@@ -42,6 +42,8 @@ printf "lib=[%s]\n" "$DOTSTEWARD_LIB"
 write_command "$fw" no-summary "" 'echo ok'
 printf 'echo not a command\n' >"$fw/cli/commands/README"
 printf 'echo bad name\n' >"$fw/cli/commands/Bad_Name.sh"
+# An invalid name that globs last must not end discovery with a failure.
+printf 'echo helper\n' >"$fw/cli/commands/zz_helper.sh"
 
 # Help lists only valid command files, sorted, with aligned summaries.
 assert_exit 0 "$ds" --help
@@ -51,6 +53,7 @@ assert_contains "$DS_STDOUT" "Commands:
   version     "
 assert_not_contains "$DS_STDOUT" README
 assert_not_contains "$DS_STDOUT" Bad_Name
+assert_not_contains "$DS_STDOUT" zz_helper
 
 # Arguments pass through verbatim; the exit status propagates.
 assert_exit 0 "$ds" probe "two words" "" --flag '*'
@@ -69,7 +72,7 @@ assert_exit 0 "$ds" probe --help
 assert_contains "$DS_STDOUT" "arg=[--help]"
 
 # Unknown commands, including anything that is not a plain command name.
-for bad in nosuch Bad_Name README ../cli/dotsteward probe.sh .hidden Probe "" "-"; do
+for bad in nosuch Bad_Name zz_helper README ../cli/dotsteward probe.sh .hidden Probe "" "-"; do
   assert_exit 1 "$ds" -- "$bad"
   assert_contains "$DS_STDERR" "[dotsteward] ERROR: unknown command: $bad" "command [$bad]"
   assert_contains "$DS_STDERR" "available commands: no-summary probe version" "command [$bad]"
