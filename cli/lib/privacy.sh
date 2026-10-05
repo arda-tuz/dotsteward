@@ -957,7 +957,7 @@ _ds_privacy_allowed() {
 # _ds_privacy_generic RULE ERE: applies one generic rule to every text unit
 # and to the path list.
 _ds_privacy_generic() {
-  local rule=$1 hits=$_DS_PRIVACY_WORK/hits name rest line match seq
+  local rule=$1 hits=$_DS_PRIVACY_WORK/hits name rest line match seq user
   _ds_privacy_grep "$_DS_PRIVACY_WORK/u" _DS_TEXT -o -i -E -e "$2" >"$hits" || return 1
   while IFS= read -r rest; do
     name=${rest%%:*}
@@ -965,7 +965,13 @@ _ds_privacy_generic() {
     line=${rest%%:*}
     match=${rest#*:}
     case $rule in
-      home-path) match=/${match#*/} ;;
+      home-path)
+        # An optional delimiter byte (which may itself be a slash) precedes
+        # /home/USER or /Users/USER; keep only the last two components.
+        user=${match##*/}
+        match=${match%/*}
+        match=/${match##*/}/$user
+        ;;
       private-ipv4) [[ $match =~ [0-9]+(\.[0-9]+){3} ]] && match=${BASH_REMATCH[0]} ;;
     esac
     if [[ $name == paths ]]; then
