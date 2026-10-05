@@ -203,13 +203,51 @@ forbidden-path result-2 (path)
 forbidden-path settings.local.json (path)" "$DS_STDOUT"
 assert_eq "[dotsteward] ERROR: scan found 9 findings in 12 files, 0 commits" "$DS_STDERR"
 
-# Content rules apply to file paths too.
+# Content rules apply to file paths too. With redaction, a path with a
+# generic match prints as path#<k> (its position in the sorted path list),
+# also as the location of the file's content findings; a path whose match is
+# allowed by the policy prints as is. Without redaction the output is
+# unchanged.
 cd "$DS_TEST_ROOT/work"
 mkdir named
 cd named
 printf 'ok\n' >"$(non_ascii_word).txt"
 assert_exit 1 scan --tree --redact
-assert_eq "non-ascii $(non_ascii_word).txt (path)" "$DS_STDOUT"
+assert_eq "non-ascii path#1 (path)" "$DS_STDOUT"
+assert_not_contains "$DS_STDOUT" "$(non_ascii_word)"
+assert_exit 1 scan --tree
+assert_eq "non-ascii $(non_ascii_word).txt (path): "$'\xc3\xa9' "$DS_STDOUT"
+rm -- "$(non_ascii_word).txt"
+
+github=$(token ghp_ 36)
+mail=$(address bob "$domain")
+home=$(home_path "$user")
+home=${home%/*}
+mkdir -p docs/git@github.com
+home_path "$user" >"cfg-$github.json"
+home_path "$user" >"docs/$mail.txt"
+home_path "$user" >docs/git@github.com/readme.txt
+home_path "$user" >docs/plain.txt
+assert_exit 1 scan --tree --redact
+assert_eq "secret-github-token path#1 (path)
+home-path path#1:1
+email path#2 (path)
+home-path path#2:1
+home-path docs/git@github.com/readme.txt:1
+home-path docs/plain.txt:1" "$DS_STDOUT"
+assert_eq "[dotsteward] ERROR: scan found 6 findings in 4 files, 0 commits" "$DS_STDERR"
+output=$DS_STDOUT$DS_STDERR
+assert_not_contains "$output" "$github"
+assert_not_contains "$output" "ghp_"
+assert_not_contains "$output" "$mail"
+assert_not_contains "$output" "$domain"
+assert_exit 1 scan --tree
+assert_eq "secret-github-token cfg-$github.json (path): $github
+home-path cfg-$github.json:1: $home
+email docs/$mail.txt (path): $mail.txt
+home-path docs/$mail.txt:1: $home
+home-path docs/git@github.com/readme.txt:1: $home
+home-path docs/plain.txt:1: $home" "$DS_STDOUT"
 
 # --- binary files and symlinks -----------------------------------------------
 cd "$DS_TEST_ROOT/work"
