@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# opencode stub: the OpenCode CLI.
+#   opencode serve [--pure] [--hostname HOST] [--port PORT]
+#       a tiny HTTP server (until killed) whose GET /skill answers the skills
+#       found below $HOME/.agents/skills, $HOME/.claude/skills and
+#       ${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skills, at any depth and
+#       including hidden directories, as a JSON list of {name, description,
+#       location} sorted by name. The state value "serve-mode" selects a
+#       failure path: "exit" (exit 1 at once) or "not-list" (/skill answers a
+#       JSON object); "normal" is the default.
+# --version prints "version" (default "1.0.0"); anything else succeeds
+# silently.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin opencode "$@"
+
+if [[ ${1:-} != serve ]]; then
+  ds_stub_app opencode "1.0.0" "Usage: opencode [command] [options]" "$@"
+fi
+shift
+hostname=127.0.0.1
+port=4096
+while (($#)); do
+  case $1 in
+    --hostname | --port)
+      (($# >= 2)) || {
+        printf 'opencode: option %s requires a value\n' "$1" >&2
+        exit 1
+      }
+      [[ $1 == --hostname ]] && hostname=$2 || port=$2
+      shift 2
+      ;;
+    --hostname=*) hostname=${1#*=} && shift ;;
+    --port=*) port=${1#*=} && shift ;;
+    *) shift ;;
+  esac
+done
+mode=$(ds_stub_value serve-mode normal)
+if [[ $mode == exit ]]; then
+  printf 'opencode: failed to start the server\n' >&2
+  exit 1
+fi
+exec python3 -c '
+import http.server, json, os, sys
+
+host, port, mode = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+home = os.environ["HOME"]
+config = os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config")
+roots = [
+    os.path.join(home, ".agents", "skills"),
+    os.path.join(home, ".claude", "skills"),
+    os.path.join(config, "opencode", "skills"),
+]
+
+
+def frontmatter(path):
+    fields = {}
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        lines = handle.read().splitlines()
+    if lines and lines[0].strip() == "---":
+        for line in lines[1:]:
+            if line.strip() == "---":
+                break
+            key, sep, value = line.partition(":")
+            if sep:
+                fields[key.strip()] = value.strip()
+    return fields
+
+
+def skills():
+    found = {}
+    for root in roots:
+        for directory, _, files in sorted(os.walk(root)):
+            if "SKILL.md" in files:
+                path = os.path.join(directory, "SKILL.md")
+                fields = frontmatter(path)
+                name = fields.get("name") or os.path.basename(directory)
+                found.setdefault(name, {"name": name, "description": fields.get("description", ""), "location": path})
+    return [found[name] for name in sorted(found)]
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.split("?")[0] != "/skill":
+            self.send_error(404)
+            return
+        body = skills() if mode != "not-list" else {"error": "unexpected"}
+        data = json.dumps(body).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args):
+        pass
+
+
+print(f"opencode server listening on http://{host}:{port}", flush=True)
+http.server.ThreadingHTTPServer((host, port), Handler).serve_forever()
+' "$hostname" "$port" "$mode"

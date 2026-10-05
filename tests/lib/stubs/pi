@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# pi stub: the Pi coding agent.
+# Records PI_OFFLINE and PI_CODING_AGENT_DIR with every call (state key "env"
+# changes the set).
+#   pi --mode rpc [...]   reads JSON requests from standard input, one per
+#       line; {"type": "get_commands"} answers {"type": "response", "command":
+#       "get_commands", "success": true, "data": {"commands": [...]}} with one
+#       {"name": "skill:<name>", "source": "skill", ...} per skill directory
+#       directly below $HOME/.agents/skills and
+#       ${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills (hidden directories
+#       skipped; none with --no-skills) plus one prompt command. The state
+#       value "commands" (a JSON list) replaces the list; "rpc-mode" selects
+#       a failure path: "invalid-json" (prints a non-JSON line) or "exit"
+#       (exit 1 at once); "normal" is the default.
+#   pi --help, pi auth check --help   the help texts the probes read
+# --version prints "version" (default "0.40.0"); anything else succeeds
+# silently.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+DS_STUB_ENV_DEFAULT="PI_OFFLINE PI_CODING_AGENT_DIR"
+ds_stub_begin pi "$@"
+
+argline=" $* "
+if [[ ${1:-} == auth && ${2:-} == check && ($argline == *" --help "* || $argline == *" -h "*) ]]; then
+  ds_stub_app pi "" "Usage: pi auth check [--json] [--no-refresh]
+
+Checks the stored credentials without starting a session.
+  --json        print the result as JSON
+  --no-refresh  never refresh an expired token" --help
+fi
+
+if [[ $argline == *" --mode rpc "* ]]; then
+  mode=$(ds_stub_value rpc-mode normal)
+  case $mode in
+    exit)
+      printf 'pi: rpc mode failed to start\n' >&2
+      exit 1
+      ;;
+    invalid-json)
+      cat >/dev/null
+      printf 'pi rpc ready (not json)\n'
+      exit 0
+      ;;
+  esac
+  skills=1
+  [[ $argline != *" --no-skills "* ]] || skills=0
+  canned=$(ds_stub_value commands)
+  exec python3 -c '
+import json, os, sys
+
+canned, with_skills = sys.argv[1], sys.argv[2] == "1"
+home = os.environ["HOME"]
+agent = os.environ.get("PI_CODING_AGENT_DIR") or os.path.join(home, ".pi", "agent")
+
+
+def commands():
+    if canned:
+        return json.loads(canned)
+    names = []
+    if with_skills:
+        for root in (os.path.join(home, ".agents", "skills"), os.path.join(agent, "skills")):
+            if not os.path.isdir(root):
+                continue
+            for entry in sorted(os.listdir(root)):
+                if not entry.startswith(".") and os.path.isfile(os.path.join(root, entry, "SKILL.md")) and entry not in names:
+                    names.append(entry)
+    result = [{"name": "skill:" + name, "source": "skill", "description": "Skill " + name} for name in names]
+    result.append({"name": "example-prompt", "source": "prompt", "description": "Synthetic prompt template"})
+    return result
+
+
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    kind = request.get("type")
+    if kind == "get_commands":
+        reply = {"type": "response", "command": kind, "success": True, "data": {"commands": commands()}}
+    else:
+        reply = {"type": "response", "command": kind, "success": False, "error": "unknown command"}
+    if "id" in request:
+        reply["id"] = request["id"]
+    print(json.dumps(reply), flush=True)
+' "$canned" "$skills"
+fi
+
+ds_stub_app pi "0.40.0" "Usage: pi [options] [prompt]
+
+Options:
+  --mode MODE           text, json or rpc
+  --offline             never use the network
+  --no-session          do not store the session
+  --no-skills           do not load skills
+  --no-extensions       do not load extensions
+  --no-prompt-templates do not load prompt templates" "$@"

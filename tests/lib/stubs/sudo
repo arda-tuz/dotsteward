@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# sudo stub: runs the command as the test user against the fixture root.
+# The call is recorded with sudo's own options; those options (-n -E -H -S
+# -k -v -b -i -s, -u USER, -g GROUP, -p PROMPT, -C N, -D DIR, -T N,
+# --preserve-env[=LIST] and their long forms) are not passed on. NAME=value
+# words before the command set its environment, "--" ends the options.
+# Every argument (the command included) that is an absolute path below /etc,
+# /opt, /srv, /var, /usr/local, /usr/share, /usr/lib, /Applications or
+# /Library, alone or after the first "=" of an OPTION=PATH word, is moved
+# below DS_SYSTEM_ROOT, so system writes land in the fixture root. The
+# command runs with DS_STUB_AS_ROOT=1, which the id, dpkg, apt-get, chsh and
+# dscl stubs read as root rights. -v or -k without a command succeed; a
+# route (for example '*' with --exit 1) simulates a refused password.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin sudo "$@"
+
+usage() {
+  printf '%s\n' "${1:+sudo: $1}" \
+    'usage: sudo -h | -K | -k | -V' \
+    'usage: sudo -v [-ABkNnS] [-g group] [-h host] [-p prompt] [-u user]' \
+    'usage: sudo [-ABbEHkNnPS] [-C num] [-D directory] [-g group] [-h host] [-p prompt] [-R directory] [-T timeout] [-u user] [VAR=value] [-i | -s] [<command>]' |
+    sed '/^$/d' >&2
+  exit 1
+}
+
+credentials_only=0
+assignments=()
+options_done=0
+while (($#)); do
+  if ((!options_done)); then
+    case $1 in
+      --)
+        options_done=1
+        shift
+        continue
+        ;;
+      -u | -g | -p | -C | -D | -T | -h | -R | --user | --group | --prompt | --close-from | --chdir | --command-timeout | --host | --chroot)
+        (($# >= 2)) || usage "option requires an argument -- '${1#-}'"
+        shift 2
+        continue
+        ;;
+      --user=* | --group=* | --prompt=* | --close-from=* | --chdir=* | --command-timeout=* | --host=* | --chroot=* | --preserve-env | --preserve-env=*)
+        shift
+        continue
+        ;;
+      --non-interactive | --preserve-env* | --set-home | --stdin | --background | --login | --shell | --askpass)
+        shift
+        continue
+        ;;
+      --validate | --reset-timestamp | --remove-timestamp)
+        credentials_only=1
+        shift
+        continue
+        ;;
+      -[!-]*)
+        flags=${1#-}
+        shift
+        while [[ -n $flags ]]; do
+          flag=${flags:0:1}
+          flags=${flags:1}
+          case $flag in
+            n | E | H | S | b | i | s | A | B | N | P) ;;
+            k | K | v) credentials_only=1 ;;
+            u | g | p | C | D | T | R)
+              if [[ -z $flags ]]; then
+                (($#)) || usage "option requires an argument -- '$flag'"
+                shift
+              fi
+              flags=""
+              ;;
+            *) usage "invalid option -- '$flag'" ;;
+          esac
+        done
+        continue
+        ;;
+    esac
+  fi
+  if [[ $1 =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+    assignments+=("$1")
+    shift
+    continue
+  fi
+  break
+done
+
+if ((!$#)); then
+  ((credentials_only)) && exit 0
+  usage
+fi
+
+system_path() {
+  local path=$1 prefix
+  if [[ $path == "$DS_TEST_ROOT"/* || $path == "$DS_TEST_ROOT" ]]; then
+    printf '%s' "$path"
+    return
+  fi
+  for prefix in /etc /opt /srv /var /usr/local /usr/share /usr/lib /Applications /Library; do
+    if [[ $path == "$prefix" || $path == "$prefix"/* ]]; then
+      printf '%s' "$DS_SYSTEM_ROOT$path"
+      return
+    fi
+  done
+  printf '%s' "$path"
+}
+
+command=()
+for arg in "$@"; do
+  if [[ $arg == /* ]]; then
+    command+=("$(system_path "$arg")")
+  elif [[ $arg =~ ^(-[^=]*=)(/.*)$ ]]; then
+    command+=("${BASH_REMATCH[1]}$(system_path "${BASH_REMATCH[2]}")")
+  else
+    command+=("$arg")
+  fi
+done
+
+exec env DS_STUB_AS_ROOT=1 "${assignments[@]}" "${command[@]}"

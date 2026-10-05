@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# xcode-select stub: the macOS command line tools switch.
+# State values: "installed" (1 by default; 0 = the tools are missing) and
+# "install-completes" (1 by default; 0 = `--install` starts an installation
+# that never finishes). The tools live in
+# DS_SYSTEM_ROOT/Library/Developer/CommandLineTools.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin xcode-select "$@"
+
+tools=$DS_SYSTEM_ROOT/Library/Developer/CommandLineTools
+installed=$(ds_stub_value installed 1)
+case ${1:-} in
+  -p | --print-path)
+    if [[ $installed != 1 ]]; then
+      printf '%s\n' "xcode-select: error: unable to get active developer directory. Use \`sudo xcode-select --switch path/to/Xcode.app\` to set one (or see \`man xcode-select\`)" >&2
+      exit 2
+    fi
+    mkdir -p "$tools"
+    printf '%s\n' "$tools"
+    ;;
+  --install)
+    if [[ $installed == 1 ]]; then
+      printf 'xcode-select: error: command line tools are already installed, use "Software Update" in System Settings to install updates\n' >&2
+      exit 1
+    fi
+    printf 'xcode-select: note: install requested for command line developer tools\n'
+    if [[ $(ds_stub_value install-completes 1) == 1 ]]; then
+      mkdir -p "$DS_STUB_DIR" "$tools"
+      printf '1\n' >"$DS_STUB_DIR/installed"
+    fi
+    ;;
+  -v | --version) printf 'xcode-select version 2409.\n' ;;
+  *)
+    printf 'xcode-select: error: invalid argument %s\n' "${1:-''}" >&2
+    exit 1
+    ;;
+esac

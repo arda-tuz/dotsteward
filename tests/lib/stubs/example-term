@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# example-term stub: a synthetic private terminal application.
+# --version prints the state value "version" (default "example-term 0.9.0"),
+# --help the state value "help"; any other call succeeds silently. Routes and
+# overrides apply (see tests/lib/harness.sh).
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin example-term "$@"
+ds_stub_app example-term "example-term 0.9.0" \
+  "Usage: example-term [OPTIONS] [COMMAND]" "$@"

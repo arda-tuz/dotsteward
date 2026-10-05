@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# apt-cache stub over the fake APT index (ds_apt_available) and the fake dpkg
+# database: policy, show and madison. Unknown packages and operations exit
+# 100 like apt-cache.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin apt-cache "$@"
+
+index=$DS_STUB_STATE/apt/available
+archive="http://archive.example.invalid/ubuntu noble/main"
+operation=${1:-}
+(($#)) && shift
+args=()
+for arg in "$@"; do
+  [[ $arg == -* ]] || args+=("$arg")
+done
+
+candidate() {
+  if [[ -f $index/$1 ]]; then
+    sed -n 's/^Version: //p' "$index/$1"
+  fi
+}
+
+architecture() {
+  sed -n 's/^Architecture: //p' "$index/$1"
+}
+
+case $operation in
+  policy)
+    for package in "${args[@]}"; do
+      installed=$(ds_dpkg_version "$package")
+      available=$(candidate "$package")
+      if [[ -z $installed && -z $available ]]; then
+        printf 'N: Unable to locate package %s\n' "$package" >&2
+        continue
+      fi
+      printf '%s:\n  Installed: %s\n  Candidate: %s\n  Version table:\n' \
+        "$package" "${installed:-(none)}" "${available:-(none)}"
+      if [[ -n $available ]]; then
+        marker="   "
+        [[ $available != "$installed" ]] || marker="***"
+        printf ' %s %s 500\n        500 %s %s Packages\n' "$marker" "$available" "$archive" "$(architecture "$package")"
+      fi
+      if [[ -n $installed && $installed != "$available" ]]; then
+        printf ' *** %s 100\n        100 /var/lib/dpkg/status\n' "$installed"
+      fi
+    done
+    ;;
+  show)
+    ((${#args[@]})) || {
+      printf 'E: No packages found\n' >&2
+      exit 100
+    }
+    for package in "${args[@]}"; do
+      if [[ ! -f $index/$package ]]; then
+        printf 'E: No packages found\n' >&2
+        exit 100
+      fi
+      cat -- "$index/$package"
+      printf '\n'
+    done
+    ;;
+  madison)
+    for package in "${args[@]}"; do
+      [[ -f $index/$package ]] || continue
+      printf '%s | %s | %s %s Packages\n' "$package" "$(candidate "$package")" "$archive" "$(architecture "$package")"
+    done
+    ;;
+  *)
+    printf 'E: Invalid operation %s\n' "$operation" >&2
+    exit 100
+    ;;
+esac

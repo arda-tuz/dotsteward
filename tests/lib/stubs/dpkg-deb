@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# dpkg-deb stub: reads fake package files (ds_fake_deb and the committed
+# tests/fixtures/common/debs) instead of real archives.
+#   -f|--field FILE [FIELD...]   all control fields, one value, or
+#                                "Field: value" lines for several fields
+#   -W|--show FILE               "Package<TAB>Version"
+#   -I|--info FILE               the info summary with indented fields
+# Anything that is not a fake package fails with exit 2 like a broken
+# archive.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin dpkg-deb "$@"
+
+action=${1:-}
+file=${2:-}
+if [[ -z $action || -z $file ]]; then
+  printf 'dpkg-deb: error: need an action option and a package file\n' >&2
+  exit 2
+fi
+shift 2
+if [[ ! -f $file ]]; then
+  printf "dpkg-deb: error: failed to read archive '%s': No such file or directory\n" "$file" >&2
+  exit 2
+fi
+control=$(_ds_deb_control "$file") || {
+  printf "dpkg-deb: error: '%s' is not a Debian format archive\n" "$file" >&2
+  exit 2
+}
+
+field_value() {
+  awk -v name="$1" 'BEGIN { name = tolower(name) }
+    { split($0, kv, ": "); if (tolower(kv[1]) == name) { sub(/^[^:]*: /, ""); print; exit } }' <<<"$control"
+}
+
+case $action in
+  -f | --field)
+    if ((!$#)); then
+      printf '%s\n' "$control"
+    elif (($# == 1)); then
+      field_value "$1"
+    else
+      for name in "$@"; do
+        printf '%s: %s\n' "$name" "$(field_value "$name")"
+      done
+    fi
+    ;;
+  -W | --show)
+    printf '%s\t%s\n' "$(field_value Package)" "$(field_value Version)"
+    ;;
+  -I | --info)
+    printf ' new Debian package, version 2.0.\n size %s bytes: control archive=0 bytes.\n' "$(stat -c %s "$file")"
+    while IFS= read -r line; do
+      printf ' %s\n' "$line"
+    done <<<"$control"
+    ;;
+  *)
+    printf 'dpkg-deb: error: unsupported action %s\n' "$action" >&2
+    exit 2
+    ;;
+esac

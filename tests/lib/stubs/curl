@@ -1,0 +1,308 @@
+#!/usr/bin/env bash
+# curl stub: answers http(s) URLs from fixture files registered with
+# ds_curl_serve, ds_curl_fail, ds_curl_delay and ds_curl_redirect, reads
+# file:// URLs from disk, and keeps the flag contract the framework relies
+# on: -f/--fail, -o/--output, -O, --create-dirs, --proto, -w/--write-out
+# (http_code, response_code, size_download, url_effective, content_type,
+# num_redirects, exitcode), -I/--head, -D/--dump-header, -L/--location,
+# -m/--max-time, -s/-S, and curl's exit codes: 1 refused protocol, 2 usage,
+# 6 unknown host, 22 HTTP error with --fail, 28 timeout, 37 unreadable file.
+# One URL per call. Other common options (--retry*, --connect-timeout, --speed-*, -H, -A,
+# --tlsv1.2, --noproxy, ...) are accepted and ignored. Responses look like
+# HTTP/2 with lowercase headers.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin curl "$@"
+
+fail_flag=0 silent=0 show_error=0 location=0 head=0 create_dirs=0 remote_name=0
+proto="" write_out="" max_time="" dump_header=""
+outputs=()
+urls=()
+
+usage_error() {
+  printf 'curl: %s\n' "$1" >&2
+  printf "curl: try 'curl --help' or 'curl --manual' for more information\n" >&2
+  exit 2
+}
+
+# set_option NAME VALUE: options that take a value.
+set_option() {
+  case $1 in
+    -o | --output) outputs+=("$2") ;;
+    -w | --write-out) write_out=$2 ;;
+    -m | --max-time) max_time=$2 ;;
+    -D | --dump-header) dump_header=$2 ;;
+    --proto) proto=$2 ;;
+    --url) urls+=("$2") ;;
+  esac
+}
+
+takes_value() {
+  case $1 in
+    -o | -w | -m | -D | -H | -A | -X | -d | -e | -r | -u | -x | -K | -E | -b | -c | -T | -F | -C | \
+      --output | --write-out | --max-time | --dump-header | --proto | --proto-redir | --proto-default | \
+      --url | --header | --user-agent | --request | --data | --data-raw | --data-binary | --referer | \
+      --range | --user | --proxy | --noproxy | --connect-timeout | --retry | --retry-delay | \
+      --retry-max-time | --speed-limit | --speed-time | --max-redirs | --cacert | --capath | --cookie | \
+      --cookie-jar | --upload-file | --form | --continue-at | --limit-rate | --max-filesize | --resolve | \
+      --config | --expect100-timeout | --keepalive-time)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+set_flag() {
+  case $1 in
+    -f | --fail | --fail-with-body) fail_flag=1 ;;
+    -s | --silent) silent=1 ;;
+    -S | --show-error) show_error=1 ;;
+    -L | --location) location=1 ;;
+    -I | --head) head=1 ;;
+    -O | --remote-name | --remote-name-all) remote_name=1 ;;
+    --create-dirs) create_dirs=1 ;;
+    -k | --insecure | -v | --verbose | -q | --disable | -4 | --ipv4 | -6 | --ipv6 | -# | --progress-bar | \
+      -i | --include | -g | --globoff | -N | --no-buffer | -Z | --parallel | --compressed | --tlsv1 | \
+      --tlsv1.0 | --tlsv1.1 | --tlsv1.2 | --tlsv1.3 | --http1.1 | --http2 | --retry-all-errors | \
+      --retry-connrefused | --no-progress-meter | --path-as-is | --no-keepalive | --ssl-reqd | --xattr | \
+      --remove-on-error | --no-clobber) ;;
+    -V | --version)
+      printf 'curl 8.14.1 (x86_64-pc-linux-gnu) libcurl/8.14.1\nRelease-Date: 2025-06-04\nProtocols: file http https\nFeatures: HTTP2 HTTPS-proxy IPv6 Largefile SSL TLS-SRP UnixSockets\n'
+      exit 0
+      ;;
+    *) usage_error "option $1: is unknown" ;;
+  esac
+}
+
+while (($#)); do
+  arg=$1
+  shift
+  case $arg in
+    --)
+      urls+=("$@")
+      break
+      ;;
+    --*=*)
+      name=${arg%%=*}
+      takes_value "$name" || usage_error "option $arg: is unknown"
+      set_option "$name" "${arg#*=}"
+      ;;
+    --*)
+      if takes_value "$arg"; then
+        (($#)) || usage_error "option $arg: requires parameter"
+        set_option "$arg" "$1"
+        shift
+      else
+        set_flag "$arg"
+      fi
+      ;;
+    -?*)
+      cluster=${arg#-}
+      while [[ -n $cluster ]]; do
+        flag=-${cluster:0:1}
+        cluster=${cluster:1}
+        if takes_value "$flag"; then
+          if [[ -n $cluster ]]; then
+            set_option "$flag" "$cluster"
+            cluster=""
+          else
+            (($#)) || usage_error "option $flag: requires parameter"
+            set_option "$flag" "$1"
+            shift
+          fi
+        else
+          set_flag "$flag"
+        fi
+      done
+      ;;
+    *) urls+=("$arg") ;;
+  esac
+done
+((${#urls[@]})) || usage_error "no URL specified"
+((${#urls[@]} == 1)) || usage_error "the curl stub takes one URL per call"
+
+# proto_allowed SCHEME: applies the --proto expression (curl syntax:
+# comma-separated, "=" sets, "+" adds, "-" removes, "all" for every scheme).
+proto_allowed() {
+  [[ -n $proto ]] || return 0
+  local scheme=$1 token op name all=(http https file) allowed=" http https file "
+  local IFS=,
+  for token in $proto; do
+    op=+
+    case $token in
+      [=+-]*)
+        op=${token:0:1}
+        name=${token:1}
+        ;;
+      *) name=$token ;;
+    esac
+    [[ $op != = ]] || allowed=" "
+    if [[ $name == all ]]; then
+      if [[ $op == - ]]; then allowed=" "; else allowed=" ${all[*]} "; fi
+    elif [[ $op == - ]]; then
+      allowed=${allowed// $name / }
+    else
+      allowed+="$name "
+    fi
+  done
+  [[ $allowed == *" $scheme "* ]]
+}
+
+error() {
+  local code=$1 message=$2
+  if ((!silent || show_error)); then
+    printf 'curl: (%s) %s\n' "$code" "$message" >&2
+  fi
+}
+
+write_out_line() {
+  [[ -n $write_out ]] || return 0
+  local text
+  printf -v text '%b' "${write_out//%%/%}"
+  text=${text//'%{http_code}'/$http_code}
+  text=${text//'%{response_code}'/$http_code}
+  text=${text//'%{size_download}'/$size_download}
+  text=${text//'%{url_effective}'/$current}
+  text=${text//'%{content_type}'/$content_type}
+  text=${text//'%{num_redirects}'/$redirects}
+  text=${text//'%{exitcode}'/$1}
+  text=${text//'%{filename_effective}'/$output}
+  printf '%s' "$text"
+}
+
+finish() {
+  write_out_line "$1"
+  exit "$1"
+}
+
+url=${urls[0]}
+output=""
+if ((${#outputs[@]})); then
+  output=${outputs[0]}
+elif ((remote_name)); then
+  output=${url%%\?*}
+  output=${output##*/}
+fi
+current=$url
+http_code=000
+size_download=0
+content_type=""
+redirects=0
+headers=""
+body=""
+
+while :; do
+  scheme=${current%%://*}
+  scheme=${scheme,,}
+  if [[ $current != *://* ]]; then
+    scheme=http
+    current=http://$current
+  fi
+  if ! proto_allowed "$scheme"; then
+    error 1 "Protocol \"$scheme\" not supported"
+    finish 1
+  fi
+  if [[ $scheme == file ]]; then
+    path=${current#*://}
+    path=/${path#*/}
+    if [[ ! -f $path || ! -r $path ]]; then
+      error 37 "Couldn't open file $path"
+      finish 37
+    fi
+    body=$path
+    http_code=000
+    break
+  fi
+  if [[ $scheme != http && $scheme != https ]]; then
+    error 1 "Protocol \"$scheme\" not supported"
+    finish 1
+  fi
+  target=$(_ds_curl_path "$current")
+  hostport=${current#*://}
+  hostport=${hostport%%[/?]*}
+  hostport=${hostport##*@}
+  host=${hostport%:*}
+  if [[ ! -d $DS_STUB_STATE/curl/www/${hostport,,} ]]; then
+    error 6 "Could not resolve host: $host"
+    finish 6
+  fi
+  if [[ -f $target.exit ]]; then
+    { read -r code && read -r message; } <"$target.exit"
+    error "$code" "$message"
+    finish "$code"
+  fi
+  if [[ -f $target.delay ]]; then
+    delay=$(<"$target.delay")
+    if [[ -n $max_time ]] && awk -v d="$delay" -v m="$max_time" 'BEGIN { exit !(d > m) }'; then
+      sleep "$max_time"
+      error 28 "Operation timed out after ${max_time%.*}000 milliseconds with 0 bytes received"
+      finish 28
+    fi
+    sleep "$delay"
+  fi
+  if [[ -f $target.status ]]; then
+    http_code=$(<"$target.status")
+  elif [[ -f $target ]]; then
+    http_code=200
+  else
+    http_code=404
+  fi
+  body=""
+  [[ ! -f $target ]] || body=$target
+  length=0
+  [[ -z $body ]] || length=$(stat -c %s -- "$body")
+  content_type=application/octet-stream
+  case ${target%%\?*} in
+    *.json) content_type=application/json ;;
+    *.txt) content_type="text/plain; charset=utf-8" ;;
+  esac
+  headers+="HTTP/2 $http_code"$'\r\n'"content-type: $content_type"$'\r\n'"content-length: $length"$'\r\n'
+  next=""
+  if [[ $http_code == 3?? && -f $target.location ]]; then
+    next=$(<"$target.location")
+    headers+="location: $next"$'\r\n'
+  fi
+  headers+=$'\r\n'
+  if [[ -n $next ]] && ((location)); then
+    if [[ $next == /* ]]; then
+      next=$scheme://$hostport$next
+    fi
+    redirects=$((redirects + 1))
+    if ((redirects > 50)); then
+      error 47 "Maximum (50) redirects followed"
+      finish 47
+    fi
+    current=$next
+    continue
+  fi
+  break
+done
+
+if [[ -n $dump_header ]]; then
+  if [[ $dump_header == - ]]; then
+    printf '%s' "$headers"
+  else
+    printf '%s' "$headers" >"$dump_header"
+  fi
+fi
+if ((fail_flag)) && [[ $http_code =~ ^[0-9]+$ ]] && ((10#$http_code >= 400)); then
+  error 22 "The requested URL returned error: $http_code"
+  finish 22
+fi
+if [[ -n $output && $output != - ]]; then
+  if ((create_dirs)); then
+    mkdir -p -- "$(dirname -- "$output")"
+  fi
+  exec 3>"$output"
+else
+  exec 3>&1
+fi
+if ((head)); then
+  printf '%s' "$headers" >&3
+elif [[ -n $body ]]; then
+  cat -- "$body" >&3
+  size_download=$(stat -c %s -- "$body")
+fi
+exec 3>&-
+finish 0

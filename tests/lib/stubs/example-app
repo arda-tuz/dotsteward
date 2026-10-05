@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# example-app stub: a synthetic private application.
+# --version prints the state value "version" (default "example-app 1.2.3"),
+# --help the state value "help"; any other call succeeds silently. Routes and
+# overrides apply (see tests/lib/harness.sh).
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin example-app "$@"
+ds_stub_app example-app "example-app 1.2.3" \
+  "Usage: example-app [OPTIONS] [COMMAND]" "$@"

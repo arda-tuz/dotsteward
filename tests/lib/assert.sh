@@ -118,3 +118,15 @@ assert_json() {
   jq -e "$expression" >/dev/null 2>&1 <<<"$document" && return 0
   ds_fail "$(_ds_with_message "jq expression [$expression] is false or invalid for [$document]" "${3:-}")"
 }
+
+# assert_call_count EXPECTED NAME [GLOB]
+# The call log must hold exactly EXPECTED calls of stub NAME whose logged
+# argument text matches the shell glob GLOB (default: every call); see
+# ds_call_count in harness.sh.
+assert_call_count() {
+  (($# == 2 || $# == 3)) || ds_fail "assert_call_count: usage: assert_call_count EXPECTED NAME [GLOB]"
+  local actual
+  actual=$(ds_call_count "$2" "${3:-*}") || ds_fail "assert_call_count: cannot read the call log"
+  [[ $actual == "$1" ]] && return 0
+  ds_fail "expected $1 calls of $2${3:+ matching [$3]}, got $actual; calls [$(ds_calls_of "$2")]"
+}

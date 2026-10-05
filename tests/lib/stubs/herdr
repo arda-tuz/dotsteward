@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# herdr stub: the herdr terminal multiplexer.
+# Records HOME, XDG_CONFIG_HOME and HERDR_SOCKET_PATH with every call (state
+# key "env" changes the set). `herdr server reload-config` sleeps the state
+# value "reload-sleep" (seconds, default 0) and exits with "reload-exit"
+# (default 0), so settings reloads can be made to fail or to time out.
+# --version prints "version" (default "herdr 0.9.3"); anything else succeeds
+# silently.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+DS_STUB_ENV_DEFAULT="HOME XDG_CONFIG_HOME HERDR_SOCKET_PATH"
+ds_stub_begin herdr "$@"
+if [[ ${1:-} == server && ${2:-} == reload-config ]]; then
+  delay=$(ds_stub_value reload-sleep 0)
+  if [[ $delay != 0 ]]; then
+    sleep "$delay"
+  fi
+  exit "$(ds_stub_value reload-exit 0)"
+fi
+ds_stub_app herdr "herdr 0.9.3" "Usage: herdr [OPTIONS] [COMMAND]" "$@"

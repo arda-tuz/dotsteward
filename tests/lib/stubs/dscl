@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# dscl stub: the macOS directory service over the harness user database.
+#   dscl DATASOURCE -read /Users/<name> [KEY...]   UserShell, NFSHomeDirectory,
+#       UniqueID, PrimaryGroupID, RealName and RecordName as "KEY: value"
+#   dscl DATASOURCE -list /Users                  user names
+#   dscl DATASOURCE -create|-change /Users/<name> UserShell [OLD] NEW
+#       needs root rights (see the sudo stub)
+# A missing user exits 56 with eDSRecordNotFound, like the real command.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin dscl "$@"
+
+ds_error() {
+  printf '%s: DS Error: %s\n' "<dscl_cmd>" "$1" >&2
+  exit "$2"
+}
+
+(($# >= 3)) || {
+  printf 'Usage: dscl [options] [<datasource> [<command>]]\n' >&2
+  exit 1
+}
+operation=$2
+record=$3
+shift 3
+if [[ $operation == -list ]]; then
+  [[ $record == /Users ]] || ds_error "-14136 (eDSRecordNotFound)" 56
+  cut -d: -f1 "$DS_PASSWD_FILE"
+  exit 0
+fi
+[[ $record == /Users/* ]] || ds_error "-14136 (eDSRecordNotFound)" 56
+user=${record#/Users/}
+ds_passwd_field "$user" 1 >/dev/null || ds_error "-14136 (eDSRecordNotFound)" 56
+
+case $operation in
+  -read)
+    (($#)) || set -- RecordName UniqueID PrimaryGroupID RealName NFSHomeDirectory UserShell
+    for key in "$@"; do
+      case $key in
+        RecordName) field=1 ;;
+        UniqueID) field=3 ;;
+        PrimaryGroupID) field=4 ;;
+        RealName) field=5 ;;
+        NFSHomeDirectory) field=6 ;;
+        UserShell) field=7 ;;
+        *) ds_error "-14134 (eDSAttributeNotFound)" 181 ;;
+      esac
+      printf '%s: %s\n' "$key" "$(ds_passwd_field "$user" "$field")"
+    done
+    ;;
+  -create | -change)
+    if ! ds_stub_as_root; then
+      printf '<main> attribute status: eDSPermissionError\n' >&2
+      ds_error "-14120 (eDSPermissionError)" 1
+    fi
+    [[ ${1:-} == UserShell && $# -ge 2 ]] || ds_error "-14134 (eDSAttributeNotFound)" 181
+    ds_passwd_set "$user" "${!#}"
+    ;;
+  *)
+    printf 'dscl: unsupported operation %s\n' "$operation" >&2
+    exit 1
+    ;;
+esac

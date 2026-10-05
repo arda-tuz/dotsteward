@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# apt-get stub over the fake APT index (ds_apt_available) and the fake dpkg
+# database. Every operation except help needs root rights (see the sudo
+# stub); errors exit 100 like apt-get.
+#   update                          succeeds
+#   install [OPTION...] ITEM...     ITEM is NAME (the index version),
+#       NAME=VERSION (must be the index version) or a fake package file
+#       (a path). The transaction is resolved first and installs nothing
+#       when one item is unknown. A lower version than the installed one is
+#       refused without --allow-downgrades; an installed equal version is
+#       kept unless --reinstall is given.
+#   remove|purge PACKAGE...         removes installed packages
+#   upgrade, dist-upgrade, autoremove, clean   succeed
+# Known options: -y --yes --assume-yes -q -qq --quiet --no-install-recommends
+# --install-recommends --reinstall --allow-downgrades --fix-broken -f
+# --allow-change-held-packages --allow-unauthenticated, -o OPTION=VALUE.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin apt-get "$@"
+
+fail() {
+  printf 'E: %s\n' "$1" >&2
+  exit 100
+}
+
+operation=""
+reinstall=0
+downgrades=0
+items=()
+while (($#)); do
+  case $1 in
+    -y | --yes | --assume-yes | -q | -qq | --quiet | --no-install-recommends | --install-recommends | \
+      --fix-broken | -f | --allow-change-held-packages | --allow-unauthenticated | --no-upgrade | --only-upgrade) ;;
+    --reinstall) reinstall=1 ;;
+    --allow-downgrades) downgrades=1 ;;
+    -o)
+      (($# >= 2)) || fail "Option -o requires an argument."
+      shift
+      ;;
+    -o?*) ;;
+    -*) fail "Command line option '${1##*-}' [from $1] is not understood in combination with the other options." ;;
+    *)
+      if [[ -z $operation ]]; then
+        operation=$1
+      else
+        items+=("$1")
+      fi
+      ;;
+  esac
+  shift
+done
+
+case $operation in
+  '') fail "No operation given. See apt-get --help." ;;
+  help | --help) printf 'Usage: apt-get [options] command\n'; exit 0 ;;
+  update | install | remove | purge | upgrade | dist-upgrade | autoremove | clean | reinstall) ;;
+  *) fail "Invalid operation $operation" ;;
+esac
+if ! ds_stub_as_root; then
+  printf 'E: Could not open lock file /var/lib/dpkg/lock-frontend - open (13: Permission denied)\n' >&2
+  fail "Unable to acquire the dpkg frontend lock (/var/lib/dpkg/lock-frontend), are you root?"
+fi
+index=$DS_STUB_STATE/apt/available
+
+case $operation in
+  update)
+    printf 'Reading package lists... Done\n'
+    ;;
+  install | reinstall)
+    [[ $operation == install ]] || reinstall=1
+    ((${#items[@]})) || exit 0
+    # Resolve the whole transaction before installing anything.
+    packages=()
+    versions=()
+    sources=()
+    for item in "${items[@]}"; do
+      if [[ $item == */* || $item == *.deb ]]; then
+        [[ -f $item ]] || fail "Unsupported file $item given on commandline"
+        control=$(_ds_deb_control "$item") || fail "Invalid archive signature in $item"
+        packages+=("$(sed -n 's/^Package: //p' <<<"$control" | head -n 1)")
+        versions+=("$(sed -n 's/^Version: //p' <<<"$control" | head -n 1)")
+        sources+=("$item")
+        continue
+      fi
+      name=${item%%=*}
+      [[ -f $index/$name ]] || fail "Unable to locate package $name"
+      available=$(sed -n 's/^Version: //p' "$index/$name")
+      if [[ $item == *=* && ${item#*=} != "$available" ]]; then
+        fail "Version '${item#*=}' for '$name' was not found"
+      fi
+      packages+=("$name")
+      versions+=("$available")
+      sources+=("$index/$name")
+    done
+    for i in "${!packages[@]}"; do
+      installed=$(ds_dpkg_version "${packages[i]}")
+      [[ -n $installed ]] || continue
+      if ds_deb_compare_versions "${versions[i]}" lt "$installed" && ((!downgrades)); then
+        printf 'The following packages will be DOWNGRADED:\n  %s\n' "${packages[i]}" >&2
+        fail "Packages were downgraded and -y was used without --allow-downgrades."
+      fi
+    done
+    for i in "${!packages[@]}"; do
+      installed=$(ds_dpkg_version "${packages[i]}")
+      if [[ $installed == "${versions[i]}" ]] && ((!reinstall)); then
+        printf '%s is already the newest version (%s).\n' "${packages[i]}" "$installed"
+        continue
+      fi
+      if [[ ${sources[i]} == "$index"/* ]]; then
+        _ds_pkgdb_install "$(<"${sources[i]}")"
+      else
+        ds_stub_deb_install "${sources[i]}" || fail "Sub-process /usr/bin/dpkg returned an error code (1)"
+      fi
+      printf 'Setting up %s (%s) ...\n' "${packages[i]}" "${versions[i]}"
+    done
+    ;;
+  remove | purge)
+    for package in "${items[@]}"; do
+      file=$DS_STUB_STATE/dpkg/installed/$package
+      if [[ -f $file ]]; then
+        printf 'Removing %s (%s) ...\n' "$package" "$(ds_dpkg_version "$package")"
+        rm -f -- "$file"
+      else
+        printf "Package '%s' is not installed, so not removed\n" "$package"
+      fi
+    done
+    ;;
+esac
+exit 0

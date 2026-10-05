@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# sw_vers stub: the macOS version from the state values "product-name"
+# (default macOS), "product-version" (default 15.0) and "build-version"
+# (default 24A335).
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin sw_vers "$@"
+
+name=$(ds_stub_value product-name macOS)
+version=$(ds_stub_value product-version 15.0)
+build=$(ds_stub_value build-version 24A335)
+case ${1:-} in
+  -productName | --productName) printf '%s\n' "$name" ;;
+  -productVersion | --productVersion) printf '%s\n' "$version" ;;
+  -buildVersion | --buildVersion) printf '%s\n' "$build" ;;
+  '') printf 'ProductName:\t\t%s\nProductVersion:\t\t%s\nBuildVersion:\t\t%s\n' "$name" "$version" "$build" ;;
+  *)
+    printf 'usage: sw_vers [-productName|-productVersion|-buildVersion]\n' >&2
+    exit 1
+    ;;
+esac

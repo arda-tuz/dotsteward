@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# gh stub: the GitHub CLI answering from canned routes (ds_stub_route gh
+# GLOB ...). The route key is the argument text without the --jq/-q FILTER
+# option; the filter is applied to the canned standard output with `jq -r`,
+# as gh does. Every call is recorded, so tests count calls with
+# assert_call_count.
+# Without a matching route:
+#   gh --version        a version banner
+#   gh auth status      logged in as the state value "login" (default
+#                       dotsteward-test) unless the state value "auth" is
+#                       "logged-out" (exit 1)
+#   gh api user         {"login": LOGIN, "id": the state value "id" (default
+#                       1000), ...}; exit 4 when logged out
+#   anything else       exit 1 "gh stub: no canned response for: ARGS"
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin --no-routes gh "$@"
+
+filter=""
+key_args=()
+while (($#)); do
+  case $1 in
+    --jq | -q)
+      (($# >= 2)) || {
+        printf 'flag needs an argument: %s\n' "$1" >&2
+        exit 1
+      }
+      filter=$2
+      shift 2
+      continue
+      ;;
+    --jq=*) filter=${1#--jq=} ;;
+    *) key_args+=("$1") ;;
+  esac
+  shift
+done
+key=${key_args[*]}
+
+# reply STATUS STDOUT_FILE: prints the body (through the filter) and exits.
+reply() {
+  local status=$1 body=$2
+  if [[ -n $body ]]; then
+    if [[ -n $filter && $status == 0 ]]; then
+      jq -r "$filter" <"$body" || exit 1
+    else
+      cat -- "$body"
+    fi
+  fi
+  exit "$status"
+}
+
+if route=$(_ds_stub_take_route gh "$key"); then
+  if [[ -f $route/sleep ]]; then
+    sleep "$(<"$route/sleep")"
+  fi
+  if [[ -f $route/stderr ]]; then
+    cat -- "$route/stderr" >&2
+  fi
+  body=""
+  [[ ! -f $route/stdout ]] || body=$route/stdout
+  reply "$(<"$route/exit")" "$body"
+fi
+
+login=$(ds_stub_value login dotsteward-test)
+logged_in=1
+[[ $(ds_stub_value auth logged-in) != logged-out ]] || logged_in=0
+
+case $key in
+  --version | version)
+    printf 'gh version 2.80.0 (2025-09-23)\nhttps://github.com/cli/cli/releases/tag/v2.80.0\n'
+    exit 0
+    ;;
+  "auth status"*)
+    if ((!logged_in)); then
+      printf 'You are not logged into any GitHub hosts. To log in, run: gh auth login\n' >&2
+      exit 1
+    fi
+    printf 'github.com\n  - Logged in to github.com account %s (keyring)\n  - Active account: true\n' "$login"
+    exit 0
+    ;;
+  "api user")
+    if ((!logged_in)); then
+      printf 'To get started with GitHub CLI, please run:  gh auth login\n' >&2
+      exit 4
+    fi
+    body=$DS_STUB_DIR/.user.json
+    mkdir -p "$DS_STUB_DIR"
+    jq -n --arg login "$login" --argjson id "$(ds_stub_value id 1000)" \
+      '{login: $login, id: $id, name: $login, html_url: ("https://github.com/" + $login), type: "User"}' >"$body"
+    reply 0 "$body"
+    ;;
+esac
+printf 'gh stub: no canned response for: %s\n' "$key" >&2
+exit 1

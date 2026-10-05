@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# codex stub: the Codex CLI and its plugin mechanism.
+# Records CODEX_HOME with every call (state key "env" changes the set).
+#   codex plugin list --json     {"installed": [...]}: the state value
+#                                "plugins" when set (a canned list), else the
+#                                plugins added so far
+#   codex plugin add NAME@MARKET installs NAME at the state value
+#                                "plugin-version" (default 1.0.0): writes
+#                                ${CODEX_HOME:-$HOME/.codex}/plugins/cache/
+#                                MARKET/NAME/VERSION/.codex-plugin/plugin.json
+#                                and one skills/<skill>/SKILL.md per name in
+#                                the state value "plugin-skills"
+# --version prints "version" (default "codex-cli 0.50.0"); anything else
+# succeeds silently.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+DS_STUB_ENV_DEFAULT="CODEX_HOME"
+ds_stub_begin codex "$@"
+
+installed=$DS_STUB_DIR/installed.json
+
+if [[ ${1:-} == plugin && ${2:-} == list ]]; then
+  if [[ -f $DS_STUB_DIR/plugins ]]; then
+    cat -- "$DS_STUB_DIR/plugins"
+  elif [[ -f $installed ]]; then
+    jq '{installed: .}' "$installed"
+  else
+    printf '{"installed": []}\n'
+  fi
+  exit 0
+fi
+
+if [[ ${1:-} == plugin && ${2:-} == add ]]; then
+  spec=${3:-}
+  if [[ ! $spec =~ ^([A-Za-z0-9._-]+)@([A-Za-z0-9._-]+)$ ]]; then
+    printf 'error: invalid plugin spec %s (expected NAME@MARKETPLACE)\n' "${spec:-''}" >&2
+    exit 1
+  fi
+  name=${BASH_REMATCH[1]}
+  market=${BASH_REMATCH[2]}
+  version=$(ds_stub_value plugin-version 1.0.0)
+  cache=${CODEX_HOME:-$HOME/.codex}/plugins/cache/$market/$name/$version
+  mkdir -p "$cache/.codex-plugin"
+  jq -n --arg name "$name" --arg version "$version" \
+    '{name: $name, version: $version, description: "Synthetic plugin for dotsteward tests."}' \
+    >"$cache/.codex-plugin/plugin.json"
+  for skill in $(ds_stub_value plugin-skills); do
+    mkdir -p "$cache/skills/$skill"
+    printf -- '---\nname: %s\ndescription: Synthetic plugin skill.\n---\n' "$skill" >"$cache/skills/$skill/SKILL.md"
+  done
+  mkdir -p "$DS_STUB_DIR"
+  [[ -f $installed ]] || printf '[]\n' >"$installed"
+  jq --arg id "$name@$market" --arg version "$version" \
+    '[.[] | select(.pluginId != $id)] + [{pluginId: $id, installed: true, enabled: true, version: $version}]' \
+    "$installed" >"$installed.tmp"
+  mv -- "$installed.tmp" "$installed"
+  printf 'Installed plugin %s@%s (%s)\n' "$name" "$market" "$version"
+  exit 0
+fi
+
+ds_stub_app codex "codex-cli 0.50.0" "Usage: codex [OPTIONS] [PROMPT]" "$@"

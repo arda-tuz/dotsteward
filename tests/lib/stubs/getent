@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# getent stub: the passwd and group databases of the harness
+# (DS_PASSWD_FILE, DS_GROUP_FILE). `getent DB` lists every entry, `getent DB
+# KEY...` looks keys up by name or numeric id and exits 2 when one is
+# missing; other databases exit 1 like an unknown database.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin getent "$@"
+
+case ${1:-} in
+  passwd) file=$DS_PASSWD_FILE ;;
+  group) file=$DS_GROUP_FILE ;;
+  '')
+    printf 'Usage: getent [OPTION...] database [key ...]\n' >&2
+    exit 1
+    ;;
+  *)
+    printf 'Unknown database: %s\n' "$1" >&2
+    exit 1
+    ;;
+esac
+shift
+if ((!$#)); then
+  cat -- "$file"
+  exit 0
+fi
+status=0
+for key in "$@"; do
+  awk -F: -v key="$key" '$1 == key || ($3 == key && key ~ /^[0-9]+$/) { print; found = 1; exit } END { exit !found }' \
+    "$file" || status=2
+done
+exit "$status"

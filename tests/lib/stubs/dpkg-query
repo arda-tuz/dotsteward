@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# dpkg-query stub: queries the fake dpkg database that ds_dpkg_installed,
+# dpkg -i and apt-get install fill (-W/--show with --showformat, -s/--status,
+# -L/--listfiles, -S/--search; see ds_stub_dpkg_query in harness.sh).
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin dpkg-query "$@"
+status=0
+ds_stub_dpkg_query "$@" || status=$?
+exit "$status"

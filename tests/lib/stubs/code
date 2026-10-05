@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# code stub: the VS Code command line.
+# --version prints the state value "version" (default: version, commit and
+# architecture on three lines, like the real command), --help the state
+# value "help"; any other call succeeds silently. Routes and overrides apply
+# (see tests/lib/harness.sh).
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin code "$@"
+ds_stub_app code $'1.105.0\n0000000000000000000000000000000000000000\nx64' \
+  "Usage: code [options][paths...]" "$@"

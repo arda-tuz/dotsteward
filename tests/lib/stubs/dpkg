@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# dpkg stub over the fake dpkg database.
+#   --compare-versions A OP B   Debian version ordering (exit 0, 1; 2 for an
+#                               unknown relation)
+#   --print-architecture        the state value "architecture" (default amd64)
+#   -i|--install FILE...        installs fake package files (ds_fake_deb);
+#                               needs root rights (see the sudo stub)
+#   -r|--remove, -P|--purge PACKAGE...   removes packages; needs root rights
+#   --configure -a              succeeds (needs root rights)
+#   -s -S -L -W -l              answered like dpkg-query
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin dpkg "$@"
+
+require_root() {
+  ds_stub_as_root && return 0
+  printf 'dpkg: error: requested operation requires superuser privilege\n' >&2
+  exit 2
+}
+
+case ${1:-} in
+  --compare-versions)
+    if (($# != 4)); then
+      printf 'dpkg: error: --compare-versions takes three arguments: <version> <relation> <version>\n' >&2
+      exit 2
+    fi
+    status=0
+    ds_deb_compare_versions "$2" "$3" "$4" || status=$?
+    exit "$status"
+    ;;
+  --print-architecture)
+    printf '%s\n' "$(ds_stub_value architecture amd64)"
+    ;;
+  -i | --install)
+    require_root
+    shift
+    (($#)) || {
+      printf 'dpkg: error: --install needs at least one package archive file argument\n' >&2
+      exit 2
+    }
+    for file in "$@"; do
+      [[ $file != -* ]] || continue
+      ds_stub_deb_install "$file" || exit 2
+      package=$(sed -n '2s/^Package: //p' "$file")
+      printf 'Setting up %s (%s) ...\n' "$package" "$(ds_dpkg_version "$package")"
+    done
+    ;;
+  -r | --remove | -P | --purge)
+    require_root
+    shift
+    for package in "$@"; do
+      [[ $package != -* ]] || continue
+      file=$DS_STUB_STATE/dpkg/installed/$package
+      if [[ -f $file ]]; then
+        printf 'Removing %s (%s) ...\n' "$package" "$(ds_dpkg_version "$package")"
+        rm -f -- "$file"
+      else
+        printf "dpkg: warning: ignoring request to remove %s which isn't installed\n" "$package" >&2
+      fi
+    done
+    ;;
+  --configure)
+    require_root
+    ;;
+  -s | --status | -S | --search | -L | --listfiles | -W | --show)
+    status=0
+    ds_stub_dpkg_query "$@" || status=$?
+    exit "$status"
+    ;;
+  -l | --list)
+    shift
+    printf 'Desired=Unknown/Install/Remove/Purge/Hold\n||/ Name Version Architecture Description\n'
+    for file in "$DS_STUB_STATE"/dpkg/installed/*; do
+      [[ -f $file ]] || continue
+      package=$(basename "$file")
+      if (($#)) && [[ " $* " != *" $package "* ]]; then
+        continue
+      fi
+      printf 'ii  %s %s %s -\n' "$package" "$(ds_dpkg_version "$package")" \
+        "$(sed -n 's/^Architecture: //p' "$file")"
+    done
+    ;;
+  *)
+    printf 'dpkg: error: unsupported action %s\n' "${1:-''}" >&2
+    exit 2
+    ;;
+esac

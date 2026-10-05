@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# id stub: user and group ids from the harness user database
+# (DS_PASSWD_FILE, DS_GROUP_FILE). Below the sudo stub (DS_STUB_AS_ROOT=1)
+# and without a USER operand it answers for root (uid 0, gid 0).
+# Supports -u, -g, -G, -n (also combined, as in -un or -Gn) and the plain
+# form uid=... gid=... groups=....
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin id "$@"
+
+what=all
+by_name=0
+user=""
+while (($#)); do
+  case $1 in
+    --user) what=u ;;
+    --group) what=g ;;
+    --groups) what=G ;;
+    --name) by_name=1 ;;
+    --real | -r) ;;
+    -[ugGnr]*)
+      flags=${1#-}
+      while [[ -n $flags ]]; do
+        case ${flags:0:1} in
+          u) what=u ;;
+          g) what=g ;;
+          G) what=G ;;
+          n) by_name=1 ;;
+          r) ;;
+          *)
+            printf "id: invalid option -- '%s'\n" "${flags:0:1}" >&2
+            exit 1
+            ;;
+        esac
+        flags=${flags:1}
+      done
+      ;;
+    -*)
+      printf "id: unrecognized option '%s'\n" "$1" >&2
+      exit 1
+      ;;
+    *)
+      [[ -z $user ]] || {
+        printf "id: extra operand '%s'\n" "$1" >&2
+        exit 1
+      }
+      user=$1
+      ;;
+  esac
+  shift
+done
+
+if [[ -z $user ]] && ds_stub_as_root; then
+  uid=0 gid=0 login=root
+  group_ids=(0)
+  group_names=(root)
+else
+  [[ -n $user ]] || user=$USER
+  entry=$(awk -F: -v user="$user" '$1 == user || ($3 == user && user ~ /^[0-9]+$/) { print; exit }' "$DS_PASSWD_FILE")
+  if [[ -z $entry ]]; then
+    printf "id: '%s': no such user\n" "$user" >&2
+    exit 1
+  fi
+  IFS=: read -r login _ uid gid _ <<<"$entry"
+  group_ids=("$gid")
+  group_names=("$(awk -F: -v gid="$gid" '$3 == gid { print $1; exit }' "$DS_GROUP_FILE")")
+  [[ -n ${group_names[0]} ]] || group_names=("$gid")
+  while IFS=: read -r name _ id members; do
+    [[ $id != "$gid" && ",$members," == *",$login,"* ]] || continue
+    group_ids+=("$id")
+    group_names+=("$name")
+  done <"$DS_GROUP_FILE"
+fi
+
+case $what in
+  u) ((by_name)) && printf '%s\n' "$login" || printf '%s\n' "$uid" ;;
+  g) ((by_name)) && printf '%s\n' "${group_names[0]}" || printf '%s\n' "$gid" ;;
+  G) ((by_name)) && printf '%s\n' "${group_names[*]}" || printf '%s\n' "${group_ids[*]}" ;;
+  all)
+    groups=""
+    for i in "${!group_ids[@]}"; do
+      groups+="${groups:+,}${group_ids[i]}(${group_names[i]})"
+    done
+    printf 'uid=%s(%s) gid=%s(%s) groups=%s\n' "$uid" "$login" "$gid" "${group_names[0]}" "$groups"
+    ;;
+esac

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# claude stub: the Claude Code CLI.
+# --version prints the state value "version" (default "2.0.0 (Claude Code)"),
+# --help the state value "help"; any other call succeeds silently. Routes and
+# overrides apply (see tests/lib/harness.sh).
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin claude "$@"
+ds_stub_app claude "2.0.0 (Claude Code)" \
+  "Usage: claude [options] [command] [prompt]" "$@"

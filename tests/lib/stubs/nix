@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# nix stub for the fast suite: records argv and answers without building.
+# Leading global options (--extra-experimental-features X, --option K V,
+# -L, --accept-flake-config, ...) are dropped from the route key, so a route
+# such as 'build *#broken*' or 'eval --raw *#lib.version' matches with or
+# without them. Routes answer first; without one:
+#   --version                 the state value "version" (default
+#                             "nix (Nix) 2.31.2")
+#   build INSTALLABLE...      one fake store path per installable,
+#       DS_STUB_STATE/nix/store/<hash>-<last attribute>, stable for the same
+#       installable and created once, holding `activate` (records its call
+#       as "activate" with HOME_MANAGER_BACKUP_EXT), home-files/ and
+#       home-path/bin/ with the application stubs named by the state value
+#       "home-bin" (default: claude codex herdr opencode pi code example-app
+#       example-term) and a copy of DS_STUB_STATE/nix/output-template/ when
+#       it exists. Honours --no-link, --out-link/-o, --print-out-paths and
+#       --json; the default link is ./result.
+#   flake check|lock|update   succeed
+#   flake metadata [--json]   a minimal metadata document
+#   other nix commands        exit 1 "nix stub: no canned response for: ARGS"
+#   unknown commands          exit 1 "nix stub: unsupported command: NAME"
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin --no-routes nix "$@"
+
+version=$(ds_stub_value version "nix (Nix) 2.31.2")
+while (($#)); do
+  case $1 in
+    --version)
+      printf '%s\n' "$version"
+      exit 0
+      ;;
+    --extra-experimental-features | --experimental-features | --extra-substituters | --substituters | \
+      --extra-trusted-public-keys | --log-format | --store | --max-jobs | -j | --cores)
+      (($# >= 2)) || break
+      shift 2
+      ;;
+    --option)
+      (($# >= 3)) || break
+      shift 3
+      ;;
+    -L | --print-build-logs | --accept-flake-config | --no-warn-dirty | --quiet | -v | --verbose | \
+      --show-trace | --offline | --refresh | --impure | --no-use-registries)
+      shift
+      ;;
+    *) break ;;
+  esac
+done
+key=$*
+
+if route=$(_ds_stub_take_route nix "$key"); then
+  ds_stub_reply_route "$route"
+fi
+
+no_canned() {
+  printf 'nix stub: no canned response for: %s\n' "$key" >&2
+  exit 1
+}
+
+store=$DS_STUB_DIR/store
+
+# make_output INSTALLABLE: prints the fake store path, creating it once.
+make_output() {
+  local installable=$1 attr name hash out tool
+  attr=${installable#*#}
+  [[ $installable == *'#'* ]] || attr=""
+  attr=${attr//\"/}
+  name=${attr##*.}
+  [[ -n $name ]] || name=default
+  hash=$(printf '%s' "$installable" | sha256sum | cut -c1-32)
+  out=$store/$hash-$name
+  if [[ ! -d $out ]]; then
+    mkdir -p "$out/home-files" "$out/home-path/bin"
+    cat >"$out/activate" <<SCRIPT
+#!$BASH
+# Fake Home Manager activation script written by the nix stub.
+set -euo pipefail
+source $(printf '%q' "$_DS_LIB_DIR/harness.sh")
+DS_STUB_ENV_DEFAULT=HOME_MANAGER_BACKUP_EXT
+ds_stub_begin activate "\$@"
+SCRIPT
+    chmod 0755 "$out/activate"
+    for tool in $(ds_stub_value home-bin "claude codex herdr opencode pi code example-app example-term"); do
+      [[ -f $_DS_LIB_DIR/stubs/$tool ]] || {
+        printf 'nix stub: unknown home-bin stub: %s\n' "$tool" >&2
+        exit 1
+      }
+      ln -s "$_DS_LIB_DIR/stubs/$tool" "$out/home-path/bin/$tool"
+    done
+    if [[ -d $DS_STUB_DIR/output-template ]]; then
+      cp -R "$DS_STUB_DIR/output-template/." "$out/"
+    fi
+  fi
+  printf '%s\n' "$out"
+}
+
+build() {
+  local link=result no_link=0 print_paths=0 json=0 installables=() outs=() out i
+  while (($#)); do
+    case $1 in
+      --no-link) no_link=1 ;;
+      --print-out-paths) print_paths=1 ;;
+      --json) json=1 ;;
+      --out-link | -o)
+        (($# >= 2)) || {
+          printf "error: flag '%s' requires 1 argument\n" "$1" >&2
+          exit 1
+        }
+        link=$2
+        shift
+        ;;
+      --override-input | --option)
+        (($# >= 3)) || {
+          printf "error: flag '%s' requires 2 arguments\n" "$1" >&2
+          exit 1
+        }
+        shift 2
+        ;;
+      --max-jobs | -j | --cores | --profile | --expr | --file | -f | --eval-store | --store | --builders | \
+        --log-format | --reference-lock-file | --inputs-from | --update-input | --extra-experimental-features)
+        (($# >= 2)) || {
+          printf "error: flag '%s' requires 1 argument\n" "$1" >&2
+          exit 1
+        }
+        shift
+        ;;
+      -*) ;;
+      *) installables+=("$1") ;;
+    esac
+    shift
+  done
+  ((${#installables[@]})) || installables=(.)
+  for i in "${!installables[@]}"; do
+    out=$(make_output "${installables[i]}")
+    outs+=("$out")
+    if ((!no_link)); then
+      if ((i == 0)); then
+        ln -sfn "$out" "$link"
+      else
+        ln -sfn "$out" "$link-$i"
+      fi
+    fi
+  done
+  if ((json)); then
+    printf '%s\n' "${outs[@]}" | jq -R . | jq -cs 'map({drvPath: (. + ".drv"), outputs: {out: .}})'
+  elif ((print_paths)); then
+    printf '%s\n' "${outs[@]}"
+  fi
+}
+
+command=${1:-}
+(($#)) && shift
+case $command in
+  build) build "$@" ;;
+  flake)
+    case ${1:-} in
+      check | lock | update) ;;
+      metadata)
+        if [[ " $* " == *" --json "* ]]; then
+          printf '{"description": null, "lastModified": 0, "locked": {"type": "path"}, "locks": {"nodes": {"root": {"inputs": {}}}, "root": "root", "version": 7}}\n'
+        else
+          printf 'Description:   (none)\n'
+        fi
+        ;;
+      *) no_canned ;;
+    esac
+    ;;
+  eval | path-info | run | shell | develop | profile | store | copy | hash | registry | search | \
+    why-depends | log | derivation | config | print-dev-env | daemon | upgrade-nix | realisation | key | \
+    bundle | edit | fmt | repl | nar | doctor)
+    no_canned
+    ;;
+  '')
+    printf 'nix stub: no command given\n' >&2
+    exit 1
+    ;;
+  *)
+    printf 'nix stub: unsupported command: %s\n' "$command" >&2
+    exit 1
+    ;;
+esac
