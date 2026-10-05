@@ -1,0 +1,6 @@
+!<dotsteward-fake-deb>
+Package: example-term
+Version: 0.9.0
+Architecture: amd64
+Maintainer: Example Maintainers <maintainers@example.invalid>
+Description: Synthetic package for dotsteward tests

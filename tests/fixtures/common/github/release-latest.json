@@ -1,0 +1,33 @@
+{
+  "url": "https://api.github.com/repos/example-org/example-term/releases/1000003",
+  "html_url": "https://github.com/example-org/example-term/releases/tag/v0.9.0",
+  "id": 1000003,
+  "tag_name": "v0.9.0",
+  "target_commitish": "main",
+  "name": "example-term 0.9.0",
+  "draft": false,
+  "prerelease": false,
+  "created_at": "2026-09-01T10:00:00Z",
+  "published_at": "2026-09-01T12:00:00Z",
+  "assets": [
+    {
+      "id": 2000001,
+      "name": "example-term_0.9.0_amd64.deb",
+      "content_type": "application/vnd.debian.binary-package",
+      "state": "uploaded",
+      "size": 194,
+      "digest": "sha256:950f43fd2ac691e81cbe68303e3aa30904a4b55a82eac7dcc01687dbd351ff46",
+      "browser_download_url": "https://github.com/example-org/example-term/releases/download/v0.9.0/example-term_0.9.0_amd64.deb"
+    },
+    {
+      "id": 2000002,
+      "name": "SHA256SUMS",
+      "content_type": "text/plain",
+      "state": "uploaded",
+      "size": 95,
+      "digest": "sha256:8acfe6209e718be45de0ccc09ffcb4c676a99c6f9ebb23f7181bddf886583ca4",
+      "browser_download_url": "https://github.com/example-org/example-term/releases/download/v0.9.0/SHA256SUMS"
+    }
+  ],
+  "body": "Synthetic release for dotsteward tests."
+}

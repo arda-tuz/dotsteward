@@ -1,0 +1,39 @@
+Package: example-app
+Version: 1.1.0
+Architecture: amd64
+Maintainer: Example Maintainers <maintainers@example.invalid>
+Installed-Size: 12
+Filename: pool/main/e/example-app/example-app_1.1.0_amd64.deb
+Size: 193
+SHA256: 1cf8d525d00656b0b6ae0c14334027c6fb085c7cc49ee2479fd4bc42ee58749a
+Description: Synthetic package for dotsteward tests
+
+Package: example-app
+Version: 1.2.3
+Architecture: amd64
+Maintainer: Example Maintainers <maintainers@example.invalid>
+Installed-Size: 12
+Filename: pool/main/e/example-app/example-app_1.2.3_amd64.deb
+Size: 193
+SHA256: 1c509468908c576b9d7f830e06e33b904fb8078f729a291c16aeec9f6aecaa3d
+Description: Synthetic package for dotsteward tests
+
+Package: example-app
+Version: 1.3.0~rc1
+Architecture: amd64
+Maintainer: Example Maintainers <maintainers@example.invalid>
+Installed-Size: 12
+Filename: pool/main/e/example-app/example-app_1.3.0~rc1_amd64.deb
+Size: 197
+SHA256: b556de7527d0fc74ee56450278e4d3896dd4a2dbc49a20cb4c5bcceaaeef2bcf
+Description: Synthetic package for dotsteward tests
+
+Package: example-term
+Version: 0.9.0
+Architecture: amd64
+Maintainer: Example Maintainers <maintainers@example.invalid>
+Installed-Size: 12
+Filename: pool/main/e/example-term/example-term_0.9.0_amd64.deb
+Size: 194
+SHA256: 950f43fd2ac691e81cbe68303e3aa30904a4b55a82eac7dcc01687dbd351ff46
+Description: Synthetic package for dotsteward tests

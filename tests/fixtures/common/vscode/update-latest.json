@@ -1,0 +1,10 @@
+{
+  "url": "https://downloads.example.invalid/code/stable/code_1.105.1-1760000000_amd64.deb",
+  "name": "1.105.1",
+  "version": "7e048bc08f047871926853fd272c039b001e15e0",
+  "productVersion": "1.105.1",
+  "hash": "311386eb6ed5b884d97c12412991e9ddbc7e2eda",
+  "timestamp": 1760000000000,
+  "sha256hash": "eadbbf299a9b68eb157fe7ed76318a5cb8967c514e5e4a883d5de911f72b74b5",
+  "supportsFastUpdate": true
+}

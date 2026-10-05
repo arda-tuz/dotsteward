@@ -1,0 +1,6 @@
+!<dotsteward-fake-deb>
+Package: example-app
+Version: 1.1.0
+Architecture: amd64
+Maintainer: Example Maintainers <maintainers@example.invalid>
+Description: Synthetic package for dotsteward tests

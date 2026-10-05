@@ -1,0 +1,72 @@
+{
+  "url": "https://api.github.com/repos/example-org/example-term/compare/1405df66cbe219b0bf6355bc3d60361a8376b6b4...2c4c6cb67abab6e6cb46d0e94b6b646c8523ebf6",
+  "html_url": "https://github.com/example-org/example-term/compare/1405df66cbe219b0bf6355bc3d60361a8376b6b4...2c4c6cb67abab6e6cb46d0e94b6b646c8523ebf6",
+  "status": "ahead",
+  "ahead_by": 2,
+  "behind_by": 0,
+  "total_commits": 2,
+  "base_commit": {
+    "sha": "1405df66cbe219b0bf6355bc3d60361a8376b6b4",
+    "commit": {
+      "message": "chore: base",
+      "author": {
+        "name": "Example Author",
+        "email": "author@example.invalid",
+        "date": "2026-09-01T09:00:00Z"
+      }
+    }
+  },
+  "merge_base_commit": {
+    "sha": "1405df66cbe219b0bf6355bc3d60361a8376b6b4"
+  },
+  "commits": [
+    {
+      "sha": "705f74ba5bd5309ca9e6a3de50df9ea722fb280c",
+      "commit": {
+        "message": "feat: add reload command",
+        "author": {
+          "name": "Example Author",
+          "email": "author@example.invalid",
+          "date": "2026-09-02T09:00:00Z"
+        }
+      },
+      "parents": [
+        {
+          "sha": "1405df66cbe219b0bf6355bc3d60361a8376b6b4"
+        }
+      ]
+    },
+    {
+      "sha": "2c4c6cb67abab6e6cb46d0e94b6b646c8523ebf6",
+      "commit": {
+        "message": "fix: keep the socket path",
+        "author": {
+          "name": "Example Author",
+          "email": "author@example.invalid",
+          "date": "2026-09-03T09:00:00Z"
+        }
+      },
+      "parents": [
+        {
+          "sha": "705f74ba5bd5309ca9e6a3de50df9ea722fb280c"
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "filename": "src/reload.rs",
+      "status": "added",
+      "additions": 40,
+      "deletions": 0,
+      "changes": 40
+    },
+    {
+      "filename": "README.md",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 1,
+      "changes": 4
+    }
+  ]
+}
