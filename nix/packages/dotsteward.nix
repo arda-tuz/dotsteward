@@ -121,7 +121,11 @@ pkgs.stdenvNoCC.mkDerivation {
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
-    first_line=$(env -i "$out/bin/dotsteward" version | head -n 1)
+    # No pipe into head: head may exit after the first line while the
+    # command still writes, and the broken pipe fails the build under
+    # pipefail.
+    first_line=$(env -i "$out/bin/dotsteward" version)
+    first_line=''${first_line%%$'\n'*}
     if [[ $first_line != ${lib.escapeShellArg "dotsteward ${version}"} ]]; then
       echo "unexpected version output: $first_line" >&2
       exit 1
