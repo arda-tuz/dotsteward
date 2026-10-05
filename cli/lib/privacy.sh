@@ -27,9 +27,11 @@
 #   <rule> commit <sha12> [<path>:<line>]    history (range scans)
 #   <rule> commit|tag <sha12> <field>        commit or tag metadata
 # Term rules are denylist:<n> and extra-term:<n>, n being the entry's line in
-# its file. With redaction, a path that contains a term prints as path#<k>
-# (its position in the scanned path list). Without redaction ": <match>" is
-# appended.
+# its file. With redaction, a path that contains a term or a generic match
+# (one the policy does not allow) prints as path#<k> (its position in the
+# scanned path list), also as the location of its file's other findings;
+# forbidden-path findings print the path, since their globs are public
+# policy. Without redaction ": <match>" is appended.
 
 # --- generic patterns (the only block the scanner exempts from itself) ------
 # dotsteward:patterns:begin
@@ -626,7 +628,7 @@ ds_privacy_begin() {
   _DS_PATHS=0
   _DS_CONTENT=()
   declare -gA _DS_U_KIND=() _DS_U_LABEL=() _DS_U_PATH=() _DS_U_PATHNO=()
-  declare -gA _DS_PATH_SEQ=() _DS_PATHNO_OF=() _DS_SEEN_PATH=() _DS_SEEN_BLOB=() _DS_TERM_PATH=()
+  declare -gA _DS_PATH_SEQ=() _DS_PATHNO_OF=() _DS_SEEN_PATH=() _DS_SEEN_BLOB=() _DS_REDACT_PATH=()
   declare -gA _DS_META_EMAIL1=() _DS_META_EMAIL2=() _DS_META_TZ1=() _DS_META_TZ2=()
   DS_PRIVACY_FILES=0
   DS_PRIVACY_COMMITS=0
@@ -957,7 +959,7 @@ _ds_privacy_allowed() {
 # _ds_privacy_generic RULE ERE: applies one generic rule to every text unit
 # and to the path list.
 _ds_privacy_generic() {
-  local rule=$1 hits=$_DS_PRIVACY_WORK/hits name rest line match seq user
+  local rule=$1 hits=$_DS_PRIVACY_WORK/hits name rest line match seq user pathno
   _ds_privacy_grep "$_DS_PRIVACY_WORK/u" _DS_TEXT -o -i -E -e "$2" >"$hits" || return 1
   while IFS= read -r rest; do
     name=${rest%%:*}
@@ -974,7 +976,9 @@ _ds_privacy_generic() {
         ;;
       private-ipv4) [[ $match =~ [0-9]+(\.[0-9]+){3} ]] && match=${BASH_REMATCH[0]} ;;
     esac
+    pathno=""
     if [[ $name == paths ]]; then
+      pathno=$line
       seq=${_DS_PATH_SEQ[$line]}
       line=0
     else
@@ -982,6 +986,8 @@ _ds_privacy_generic() {
       ! _ds_privacy_exempt "$seq" "$line" || continue
     fi
     ! _ds_privacy_allowed "$rule" "$match" "$seq" || continue
+    # A path with a reported match is never printed in redacted output.
+    [[ -z $pathno ]] || _DS_REDACT_PATH[$pathno]=1
     _ds_privacy_record "$seq" "$line" "$rule" "" "$match"
   done <"$hits"
 }
@@ -1027,7 +1033,7 @@ _ds_privacy_terms() {
       line=${rest%%:*}
       match=${rest#*:}
       if [[ $name == paths ]]; then
-        _DS_TERM_PATH[$line]=1
+        _DS_REDACT_PATH[$line]=1
         seq=${_DS_PATH_SEQ[$line]}
         line=0
       else
@@ -1102,7 +1108,7 @@ _ds_privacy_location() {
     *)
       label=${_DS_U_LABEL[$seq]}
       pathno=${_DS_U_PATHNO[$seq]}
-      if ((redact)) && [[ -n ${_DS_TERM_PATH[$pathno]:-} ]]; then
+      if ((redact)) && [[ -n ${_DS_REDACT_PATH[$pathno]:-} ]]; then
         label=${label%"${_DS_U_PATH[$seq]}"}path#$pathno
       fi
       if [[ $kind == path ]]; then
