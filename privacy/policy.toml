@@ -1,0 +1,14 @@
+schema_version = 1
+generic_secrets = true                     # private keys, cloud and forge tokens, credential assignments
+home_paths = { enabled = true, allow_users = ["alice", "dotsteward-test", "runner", "user", "example"], allow_paths = ["/homeless-shelter"] }
+emails = { enabled = true, allow_domains = ["example.invalid", "example.com", "example.org", "users.noreply.github.com"], allow_exact = ["git@github.com", "noreply@github.com"] }
+private_ipv4 = true
+non_ascii = { enabled = true, except_files = [] }   # language-neutral: any byte >= 0x80 in text files
+forbidden_paths = [".private/**", ".work/**", "**/.env*", "result*", "**/*.local.json"]
+[commits]
+email = '^([0-9]+\+[A-Za-z0-9-]+@users\.noreply\.github\.com|noreply@github\.com)$'
+utc_only = true
+forbidden_lines = ['^Claude-Session:', '^Co-Authored-By:', 'Generated with \[Claude Code\]']
+[denylist]
+path = "~/.config/dotsteward/denylist.txt"
+required_for_range = true                  # the pre-push hook refuses to run without it

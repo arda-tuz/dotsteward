@@ -1,0 +1,10 @@
+# Public strings masked before denylist and extra-term matching (one per
+# line, case-insensitive). Generic rules still see them.
+#
+# The framework's public commit identity and repositories.
+124616428+arda-tuz@users.noreply.github.com
+arda-tuz/dotsteward
+arda-tuz/dotsteward-dev
+# Working directories that privacy/policy.toml forbids by name.
+.private/
+.work/
