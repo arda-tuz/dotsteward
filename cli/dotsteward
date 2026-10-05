@@ -44,7 +44,9 @@ command_names() {
     [[ -f $file ]] || continue
     name=${file##*/}
     name=${name%.sh}
-    valid_name "$name" && printf '%s\n' "$name"
+    if valid_name "$name"; then
+      printf '%s\n' "$name"
+    fi
   done | LC_ALL=C sort
 }
 
