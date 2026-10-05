@@ -1,0 +1,660 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/arda-tuz/dotsteward/schema/workstation.schema.json",
+  "title": "dotsteward workstation.toml",
+  "description": "Instance configuration, schema version 1. Unknown keys are errors except inside [components.<name>].options.",
+  "$comment": "Readers interpret a keyword subset: type, enum, const, pattern, minLength, minimum, maximum, items, minItems, uniqueItems, properties, required, additionalProperties, propertyNames, $ref and default. Patterns are searched for, as JSON Schema defines, and use the POSIX extended regular expression subset shared with Nix builtins.match (no backslash classes, no lookaround); anchor them with ^ and $ to constrain a whole value. A default given here is filled in by the readers; keys without one get the derived default described in their description.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "identity",
+    "instance",
+    "nix",
+    "profiles"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Configuration schema version; another value is an error with an upgrade hint."
+    },
+    "identity": {
+      "type": "object",
+      "description": "The check identity; run time always uses $USER and $HOME.",
+      "properties": {
+        "username": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$",
+          "description": "Check identity user name (homeConfigurations.<username>, sandbox checks). With a Linux system it must also match ^[a-z_][a-z0-9_-]*$."
+        },
+        "home": {
+          "type": "string",
+          "pattern": "^/[^\t\n\r '\"$\\\\]*$",
+          "description": "Check home on Linux; default /home/<username>."
+        },
+        "darwin_home": {
+          "type": "string",
+          "pattern": "^/[^\t\n\r '\"$\\\\]*$",
+          "description": "Check home on aarch64-darwin; default /Users/<username>."
+        }
+      },
+      "required": [
+        "username"
+      ],
+      "additionalProperties": false
+    },
+    "instance": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+$",
+          "description": "Display name; default: the instance directory name."
+        },
+        "remote": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact git remote get-url origin value."
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1,
+          "default": "main"
+        },
+        "checkout": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical checkout; default ~/<instance.name>."
+        }
+      },
+      "required": [
+        "remote"
+      ],
+      "additionalProperties": false
+    },
+    "state": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "default": "${XDG_STATE_HOME:-~/.local/state}/dotsteward",
+          "description": "Root of every machine record."
+        }
+      },
+      "additionalProperties": false
+    },
+    "nix": {
+      "type": "object",
+      "properties": {
+        "systems": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "x86_64-linux",
+              "aarch64-darwin"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "default": [
+            "x86_64-linux"
+          ],
+          "description": "Systems to build; the first is the primary system."
+        },
+        "allow_unfree": {
+          "type": "boolean",
+          "default": false,
+          "description": "nixpkgs config.allowUnfree."
+        },
+        "state_version": {
+          "type": "string",
+          "pattern": "^[0-9]{2}\\.[0-9]{2}$",
+          "description": "home.stateVersion."
+        }
+      },
+      "required": [
+        "state_version"
+      ],
+      "additionalProperties": false
+    },
+    "profiles": {
+      "type": "object",
+      "properties": {
+        "names": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/profileName"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Allowed profile names."
+        },
+        "default": {
+          "$ref": "#/$defs/profileName",
+          "description": "mkHome default; default: the first name."
+        },
+        "check": {
+          "$ref": "#/$defs/profileName",
+          "description": "Check profile (homeConfigurations, checks.home, gate cli-probes); default: profiles.default."
+        },
+        "bootstrap": {
+          "$ref": "#/$defs/profileName",
+          "description": "The only profile bootstrap accepts; default: profiles.default."
+        }
+      },
+      "required": [
+        "names"
+      ],
+      "additionalProperties": {
+        "$ref": "#/$defs/profile"
+      },
+      "propertyNames": {
+        "$ref": "#/$defs/profileName"
+      }
+    },
+    "platform": {
+      "type": "object",
+      "properties": {
+        "linux": {
+          "type": "object",
+          "properties": {
+            "fast_path": {
+              "type": "object",
+              "properties": {
+                "os_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "default": "ubuntu"
+                },
+                "os_version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "default": "24.04"
+                },
+                "architecture": {
+                  "type": "string",
+                  "minLength": 1,
+                  "default": "x86_64"
+                },
+                "desktop_contains": {
+                  "type": "string",
+                  "minLength": 1,
+                  "default": null,
+                  "description": "Case-insensitive substring of XDG_CURRENT_DESKTOP."
+                },
+                "detectors": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+                  },
+                  "uniqueItems": true,
+                  "default": [],
+                  "description": "Component preflight detector names, ORed with desktop_contains."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "darwin": {
+          "type": "object",
+          "properties": {
+            "fast_path": {
+              "type": "object",
+              "properties": {
+                "min_version": {
+                  "type": "string",
+                  "pattern": "^[0-9]+(\\.[0-9]+)*$",
+                  "default": "14"
+                },
+                "architecture": {
+                  "type": "string",
+                  "minLength": 1,
+                  "default": "arm64"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "gate": {
+      "type": "object",
+      "properties": {
+        "nix_max_jobs": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 2
+        },
+        "nix_cores": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 6
+        },
+        "min_free_gib": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 5
+        },
+        "prepare_warn_free_gib": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 15
+        },
+        "cache_url": {
+          "type": "string",
+          "pattern": "^https?://.+$",
+          "default": "https://cache.nixos.org"
+        },
+        "static": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/instancePath"
+          },
+          "default": [],
+          "description": "Instance static scripts (gate static step, checks.instance-static)."
+        },
+        "update_allowlist": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "default": [],
+          "description": "Extended regular expressions merged into the update-scope allowlist."
+        }
+      },
+      "additionalProperties": false
+    },
+    "commit": {
+      "type": "object",
+      "properties": {
+        "update_subject": {
+          "type": "string",
+          "minLength": 1,
+          "default": "chore: update pinned tool versions"
+        },
+        "settings_subject": {
+          "type": "string",
+          "minLength": 1,
+          "default": "chore: sync local maintained settings"
+        },
+        "upgrade_subject": {
+          "type": "string",
+          "minLength": 1,
+          "default": "chore(dotsteward): upgrade to {version}"
+        }
+      },
+      "additionalProperties": false
+    },
+    "components": {
+      "type": "object",
+      "description": "[components] order and one [components.<name>] table per component.",
+      "properties": {
+        "order": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/componentName"
+          },
+          "uniqueItems": true,
+          "description": "Hook and check order (D10). Listed components come first, then the remaining catalog components in catalog order, then the instance components sorted."
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/component"
+      },
+      "propertyNames": {
+        "$ref": "#/$defs/componentName"
+      }
+    },
+    "settings": {
+      "type": "object",
+      "properties": {
+        "buffer_dir": {
+          "$ref": "#/$defs/instancePath",
+          "default": "local-maintained-files"
+        },
+        "published_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Default: origin/<instance.branch>."
+        }
+      },
+      "additionalProperties": false
+    },
+    "skills": {
+      "type": "object",
+      "properties": {
+        "lock": {
+          "$ref": "#/$defs/instancePath",
+          "default": "agent/skills.lock.json"
+        },
+        "vendor_dir": {
+          "$ref": "#/$defs/instancePath",
+          "default": "agent/skills"
+        },
+        "hm_root": {
+          "type": "string",
+          "pattern": "^[^/~]",
+          "default": ".agents/skills",
+          "description": "Home-relative root of Home Manager deployed skills."
+        },
+        "installer": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "minItems": 1,
+          "default": null,
+          "description": "Installer argv template with {source}, {name} and {home}; default (null): the native copy."
+        },
+        "overlays": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/instancePath"
+          },
+          "propertyNames": {
+            "type": "string",
+            "enum": [
+              "dotsteward-maintain",
+              "dotsteward-update",
+              "dotsteward-contribute"
+            ]
+          },
+          "default": {},
+          "description": "Overlay file per framework skill; agent/overlays/<skill>.md is used when it exists and no entry is given."
+        }
+      },
+      "additionalProperties": false
+    },
+    "pins": {
+      "type": "object",
+      "properties": {
+        "versions_lock": {
+          "$ref": "#/$defs/instancePath",
+          "default": "versions.lock.json"
+        },
+        "excluded_flake_inputs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_'-]*$"
+          },
+          "uniqueItems": true,
+          "default": [
+            "dotsteward"
+          ]
+        },
+        "nixpkgs_versions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_'-]*(\\.[A-Za-z_][A-Za-z0-9_'-]*)*$"
+          },
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.+-]*$"
+          },
+          "default": {},
+          "description": "versions.lock.json nix_packages key -> nixpkgs attribute path."
+        },
+        "apt_arch": {
+          "type": "string",
+          "minLength": 1,
+          "default": "amd64"
+        }
+      },
+      "additionalProperties": false
+    },
+    "privacy": {
+      "type": "object",
+      "properties": {
+        "forbidden_paths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "default": []
+        },
+        "file_rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "files": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/nonEmptyString"
+                },
+                "minItems": 1
+              },
+              "pattern": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "files",
+              "pattern",
+              "message"
+            ],
+            "additionalProperties": false
+          },
+          "default": []
+        },
+        "denylist": {
+          "type": "string",
+          "minLength": 1,
+          "default": null,
+          "description": "Optional instance denylist path."
+        }
+      },
+      "additionalProperties": false
+    },
+    "protected": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "propertyNames": {
+        "$ref": "#/$defs/instancePath"
+      },
+      "default": {},
+      "description": "Byte-protected files: instance path -> sha256 hex."
+    },
+    "agent_rules": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/instancePath",
+          "default": "home/AGENTS.md"
+        }
+      },
+      "additionalProperties": false
+    },
+    "upstream": {
+      "type": "object",
+      "properties": {
+        "contribute": {
+          "type": "string",
+          "enum": [
+            "fork",
+            "owner"
+          ],
+          "default": "fork"
+        },
+        "fork": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+          "default": null,
+          "description": "Fork remote owner/repo; default (null): <gh user>/dotsteward at run time."
+        },
+        "pr_to_upstream": {
+          "type": "boolean",
+          "default": false,
+          "description": "Fork mode opens an upstream pull request."
+        },
+        "local_clone": {
+          "type": "string",
+          "minLength": 1,
+          "default": "${XDG_DATA_HOME:-~/.local/share}/dotsteward/framework"
+        }
+      },
+      "additionalProperties": false
+    },
+    "compat": {
+      "type": "object",
+      "properties": {
+        "legacy_env": {
+          "type": "boolean",
+          "default": false,
+          "description": "Also read the legacy DOTFILES_* environment names."
+        },
+        "legacy_backup_layout": {
+          "type": "boolean",
+          "default": false,
+          "description": "backup_copy_of also reads files/home/<rel> backups."
+        },
+        "repo_owned_revision": {
+          "type": "string",
+          "minLength": 1,
+          "default": null
+        },
+        "host_input": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$",
+          "default": "instance"
+        },
+        "check_aliases": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/profileName"
+          },
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*$"
+          },
+          "default": {},
+          "description": "Extra checks.<system>.<name> aliases of home-<profile>."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "componentName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "A component name: a catalog directory name or an instance components/<name> directory."
+    },
+    "profileName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+      "description": "A profile name."
+    },
+    "method": {
+      "type": "string",
+      "enum": [
+        "nix",
+        "official-binary",
+        "deb",
+        "app-archive",
+        "external"
+      ],
+      "description": "An install method (component contract)."
+    },
+    "instancePath": {
+      "type": "string",
+      "pattern": "^[^/~]",
+      "description": "A path relative to the instance root."
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "profile": {
+      "type": "object",
+      "description": "Settings of one profile named in profiles.names.",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "fresh",
+            "adopt"
+          ],
+          "default": "fresh",
+          "description": "fresh installs system-level parts; adopt skips them (D14)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "component": {
+      "type": "object",
+      "description": "One [components.<name>] table.",
+      "properties": {
+        "enable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the component is part of the instance."
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "catalog",
+            "instance"
+          ],
+          "description": "Default: catalog when the name is a catalog component, else instance (components/<name>/default.nix)."
+        },
+        "method": {
+          "$ref": "#/$defs/method",
+          "default": null,
+          "description": "Install method; default (null): the component's own default for the platform."
+        },
+        "method_by_platform": {
+          "type": "object",
+          "description": "Per-platform method overrides; win over method.",
+          "properties": {
+            "linux": {
+              "$ref": "#/$defs/method",
+              "default": null
+            },
+            "darwin": {
+              "$ref": "#/$defs/method",
+              "default": null
+            }
+          },
+          "additionalProperties": false
+        },
+        "profiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/profileName"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "default": null,
+          "description": "Profiles where the component is active; default (null): every profile."
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": true,
+          "default": {},
+          "description": "Component-owned options, passed to the module unchanged; never validated here."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

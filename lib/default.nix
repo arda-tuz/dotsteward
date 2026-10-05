@@ -41,6 +41,7 @@ lib.fix (
       else
         { };
 
+    config = import ./config.nix args;
     contract = import ./contract.nix args;
     pinAt = import ./pins.nix args;
     platform = import ./platform.nix args;
