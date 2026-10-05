@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# dotsteward pre-push hook: the privacy gate for everything a push publishes.
+#
+# Install once per clone (dotsteward contribute setup does it as well):
+#   git config core.hooksPath .githooks
+#
+# git runs this hook with the remote name and URL as arguments and one line
+# "<local ref> <local sha> <remote ref> <remote sha>" per ref update on
+# standard input. Deletions are skipped. For every other update the
+# framework scanner (cli/commands/scan.sh next to this directory) runs with
+# --redact, so findings name a rule and a location, never the matched text:
+#   1. on the pushed commits, with --metadata (the commit rules): the range
+#      remote..local for an existing ref; for a new ref, or a remote commit
+#      this clone does not have, the local tip minus every ref of the named
+#      remote (the whole history for a push to a URL). Annotated tags in the
+#      range and pushed tags are scanned with their commits.
+#   2. when the commits are clean, on the tree of the pushed tip, exported
+#      with git archive into a dotsteward-hook.* temporary directory. A tip
+#      whose export attributes leave files out of the archive is refused.
+# Every scan uses the private denylist ~/.config/dotsteward/denylist.txt.
+# In a framework repository (privacy/policy.toml at its root) a missing
+# denylist refuses the push before anything is scanned; any other repository
+# is scanned with the generic rules alone and a warning. Any finding or
+# error refuses the whole push.
+set -Eeuo pipefail
+
+error() {
+  printf '[dotsteward] ERROR: pre-push: %s\n' "$*" >&2
+}
+
+if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4))); then
+  error "bash 4.4 or newer is required (found $BASH_VERSION); push refused"
+  exit 1
+fi
+
+trap 'status=$?; error "unexpected failure at line $LINENO (exit $status); push refused"' ERR
+
+if (($# < 1)) || [[ -z $1 ]]; then
+  error "usage: pre-push REMOTE [URL]"
+  exit 1
+fi
+remote=$1
+
+hook_dir=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+scan=$(dirname -- "$hook_dir")/cli/commands/scan.sh
+if [[ ! -f $scan ]]; then
+  error "the scanner cli/commands/scan.sh is missing next to the hook; push refused"
+  exit 1
+fi
+
+# --- ref updates ---------------------------------------------------------------
+
+# All of standard input is read first: nothing below may consume it.
+mapfile -t input_lines
+updates=()
+line_number=0
+for line in "${input_lines[@]}"; do
+  line_number=$((line_number + 1))
+  [[ -n ${line//[[:space:]]/} ]] || continue
+  read -r local_ref local_sha remote_ref remote_sha extra <<<"$line" || true
+  if [[ -z ${remote_sha:-} || -n ${extra:-} || -z $local_ref || -z $remote_ref ||
+    ! $local_sha =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ || ! $remote_sha =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]; then
+    # The line is not printed: ref names can be private too.
+    error "unexpected input line $line_number from git; push refused"
+    exit 1
+  fi
+  [[ ! $local_sha =~ ^0+$ ]] || continue
+  updates+=("$local_sha $remote_sha")
+done
+((${#updates[@]})) || exit 0
+
+# --- denylist ------------------------------------------------------------------
+
+if [[ -z ${HOME:-} ]]; then
+  error "HOME is not set, so the denylist cannot be found; push refused"
+  exit 1
+fi
+denylist=$HOME/.config/dotsteward/denylist.txt
+# shellcheck disable=SC2088 # shown to the user as written in the policy, never expanded
+denylist_shown='~/.config/dotsteward/denylist.txt'
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+denylist_args=()
+if [[ -e $denylist ]]; then
+  denylist_args=(--denylist "$denylist" --require-denylist)
+elif [[ -n $repo_root && -f $repo_root/privacy/policy.toml ]]; then
+  error "the denylist $denylist_shown is missing (a framework repository needs it); push refused"
+  exit 1
+else
+  printf '[dotsteward] WARNING: pre-push: no denylist at %s; generic rules only\n' "$denylist_shown" >&2
+fi
+
+# --- scans ---------------------------------------------------------------------
+
+# A new ref excludes what the named remote already has. A URL has no
+# remote-tracking refs, so nothing is excluded.
+exclusions=()
+if git remote get-url "$remote" >/dev/null 2>&1; then
+  mapfile -t exclusions < <(git for-each-ref --format='^%(objectname)' "refs/remotes/$remote")
+fi
+
+# The tree scan runs outside any repository: it must neither see the pushing
+# repository's variables nor discover a repository around the temporary
+# directory.
+mapfile -t repository_variables < <(git rev-parse --local-env-vars)
+
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/dotsteward-hook.XXXXXX")
+trap 'rm -rf -- "$tmp"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+tmp=$(cd -P -- "$tmp" && pwd)
+
+# scan_commits LOCAL_SHA REMOTE_SHA
+scan_commits() {
+  local local_sha=$1 remote_sha=$2 range
+  if [[ ! $remote_sha =~ ^0+$ ]] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+    range="$remote_sha..$local_sha"
+  else
+    range="$local_sha${exclusions[*]:+ ${exclusions[*]}}"
+  fi
+  printf '[dotsteward] pre-push: checking the commits up to %s\n' "${local_sha:0:12}"
+  "$BASH" "$scan" --range "$range" --metadata "${denylist_args[@]}" --redact </dev/null
+}
+
+# scan_tree LOCAL_SHA TREE INDEX
+scan_tree() {
+  local local_sha=$1 tree=$2 dir=$tmp/tree-$3 expected actual status=0
+  printf '[dotsteward] pre-push: checking the tree of %s\n' "${local_sha:0:12}"
+  mkdir -- "$dir"
+  if ! git archive --format=tar "$tree" | tar -x -f - -C "$dir"; then
+    error "exporting the tree of ${local_sha:0:12} failed"
+    return 1
+  fi
+  expected=$(git ls-tree -r --format='%(objecttype)' "$tree" | grep -cx blob || true)
+  actual=$(find "$dir" \( -type f -o -type l \) -print | grep -c '' || true)
+  if [[ $expected != "$actual" ]]; then
+    error "the tree of ${local_sha:0:12} could not be exported completely ($actual of $expected files; export attributes leave files out)"
+    return 1
+  fi
+  (
+    cd -- "$dir"
+    unset "${repository_variables[@]}"
+    export GIT_CEILING_DIRECTORIES=$tmp
+    exec "$BASH" "$scan" --tree "${denylist_args[@]}" --redact </dev/null
+  ) || status=$?
+  rm -rf -- "$dir"
+  return "$status"
+}
+
+failed=0
+index=0
+declare -A tree_done=()
+for update in "${updates[@]}"; do
+  index=$((index + 1))
+  read -r local_sha remote_sha <<<"$update"
+  if ! scan_commits "$local_sha" "$remote_sha"; then
+    failed=$((failed + 1))
+    continue
+  fi
+  if ! tree=$(git rev-parse --verify --quiet "$local_sha^{tree}"); then
+    error "${local_sha:0:12} does not point to a tree"
+    failed=$((failed + 1))
+    continue
+  fi
+  # A tree shared by several pushed refs is scanned once.
+  [[ -z ${tree_done[$tree]:-} ]] || continue
+  tree_done[$tree]=1
+  if ! scan_tree "$local_sha" "$tree" "$index"; then
+    failed=$((failed + 1))
+  fi
+done
+
+if ((failed)); then
+  error "push refused: $failed of ${#updates[@]} ref updates failed the privacy checks (findings above, redacted)"
+  exit 1
+fi
+printf '[dotsteward] pre-push: privacy checks passed\n'
