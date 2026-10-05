@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  push:
+    # Branches of the privacy drill (tests/ci/privacy-drill.sh) carry
+    # deliberate leaks; only privacy.yml looks at them.
+    branches-ignore:
+      - "leak-test/**"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Superseded runs of other branches are cancelled; runs of main never are.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # Authenticated GitHub fetches of the locked flake inputs.
+      NIX_CONFIG: access-tokens = github.com=${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Nix
+        run: bash tests/ci/install-nix.sh
+      - name: shellcheck (pinned by flake.lock)
+        run: |
+          git ls-files -z -- '*.sh' cli/dotsteward .githooks/pre-push |
+            xargs -0 nix run --inputs-from . nixpkgs#shellcheck --
+      - name: actionlint (pinned by flake.lock)
+        run: nix shell --inputs-from . nixpkgs#actionlint nixpkgs#shellcheck --command actionlint
+      - name: Python syntax
+        run: |
+          dirs=()
+          for dir in cli/python engines; do
+            [[ ! -d $dir ]] || dirs+=("$dir")
+          done
+          if ((${#dirs[@]})); then
+            find "${dirs[@]}" -name '*.py' -print0 | xargs -0 -r python3 -m py_compile
+          else
+            echo "no Python sources yet"
+          fi
+
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      NIX_CONFIG: access-tokens = github.com=${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Nix
+        run: bash tests/ci/install-nix.sh
+      - name: nix flake check
+        run: nix flake check -L
+      - name: Hook tests (outside the sandbox)
+        run: bash tests/run.sh tests/hooks
