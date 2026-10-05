@@ -100,6 +100,9 @@ rm near-misses.txt
   printf '/homeless-shelter/.cache /home/\n'               # 8
   # shellcheck disable=SC2016 # literal variable references, not expanded
   printf 'cd "$HOME/x" /home/$USER/y\n'                    # 9
+  # Allowed users stay allowed after a slash delimiter.
+  printf 'see file://%s\n' "$(home_path runner work)"      # 10
+  printf 'x //%s =/HOME/Alice/y\n' "$(home_path alice)"    # 11
 } >home.txt
 assert_exit 1 scan --tree --redact
 assert_eq "home-path home.txt:1
@@ -108,6 +111,7 @@ home-path home.txt:3" "$DS_STDOUT"
 # Without --redact the matched text is shown.
 assert_exit 1 scan --tree
 assert_contains "$DS_STDOUT" "home-path home.txt:1: /home/$user"$'\n'
+assert_contains "$DS_STDOUT" "home-path home.txt:2: /home/$user"$'\n'
 rm home.txt
 
 # E-mail addresses: allowed domains (and their subdomains) and exact allowed
