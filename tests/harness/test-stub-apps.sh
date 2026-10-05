@@ -64,6 +64,12 @@ assert_json - '.installed[0].enabled == false' <<<"$(codex plugin list --json)"
 mkdir -p "$HOME/.agents/skills/alpha-skill" "$HOME/.agents/skills/.system/hidden"
 printf -- '---\nname: alpha-skill\ndescription: Alpha.\n---\n' >"$HOME/.agents/skills/alpha-skill/SKILL.md"
 printf -- '---\nname: hidden\ndescription: Hidden.\n---\n' >"$HOME/.agents/skills/.system/hidden/SKILL.md"
+# A skill linked into the root from elsewhere is reported at the link path,
+# and a link back to an ancestor does not make the walk loop.
+mkdir -p "$HOME/.codex/skills/linked-skill"
+printf -- '---\nname: linked-skill\ndescription: Linked.\n---\n' >"$HOME/.codex/skills/linked-skill/SKILL.md"
+ln -s "$HOME/.codex/skills/linked-skill" "$HOME/.agents/skills/linked-skill"
+ln -s .. "$HOME/.agents/skills/alpha-skill/loop"
 port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
 opencode serve --pure --hostname 127.0.0.1 --port "$port" >"$TMPDIR/opencode.log" 2>&1 &
 server=$!
@@ -73,7 +79,8 @@ for _ in $(seq 1 100); do
   body=$(curl --noproxy '*' -fsS "http://127.0.0.1:$port/skill" 2>/dev/null) && break
   sleep 0.1
 done
-assert_json - 'map(.name) == ["alpha-skill", "hidden"]' <<<"$body"
+assert_json - 'map(.name) == ["alpha-skill", "hidden", "linked-skill"]' <<<"$body"
+assert_json - '.[2].location == "'"$HOME"'/.agents/skills/linked-skill/SKILL.md"' <<<"$body"
 assert_json - '.[0].location == "'"$HOME"'/.agents/skills/alpha-skill/SKILL.md"' <<<"$body"
 kill "$server"
 wait "$server" 2>/dev/null || true
@@ -105,7 +112,7 @@ response=$(printf '{"type":"get_commands"}\n' |
 assert_calls "pi --mode rpc --no-session --no-extensions --no-prompt-templates" \
   "pi:env PI_OFFLINE=1 PI_CODING_AGENT_DIR=$agent_dir"
 assert_json - '.type == "response" and .command == "get_commands" and .success == true' <<<"$response"
-assert_json - '[.data.commands[] | select(.source == "skill") | .name] == ["skill:alpha-skill"]' <<<"$response"
+assert_json - '[.data.commands[] | select(.source == "skill") | .name] == ["skill:alpha-skill", "skill:linked-skill"]' <<<"$response"
 assert_json - '[.data.commands[] | select(.source != "skill")] | length >= 1' <<<"$response"
 ds_stub_set pi rpc-mode invalid-json
 response=$(printf '{"type":"get_commands"}\n' | pi --mode rpc)

@@ -41,3 +41,16 @@ for lib in bare-remote.sh fakessh.sh httpfix.py; do
 done
 [[ -x $DS_REPO_ROOT/tests/lib/fakessh.sh ]] || ds_fail "fakessh.sh is not executable"
 [[ -x $DS_REPO_ROOT/tests/lib/httpfix.py ]] || ds_fail "httpfix.py is not executable"
+
+# The harness resets only the variables it owns. Other DS_* names are inputs
+# a caller (for example a Nix check's setup hook) passes to the tests and
+# must survive; a stale harness variable is replaced by the test's own value.
+inner=$TMPDIR/inner/test-inherited-environment.sh
+mkdir -p "${inner%/*}"
+cat >"$inner" <<'INNER'
+# shellcheck shell=bash
+assert_eq kept "${DS_EXAMPLE_INPUT:-}"
+assert_eq "$DS_TEST_ROOT/calls.log" "$DS_CALL_LOG"
+INNER
+assert_exit 0 env DS_EXAMPLE_INPUT=kept DS_CALL_LOG=/nonexistent bash "$DS_REPO_ROOT/tests/run.sh" "$inner"
+assert_contains "$DS_STDOUT" "PASS"
