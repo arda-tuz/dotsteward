@@ -1,0 +1,22 @@
+# expect: invalid key name components.Example_App: does not match "^[a-z][a-z0-9-]*$"
+# expect: invalid key name skills.overlays.example-skill: expected one of "dotsteward-maintain", "dotsteward-update", "dotsteward-contribute"
+# jsonschema: invalid
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]
+
+[components.Example_App]
+enable = true
+
+[skills.overlays]
+example-skill = "agent/overlays/example-skill.md"

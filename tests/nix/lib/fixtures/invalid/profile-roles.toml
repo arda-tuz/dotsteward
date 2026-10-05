@@ -1,0 +1,22 @@
+# expect: profiles.default: "other" is not in profiles.names
+# expect: profiles.check: "missing" is not in profiles.names
+# expect: unknown key profiles.stale (not a profile in profiles.names)
+# jsonschema: valid
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]
+default = "other"
+check = "missing"
+
+[profiles.stale]
+mode = "adopt"

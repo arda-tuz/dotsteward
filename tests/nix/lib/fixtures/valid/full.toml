@@ -1,0 +1,138 @@
+# Every key of schema version 1 with a non-default value.
+schema_version = 1
+
+[identity]
+username = "alice"
+home = "/home/alice"
+darwin_home = "/Users/alice"
+
+[instance]
+name = "workstation"
+remote = "git@github.com:alice/workstation.git"
+branch = "trunk"
+checkout = "~/src/workstation"
+
+[state]
+root = "~/.local/state/workstation"
+
+[nix]
+systems = ["x86_64-linux", "aarch64-darwin"]
+allow_unfree = true
+state_version = "26.05"
+
+[profiles]
+names = ["workstation", "fresh"]
+default = "workstation"
+check = "workstation"
+bootstrap = "fresh"
+
+[profiles.workstation]
+mode = "adopt"
+
+[profiles.fresh]
+mode = "fresh"
+
+[platform.linux.fast_path]
+os_id = "ubuntu"
+os_version = "24.04"
+architecture = "x86_64"
+desktop_contains = "example"
+detectors = ["example_detector"]
+
+[platform.darwin.fast_path]
+min_version = "15"
+architecture = "arm64"
+
+[gate]
+nix_max_jobs = 4
+nix_cores = 8
+min_free_gib = 10
+prepare_warn_free_gib = 20
+cache_url = "https://cache.example.invalid"
+static = ["tests/static.sh"]
+update_allowlist = ['flake\.lock', 'components/[^/]+/default\.nix']
+
+[commit]
+update_subject = "chore: refresh pins"
+settings_subject = "chore: sync settings"
+upgrade_subject = "chore: dotsteward {version}"
+
+[components]
+order = ["shell", "example-term", "herdr", "claude-code", "codex", "opencode-pi", "vscode", "example-app"]
+
+[components.shell]
+enable = true
+
+[components.herdr]
+enable = true
+profiles = ["workstation"]
+
+[components.claude-code]
+enable = true
+method = "deb"
+
+[components.codex]
+enable = true
+method = "external"
+
+[components.opencode-pi]
+enable = false
+
+[components.vscode]
+enable = true
+method_by_platform = { linux = "deb", darwin = "app-archive" }
+options = { set_default_editor = true }
+
+[components.example-app]
+enable = true
+options = { flag = false, nested = { level = 2, items = ["a", "b"] } }
+
+[components.example-term]
+enable = true
+source = "instance"
+method = "official-binary"
+
+[settings]
+buffer_dir = "settings-buffer"
+published_ref = "upstream/trunk"
+
+[skills]
+lock = "agent/skills.lock.json"
+vendor_dir = "agent/vendor"
+hm_root = ".codex/skills"
+installer = ["{home}/.local/bin/skill-installer", "add", "{source}", "--skill", "{name}"]
+overlays = { dotsteward-maintain = "agent/overlays/maintain.md" }
+
+[pins]
+versions_lock = "locks/versions.lock.json"
+excluded_flake_inputs = ["dotsteward", "example-input"]
+nixpkgs_versions = { example-tool = "example-tool", example-font = "example-fonts.mono" }
+apt_arch = "arm64"
+
+[privacy]
+forbidden_paths = ["*private-notes*"]
+denylist = "~/.config/workstation/denylist.txt"
+
+[[privacy.file_rules]]
+files = ["profiles/example-app/state.ini"]
+pattern = '\[recent items\]'
+message = "example profile contains recent items"
+
+[protected]
+"home/AGENTS.md" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[agent_rules]
+source = "agent/AGENTS.md"
+
+[upstream]
+contribute = "owner"
+fork = "alice/dotsteward"
+pr_to_upstream = true
+local_clone = "~/src/dotsteward"
+
+[compat]
+legacy_env = true
+legacy_backup_layout = true
+repo_owned_revision = "same-as-instance-checkout"
+host_input = "workstation"
+check_aliases = { fresh-home = "fresh" }

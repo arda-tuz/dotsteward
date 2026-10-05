@@ -1,0 +1,10 @@
+# A future schema: only the version is reported, never its unknown keys.
+# expect: schema_version 2 is not supported; this dotsteward reads schema_version 1 (update the dotsteward flake input to a release that reads it)
+# jsonschema: invalid
+schema_version = 2
+
+[identity]
+username = "alice"
+
+[future]
+key = true

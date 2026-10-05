@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "nix_packages": {
+    "example-term": {
+      "expected": "1.2.3",
+      "resolved": "1.2.3",
+      "notes": null
+    }
+  },
+  "agent_tools": {
+    "example-app": {
+      "version": "4.5.6",
+      "package": "example-app"
+    }
+  },
+  "desktop_packages": "not a table"
+}

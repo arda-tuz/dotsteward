@@ -1,0 +1,25 @@
+# expect: gate.static[0]: "/srv/static.sh" does not match "^[^/~]"
+# expect: identity.home: "home/alice" does not match "^/[^\t\n\r '\"$\\\\]*$"
+# expect: nix.state_version: "26" does not match "^[0-9]{2}\\.[0-9]{2}$"
+# expect: protected."home/AGENTS.md": "not-a-digest" does not match "^[0-9a-f]{64}$"
+# jsonschema: invalid
+schema_version = 1
+
+[identity]
+username = "alice"
+home = "home/alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26"
+
+[profiles]
+names = ["main"]
+
+[gate]
+static = ["/srv/static.sh"]
+
+[protected]
+"home/AGENTS.md" = "not-a-digest"

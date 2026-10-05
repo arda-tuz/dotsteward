@@ -1,0 +1,15 @@
+# expect: schema_version: expected an integer, got a string
+# jsonschema: invalid
+schema_version = "1"
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]

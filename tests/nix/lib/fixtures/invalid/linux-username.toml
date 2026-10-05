@@ -1,0 +1,16 @@
+# expect: identity.username: "Alice.Example" is not a valid Linux user name (^[a-z_][a-z0-9_-]*$)
+# jsonschema: valid
+schema_version = 1
+
+[identity]
+username = "Alice.Example"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+systems = ["aarch64-darwin", "x86_64-linux"]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]

@@ -1,0 +1,20 @@
+# expect: gate.min_free_gib: expected an integer >= 0, got -1
+# expect: gate.nix_max_jobs: expected an integer >= 1, got 0
+# jsonschema: invalid
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]
+
+[gate]
+nix_max_jobs = 0
+min_free_gib = -1

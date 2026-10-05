@@ -1,0 +1,21 @@
+# expect: components.order: duplicate item "shell"
+# expect: nix.systems: expected at least 1 item, got 0
+# expect: profiles.names: duplicate item "main"
+# jsonschema: invalid
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+systems = []
+state_version = "26.05"
+
+[profiles]
+names = ["main", "main"]
+
+[components]
+order = ["shell", "herdr", "shell"]

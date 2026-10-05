@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "identity": {
+    "username": "alice",
+    "home": "/home/alice",
+    "darwin_home": "/Users/alice"
+  },
+  "instance": {
+    "name": null,
+    "remote": "git@github.com:alice/workstation.git",
+    "branch": "main",
+    "checkout": null
+  },
+  "state": {
+    "root": "${XDG_STATE_HOME:-~/.local/state}/dotsteward"
+  },
+  "nix": {
+    "systems": ["x86_64-linux"],
+    "allow_unfree": false,
+    "state_version": "26.05"
+  },
+  "profiles": {
+    "names": ["main"],
+    "default": "main",
+    "check": "main",
+    "bootstrap": "main",
+    "main": { "mode": "fresh" }
+  },
+  "platform": {
+    "linux": {
+      "fast_path": {
+        "os_id": "ubuntu",
+        "os_version": "24.04",
+        "architecture": "x86_64",
+        "desktop_contains": null,
+        "detectors": []
+      }
+    },
+    "darwin": {
+      "fast_path": {
+        "min_version": "14",
+        "architecture": "arm64"
+      }
+    }
+  },
+  "gate": {
+    "nix_max_jobs": 2,
+    "nix_cores": 6,
+    "min_free_gib": 5,
+    "prepare_warn_free_gib": 15,
+    "cache_url": "https://cache.nixos.org",
+    "static": [],
+    "update_allowlist": []
+  },
+  "commit": {
+    "update_subject": "chore: update pinned tool versions",
+    "settings_subject": "chore: sync local maintained settings",
+    "upgrade_subject": "chore(dotsteward): upgrade to {version}"
+  },
+  "components": {
+    "order": ["shell", "herdr", "claude-code", "codex", "opencode-pi", "vscode"],
+    "shell": { "enable": false, "source": "catalog", "method": null, "method_by_platform": { "linux": null, "darwin": null }, "profiles": null, "options": {} },
+    "herdr": { "enable": false, "source": "catalog", "method": null, "method_by_platform": { "linux": null, "darwin": null }, "profiles": null, "options": {} },
+    "claude-code": { "enable": false, "source": "catalog", "method": null, "method_by_platform": { "linux": null, "darwin": null }, "profiles": null, "options": {} },
+    "codex": { "enable": false, "source": "catalog", "method": null, "method_by_platform": { "linux": null, "darwin": null }, "profiles": null, "options": {} },
+    "opencode-pi": { "enable": false, "source": "catalog", "method": null, "method_by_platform": { "linux": null, "darwin": null }, "profiles": null, "options": {} },
+    "vscode": { "enable": false, "source": "catalog", "method": null, "method_by_platform": { "linux": null, "darwin": null }, "profiles": null, "options": {} }
+  },
+  "settings": {
+    "buffer_dir": "local-maintained-files",
+    "published_ref": "origin/main"
+  },
+  "skills": {
+    "lock": "agent/skills.lock.json",
+    "vendor_dir": "agent/skills",
+    "hm_root": ".agents/skills",
+    "installer": null,
+    "overlays": {}
+  },
+  "pins": {
+    "versions_lock": "versions.lock.json",
+    "excluded_flake_inputs": ["dotsteward"],
+    "nixpkgs_versions": {},
+    "apt_arch": "amd64"
+  },
+  "privacy": {
+    "forbidden_paths": [],
+    "file_rules": [],
+    "denylist": null
+  },
+  "protected": {},
+  "agent_rules": {
+    "source": "home/AGENTS.md"
+  },
+  "upstream": {
+    "contribute": "fork",
+    "fork": null,
+    "pr_to_upstream": false,
+    "local_clone": "${XDG_DATA_HOME:-~/.local/share}/dotsteward/framework"
+  },
+  "compat": {
+    "legacy_env": false,
+    "legacy_backup_layout": false,
+    "repo_owned_revision": null,
+    "host_input": "instance",
+    "check_aliases": {}
+  }
+}

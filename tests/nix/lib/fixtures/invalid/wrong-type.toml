@@ -1,0 +1,26 @@
+# expect: gate.nix_max_jobs: expected an integer, got a float
+# expect: nix.allow_unfree: expected a boolean, got a string
+# expect: privacy.forbidden_paths: expected an array, got a string
+# expect: upstream: expected a table, got a string
+# jsonschema: invalid
+upstream = "fork"
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+allow_unfree = "yes"
+
+[profiles]
+names = ["main"]
+
+[gate]
+nix_max_jobs = 1.5
+
+[privacy]
+forbidden_paths = "*secret*"

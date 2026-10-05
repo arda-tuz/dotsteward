@@ -1,0 +1,13 @@
+# expect: missing required key schema_version
+# jsonschema: invalid
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]

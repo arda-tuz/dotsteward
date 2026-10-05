@@ -1,0 +1,20 @@
+# expect: instance.remote: expected a non-empty string
+# expect: missing required key privacy.file_rules[0].message
+# jsonschema: invalid
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = ""
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]
+
+[[privacy.file_rules]]
+files = ["notes.txt"]
+pattern = "secret"

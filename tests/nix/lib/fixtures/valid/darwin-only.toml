@@ -1,0 +1,29 @@
+# A darwin-only instance: the user name follows the macOS short-name rule,
+# which allows upper case letters and dots.
+schema_version = 1
+
+[identity]
+username = "Alice"
+
+[instance]
+name = "mac-workstation"
+remote = "git@github.com:alice/mac-workstation.git"
+
+[nix]
+systems = ["aarch64-darwin"]
+state_version = "26.05"
+
+[profiles]
+names = ["laptop", "fresh"]
+default = "fresh"
+check = "laptop"
+
+[profiles.laptop]
+mode = "adopt"
+
+[components.vscode]
+enable = true
+method_by_platform = { darwin = "app-archive" }
+
+[components.example-term]
+enable = true

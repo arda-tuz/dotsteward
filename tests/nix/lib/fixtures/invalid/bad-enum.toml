@@ -1,0 +1,28 @@
+# expect: components.shell.method: expected one of "nix", "official-binary", "deb", "app-archive", "external", got "apt"
+# expect: nix.systems[1]: expected one of "x86_64-linux", "aarch64-darwin", got "i686-linux"
+# expect: profiles.main.mode: expected one of "fresh", "adopt", got "keep"
+# expect: upstream.contribute: expected one of "fork", "owner", got "push"
+# jsonschema: invalid
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+systems = ["x86_64-linux", "i686-linux"]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]
+
+[profiles.main]
+mode = "keep"
+
+[components.shell]
+method = "apt"
+
+[upstream]
+contribute = "push"

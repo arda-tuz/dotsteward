@@ -1,0 +1,20 @@
+# expect: compat.check_aliases.fresh-home: "other" is not in profiles.names
+# expect: compat.check_aliases.home: collides with the built-in check home
+# expect: compat.check_aliases.home-main: collides with the built-in check home-main
+# jsonschema: valid
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]
+
+[compat]
+check_aliases = { fresh-home = "other", home = "main", home-main = "main" }

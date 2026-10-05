@@ -1,0 +1,15 @@
+# expect: profiles.names[1]: "default" is reserved (profiles.names, default, check and bootstrap are keys of [profiles])
+# jsonschema: valid
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main", "default"]

@@ -1,0 +1,14 @@
+# expect: missing required key nix
+# expect: missing required key identity.username
+# expect: missing required key instance.remote
+# jsonschema: invalid
+schema_version = 1
+
+[identity]
+home = "/home/alice"
+
+[instance]
+name = "workstation"
+
+[profiles]
+names = ["main"]
