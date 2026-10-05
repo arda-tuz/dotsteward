@@ -1,0 +1,11 @@
+# Nix build results
+result*
+.direnv/
+# Python bytecode
+__pycache__/
+*.pyc
+# Local environment and secrets
+.env*
+# Local working material that never belongs in the repository
+.work/
+.claude/settings.local.json

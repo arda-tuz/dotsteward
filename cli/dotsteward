@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# dotsteward command dispatcher.
+#
+# Usage: dotsteward [--instance DIR] <command> [ARG...]
+#        dotsteward --help
+#
+# Runs cli/commands/<command>.sh with the remaining arguments. Commands are
+# discovered from that directory; each file names itself in its first
+# "# summary:" line, which --help prints. --instance sets
+# DOTSTEWARD_INSTANCE (an absolute path) for the command. Every command also
+# receives DOTSTEWARD_FRAMEWORK_ROOT (the framework source) and
+# DOTSTEWARD_LIB (its cli/lib directory).
+set -Eeuo pipefail
+
+# Resolve symlinks to find the framework root, without GNU-only tools.
+source_path=${BASH_SOURCE[0]}
+while [[ -L $source_path ]]; do
+  link_dir=$(cd -P -- "$(dirname -- "$source_path")" && pwd)
+  source_path=$(readlink -- "$source_path")
+  [[ $source_path == /* ]] || source_path=$link_dir/$source_path
+done
+cli_dir=$(cd -P -- "$(dirname -- "$source_path")" && pwd)
+framework_root=$(dirname -- "$cli_dir")
+commands_dir=$cli_dir/commands
+
+error() {
+  printf '[dotsteward] ERROR: %s\n' "$*" >&2
+}
+
+usage() {
+  printf 'Usage: dotsteward [--instance DIR] <command> [ARG...]\n'
+  printf '       dotsteward --help\n'
+}
+
+valid_name() {
+  [[ $1 =~ ^[a-z][a-z0-9-]*$ ]]
+}
+
+# Prints the valid command names, sorted, one per line.
+command_names() {
+  local file name
+  [[ -d $commands_dir ]] || return 0
+  for file in "$commands_dir"/*.sh; do
+    [[ -f $file ]] || continue
+    name=${file##*/}
+    name=${name%.sh}
+    valid_name "$name" && printf '%s\n' "$name"
+  done | LC_ALL=C sort
+}
+
+print_help() {
+  local names=() name width=0 summary
+  mapfile -t names < <(command_names)
+  usage
+  printf '\nCommands:\n'
+  for name in "${names[@]}"; do
+    ((${#name} > width)) && width=${#name}
+  done
+  for name in "${names[@]}"; do
+    summary=$(sed -n 's/^# summary: //p' "$commands_dir/$name.sh" | head -n 1)
+    if [[ -n $summary ]]; then
+      printf '  %-*s  %s\n' "$width" "$name" "$summary"
+    else
+      printf '  %s\n' "$name"
+    fi
+  done
+}
+
+set_instance() {
+  local dir=$1
+  if [[ -z $dir ]]; then
+    error "--instance requires a directory"
+    exit 1
+  fi
+  if [[ ! -d $dir ]]; then
+    error "--instance: not a directory: $dir"
+    exit 1
+  fi
+  DOTSTEWARD_INSTANCE=$(cd -P -- "$dir" && pwd)
+  export DOTSTEWARD_INSTANCE
+}
+
+while (($#)); do
+  case $1 in
+    -h | --help)
+      print_help
+      exit 0
+      ;;
+    --instance)
+      (($# >= 2)) || set_instance ""
+      set_instance "$2"
+      shift 2
+      ;;
+    --instance=*)
+      set_instance "${1#--instance=}"
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -?*)
+      error "unknown option: $1"
+      usage >&2
+      exit 1
+      ;;
+    *) break ;;
+  esac
+done
+
+if (($# == 0)); then
+  usage >&2
+  exit 1
+fi
+
+command_name=$1
+shift
+if ! valid_name "$command_name" || [[ ! -f $commands_dir/$command_name.sh ]]; then
+  error "unknown command: $command_name"
+  available=$(command_names | tr '\n' ' ')
+  printf '[dotsteward] available commands: %s\n' "${available% }" >&2
+  exit 1
+fi
+
+export DOTSTEWARD_FRAMEWORK_ROOT=$framework_root
+export DOTSTEWARD_LIB=$cli_dir/lib
+exec "$BASH" -- "$commands_dir/$command_name.sh" "$@"
