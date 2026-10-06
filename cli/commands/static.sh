@@ -179,6 +179,19 @@ fail() {
   failed[$current]=1
 }
 
+# json_lines VAR FILE JQ-ARG...: VAR gets the lines `jq -r JQ-ARG... FILE`
+# prints (none for empty output). Fails without output when jq fails; jq's
+# own error text is dropped, since it can quote the file's content. The
+# caller reports the failure: a check never passes on JSON it could not read.
+json_lines() {
+  local -n _lines=$1
+  local file=$2 output
+  shift 2
+  _lines=()
+  output=$(jq -r "$@" "$file" 2>/dev/null) || return 1
+  [[ -z $output ]] || mapfile -t _lines <<<"$output"
+}
+
 # Git context: the files git would carry; otherwise (sandbox, no git) every
 # file below the root.
 git_context=0
@@ -239,7 +252,8 @@ done
 # --- shell -------------------------------------------------------------------
 
 check_shell() {
-  local path first output version pinned lock jobs status=0
+  local path first output version lock jobs status=0
+  local -a pinned=()
   for path in "${SHELL_FILES[@]}"; do
     if ! output=$(bash -n -- "$root/$path" 2>&1); then
       fail "$path: bash -n failed"
@@ -261,9 +275,13 @@ check_shell() {
   version=$(shellcheck --version | awk '$1 == "version:" { print $2; exit }')
   if [[ $target == instance ]]; then
     lock=$root/$DS_PINS_VERSIONS_LOCK
-    pinned=$(jq -r '.nix_packages.shellcheck.resolved // empty' "$lock" 2>/dev/null || true)
-    if [[ -n $pinned && $pinned != "$version" ]]; then
-      fail "ShellCheck $pinned is pinned in $DS_PINS_VERSIONS_LOCK but $version is installed"
+    # A missing lock is the versions-lock check's finding.
+    if [[ -f $lock ]] && ! json_lines pinned "$lock" '.nix_packages.shellcheck.resolved // empty'; then
+      fail "$DS_PINS_VERSIONS_LOCK cannot be read as a versions lock, so the pinned ShellCheck version is unknown"
+      return 0
+    fi
+    if ((${#pinned[@]})) && [[ ${pinned[*]} != "$version" ]]; then
+      fail "ShellCheck ${pinned[*]} is pinned in $DS_PINS_VERSIONS_LOCK but $version is installed"
       return 0
     fi
   fi
@@ -341,8 +359,8 @@ check_bootstrap() {
 
 check_skills() {
   local lock=$DS_SKILLS_LOCK vendor=${DS_SKILLS_VENDOR_DIR%/} name directory sha dsha declared listed
-  local entry link
-  local -a expected=() found=() problems=()
+  local entry link row
+  local -a expected=() found=() problems=() rows=()
   if [[ ! -e $root/$lock ]]; then
     if [[ -e $root/$vendor ]] && [[ -n $(find "$root/$vendor" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null) ]]; then
       fail "$lock is missing but $vendor holds vendored skills"
@@ -353,17 +371,24 @@ check_skills() {
     fail "$lock is not a valid JSON object"
     return 0
   fi
-  mapfile -t problems < <(jq -r --arg lock "$lock" '
+  # shellcheck disable=SC2016 # $lock is a jq variable
+  if ! json_lines problems "$root/$lock" --arg lock "$lock" '
     (if .schema_version != "1.0" then "\($lock): schema_version must be \"1.0\"" else empty end),
     (if (.skills | type) != "array" then "\($lock): skills must be a list" else
       (if .expected_skill_count != (.skills | length) then
         "\($lock): expected_skill_count is \(.expected_skill_count), the lock lists \(.skills | length)"
       else empty end),
-      ((.skills | map(.name) | group_by(.) | map(select(length > 1) | .[0]))[] | "\($lock): duplicate skill name \(.)"),
-      ((.skills | map(.directory) | group_by(.) | map(select(length > 1) | .[0]))[] | "\($lock): duplicate skill directory \(.)"),
-      (.skills[] | select((.name | type) != "string" or (.directory | type) != "string")
+      (if any(.skills[]; type != "object") then "\($lock): every skill entry must be an object" else empty end),
+      ((.skills | map(objects | .name) | group_by(.) | map(select(length > 1) | .[0]))[]
+        | "\($lock): duplicate skill name \(.)"),
+      ((.skills | map(objects | .directory) | group_by(.) | map(select(length > 1) | .[0]))[]
+        | "\($lock): duplicate skill directory \(.)"),
+      (.skills[] | objects | select((.name | type) != "string" or (.directory | type) != "string")
         | "\($lock): every skill needs a name and a directory")
-    end)' "$root/$lock")
+    end)'; then
+    fail "$lock cannot be read as a skills lock"
+    return 0
+  fi
   for entry in "${problems[@]}"; do
     fail "$entry"
   done
@@ -379,12 +404,22 @@ check_skills() {
     done < <(find "$root/$vendor" -type l -print0 | LC_ALL=C sort -z)
     mapfile -t found < <(find "$root/$vendor" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | LC_ALL=C sort)
   fi
-  mapfile -t expected < <(jq -r '.skills[].directory | strings' "$root/$lock" | LC_ALL=C sort)
+  if ! json_lines expected "$root/$lock" '[.skills[] | objects | .directory | strings] | sort[]'; then
+    fail "$lock cannot be read as a skills lock"
+    return 0
+  fi
   if [[ "${expected[*]}" != "${found[*]}" ]]; then
     fail "$vendor: directories do not match the lock (expected ${expected[*]:-nothing}, found ${found[*]:-nothing})"
   fi
 
-  while IFS=$'\t' read -r name directory sha dsha; do
+  if ! json_lines rows "$root/$lock" '.skills[] | objects
+    | select((.name | type) == "string" and (.directory | type) == "string")
+    | [.name, .directory, (.skill_sha256 // "" | tostring), (.directory_sha256 // "-" | tostring)] | @tsv'; then
+    fail "$lock cannot be read as a skills lock"
+    return 0
+  fi
+  for row in "${rows[@]}"; do
+    IFS=$'\t' read -r name directory sha dsha <<<"$row"
     [[ $name != dotsteward-* ]] || fail "$name: framework skills never appear in $lock"
     [[ $sha =~ ^[0-9a-f]{64}$ ]] || fail "$name: skill_sha256 is not a sha256 hex digest"
     [[ $dsha == - || $dsha =~ ^[0-9a-f]{64}$ ]] || fail "$name: directory_sha256 is not a sha256 hex digest"
@@ -409,8 +444,7 @@ check_skills() {
     declared=${declared#[\"\']}
     declared=${declared%[\"\']}
     [[ $declared == "$name" ]] || fail "$name: SKILL.md declares name ${declared:-nothing}"
-  done < <(jq -r '.skills[] | select((.name | type) == "string" and (.directory | type) == "string")
-    | [.name, .directory, (.skill_sha256 // "" | tostring), (.directory_sha256 // "-" | tostring)] | @tsv' "$root/$lock")
+  done
   return 0
 }
 
@@ -427,12 +461,18 @@ check_versions_lock() {
     fail "$lock is not valid JSON"
     return 0
   fi
-  mapfile -t problems < <(jq -r --arg lock "$lock" '
+  # shellcheck disable=SC2016 # $lock is a jq variable
+  if ! json_lines problems "$root/$lock" --arg lock "$lock" '
     (if .schema_version != "1.0" then "\($lock): schema_version must be \"1.0\"" else empty end),
-    (if .policy.persistent_agentic_updates != false then
-      "\($lock): policy.persistent_agentic_updates must be false" else empty end),
-    (if .policy.native_application_updates != true then
-      "\($lock): policy.native_application_updates must be true" else empty end)' "$root/$lock")
+    (if has("policy") and (.policy | type) != "object" then "\($lock): policy must be an object" else
+      (if .policy.persistent_agentic_updates != false then
+        "\($lock): policy.persistent_agentic_updates must be false" else empty end),
+      (if .policy.native_application_updates != true then
+        "\($lock): policy.native_application_updates must be true" else empty end)
+    end)'; then
+    fail "$lock cannot be read as a versions lock"
+    return 0
+  fi
   for entry in "${problems[@]}"; do
     fail "$entry"
   done
