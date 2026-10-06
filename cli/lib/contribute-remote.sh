@@ -545,21 +545,27 @@ _contribute_open_pr() {
 
 # --- publish ------------------------------------------------------------------------
 
+# _contribute_publish_owner: the recorded pull request is read first, so a
+# run interrupted after the squash merge (before merged_sha was recorded)
+# resumes at the verification; the branch checks, the push and the pull
+# request only run while it is not merged, since the squash commit on main
+# is not an ancestor of the tested commit.
 _contribute_publish_owner() {
   local pr state answer merged
-  _contribute_up_to_date origin
-  _contribute_push_branch origin
   pr=$(_contribute_get pr)
   state=OPEN
   if [[ -n $pr ]]; then
     answer=$(gh pr view "$pr" --json state </dev/null) || _contribute_red "cannot read $pr"
     state=$(jq -r '.state' <<<"$answer")
     [[ $state != CLOSED ]] || die "the pull request $pr is closed; reopen it, or end the run with: dotsteward contribute abort"
-  else
-    _contribute_open_pr "$CT_PUBLISH_SLUG" "$CT_BRANCH" origin
-    pr=$CT_PR
   fi
   if [[ $state != MERGED ]]; then
+    _contribute_up_to_date origin
+    _contribute_push_branch origin
+    if [[ -z $pr ]]; then
+      _contribute_open_pr "$CT_PUBLISH_SLUG" "$CT_BRANCH" origin
+      pr=$CT_PR
+    fi
     _contribute_wait_pr_checks "$pr"
     [[ $(_contribute_get trial) != build-only ]] || _contribute_clean_install "$CT_PUBLISH_SLUG"
     _contribute_up_to_date origin
