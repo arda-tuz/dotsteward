@@ -1,0 +1,16 @@
+# Settings tracked in the vscode-settings target of the component (no
+# [targets.vscode-settings] here: the component's target applies). VS Code
+# setting names contain dots; each is one top-level key.
+schema_version = 1
+
+[[entries]]
+id = "vscode-font-size"
+target = "vscode-settings"
+key = ["editor.fontSize"]
+value = 14
+
+[[entries]]
+id = "vscode-auto-save"
+target = "vscode-settings"
+key = ["files.autoSave"]
+value = "afterDelay"

@@ -1,0 +1,31 @@
+# An instance with the vscode catalog component on both systems, its
+# default methods (deb on Linux, app-archive on darwin) and the editor
+# variables. Tests call lib.mkInstance with constructed inputs; the cases in
+# ../cases replace this file to vary the method and the options.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+systems = ["x86_64-linux", "aarch64-darwin"]
+state_version = "25.11"
+
+[profiles]
+names = ["workstation", "fresh"]
+default = "workstation"
+check = "workstation"
+bootstrap = "fresh"
+
+[profiles.workstation]
+mode = "adopt"
+
+[profiles.fresh]
+mode = "fresh"
+
+[components.vscode]
+enable = true
+options = { set_default_editor = true }

@@ -1,0 +1,27 @@
+# vscode without options: the editor variables are not set.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+systems = ["x86_64-linux", "aarch64-darwin"]
+state_version = "25.11"
+
+[profiles]
+names = ["workstation", "fresh"]
+default = "workstation"
+check = "workstation"
+bootstrap = "fresh"
+
+[profiles.workstation]
+mode = "adopt"
+
+[profiles.fresh]
+mode = "fresh"
+
+[components.vscode]
+enable = true
