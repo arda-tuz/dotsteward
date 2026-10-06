@@ -94,6 +94,26 @@ NIX_FEATURES = ("--extra-experimental-features", "nix-command flakes")
 # Variables the steps must not inherit: they name another instance, CLI or
 # framework than the one init composes.
 STEP_ENV_REMOVED = ("DOTSTEWARD_INSTANCE", "DOTSTEWARD_CLI", "DOTSTEWARD_FRAMEWORK_OVERRIDE")
+# Variables that point git at another repository than the one it finds from
+# its working directory (`git rev-parse --local-env-vars` without the
+# GIT_CONFIG* carriers of the identity, plus GIT_NAMESPACE). A git hook,
+# `git rebase -x` or a tool may export them; init removes them so every git
+# call and every step works on the target or the staged repository only.
+GIT_REPOSITORY_ENV = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_PREFIX",
+    "GIT_NAMESPACE",
+    "GIT_SHALLOW_FILE",
+    "GIT_GRAFT_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE",
+)
 # Seconds a step's processes get to exit after SIGTERM when init stops.
 STOP_GRACE_SECONDS = 5
 # Where a daemon or single-user Nix installation puts nix when PATH lacks it.
@@ -1004,6 +1024,7 @@ def next_steps(options: Options, commit: str | None) -> list[dict[str, str]]:
 
 
 def initialize(options: Options, env: dict[str, str]) -> Result:
+    env = {key: value for key, value in env.items() if key not in GIT_REPOSITORY_ENV}
     kind = classify_target(options.dir)
     identity = resolve_identity(options, env)
 
