@@ -532,9 +532,12 @@ class Entry:
         if absent is not True and absent is not False:
             raise LmfError(f"{self.id}: absent must be true or false")
         if self.kind == "key":
-            self.target = targets.get(plain(item.get("target")))
+            target_name = plain(item.get("target"))
+            if not isinstance(target_name, str):
+                raise LmfError(f"{self.id}: target must be a target name")
+            self.target = targets.get(target_name)
             if self.target is None:
-                raise LmfError(f"{self.id}: unknown target {plain(item.get('target'))!r}")
+                raise LmfError(f"{self.id}: unknown target {target_name!r}")
             key = plain(item.get("key"))
             if not isinstance(key, list) or not key or not all(isinstance(part, str) and part for part in key):
                 raise LmfError(f"{self.id}: key must be a non-empty list of non-empty strings")
