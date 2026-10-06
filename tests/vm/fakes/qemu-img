@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Fake qemu-img for the VM harness tests. Records its arguments in
+# DS_CALL_LOG. `create ... OUTPUT [SIZE]` writes OUTPUT as a text file that
+# names the backing file and the size; anything else succeeds silently.
+# Behaviour files in DS_STUB_STATE/qemu-img/:
+#   fail     every call prints the file's text and exits 1
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../../lib/harness.sh"
+ds_stub_begin --no-routes qemu-img "$@"
+
+state=$DS_STUB_STATE/qemu-img
+if [[ -f $state/fail ]]; then
+  cat -- "$state/fail" >&2
+  exit 1
+fi
+[[ ${1:-} == create ]] || exit 0
+shift
+backing="" positional=()
+while (($#)); do
+  case $1 in
+    -b)
+      backing=$2
+      shift
+      ;;
+    -f | -F | -o)
+      shift
+      ;;
+    -*) ;;
+    *) positional+=("$1") ;;
+  esac
+  shift
+done
+((${#positional[@]} >= 1)) || {
+  echo 'fake qemu-img: create without an output file' >&2
+  exit 1
+}
+printf 'fake overlay\nbacking=%s\nsize=%s\n' "$backing" "${positional[1]:-}" >"${positional[0]}"

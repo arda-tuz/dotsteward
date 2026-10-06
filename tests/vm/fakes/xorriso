@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Fake xorriso for the VM harness tests (only the `-as mkisofs` form the
+# harness uses). Records its arguments in DS_CALL_LOG and writes the -output
+# file as a text listing of the volume id and the input files with their
+# contents, so tests can read what would be on the seed image.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../../lib/harness.sh"
+ds_stub_begin --no-routes xorriso "$@"
+# shellcheck source=tests/vm/fakes/iso-common.sh
+source "$(dirname "$(readlink -f "$0")")/iso-common.sh"
+
+[[ ${1:-} == -as && ${2:-} == mkisofs ]] || {
+  echo 'fake xorriso: only "-as mkisofs" is supported' >&2
+  exit 1
+}
+shift 2
+fake_iso_write "$@"

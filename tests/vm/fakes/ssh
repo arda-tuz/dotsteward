@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Fake ssh for the VM harness tests: plays a guest without connecting
+# anywhere. Records its arguments in DS_CALL_LOG. Call N (counted from 1)
+# saves its standard input in DS_STUB_STATE/ssh/stdin.N when standard input
+# is not a terminal, and appends "N<TAB>REMOTE COMMAND" to
+# DS_STUB_STATE/ssh/commands. The remote command is everything after the
+# destination (the first operand that contains "@").
+# Answers:
+#   connection   the first "fail_first" calls (default 0) and every call
+#                while "never_ready" exists fail like a refused connection
+#                (exit 255)
+#   cloud-init status ...      prints "status: done", exits "cloud_init_exit"
+#                              (default 0)
+#   test -f /etc/dotsteward-vm exits "marker_exit" (default 0)
+#   anything else  prints the file "command_output" when it exists and
+#                  exits "command_exit" (default 0)
+# Behaviour files live in DS_STUB_STATE/ssh/.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../../lib/harness.sh"
+ds_stub_begin --no-routes ssh "$@"
+
+state=$DS_STUB_STATE/ssh
+mkdir -p "$state"
+value() {
+  if [[ -f $state/$1 ]]; then
+    printf '%s' "$(<"$state/$1")"
+  else
+    printf '%s' "$2"
+  fi
+}
+
+count=$(($(value calls 0) + 1))
+printf '%s\n' "$count" >"$state/calls"
+
+port=22
+while (($#)); do
+  case $1 in
+    -p)
+      port=$2
+      shift 2
+      ;;
+    -[BbcDEeFIiJLlmOoQRSWw])
+      shift 2
+      ;;
+    -*) shift ;;
+    *@*)
+      shift
+      break
+      ;;
+    *)
+      echo "fake ssh: unexpected operand before the destination: $1" >&2
+      exit 255
+      ;;
+  esac
+done
+command_text="$*"
+printf '%s\t%s\n' "$count" "$command_text" >>"$state/commands"
+if [[ ! -t 0 ]]; then
+  cat >"$state/stdin.$count"
+fi
+
+if [[ -f $state/never_ready ]] || ((count <= $(value fail_first 0))); then
+  echo "ssh: connect to host 127.0.0.1 port $port: Connection refused" >&2
+  exit 255
+fi
+
+case $command_text in
+  'cloud-init status'*)
+    echo 'status: done'
+    exit "$(value cloud_init_exit 0)"
+    ;;
+  'test -f /etc/dotsteward-vm')
+    exit "$(value marker_exit 0)"
+    ;;
+esac
+if [[ -f $state/command_output ]]; then
+  cat -- "$state/command_output"
+fi
+exit "$(value command_exit 0)"

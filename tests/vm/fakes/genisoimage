@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Fake genisoimage for the VM harness tests. Records its arguments in
+# DS_CALL_LOG and writes the -output file as a text listing of the volume id
+# and the input files with their contents.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../../lib/harness.sh"
+ds_stub_begin --no-routes genisoimage "$@"
+# shellcheck source=tests/vm/fakes/iso-common.sh
+source "$(dirname "$(readlink -f "$0")")/iso-common.sh"
+
+fake_iso_write "$@"
