@@ -8,14 +8,16 @@
 # inherited PATH.
 #
 # The package copies cli/, engines/, skills/manifest.json, privacy/, schema/,
-# VERSION and the template files `dotsteward static` compares instances with
-# (template/.dotsteward/cli.sh, template/bootstrap.sh) by path (missing ones
-# are skipped), so new command files need no edit here, and bakes the
-# framework rev and narHash into share/dotsteward/source-info for
-# `dotsteward version`. It has no modules/ directory, so
+# VERSION, template/ (which `dotsteward init` copies and `dotsteward static`
+# compares instances with) and the component seeds
+# modules/components/*/seed.json (which `dotsteward init` merges) by path
+# (missing ones are skipped), so new command files need no edit here, and
+# bakes the framework rev and narHash into share/dotsteward/source-info for
+# `dotsteward version`. Of modules/ it ships only the seeds, so
 # share/dotsteward/catalog.json lists the catalog component names (the
 # modules/components directories, as lib.catalog), which the Python
-# configuration reader uses as its default catalog.
+# configuration reader uses as its default catalog when the seeds are
+# absent.
 {
   version,
   src,
@@ -68,9 +70,11 @@ let
         (root + "/skills/manifest.json")
         (root + "/privacy")
         (root + "/schema")
-        (root + "/template/.dotsteward/cli.sh")
-        (root + "/template/bootstrap.sh")
+        (root + "/template")
       ]
+      ++ lib.optional (builtins.pathExists componentsDir) (
+        fs.fileFilter (file: file.name == "seed.json") componentsDir
+      )
     );
   };
 

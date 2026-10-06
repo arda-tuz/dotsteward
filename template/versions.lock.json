@@ -26,5 +26,10 @@
       "revision": "db7d5e2332710f5abb088f6b5de927d7f9511b35"
     }
   },
-  "nix_packages": {}
+  "nix_packages": {
+    "tomlkit": {
+      "expected": "locked nixpkgs package",
+      "resolved": "0.14.0"
+    }
+  }
 }

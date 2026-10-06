@@ -40,5 +40,11 @@
         "resolved": "1.0.1"
       }
     }
+  },
+  "skills_lock": {
+    "release_tools": {
+      "opencode": {}
+    },
+    "nix_tools": {}
   }
 }

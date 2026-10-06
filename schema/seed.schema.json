@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/arda-tuz/dotsteward/schema/seed.schema.json",
   "title": "dotsteward component seed",
-  "description": "modules/components/<name>/seed.json, schema version 1: the pins and flake inputs a catalog component starts from, as proved by the release's clean-install CI. dotsteward init merges versions_lock into the instance versions.lock.json and writes flake_inputs into the instance flake.nix.",
+  "description": "modules/components/<name>/seed.json, schema version 1: the pins and flake inputs a catalog component starts from, as proved by the release's clean-install CI. dotsteward init merges versions_lock into the instance versions.lock.json, skills_lock into its agent/skills.lock.json and writes flake_inputs into the instance flake.nix.",
   "$comment": "Readers interpret the keyword subset of workstation.schema.json: type, enum, const, pattern, minLength, minimum, maximum, items, minItems, uniqueItems, properties, required, additionalProperties, propertyNames and $ref. Patterns are searched for and use the POSIX extended regular expression subset; anchor them with ^ and $.",
   "type": "object",
   "required": [
@@ -63,6 +63,17 @@
         }
       },
       "description": "Fragment deep-merged into the instance versions.lock.json; a conflicting leaf value is an error."
+    },
+    "skills_lock": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/lockKey"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "description": "A section of agent/skills.lock.json."
+      },
+      "description": "Fragment deep-merged into the instance agent/skills.lock.json: the parent objects of the skills-lock paths the component's mirror rules write (pins sync fills their values and never creates entries); a conflicting leaf value is an error."
     }
   },
   "$defs": {
