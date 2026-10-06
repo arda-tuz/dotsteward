@@ -42,11 +42,44 @@
 #                           terms from `dotsteward context --json`), then
 #                           `nix flake check` with the gate's parallelism.
 #                           Records test_sha and tested_tree on success.
-#   trial [--build-only]    the remote steps, provided by
-#   publish                 cli/lib/contribute-remote.sh: the trial on this
-#   release                 machine, publishing, the patch release, the
-#   upgrade [--build-only]  instance upgrade and the recovery after a trial
-#   abort                   switch (SPEC 9.4 steps 7 to 10)
+#   trial [--build-only]    the trial on this machine (SPEC 9.4 step 7): gate,
+#                           rebuild --switch and e2e of the instance with
+#                           --framework-override git+file://<clone>?rev=<the
+#                           checked commit>; --build-only: gate and rebuild
+#                           --build-only (no switch, no e2e). Red: nothing is
+#                           published and a trial switch is recovered
+#   publish [--pr-to-upstream]
+#                           owner: push fix/SLUG, open (or reuse) the pull
+#                           request, wait for its checks (a build-only trial
+#                           also needs clean-install.yml green on the
+#                           commit, dispatched on the branch when missing),
+#                           merge with --squash --match-head-commit and
+#                           verify the merged tree is the tested tree; fork:
+#                           push, the fork's CI, fast-forward the fork's
+#                           main, an upstream pull request only with
+#                           upstream.pr_to_upstream or --pr-to-upstream.
+#                           Upstream main moved: the branch is rebased and
+#                           the run goes back to check (exit 5)
+#   release                 the next patch tag (newest v* tag + 1, v0.0.1
+#                           without one; VERSION of the merged commit must
+#                           equal it) as an annotated tag on the merged
+#                           commit, pushed; owner: gh release create
+#                           --generate-notes --verify-tag
+#   upgrade [--tag TAG] [--build-only]
+#                           the instance to the release: update prepare
+#                           --scope maintain, the dotsteward input of
+#                           flake.nix, nix flake update dotsteward,
+#                           bootstrap.sh and .dotsteward/cli.sh from the
+#                           release's template/, sync, gate, a commit with
+#                           commit.upgrade_subject ({version}: TAG without
+#                           v), rebuild --switch and e2e (--build-only:
+#                           rebuild --build-only), update publish --scope
+#                           maintain; re-runnable
+#   abort                   ends the run; after a trial switch it first runs
+#                           the recovery: rebuild --switch and e2e without
+#                           an override, back to the pinned framework
+#   report [--json]         the run's result (pull request, merged commit,
+#                           release, instance commit, tests); ends the run
 #   status [--json]         the run's state (--json: the state document)
 # Options of the steps that use a run (check, status and the remote steps):
 #   --id ID                 that run instead of the current one
@@ -54,7 +87,9 @@
 # State: one file per run, <state root>/contribute/<id>.json (0600, in a 0700
 # directory), id = <UTC timestamp>-<slug>, with the fields id, slug, mode,
 # clone, branch, base_sha, test_sha, tested_tree, trial_switched, pr,
-# merged_sha, tag, instance_commit and step; <state root>/contribute/current
+# merged_sha, tag, instance_commit and step, plus profile, trial, trial_sha,
+# upgrade, instance_base, recovery and outcome from the remote steps (see
+# cli/lib/contribute-remote.sh); <state root>/contribute/current
 # holds the current run's id. step is the next step of the run: reproduce,
 # fix, check, trial, publish, release, upgrade, report or done; every step
 # reads and updates the file, so an interrupted run resumes at step.
@@ -73,6 +108,8 @@
 #   0  done
 #   1  refused or failed
 #   4  privacy hard stop (check): nothing may be published
+#   5  back to check (publish): upstream main moved, the branch was rebased
+#      (or must be rebased by hand after a conflict)
 set -Eeuo pipefail
 
 lib_dir=${DOTSTEWARD_LIB:-$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/../lib" && pwd)}
@@ -267,7 +304,7 @@ case $step in
     usage
     exit 0
     ;;
-  mode | setup | start | check | status | trial | publish | release | upgrade | abort) ;;
+  mode | setup | start | check | status | trial | publish | release | upgrade | abort | report) ;;
   *) die "unknown contribute step: $step" ;;
 esac
 handler=contribute_cmd_$step
