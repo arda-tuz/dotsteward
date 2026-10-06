@@ -17,10 +17,10 @@
 # "Verification").
 #
 # options (the [components.codex] options table of workstation.toml):
-#   plugins = [ { spec = "NAME@MARKETPLACE",
-#                 minimumAt = "<versions.lock.json path>",       optional
-#                 requiredSkillDirectories = [ "<dir>", ... ] }  optional
-#             ]
+#   [[components.codex.options.plugins]]          # one table per plugin
+#   spec = "NAME@MARKETPLACE"
+#   minimumAt = "<versions.lock.json path>"       # optional
+#   requiredSkillDirectories = ["<dir>", ...]     # optional
 # A non-empty list adds the agentsPost hook plugins.sh, which installs
 # missing plugins (agents install) and verifies every listed one (both
 # modes). Invalid options fail the evaluation with every problem listed.

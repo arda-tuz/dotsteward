@@ -66,17 +66,21 @@ missing or older binary with the rebuild hint and change nothing.
 
 ## Plugins
 
-`options.plugins` lists Codex plugins to install and verify:
+`options.plugins` lists Codex plugins to install and verify, one
+`[[components.codex.options.plugins]]` table per plugin:
 
 ```toml
 [components.codex]
 enable = true
-options = { plugins = [
-  { spec = "example-plugin@example-market",
-    minimumAt = "agent_tools.example-plugin.minimum_version",
-    requiredSkillDirectories = ["alpha", "beta"] },
-] }
+
+[[components.codex.options.plugins]]
+spec = "example-plugin@example-market"
+minimumAt = "agent_tools.example-plugin.minimum_version"
+requiredSkillDirectories = ["alpha", "beta"]
 ```
+
+The inline form `options = { plugins = [ { spec = "..." }, ... ] }` is
+equivalent, but TOML 1.0 requires each inline table on a single line.
 
 | Key | Required | Meaning |
 | --- | --- | --- |

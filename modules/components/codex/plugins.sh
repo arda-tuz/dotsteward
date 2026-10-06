@@ -4,10 +4,10 @@
 # install|check` and reads the plugin list from [components.codex] options
 # of the instance's workstation.toml:
 #
-#   plugins = [ { spec = "NAME@MARKETPLACE",
-#                 minimumAt = "<versions.lock.json path>",       optional
-#                 requiredSkillDirectories = [ "<dir>", ... ] }  optional
-#             ]
+#   [[components.codex.options.plugins]]          # one table per plugin
+#   spec = "NAME@MARKETPLACE"
+#   minimumAt = "<versions.lock.json path>"       # optional
+#   requiredSkillDirectories = ["<dir>", ...]     # optional
 #
 # install (DOTSTEWARD_CHECK_ONLY=0) runs `codex plugin add SPEC` for a plugin
 # that `codex plugin list --json` does not show installed and enabled. Both
