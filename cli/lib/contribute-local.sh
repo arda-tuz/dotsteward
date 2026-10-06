@@ -700,7 +700,14 @@ contribute_cmd_check() {
     die "$remote/main is missing after the fetch"
   head=$(git -C "$CT_CLONE" rev-parse HEAD)
   tree=$(git -C "$CT_CLONE" rev-parse 'HEAD^{tree}')
-  (($(git -C "$CT_CLONE" rev-list --count "$base..$head") > 0)) || die "no commits on $branch after $remote/main"
+  # A branch without commits of its own is checked only after a tree
+  # mismatch, when publish rebased it onto the merged pull request.
+  local ahead
+  ahead=$(git -C "$CT_CLONE" rev-list --count "$base..$head")
+  if ((ahead == 0)); then
+    [[ -n $(jq -r '.merged_sha // ""' <<<"$state") ]] || die "no commits on $branch after $remote/main"
+    log "$branch has no commits after $remote/main: its pull request is merged, so the merged $remote/main is checked"
+  fi
   contribute_denylist_ready ||
     die "the privacy scans need the denylist $CONTRIBUTE_DENYLIST_SHOWN (the pre-push hook reads it too); create it with one private term per line"
 
@@ -723,10 +730,12 @@ contribute_cmd_check() {
   local range=$base..$head
   local -a stopped=()
   _contribute_scan tree --tree || stopped+=(tree)
-  _contribute_scan "commits $remote/main..$branch" --range "$range" --metadata \
-    --denylist "$(contribute_denylist_path)" --require-denylist || stopped+=(commits)
-  _contribute_scan "instance leak $remote/main..$branch" --range "$range" --extra-terms "$terms" ||
-    stopped+=(instance-leak)
+  if ((ahead)); then
+    _contribute_scan "commits $remote/main..$branch" --range "$range" --metadata \
+      --denylist "$(contribute_denylist_path)" --require-denylist || stopped+=(commits)
+    _contribute_scan "instance leak $remote/main..$branch" --range "$range" --extra-terms "$terms" ||
+      stopped+=(instance-leak)
+  fi
   if ((${#stopped[@]})); then
     printf '[dotsteward] ERROR: privacy hard stop (%s): nothing may be published; remove the findings from the branch, rewriting its commits, and run check again\n' \
       "${stopped[*]}" >&2

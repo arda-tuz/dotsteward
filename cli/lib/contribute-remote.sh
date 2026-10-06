@@ -158,26 +158,33 @@ _contribute_instance_dirty() {
 
 # _contribute_recover: after a trial switch, switches the live generation
 # back to the instance's pinned framework (rebuild --switch and e2e without
-# an override); nothing when the run never switched. Status 1 when the
-# recovery could not run or failed.
+# an override); nothing when the run never switched. A failed recovery is
+# resumed: once its rebuild switched back (trial_switched false), only its
+# e2e runs again. Status 1 when the recovery could not run or failed;
+# recovery is done only once the e2e passed.
 _contribute_recover() {
-  [[ $(_contribute_get trial_switched) == true ]] || return 0
-  local profile base commit
+  local switched profile base commit
   local -a e2e=()
+  switched=$(_contribute_get trial_switched)
+  [[ $switched == true || $(_contribute_get recovery) == failed ]] || return 0
   profile=$(_contribute_profile) || return 1
-  if _contribute_instance_dirty; then
-    _contribute_set '.recovery = "failed"'
-    printf '[dotsteward] ERROR: recovery not run: the instance %s has uncommitted changes, so it cannot be rebuilt; the live generation still uses the trial framework. Finish them (dotsteward contribute upgrade) or remove them, then run: dotsteward contribute abort\n' \
-      "$DS_INSTANCE_ROOT" >&2
-    return 1
+  if [[ $switched == true ]]; then
+    if _contribute_instance_dirty; then
+      _contribute_set '.recovery = "failed"'
+      printf '[dotsteward] ERROR: recovery not run: the instance %s has uncommitted changes, so it cannot be rebuilt; the live generation still uses the trial framework. Finish them (dotsteward contribute upgrade) or remove them, then run: dotsteward contribute abort\n' \
+        "$DS_INSTANCE_ROOT" >&2
+      return 1
+    fi
+    log "recovery: switching the live generation back to the instance's pinned framework"
+    if ! _contribute_instance rebuild --profile "$profile" --switch; then
+      _contribute_set '.recovery = "failed"'
+      printf '[dotsteward] ERROR: recovery failed: rebuild --switch without the override failed, so the live generation may still use the trial framework; fix the problem, then run: dotsteward contribute abort\n' >&2
+      return 1
+    fi
+    _contribute_set '.trial_switched = false'
+  else
+    log "recovery: the live generation uses the instance's pinned framework again; running its e2e, which failed last time"
   fi
-  log "recovery: switching the live generation back to the instance's pinned framework"
-  if ! _contribute_instance rebuild --profile "$profile" --switch; then
-    _contribute_set '.recovery = "failed"'
-    printf '[dotsteward] ERROR: recovery failed: rebuild --switch without the override failed, so the live generation may still use the trial framework; fix the problem, then run: dotsteward contribute abort\n' >&2
-    return 1
-  fi
-  _contribute_set '.trial_switched = false'
   e2e=(e2e --profile "$profile")
   base=$(_contribute_get instance_base)
   commit=$(_contribute_get instance_commit)
@@ -366,8 +373,40 @@ _contribute_push_branch() {
   log "pushed $CT_BRANCH (${CT_TEST_SHA:0:12}) to $remote"
 }
 
+# _contribute_rebase_onto_merged REMOTE: after a squash merge whose commit
+# is not the tested tree (SPEC 9.4 step 8: rebase, back to step 6). The
+# branch is rebased onto REMOTE/main (fetched): its commits are in the
+# squash commit, so it becomes REMOTE/main; a conflicting rebase is aborted
+# and the branch reset to REMOTE/main, which already holds the change. The
+# merged pull request stays recorded (publish then takes the re-checked
+# commit on REMOTE/main as published), unless the branch keeps commits that
+# REMOTE/main lacks: those need a new pull request. No recovery: the run
+# continues at check; exits with CONTRIBUTE_RESTART.
+_contribute_rebase_onto_merged() {
+  local remote=$1 main
+  main=$(git -C "$CT_CLONE" rev-parse "refs/remotes/$remote/main^{commit}")
+  _contribute_set '.step = "check" | .test_sha = null | .tested_tree = null | .trial = null | .trial_sha = null'
+  log "rebasing $CT_BRANCH onto $remote/main (${main:0:12}), which holds the merged pull request"
+  if ! (cd -- "$CT_CLONE" && TZ=UTC git rebase --quiet "refs/remotes/$remote/main") </dev/null >/dev/null 2>&1; then
+    git -C "$CT_CLONE" rebase --abort >/dev/null 2>&1 || true
+    log "$CT_BRANCH conflicts with $remote/main, which already holds its change: resetting it to $remote/main"
+    git -C "$CT_CLONE" reset --quiet --hard "refs/remotes/$remote/main" ||
+      die "cannot reset $CT_BRANCH to $remote/main in $CT_CLONE; reset it by hand, then run: dotsteward contribute check"
+  fi
+  if git -C "$CT_CLONE" merge-base --is-ancestor HEAD "refs/remotes/$remote/main"; then
+    log "$CT_BRANCH is now $remote/main ($(git -C "$CT_CLONE" rev-parse --short=12 HEAD)); the tested commit changed"
+  else
+    _contribute_set '.pr = null'
+    log "$CT_BRANCH keeps commits that $remote/main lacks (now $(git -C "$CT_CLONE" rev-parse --short=12 HEAD)); publish opens a new pull request for them"
+  fi
+  log "the run is back at the framework gate; next: dotsteward contribute check, then trial and publish again"
+  exit "$CONTRIBUTE_RESTART"
+}
+
 # _contribute_verify_tree COMMIT REMOTE: COMMIT is on REMOTE/main (fetched
-# now) and has the tested tree.
+# now) and has the tested tree. A tree mismatch in owner mode (the squash
+# merge landed on a main that moved at the last moment) releases nothing
+# and sends the run back to check on the merged main.
 _contribute_verify_tree() {
   local commit=$1 remote=$2 tree
   contribute_fetch_main "$CT_CLONE" "$remote"
@@ -379,9 +418,27 @@ _contribute_verify_tree() {
   if [[ $tree != "$CT_TESTED_TREE" ]]; then
     # shellcheck disable=SC2016 # jq variables
     _contribute_set '.merged_sha = $commit' --arg commit "$commit"
-    _contribute_red "tree mismatch: the published commit ${commit:0:12} has tree ${tree:0:12}, but the tested tree is ${CT_TESTED_TREE:0:12} ($remote/main moved during the merge); nothing is released. Validate $remote/main with a new run"
+    [[ $CT_RUN_MODE == owner ]] ||
+      _contribute_red "tree mismatch: the published commit ${commit:0:12} has tree ${tree:0:12}, but the tested tree is ${CT_TESTED_TREE:0:12}; nothing is released"
+    printf '[dotsteward] ERROR: tree mismatch: the published commit %s has tree %s, but the tested tree is %s (%s/main moved during the merge); nothing is released\n' \
+      "${commit:0:12}" "${tree:0:12}" "${CT_TESTED_TREE:0:12}" "$remote" >&2
+    _contribute_rebase_onto_merged "$remote"
   fi
   log "verified: ${commit:0:12} on $remote/main has the tested tree ${CT_TESTED_TREE:0:12}"
+}
+
+# _contribute_require_version COMMIT: VERSION at COMMIT equals the release
+# this run will tag (the recorded tag, else the next patch tag), checked
+# before main is touched; red otherwise.
+_contribute_require_version() {
+  local commit=$1 tag version
+  tag=$(_contribute_get tag)
+  [[ -n $tag ]] || tag=$(_contribute_next_tag)
+  version=$(git -C "$CT_CLONE" show "$commit:VERSION" 2>/dev/null) ||
+    _contribute_red "${commit:0:12} has no VERSION file; nothing is published"
+  version=${version//[[:space:]]/}
+  [[ v$version == "$tag" ]] ||
+    _contribute_red "VERSION is $version at ${commit:0:12}, but the next release is $tag: set VERSION to ${tag#v} in the fix, then run: dotsteward contribute check; nothing is published"
 }
 
 # --- publish: CI ----------------------------------------------------------------------
@@ -564,9 +621,13 @@ _contribute_open_pr() {
 # run interrupted after the squash merge (before merged_sha was recorded)
 # resumes at the verification; the branch checks, the push and the pull
 # request only run while it is not merged, since the squash commit on main
-# is not an ancestor of the tested commit.
+# is not an ancestor of the tested commit. A merged pull request whose
+# tested commit is on origin/main is a run re-checked on the merged main
+# after a tree mismatch: that commit is the published one. VERSION is
+# checked before main is touched, and again right before the merge (a
+# release tagged while CI ran moves the next tag).
 _contribute_publish_owner() {
-  local pr state answer merged
+  local pr state answer merged=""
   pr=$(_contribute_get pr)
   state=OPEN
   if [[ -n $pr ]]; then
@@ -575,6 +636,7 @@ _contribute_publish_owner() {
     [[ $state != CLOSED ]] || die "the pull request $pr is closed; reopen it, or end the run with: dotsteward contribute abort"
   fi
   if [[ $state != MERGED ]]; then
+    _contribute_require_version "$CT_TEST_SHA"
     _contribute_up_to_date origin
     _contribute_push_branch origin
     if [[ -z $pr ]]; then
@@ -584,13 +646,22 @@ _contribute_publish_owner() {
     _contribute_wait_pr_checks "$pr"
     [[ $(_contribute_get trial) != build-only ]] || _contribute_clean_install "$CT_PUBLISH_SLUG"
     _contribute_up_to_date origin
+    _contribute_require_version "$CT_TEST_SHA"
     log "merging $pr (squash, head ${CT_TEST_SHA:0:12})"
     gh pr merge "$pr" --squash --match-head-commit "$CT_TEST_SHA" </dev/null ||
       _contribute_red "gh pr merge refused $pr; main is untouched"
+  else
+    contribute_fetch_main "$CT_CLONE" origin
+    if git -C "$CT_CLONE" merge-base --is-ancestor "$CT_TEST_SHA" refs/remotes/origin/main; then
+      merged=$CT_TEST_SHA
+      log "$pr is merged and the re-checked ${CT_TEST_SHA:0:12} is on origin/main: it is the published commit"
+    fi
   fi
-  answer=$(gh pr view "$pr" --json state,mergeCommit </dev/null) || _contribute_red "cannot read $pr after the merge"
-  merged=$(jq -r 'if .state == "MERGED" then .mergeCommit.oid // empty else empty end' <<<"$answer")
-  [[ -n $merged ]] || _contribute_red "$pr is not merged"
+  if [[ -z $merged ]]; then
+    answer=$(gh pr view "$pr" --json state,mergeCommit </dev/null) || _contribute_red "cannot read $pr after the merge"
+    merged=$(jq -r 'if .state == "MERGED" then .mergeCommit.oid // empty else empty end' <<<"$answer")
+    [[ -n $merged ]] || _contribute_red "$pr is not merged"
+  fi
   _contribute_verify_tree "$merged" origin
   # shellcheck disable=SC2016 # jq variables
   _contribute_set '.merged_sha = $merged | .step = "release"' --arg merged "$merged"
@@ -604,11 +675,13 @@ _contribute_publish_fork() {
     [[ $(gh api "repos/$CT_PUBLISH_SLUG/actions/permissions" </dev/null 2>/dev/null | jq -r '.enabled') == false ]]; then
     die "the build-only trial needs $CONTRIBUTE_CLEAN_INSTALL green, but GitHub Actions are disabled on $CT_PUBLISH_SLUG; enable them there, or run a full trial"
   fi
+  _contribute_require_version "$CT_TEST_SHA"
   _contribute_up_to_date upstream
   _contribute_push_branch origin
   _contribute_fork_ci
   ((build_only == 0)) || _contribute_clean_install "$CT_PUBLISH_SLUG"
   _contribute_up_to_date upstream
+  _contribute_require_version "$CT_TEST_SHA"
   main=$(_contribute_remote_ref origin refs/heads/main) || _contribute_red "cannot read main of $CT_PUBLISH_SLUG"
   if [[ $main != "$CT_TEST_SHA" ]]; then
     git_net 180 -C "$CT_CLONE" push --quiet origin "$CT_TEST_SHA:refs/heads/main" </dev/null ||
@@ -1051,7 +1124,8 @@ contribute_cmd_upgrade() {
   else
     _contribute_pinned rebuild --profile "$profile" --switch ||
       _contribute_red "upgrade: rebuild --switch failed; run upgrade again once it is fixed"
-    _contribute_set '.trial_switched = false'
+    # The upgraded generation replaces whatever a failed recovery left.
+    _contribute_set '.trial_switched = false | if .recovery == "failed" then .recovery = null else . end'
     if [[ $instance_commit == "$base" ]]; then
       _contribute_pinned e2e --profile "$profile" ||
         _contribute_red "upgrade: e2e failed on the upgraded instance; run upgrade again once it is fixed"

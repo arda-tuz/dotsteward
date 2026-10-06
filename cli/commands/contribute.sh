@@ -41,7 +41,9 @@
 #                           and the denylist; the instance-leak scan with
 #                           terms from `dotsteward context --json`), then
 #                           `nix flake check` with the gate's parallelism.
-#                           Records test_sha and tested_tree on success.
+#                           Records test_sha and tested_tree on success. A
+#                           branch without commits after upstream main is
+#                           refused, except after a tree mismatch
 #   trial [--build-only]    the trial on this machine (SPEC 9.4 step 7): gate,
 #                           rebuild --switch and e2e of the instance with
 #                           --framework-override git+file://<clone>?rev=<the
@@ -58,8 +60,12 @@
 #                           push, the fork's CI, fast-forward the fork's
 #                           main, an upstream pull request only with
 #                           upstream.pr_to_upstream or --pr-to-upstream.
-#                           Upstream main moved: the branch is rebased and
-#                           the run goes back to check (exit 5)
+#                           VERSION of the checked commit must equal the
+#                           next release before anything is pushed and
+#                           again before the merge. Upstream main moved: the
+#                           branch is rebased and the run goes back to check
+#                           (exit 5); so does a tree mismatch after the
+#                           merge, with the branch on the merged main
 #   release                 the next patch tag (newest v* tag + 1, v0.0.1
 #                           without one; VERSION of the merged commit must
 #                           equal it) as an annotated tag on the merged
