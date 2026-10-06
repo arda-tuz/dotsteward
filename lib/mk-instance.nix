@@ -109,7 +109,10 @@ let
 
   # Framework commands run by checks.<system>.instance-contract, in order.
   # settings validate reads the component targets from TARGETS_FILE, the
-  # evaluated values, not from a committed mirror.
+  # evaluated values, not from a committed mirror. The privacy scan is the
+  # instance scan of static (generic secret rules and [privacy], SPEC 11.2);
+  # `scan` would apply the framework policy (home paths, e-mail addresses,
+  # non-ASCII text) to personal instance content.
   contractSteps = targetsFile: [
     [
       "static"
@@ -124,10 +127,6 @@ let
       "--targets-file"
       "${targetsFile}"
       "validate"
-    ]
-    [
-      "scan"
-      "--tree"
     ]
   ];
 

@@ -232,7 +232,7 @@ for the user database lookup; it answers before `getent` or `dscl`) and
 | What | Linux | darwin |
 | --- | --- | --- |
 | CLI and platform layer | the framework checks (`nix flake check`) | `checks.darwin-eval` runs the darwin platform tests (`tests/cli/darwin`) on Linux, with the user database, `sudo` and `dscl` stubs and doubles of `ditto` and `hdiutil` |
-| Full instance with every catalog component | `checks.template-full` builds every check of the full fixture and runs its probes | `checks.darwin-eval` evaluates every check of the full darwin fixture for `aarch64-darwin` (the activation packages of every profile, the Pi package and the instance checks are instantiated, never built) and runs its instance contract (static, pins check, settings validate, privacy scan) |
+| Full instance with every catalog component | `checks.template-full` builds every check of the full fixture and runs its probes | `checks.darwin-eval` evaluates every check of the full darwin fixture for `aarch64-darwin` (the activation packages of every profile, the Pi package and the instance checks are instantiated, never built) and runs its instance contract (static with the instance privacy scan, pins check, settings validate) |
 | Real machine | the clean-install workflow installs a fresh Ubuntu runner end to end | the macOS smoke workflow (Nix install, `init` with darwin methods, `rebuild`, `e2e` for the catalog) |
 
 Real activation never runs on a developer's machine as part of the tests; it
