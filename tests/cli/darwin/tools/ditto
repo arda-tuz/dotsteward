@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# ditto double of the darwin platform tests (ditto exists only on macOS):
+# the two forms the app-archive method uses.
+#   ditto -x -k ARCHIVE DEST   extracts the zip ARCHIVE into DEST, keeping
+#                              symlinks and modes like ditto
+#   ditto SOURCE DEST          copies the directory SOURCE to DEST (created
+#                              when missing, merged into when present)
+# State value "fail" (see darwin_tool_set): "extract" makes the first form
+# fail, "copy" makes the second form fail after creating DEST with part of
+# the copy.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../../../lib/harness.sh"
+ds_stub_begin --no-routes ditto "$@"
+
+fail=$(ds_stub_value fail '')
+if [[ ${1:-} == -x ]]; then
+  [[ $# == 4 && $2 == -k ]] || {
+    printf 'ditto double: unsupported arguments: %s\n' "$*" >&2
+    exit 2
+  }
+  if [[ $fail == extract ]]; then
+    printf 'ditto: Couldn'\''t read PKZip signature\n' >&2
+    exit 1
+  fi
+  python3 -I - "$3" "$4" <<'PY'
+import os
+import stat
+import sys
+import zipfile
+
+archive, dest = sys.argv[1:]
+try:
+    source = zipfile.ZipFile(archive)
+except (OSError, zipfile.BadZipFile):
+    print("ditto: Couldn't read PKZip signature", file=sys.stderr)
+    sys.exit(1)
+os.makedirs(dest, exist_ok=True)
+with source:
+    for info in source.infolist():
+        name = info.filename
+        if name.startswith("/") or ".." in name.split("/"):
+            print(f"ditto: unsafe entry: {name}", file=sys.stderr)
+            sys.exit(1)
+        path = os.path.join(dest, name)
+        mode = info.external_attr >> 16
+        if stat.S_ISLNK(mode):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            os.symlink(source.read(info).decode(), path)
+        elif name.endswith("/"):
+            os.makedirs(path, exist_ok=True)
+        else:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as handle:
+                handle.write(source.read(info))
+            if mode:
+                os.chmod(path, stat.S_IMODE(mode))
+PY
+  exit 0
+fi
+
+[[ $# == 2 && ${1:0:1} != - ]] || {
+  printf 'ditto double: unsupported arguments: %s\n' "$*" >&2
+  exit 2
+}
+[[ -d $1 ]] || {
+  printf 'ditto: %s: No such file or directory\n' "$1" >&2
+  exit 1
+}
+if [[ $fail == copy ]]; then
+  mkdir -p "$2/Contents"
+  printf 'ditto: %s/Contents: No space left on device\n' "$2" >&2
+  exit 1
+fi
+if [[ -d $2 ]]; then
+  cp -a -- "$1/." "$2/"
+else
+  cp -a -- "$1" "$2"
+fi
