@@ -1,0 +1,18 @@
+# Failure case: a Linux-only component enabled with aarch64-darwin in nix.systems.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+systems = ["x86_64-linux", "aarch64-darwin"]
+state_version = "25.11"
+
+[profiles]
+names = ["workstation"]
+
+[components.example-linux]
+enable = true

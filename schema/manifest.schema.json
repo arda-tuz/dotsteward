@@ -1,0 +1,348 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/arda-tuz/dotsteward/schema/manifest.schema.json",
+  "title": "dotsteward manifest",
+  "description": "Contract values of an instance for one system (schema_version 1): share/dotsteward/manifest.json in a generation, and .dotsteward/manifest.<system>.json in the instance (the mirror: framework rev and narHash left out, store paths replaced by <instance>/<path>, <dotsteward>/<path> or <store>/<name>). Entries contributed by a component carry its name in component (core for the framework's own). The manifest never depends on the profile (D20): profile scoping is the profiles and modes fields.",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 1 },
+    "system": { "enum": ["x86_64-linux", "aarch64-darwin"] },
+    "platform": { "$ref": "#/$defs/platform" },
+    "framework": {
+      "type": "object",
+      "properties": {
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "rev": { "type": ["string", "null"] },
+        "narHash": { "type": ["string", "null"] }
+      },
+      "required": ["version"],
+      "additionalProperties": false
+    },
+    "config": {
+      "type": "object",
+      "description": "The resolved workstation.toml (schema/workstation.schema.json) with every default filled in.",
+      "required": ["schema_version", "identity", "instance", "nix", "profiles", "components"]
+    },
+    "components": {
+      "type": "array",
+      "description": "Enabled components in [components] order.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "$ref": "#/$defs/name" },
+          "source": { "enum": ["catalog", "instance"] },
+          "method": { "$ref": "#/$defs/method" },
+          "profiles": { "$ref": "#/$defs/profiles" },
+          "platforms": { "type": "array", "items": { "$ref": "#/$defs/platform" } },
+          "options": { "type": "object" },
+          "modes": {
+            "type": "object",
+            "description": "Mode of each profile the component is active in.",
+            "additionalProperties": { "enum": ["fresh", "adopt"] }
+          },
+          "supported_methods": {
+            "type": "object",
+            "properties": {
+              "linux": { "type": "array", "items": { "$ref": "#/$defs/method" } },
+              "darwin": { "type": "array", "items": { "$ref": "#/$defs/method" } }
+            },
+            "required": ["linux", "darwin"],
+            "additionalProperties": false
+          },
+          "install": { "type": "object", "description": "The install block of the resolved method (nix: package names)." }
+        },
+        "required": ["name", "source", "method", "profiles", "platforms", "options", "modes", "supported_methods", "install"],
+        "additionalProperties": false
+      }
+    },
+    "settings_targets": {
+      "type": "object",
+      "description": "Settings targets of the enabled components, paths for this platform.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "component": { "$ref": "#/$defs/name" },
+          "path": { "$ref": "#/$defs/homePath" },
+          "format": { "enum": ["json", "toml", "jsonc"] },
+          "backup": { "type": "boolean" },
+          "create_if_missing": { "type": "boolean" },
+          "create_mode": { "$ref": "#/$defs/fileMode" },
+          "reload": { "oneOf": [{ "type": "null" }, { "type": "string" }, { "$ref": "#/$defs/reload" }] }
+        },
+        "required": ["component", "path", "format", "backup", "create_if_missing", "create_mode", "reload"],
+        "additionalProperties": false
+      }
+    },
+    "reload_hooks": {
+      "type": "object",
+      "additionalProperties": {
+        "allOf": [{ "$ref": "#/$defs/reload" }],
+        "properties": { "component": { "$ref": "#/$defs/name" } },
+        "required": ["component"]
+      }
+    },
+    "probes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "component": { "$ref": "#/$defs/name" },
+          "command": { "type": "string" },
+          "kind": { "enum": ["version", "presence", "features"] },
+          "argv": { "$ref": "#/$defs/strings" },
+          "env": { "$ref": "#/$defs/stringMap" },
+          "extract": { "type": "string" },
+          "expected": { "type": ["string", "null"] },
+          "needles": { "$ref": "#/$defs/strings" },
+          "profiles": { "$ref": "#/$defs/profiles" }
+        },
+        "required": ["component", "command", "kind", "argv", "env", "extract", "expected", "needles", "profiles"],
+        "additionalProperties": false
+      }
+    },
+    "checks": {
+      "type": "object",
+      "properties": {
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "component": { "type": "string" }, "command": { "type": "string" } },
+            "required": ["component", "command"],
+            "additionalProperties": false
+          }
+        },
+        "e2e": { "$ref": "#/$defs/hooks" },
+        "agents": { "$ref": "#/$defs/hooks" },
+        "floors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "component": { "$ref": "#/$defs/name" },
+              "command": { "type": "string" },
+              "argv": { "$ref": "#/$defs/strings" },
+              "minimum": { "type": "string" },
+              "compare": { "enum": ["dpkg", "semver"] }
+            },
+            "required": ["component", "command", "argv", "minimum", "compare"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["commands", "e2e", "agents", "floors"],
+      "additionalProperties": false
+    },
+    "hooks": {
+      "type": "object",
+      "properties": {
+        "pre_activate": { "$ref": "#/$defs/hooks" },
+        "system_install": { "$ref": "#/$defs/hooks" },
+        "post_install": { "$ref": "#/$defs/hooks" },
+        "forbid": { "$ref": "#/$defs/hooks" },
+        "agents_install": { "$ref": "#/$defs/hooks" },
+        "agents_migrate": { "$ref": "#/$defs/hooks" },
+        "agents_post": { "$ref": "#/$defs/hooks" },
+        "desktop_apply": { "$ref": "#/$defs/hooks" }
+      },
+      "required": ["pre_activate", "system_install", "post_install", "forbid", "agents_install", "agents_migrate", "agents_post", "desktop_apply"],
+      "additionalProperties": false
+    },
+    "backup_paths": { "$ref": "#/$defs/hostPaths" },
+    "snapshots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "component": { "$ref": "#/$defs/name" },
+          "name": { "type": "string" },
+          "argv": { "$ref": "#/$defs/strings" },
+          "require_command": { "type": ["string", "null"] }
+        },
+        "required": ["component", "name", "argv", "require_command"],
+        "additionalProperties": false
+      }
+    },
+    "prerequisites": {
+      "type": "object",
+      "properties": { "apt": { "$ref": "#/$defs/strings" } },
+      "required": ["apt"],
+      "additionalProperties": false
+    },
+    "managed_links": { "$ref": "#/$defs/hostPaths" },
+    "force_linked_restore": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "component": { "$ref": "#/$defs/name" },
+          "path": { "$ref": "#/$defs/hostPath" },
+          "mode": { "$ref": "#/$defs/fileMode" }
+        },
+        "required": ["component", "path", "mode"],
+        "additionalProperties": false
+      }
+    },
+    "adopt_paths": { "$ref": "#/$defs/hostPaths" },
+    "preflight_detectors": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "component": { "$ref": "#/$defs/name" },
+          "argv": { "$ref": "#/$defs/strings" },
+          "match_line": { "type": "string" }
+        },
+        "required": ["component", "argv", "match_line"],
+        "additionalProperties": false
+      }
+    },
+    "skill_layout": {
+      "type": "object",
+      "properties": {
+        "legacy_roots": { "$ref": "#/$defs/hostPaths" },
+        "link_roots": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "component": { "$ref": "#/$defs/name" },
+              "target_prefix": { "type": "string" }
+            },
+            "required": ["component", "target_prefix"],
+            "additionalProperties": false
+          }
+        },
+        "excluded_subtrees": { "$ref": "#/$defs/strings" }
+      },
+      "required": ["legacy_roots", "link_roots", "excluded_subtrees"],
+      "additionalProperties": false
+    },
+    "agent_rules": {
+      "type": "object",
+      "properties": {
+        "source": { "type": ["string", "null"] },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "component": { "$ref": "#/$defs/name" },
+              "path": { "type": "string", "pattern": "^[^/~]" },
+              "force": { "type": "boolean" }
+            },
+            "required": ["component", "path", "force"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["source", "targets"],
+      "additionalProperties": false
+    },
+    "update_allowlist": { "$ref": "#/$defs/strings" },
+    "pins": {
+      "type": "object",
+      "properties": {
+        "rules": { "$ref": "#/$defs/declarations", "description": "Pin rules; fields depend on kind." },
+        "latest": { "$ref": "#/$defs/declarations", "description": "Latest declarations; fields depend on adapter." },
+        "resolved_versions": { "$ref": "#/$defs/stringMap" },
+        "flake_inputs": { "$ref": "#/$defs/strings" }
+      },
+      "required": ["rules", "latest", "resolved_versions", "flake_inputs"],
+      "additionalProperties": false
+    },
+    "skills": {
+      "type": "object",
+      "properties": {
+        "hm_root": { "type": "string", "pattern": "^[^/~]" },
+        "framework": { "$ref": "#/$defs/strings" },
+        "home_managed": { "$ref": "#/$defs/strings" },
+        "framework_manifest": {
+          "description": "The framework's skills/manifest.json, null when the framework has none.",
+          "type": ["object", "array", "null"]
+        }
+      },
+      "required": ["hm_root", "framework", "home_managed", "framework_manifest"],
+      "additionalProperties": false
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "source": { "type": "string" },
+          "target": { "type": "string" },
+          "mode": { "$ref": "#/$defs/fileMode" },
+          "policy": { "enum": ["always", "if-missing"] }
+        },
+        "required": ["source", "target", "mode", "policy"],
+        "additionalProperties": false
+      }
+    },
+    "login_shell": { "type": ["string", "null"] },
+    "pinned_versions": {
+      "$ref": "#/$defs/stringMap",
+      "description": "lib.pinnedVersionsFor.<system>: enabled components' resolved versions, core tomlkit and [pins] nixpkgs_versions."
+    }
+  },
+  "required": [
+    "schema_version", "system", "platform", "framework", "config", "components", "settings_targets", "reload_hooks",
+    "probes", "checks", "hooks", "backup_paths", "snapshots", "prerequisites", "managed_links", "force_linked_restore",
+    "adopt_paths", "preflight_detectors", "skill_layout", "agent_rules", "update_allowlist", "pins", "skills", "files",
+    "login_shell", "pinned_versions"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "name": { "type": "string", "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*$" },
+    "platform": { "enum": ["linux", "darwin"] },
+    "method": { "enum": ["nix", "official-binary", "deb", "app-archive", "external"] },
+    "profiles": {
+      "description": "Profiles where the entry applies; null: every profile.",
+      "oneOf": [{ "type": "null" }, { "type": "array", "items": { "type": "string" } }]
+    },
+    "strings": { "type": "array", "items": { "type": "string" } },
+    "stringMap": { "type": "object", "additionalProperties": { "type": "string" } },
+    "homePath": { "type": "string", "pattern": "^~/." },
+    "hostPath": { "type": "string", "pattern": "^(~|)/." },
+    "hostPaths": { "type": "array", "items": { "$ref": "#/$defs/hostPath" }, "uniqueItems": true },
+    "fileMode": { "type": "string", "pattern": "^0[0-7]{3}$" },
+    "reload": {
+      "type": "object",
+      "properties": {
+        "component": true,
+        "command": { "$ref": "#/$defs/strings" },
+        "timeout": { "type": "integer", "minimum": 1 },
+        "env": { "$ref": "#/$defs/stringMap" },
+        "unset_env": { "$ref": "#/$defs/strings" },
+        "require_command": { "type": ["string", "null"] },
+        "on_success": { "enum": ["log", "silent"] },
+        "on_failure": { "enum": ["warn", "silent"] }
+      },
+      "required": ["command", "timeout", "env", "unset_env", "require_command", "on_success", "on_failure"],
+      "additionalProperties": false
+    },
+    "hooks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "component": { "$ref": "#/$defs/name" },
+          "name": { "type": "string" },
+          "script": { "type": "string", "description": "Store path in a generation; <instance>/..., <dotsteward>/... or <store>/<name> in a mirror." },
+          "phase": { "enum": ["early", "main", "late"] },
+          "profiles": { "$ref": "#/$defs/profiles" }
+        },
+        "required": ["component", "name", "script", "phase", "profiles"],
+        "additionalProperties": false
+      }
+    },
+    "declarations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": { "component": { "$ref": "#/$defs/name" } },
+        "required": ["component"]
+      }
+    }
+  }
+}

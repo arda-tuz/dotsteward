@@ -1,0 +1,22 @@
+# Method precedence: [components.<name>].method over the component default.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+systems = ["x86_64-linux", "aarch64-darwin"]
+state_version = "25.11"
+
+[profiles]
+names = ["workstation"]
+
+[components.example-app]
+enable = true
+
+[components.example-term]
+enable = true
+method = "nix"

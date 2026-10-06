@@ -1,0 +1,62 @@
+# Two profiles on two systems with synthetic instance components:
+#   example-app    method nix (its default), packaged and checked
+#   example-term   official-binary on Linux (its default), nix on darwin
+#                  (method_by_platform), active in the workstation profile
+#   example-off    disabled: neither its module nor its package.nix is read
+#   example-linux  Linux only, disabled (the unsupported-system case enables it)
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+name = "workstation"
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+systems = ["x86_64-linux", "aarch64-darwin"]
+state_version = "25.11"
+
+[profiles]
+names = ["workstation", "fresh"]
+default = "workstation"
+check = "workstation"
+bootstrap = "fresh"
+
+[profiles.workstation]
+mode = "adopt"
+
+[profiles.fresh]
+mode = "fresh"
+
+[platform.linux.fast_path]
+desktop_contains = "example"
+detectors = ["example_detector"]
+
+[gate]
+static = ["tests/static.sh"]
+
+[components]
+order = ["example-term", "example-app"]
+
+[components.example-app]
+enable = true
+
+[components.example-term]
+enable = true
+profiles = ["workstation"]
+method_by_platform = { darwin = "nix" }
+options = { greeting = "hello from options" }
+
+[components.example-off]
+enable = false
+
+[components.example-linux]
+enable = false
+
+[pins]
+nixpkgs_versions = { hello = "hello", example-lib = "python3Packages.six" }
+
+[compat]
+host_input = "workstation"
+check_aliases = { fresh-home = "fresh" }

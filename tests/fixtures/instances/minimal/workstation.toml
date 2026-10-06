@@ -1,0 +1,14 @@
+# The smallest instance: required keys only, no components.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "25.11"
+
+[profiles]
+names = ["workstation"]

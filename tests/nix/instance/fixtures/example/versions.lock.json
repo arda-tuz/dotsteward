@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-01-01T00:00:00+00:00",
+  "nix": {
+    "version": "2.35.2",
+    "installer_url": "https://releases.example.invalid/nix/nix-2.35.2/install",
+    "installer_size": 4499,
+    "installer_sha256": "99d0ddf3c86a252730207c4cf7d2fafaca9f76d14bb98ef588307da33e264d84"
+  },
+  "nix_packages": {
+    "example-app": {
+      "expected": "1.2.3",
+      "resolved": "1.2.3"
+    }
+  }
+}

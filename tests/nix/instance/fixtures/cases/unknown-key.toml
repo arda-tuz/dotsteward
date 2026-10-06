@@ -1,0 +1,15 @@
+# Failure case: a key workstation.toml schema version 1 does not have.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "25.11"
+unknown_option = true
+
+[profiles]
+names = ["workstation"]

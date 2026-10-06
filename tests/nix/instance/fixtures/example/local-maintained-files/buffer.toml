@@ -1,0 +1,46 @@
+# Synthetic settings buffer: a buffer-only target, a target replacing a
+# component target (backup = false), key entries and a file entry.
+schema_version = 1
+
+[targets.example-extra]
+path = { linux = "~/.config/example-extra/settings.toml", darwin = "~/Library/Application Support/example-extra/settings.toml" }
+format = "toml"
+create_if_missing = true
+
+[targets.example-term]
+path = "~/.config/example-term/replaced.toml"
+format = "toml"
+create_if_missing = false
+backup = false
+
+
+[[entries]]
+id = "A1"
+target = "example-app"
+key = ["theme"]
+value = "dark"
+
+[[entries]]
+id = "E1"
+target = "example-extra"
+key = ["mode"]
+value = "fast"
+
+[[entries]]
+id = "E2"
+target = "example-extra"
+key = ["level"]
+value = 2
+
+[[entries]]
+id = "T1"
+target = "example-term"
+key = ["size"]
+value = 1
+
+[[entries]]
+id = "F1"
+kind = "file"
+path = "~/.local/bin/example-script.sh"
+source = "example-script.sh"
+mode = "0755"
