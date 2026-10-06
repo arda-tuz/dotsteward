@@ -23,11 +23,13 @@
 #                   getent, id, chsh and dscl stubs
 # The host environment is neutralized: every XDG_*, GIT_*, DOTSTEWARD_*,
 # DOTFILES_* and application variable (CODEX_*, HERDR_*, PI_*, OPENCODE_*,
-# CLAUDE*) is removed, git reads only a temporary global config with the
-# identity `dotsteward-test <dotsteward-test@example.invalid>`, TZ=UTC and the
-# C locale apply, and the platform injection points (DOTSTEWARD_ETC_SHELLS,
-# DOTSTEWARD_OS_RELEASE, DOTSTEWARD_PASSWD_CMD, DOTSTEWARD_SW_VERS) point at
-# synthetic files inside DS_TEST_ROOT.
+# CLAUDE*) is removed, and the DS_* variables the harness and its helpers own
+# are reset (any other DS_* variable is an input from the caller, such as a
+# Nix check's setup hook, and is kept). git reads only a temporary global
+# config with the identity `dotsteward-test <dotsteward-test@example.invalid>`,
+# TZ=UTC and the C locale apply, and the platform injection points
+# (DOTSTEWARD_ETC_SHELLS, DOTSTEWARD_OS_RELEASE, DOTSTEWARD_PASSWD_CMD,
+# DOTSTEWARD_SW_VERS) point at synthetic files inside DS_TEST_ROOT.
 #
 # Tests must not replace the EXIT trap; register cleanup work with ds_defer.
 #
@@ -92,14 +94,19 @@ ds_harness_init() {
   local name
   for name in $(compgen -v XDG_ || true) $(compgen -v GIT_ || true) \
     $(compgen -v DOTSTEWARD_ || true) $(compgen -v DOTFILES_ || true) \
-    $(compgen -v DS_ || true) $(compgen -v CODEX_ || true) \
-    $(compgen -v HERDR_ || true) $(compgen -v PI_ || true) \
-    $(compgen -v OPENCODE || true) $(compgen -v CLAUDE || true); do
-    case $name in
-      DS_REPO_ROOT | DS_TEST_FILE | DS_TEST_ROOT | DS_DEFERRED | DS_TEST_IDENTITY_* | DS_FIXTURE_*) ;;
-      *) unset "$name" ;;
-    esac
+    $(compgen -v CODEX_ || true) $(compgen -v HERDR_ || true) \
+    $(compgen -v PI_ || true) $(compgen -v OPENCODE || true) \
+    $(compgen -v CLAUDE || true); do
+    unset "$name"
   done
+  # Only the DS_* names the harness and its helpers own are reset; any other
+  # DS_* variable is an input from the caller (a Nix check's setup hook, for
+  # example) and is kept.
+  unset DS_CALL_LOG DS_STUB_STATE DS_SYSTEM_ROOT DS_PASSWD_FILE DS_GROUP_FILE \
+    DS_STUB_AS_ROOT DS_STUB_NAME DS_STUB_DIR DS_STUB_ENV_DEFAULT \
+    DS_HTTPFIX_URL DS_HTTPFIX_PID DS_HTTPFIX_LOG \
+    DS_FAKESSH_MAP DS_FAKESSH_LOG DS_FAKESSH_SLEEP DS_FAKESSH_FAIL \
+    DS_STDOUT DS_STDERR DS_STATUS
 
   mkdir -p "$DS_TEST_ROOT"/{home,tmp,work,state,platform,stubs}
   export HOME=$DS_TEST_ROOT/home

@@ -3,9 +3,11 @@
 #   opencode serve [--pure] [--hostname HOST] [--port PORT]
 #       a tiny HTTP server (until killed) whose GET /skill answers the skills
 #       found below $HOME/.agents/skills, $HOME/.claude/skills and
-#       ${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skills, at any depth and
-#       including hidden directories, as a JSON list of {name, description,
-#       location} sorted by name. The state value "serve-mode" selects a
+#       ${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skills, at any depth,
+#       including hidden directories and through directory links (each
+#       resolved directory is visited once, so link cycles end), as a JSON
+#       list of {name, description, location} sorted by name; location is
+#       the path through the link, not the resolved target. The state value "serve-mode" selects a
 #       failure path: "exit" (exit 1 at once) or "not-list" (/skill answers a
 #       JSON object); "normal" is the default.
 # --version prints "version" (default "1.0.0"); anything else succeeds
@@ -68,10 +70,26 @@ def frontmatter(path):
     return fields
 
 
+def walk(root):
+    # Follows directory links like OpenCode does, keeping the path through
+    # the link; a directory already seen (by its resolved path) is pruned so
+    # link cycles end.
+    seen = set()
+    entries = []
+    for directory, subdirectories, files in os.walk(root, followlinks=True):
+        real = os.path.realpath(directory)
+        if real in seen:
+            subdirectories[:] = []
+            continue
+        seen.add(real)
+        entries.append((directory, files))
+    return sorted(entries)
+
+
 def skills():
     found = {}
     for root in roots:
-        for directory, _, files in sorted(os.walk(root)):
+        for directory, files in walk(root):
             if "SKILL.md" in files:
                 path = os.path.join(directory, "SKILL.md")
                 fields = frontmatter(path)
