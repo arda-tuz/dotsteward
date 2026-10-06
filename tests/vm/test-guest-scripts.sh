@@ -45,5 +45,13 @@ for expected in '--install-nix-only' ' init ' '--framework-url' './bootstrap.sh 
   assert_contains "$clean" "$expected" "clean-install step"
 done
 
+# e2e has no default profile (--profile is required), so agent-verify always
+# passes one: the --profile argument, else the instance's current profile
+# as `dotsteward context --json` reports it.
+verify=$(text_of agent-verify)
+for expected in 'context --json' 'e2e --profile'; do
+  assert_contains "$verify" "$expected" "agent-verify step"
+done
+
 # The shared guest helpers are not a scenario.
 [[ -f $guest/common.sh ]] || ds_fail "missing guest/common.sh"
