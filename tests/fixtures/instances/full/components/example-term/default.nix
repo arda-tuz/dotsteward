@@ -4,10 +4,12 @@
   config,
   lib,
   packages,
+  profile,
   ...
 }:
 let
   component = config.dotsteward.components.example-term;
+  active = component.profiles == null || lib.elem profile component.profiles;
 in
 {
   dotsteward.components.example-term = {
@@ -48,6 +50,9 @@ in
     };
   };
 
-  # Home files may depend on the profile and on the options.
-  home.file.".example-term/greeting".text = component.options.greeting + "\n";
+  # Home files may depend on the profile and on the options (D20): the
+  # greeting is written only in the profiles the component is active in.
+  home.file.".example-term/greeting" = lib.mkIf active {
+    text = component.options.greeting + "\n";
+  };
 }
