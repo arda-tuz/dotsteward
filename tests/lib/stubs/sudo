@@ -4,10 +4,14 @@
 # -k -v -b -i -s, -u USER, -g GROUP, -p PROMPT, -C N, -D DIR, -T N,
 # --preserve-env[=LIST] and their long forms) are not passed on. NAME=value
 # words before the command set its environment, "--" ends the options.
-# Every argument (the command included) that is an absolute path below /etc,
-# /opt, /srv, /var, /usr/local, /usr/share, /usr/lib, /Applications or
-# /Library, alone or after the first "=" of an OPTION=PATH word, is moved
-# below DS_SYSTEM_ROOT, so system writes land in the fixture root. The
+# Every argument (the command included) that is an absolute path below a
+# system area (/etc, /opt, /srv, /var, /usr/local, /usr/share, /usr/lib,
+# /Applications, /Library) or an area a user can write on a real host
+# (/home, /root, /tmp, /run, /dev/shm, /mnt, /media, /private, /Volumes,
+# /Users), alone or after the first "=" of an OPTION=PATH word, is moved
+# below DS_SYSTEM_ROOT, so no write reaches the host. Paths inside
+# DS_TEST_ROOT (HOME and TMPDIR included) stay in place, and /Users stays
+# for dscl, which takes /Users/<name> as a record path. The
 # command runs with DS_STUB_AS_ROOT=1, which the id, dpkg, apt-get, chsh and
 # dscl stubs read as root rights. Ownership cannot be given away by the test
 # user, so install runs without its -o/-g options (the call log keeps them)
@@ -165,13 +169,17 @@ if [[ $(basename -- "$1") == install ]]; then
   set -- "${kept[@]}"
 fi
 
+# system_path PATH PROGRAM: PATH as PROGRAM sees it below the fixture root.
 system_path() {
-  local path=$1 prefix
+  local path=$1 prefix prefixes
   if [[ $path == "$DS_TEST_ROOT"/* || $path == "$DS_TEST_ROOT" ]]; then
     printf '%s' "$path"
     return
   fi
-  for prefix in /etc /opt /srv /var /usr/local /usr/share /usr/lib /Applications /Library; do
+  prefixes=(/etc /opt /srv /var /usr/local /usr/share /usr/lib /Applications /Library
+    /home /root /tmp /run /dev/shm /mnt /media /private /Volumes)
+  [[ $(basename -- "$2") == dscl ]] || prefixes+=(/Users)
+  for prefix in "${prefixes[@]}"; do
     if [[ $path == "$prefix" || $path == "$prefix"/* ]]; then
       printf '%s' "$DS_SYSTEM_ROOT$path"
       return
@@ -180,12 +188,13 @@ system_path() {
   printf '%s' "$path"
 }
 
+program=$1
 command=()
 for arg in "$@"; do
   if [[ $arg == /* ]]; then
-    command+=("$(system_path "$arg")")
+    command+=("$(system_path "$arg" "$program")")
   elif [[ $arg =~ ^(-[^=]*=)(/.*)$ ]]; then
-    command+=("${BASH_REMATCH[1]}$(system_path "${BASH_REMATCH[2]}")")
+    command+=("${BASH_REMATCH[1]}$(system_path "${BASH_REMATCH[2]}" "$program")")
   else
     command+=("$arg")
   fi

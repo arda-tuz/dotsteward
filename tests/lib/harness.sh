@@ -16,8 +16,8 @@
 #                   assert_calls, ds_calls_of and ds_call_count
 #   DS_STUB_STATE   per-stub state (DS_STUB_STATE/<stub>/...), see "Stubs"
 #   DS_SYSTEM_ROOT  fixture root that stands in for /: the sudo stub moves
-#                   system paths below it, the package stubs keep their
-#                   databases next to it
+#                   system paths and the host's user-writable areas below
+#                   it, the package stubs keep their databases next to it
 #   DS_PASSWD_FILE, DS_GROUP_FILE
 #                   the user database behind DOTSTEWARD_PASSWD_CMD and the
 #                   getent, id, chsh and dscl stubs
@@ -118,7 +118,8 @@ ds_harness_init() {
   export DS_STUB_STATE=$DS_TEST_ROOT/stubs
   export DS_SYSTEM_ROOT=$DS_TEST_ROOT/system
   mkdir -p "$DS_SYSTEM_ROOT"/{etc/default,etc/apt/sources.list.d,etc/apt/keyrings,opt,srv} \
-    "$DS_SYSTEM_ROOT"/{usr/local/bin,usr/share,usr/lib,var/lib,Applications,Library}
+    "$DS_SYSTEM_ROOT"/{usr/local/bin,usr/share,usr/lib,var/lib,Applications,Library} \
+    "$DS_SYSTEM_ROOT"/{home,root,tmp,run}
 
   export GIT_CONFIG_NOSYSTEM=1
   export GIT_CONFIG_GLOBAL=$DS_TEST_ROOT/gitconfig
