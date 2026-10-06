@@ -94,7 +94,8 @@ state_set '.step = "done"'
 write_flake github
 released_run second-feature 0.1.2
 base=$(git -C "$ct_inst" rev-parse HEAD)
-state_set '.trial_switched = true'
+# An earlier recovery failed (its rebuild): the upgrade's switch replaces it.
+state_set '.trial_switched = true | .recovery = "failed"'
 printf 'switched\n' >"$rt_live"
 stand_in_fail e2e '--profile main --expected-remote-base*'
 reset_calls
@@ -104,6 +105,8 @@ assert_contains "$(cat "$ct_inst/flake.nix")" 'dotsteward.url = "github:example-
 commit=$(git -C "$ct_inst" rev-parse HEAD)
 assert_eq "$commit" "$(field .instance_commit)" "recorded instance commit"
 assert_eq false "$(field .trial_switched)" "the upgrade's switch replaced the trial generation"
+assert_eq null "$(field .recovery)" "the upgrade's switch replaced the failed recovery"
+assert_not_contains "$DS_STDERR" "recovery"
 assert_call_count 0 dotsteward-update 'publish*'
 stand_in_clear e2e
 reset_calls

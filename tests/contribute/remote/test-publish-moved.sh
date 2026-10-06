@@ -4,9 +4,11 @@
 # or while CI runs, the branch is rebased onto the new main and the run goes
 # back to check (exit 5, the tested commit and the trial are cleared); a
 # conflicting rebase is aborted and left to the user. A pull request that
-# GitHub refuses to merge, or a merge that lands on a main that moved at the
-# last moment (tree mismatch), is red: nothing is released and the trial
-# switch is recovered. A closed pull request is refused.
+# GitHub refuses to merge is red: main is untouched and the trial switch is
+# recovered. A merge that lands on a main that moved at the last moment
+# (tree mismatch) releases nothing: the branch is rebased onto the merged
+# main and the run goes back to check, whose merged main is then published
+# and released. A closed pull request is refused.
 # shellcheck source=tests/contribute/remote/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/remote/helpers.sh"
 
@@ -50,6 +52,7 @@ git -C "$ct_clone" fetch -q origin
 git -C "$ct_clone" reset -q --hard origin/main
 checked_branch() {
   printf 'feature\n' >"$ct_clone/feature-two.txt"
+  printf '0.1.1\n' >"$ct_clone/VERSION"
   git -C "$ct_clone" add -A
   git -C "$ct_clone" commit -q -m 'feat(example): the feature, again'
   mark_checked
@@ -91,23 +94,55 @@ assert_eq "$(git -C "$ct_clone" rev-parse 'HEAD^{tree}')" "$(upstream_tree)" "tr
 
 # --- a merge onto a main that moved at the last moment: tree mismatch -----------------------
 
+# The squash commit holds the fix and a concurrent change, so its tree is
+# not the tested one: nothing is released; the branch is rebased onto it
+# (its commits are in the squash, so it becomes upstream main) and the run
+# goes back to check (exit 5) with the merged pull request kept. The live
+# generation keeps the trial framework until the next trial.
 checked_run race
 mark_trialled full true
+race_tree=$(git -C "$ct_clone" rev-parse 'HEAD^{tree}')
 printf 'switched\n' >"$rt_live"
 hub_knob merge race
 reset_calls
-assert_exit 1 run_contribute publish
+assert_exit 5 run_contribute publish
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: tree mismatch: the published commit"
-assert_contains "$DS_STDERR" "but the tested tree is $(git -C "$ct_clone" rev-parse --short=12 'HEAD^{tree}') (origin/main moved during the merge); nothing is released. Validate origin/main with a new run"
-assert_eq "$(upstream_main)" "$(field .merged_sha)" "merged commit recorded for the report"
-assert_eq publish "$(field .step)" "step after a tree mismatch"
-assert_eq pinned "$(live)" "live framework after a tree mismatch"
+assert_contains "$DS_STDERR" "but the tested tree is ${race_tree:0:12} (origin/main moved during the merge); nothing is released"
+assert_contains "$DS_STDOUT" "[dotsteward] the run is back at the framework gate; next: dotsteward contribute check, then trial and publish again"
+squash=$(upstream_main)
+race_pr=$(field .pr)
+assert_eq "$squash" "$(git -C "$ct_clone" rev-parse HEAD)" "branch after the tree mismatch"
+assert_eq "" "$(git -C "$ct_clone" status --porcelain)" "clone after the tree mismatch"
+state_json | assert_json - ".step == \"check\" and .test_sha == null and .tested_tree == null and .trial == null
+  and .trial_sha == null and .trial_switched == true and .merged_sha == \"$squash\" and .pr != null"
+assert_eq switched "$(live)" "live framework after a tree mismatch"
+assert_eq "" "$(instance_calls)" "instance commands after a tree mismatch"
 assert_exit 1 run_contribute release
-assert_contains "$DS_STDERR" "is not published yet; next: dotsteward contribute publish"
+assert_contains "$DS_STDERR" "is not published yet; next: dotsteward contribute check"
+
+# check validates upstream main as it is (the branch has no commits of its
+# own), the trial switches to it, and publish takes it as the published
+# commit: the merged pull request is neither merged nor opened again.
+hub_knob merge normal
+assert_exit 0 run_contribute check
+assert_contains "$DS_STDOUT" "[dotsteward] fix/race has no commits after origin/main: its pull request is merged, so the merged origin/main is checked"
+assert_eq "$squash" "$(field .test_sha)" "checked commit after the tree mismatch"
+assert_exit 0 run_contribute trial
+assert_eq "git+file://$ct_clone?rev=$squash" "$(live)" "live framework after the second trial"
+reset_calls
+assert_exit 0 run_contribute publish
+assert_call_count 0 gh 'pr merge*'
+assert_call_count 0 gh 'pr create*'
+assert_contains "$DS_STDOUT" "[dotsteward] verified: ${squash:0:12} on origin/main has the tested tree"
+state_json | assert_json - ".step == \"release\" and .merged_sha == \"$squash\" and .test_sha == \"$squash\"
+  and .pr == \"$race_pr\""
+assert_exit 0 run_contribute release
+assert_eq "$squash" "$(git -C "$ct_upstream_bare" rev-parse 'refs/tags/v0.1.1^{commit}')" "released commit"
+assert_eq "$(field .tested_tree)" "$(git -C "$ct_upstream_bare" rev-parse 'refs/tags/v0.1.1^{tree}')" "tree of the release"
 
 # --- a closed pull request ----------------------------------------------------------------
 
-checked_run closed
+checked_run closed 0.1.2
 mark_trialled full false
 hub_knob merge normal
 hub_knob checks fail

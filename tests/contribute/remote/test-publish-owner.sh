@@ -138,3 +138,37 @@ reset_calls
 assert_exit 0 run_contribute publish
 assert_call_count 0 gh 'workflow run*'
 assert_contains "$DS_STDOUT" "[dotsteward] clean-install.yml on $(git -C "$ct_clone" rev-parse --short=12 HEAD): success"
+
+# --- VERSION must equal the next release before main is touched ----------------------------
+
+# VERSION 0.2.0 while the next release is v0.1.1: nothing is pushed, no
+# pull request is opened, main is untouched, the trial switch is recovered.
+checked_run wrong-version 0.2.0
+mark_trialled full true
+sha4=$(git -C "$ct_clone" rev-parse HEAD)
+main4_before=$(upstream_main)
+printf 'switched\n' >"$rt_live"
+reset_calls
+assert_exit 1 run_contribute publish
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: VERSION is 0.2.0 at ${sha4:0:12}, but the next release is v0.1.1: set VERSION to 0.1.1 in the fix, then run: dotsteward contribute check; nothing is published"
+assert_call_count 0 gh 'pr *'
+[[ -z $(git -C "$ct_upstream_bare" for-each-ref refs/heads/fix/wrong-version) ]] || ds_fail "pushed despite the VERSION mismatch"
+assert_eq "$main4_before" "$(upstream_main)" "upstream main after a VERSION mismatch"
+assert_eq pinned "$(live)" "live framework after a VERSION mismatch"
+state_json | assert_json - '.step == "publish" and .merged_sha == null and .pr == null'
+
+# A release tagged while CI ran moves the next release: checked again right
+# before the merge, so nothing is merged.
+printf '0.1.1\n' >"$ct_clone/VERSION"
+git -C "$ct_clone" commit -q -a -m 'fix(example): VERSION of the next release'
+mark_checked
+mark_trialled full false
+sha5=$(git -C "$ct_clone" rev-parse HEAD)
+hub_knob ci-tags v0.1.1
+reset_calls
+assert_exit 1 run_contribute publish
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: VERSION is 0.1.1 at ${sha5:0:12}, but the next release is v0.1.2: set VERSION to 0.1.2 in the fix, then run: dotsteward contribute check; nothing is published"
+assert_call_count 1 gh 'pr checks * --watch *'
+assert_call_count 0 gh 'pr merge*'
+assert_eq "$main4_before" "$(upstream_main)" "upstream main after a release during CI"
+assert_eq publish "$(field .step)" "step after a release during CI"

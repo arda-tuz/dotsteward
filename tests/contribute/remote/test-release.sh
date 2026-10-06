@@ -2,7 +2,8 @@
 # shellcheck disable=SC2154 # DS_* and ct_* variables come from the harness and the helpers
 # Q5, `dotsteward contribute release` in owner mode (SPEC 9.4 step 9, D11):
 # the next patch tag after the newest stable v* tag of the upstream (v0.0.1
-# without any), only when VERSION of the merged commit equals it; an
+# without any), only when VERSION of the merged commit equals it (publish
+# checks it before the merge, release again as the last safety net); an
 # annotated tag on the merged commit with a UTC tagger date, pushed, then
 # `gh release create TAG --generate-notes --verify-tag`. Re-runs reuse the
 # tag and the release; a tag elsewhere is refused.
@@ -21,18 +22,21 @@ state_set '.step = "done"'
 
 # --- VERSION must equal the next tag ----------------------------------------------------
 
-checked_run wrong-version 0.2.0
-mark_trialled full false
-assert_exit 0 run_contribute publish
+# publish already refuses a VERSION other than the next release; release
+# checks it again, as the last safety net, for a release tagged after the
+# merge (v0.1.1 elsewhere, so the next release is v0.1.2).
+published_run late-tag
 merged=$(field .merged_sha)
+git -C "$ct_upstream_bare" tag -a v0.1.1 -m 'dotsteward v0.1.1' "$merged^"
 reset_calls
 assert_exit 1 run_contribute release
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: VERSION is 0.2.0 at the merged commit ${merged:0:12}, but the next release is v0.1.1: the fix must set VERSION to 0.1.1 (VERSION equals the released tag); nothing is released"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: VERSION is 0.1.1 at the merged commit ${merged:0:12}, but the next release is v0.1.2: the fix must set VERSION to 0.1.2 (VERSION equals the released tag); nothing is released"
 assert_eq release "$(field .step)" "step after a VERSION mismatch"
 assert_call_count 0 gh 'release *'
-if git -C "$ct_upstream_bare" rev-parse --verify --quiet refs/tags/v0.1.1 >/dev/null; then
+if git -C "$ct_upstream_bare" rev-parse --verify --quiet refs/tags/v0.1.2 >/dev/null; then
   ds_fail "tagged despite the VERSION mismatch"
 fi
+git -C "$ct_upstream_bare" tag -d v0.1.1 >/dev/null
 state_set '.step = "done"'
 
 # --- the release ------------------------------------------------------------------------

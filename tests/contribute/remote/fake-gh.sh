@@ -17,6 +17,8 @@
 #                  before the squash) or refuse (default normal)
 #   ci-moves-main  a file name: while `pr checks --watch` runs, a commit
 #                  writing that file lands on main (once)
+#   ci-tags        a tag name: while `pr checks --watch` runs, that tag
+#                  (annotated) lands on main of the repository (once)
 #
 # Supported commands (--jq/-q FILTER is applied to the JSON answer):
 #   auth status; api user; config get git_protocol; api repos/R;
@@ -245,6 +247,11 @@ case "${1:-} ${2:-}" in
           if [[ -f $hub/knobs/ci-moves-main ]]; then
             move_main "$(jq -r .repo "$(pr_file_of "$3")")" "$(<"$hub/knobs/ci-moves-main")"
             rm -f "$hub/knobs/ci-moves-main"
+          fi
+          if [[ -f $hub/knobs/ci-tags ]]; then
+            tag=$(<"$hub/knobs/ci-tags")
+            git -C "$(bare_of "$(jq -r .repo "$(pr_file_of "$3")")")" tag -a "$tag" -m "dotsteward $tag" refs/heads/main
+            rm -f "$hub/knobs/ci-tags"
           fi
           printf 'All checks were successful\nci\tpass\t1m\n'
           ;;

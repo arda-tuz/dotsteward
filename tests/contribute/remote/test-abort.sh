@@ -4,8 +4,9 @@
 # switch): ends the run (step done, outcome aborted); after a trial switch
 # it first runs rebuild --switch and e2e without an override, so the live
 # generation returns to the pinned framework. A recovery that fails keeps
-# the run open (abort can be repeated); an open pull request is left alone
-# and named. A finished run cannot be aborted.
+# the run open; abort repeated resumes it (only the e2e once the rebuild
+# passed). An open pull request is left alone and named. A finished run
+# cannot be aborted.
 # shellcheck source=tests/contribute/remote/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/remote/helpers.sh"
 
@@ -52,17 +53,13 @@ assert_eq publish "$(field .step)" "step after a failed recovery"
 assert_eq failed "$(field .recovery)" "recovery after a failed e2e"
 stand_in_clear e2e
 
-# Once e2e passes, abort recovers and ends the run (the generation is marked
-# as switched again, so the whole recovery runs).
+# The generation was switched back before the e2e failed: once e2e passes,
+# abort runs the rest of the recovery (its e2e) and ends the run.
 assert_eq false "$(field .trial_switched)" "trial_switched after the rebuild of a failed recovery"
-state_set '.trial_switched = true'
-printf 'switched\n' >"$rt_live"
+assert_eq pinned "$(live)" "live framework after the rebuild of a failed recovery"
 reset_calls
 assert_exit 0 run_contribute abort --id "$(current_id)"
-assert_eq "$(
-  call_line dotsteward-rebuild --profile main --switch
-  call_line dotsteward-e2e --profile main
-)" "$(instance_calls)" "calls of the recovery"
+assert_eq "$(call_line dotsteward-e2e --profile main)" "$(instance_calls)" "calls of the resumed recovery"
 assert_contains "$DS_STDOUT" "[dotsteward] recovery done: the live generation and its framework skills use the instance's pinned framework again"
 assert_contains "$DS_STDOUT" "[dotsteward] the pull request $pr stays open; close it if it is no longer wanted"
 assert_eq pinned "$(live)" "live framework after abort"

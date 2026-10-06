@@ -131,7 +131,9 @@ stand_in_clear rebuild
 
 # --- build-only -------------------------------------------------------------------------------
 
-state_set '.trial_switched = false'
+# The problem is fixed and the generation switched back by hand: nothing is
+# left to recover.
+state_set '.trial_switched = false | .recovery = null'
 rm -f "$rt_live"
 reset_calls
 assert_exit 0 run_contribute trial --build-only
