@@ -37,8 +37,13 @@ let
 
   configPath = "~/.config/herdr/config.toml";
 
-  # The login shell check needs the zsh of the shell component.
-  shellEnabled = (config.dotsteward.components.shell or { enable = false; }).enable;
+  # The login shell check needs the zsh of the shell component, so it runs
+  # only where that component is active: its profiles scope the hook.
+  shell =
+    config.dotsteward.components.shell or {
+      enable = false;
+      profiles = null;
+    };
 in
 {
   dotsteward.components.herdr = {
@@ -89,10 +94,11 @@ in
 
     checks = {
       commands = [ "herdr" ];
-      e2e = lib.optional shellEnabled {
+      e2e = lib.optional shell.enable {
         name = "herdr-login-zsh";
         script = ./e2e-login-zsh.sh;
         phase = "main";
+        inherit (shell) profiles;
       };
     };
 
