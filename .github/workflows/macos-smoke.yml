@@ -1,0 +1,40 @@
+name: macos-smoke
+
+# The macOS smoke test (tests/ci/macos-smoke.sh): on a macos-14 arm64
+# runner, the pinned Nix through stage 0 (--install-nix-only), a new
+# aarch64-darwin instance from `dotsteward init` with the darwin methods,
+# rebuild --build-only and --switch in the runner's home, the login shell
+# and the E2E checks. Manual only: macOS minutes are expensive, so it runs
+# when a release needs a real Mac.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  smoke:
+    runs-on: macos-14
+    timeout-minutes: 120
+    env:
+      # Authenticated GitHub fetches of the locked flake inputs. Nothing else
+      # is configured: the CLI enables the Nix features it needs, as on a
+      # Mac where stage 0 installed Nix.
+      NIX_CONFIG: access-tokens = github.com=${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # One step: stage 0 adds nothing to GITHUB_PATH, so Nix is on PATH
+      # only inside the script that sourced its profile.
+      - name: Smoke test (Nix, init, rebuild, login shell, e2e)
+        run: bash tests/ci/macos-smoke.sh
