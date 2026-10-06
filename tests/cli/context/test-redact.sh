@@ -100,3 +100,93 @@ printf '\n[gate]\nbogus = 1\n' >>"$bad/workstation.toml"
 assert_exit 1 ds_cli --instance "$bad" doctor --json --redact
 leaks "$DS_STDOUT"
 assert_eq null "$(jq -c .context <<<"$DS_STDOUT")"
+
+# An invalid configuration still names its private values in the config
+# check's problems; --redact removes them (the raw identity and remote of
+# workstation.toml are redaction terms, and the quoted values of the
+# problems go), and keeps the schema facts that make the problems useful.
+# Schema problems: the username and both homes do not match their patterns.
+private=$DS_TEST_ROOT/instances/private
+mkdir -p "$private"
+cat >"$private/workstation.toml" <<'TOML'
+schema_version = 1
+
+[identity]
+username = "Alice Smith"
+home = "/home/example Carol"
+darwin_home = "/Users/example Danvers"
+
+[instance]
+remote = "git@github.com:carol-corp/carol-dotfiles.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]
+TOML
+assert_exit 1 ds_cli --instance "$private" doctor --json
+plain=$DS_STDOUT
+assert_contains "$plain" '\"Alice Smith\" does not match'
+assert_contains "$plain" '\"/Users/example Danvers\" does not match'
+assert_exit 1 ds_cli --instance "$private" doctor --json --redact
+redacted=$DS_STDOUT
+for term in Alice Carol Smith Danvers; do
+  assert_not_contains "$redacted" "$term" "redacted report of an invalid configuration leaks [$term]"
+done
+leaks "$redacted"
+assert_eq null "$(jq -c .context <<<"$redacted")"
+assert_eq "$(jq -c '[.checks[] | [.id, .status]]' <<<"$plain")" "$(jq -c '[.checks[] | [.id, .status]]' <<<"$redacted")"
+assert_eq "$(jq '.checks[0].details.problems | length' <<<"$plain")" \
+  "$(jq '.checks[0].details.problems | length' <<<"$redacted")"
+assert_contains "$(jq -r '.checks[0].details.problems[]' <<<"$redacted")" \
+  'identity.username: "<redacted>" does not match "^[A-Za-z_][A-Za-z0-9_.-]*$"'
+assert_exit 1 ds_cli --instance "$private" doctor --redact
+for term in Alice Carol Smith Danvers; do
+  assert_not_contains "$DS_STDOUT" "$term" "redacted human report of an invalid configuration leaks [$term]"
+done
+
+# Semantic problems: a username that is not a Linux user name, the remote's
+# owner in a profile role and its repository in a profile table name, and an
+# instance component (a private name, as in the context) in a problem path.
+# The reserved profile name is a schema fact and stays.
+cat >"$private/workstation.toml" <<'TOML'
+schema_version = 1
+
+[identity]
+username = "Carol"
+
+[instance]
+remote = "git@github.com:carol-corp/carol-dotfiles.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main", "names"]
+default = "carol-corp"
+
+[profiles.carol-dotfiles]
+mode = "fresh"
+
+[components.secret-tool]
+enable = true
+source = "instance"
+profiles = ["ghost"]
+TOML
+assert_exit 1 ds_cli --instance "$private" doctor --json
+plain=$DS_STDOUT
+for term in '\"Carol\" is not a valid Linux user name' '\"carol-corp\" is not in profiles.names' \
+  'unknown key profiles.carol-dotfiles' components.secret-tool.profiles '\"names\" is reserved'; do
+  assert_contains "$plain" "$term"
+done
+assert_exit 1 ds_cli --instance "$private" doctor --json --redact
+redacted=$DS_STDOUT
+for term in Carol carol-corp carol-dotfiles secret-tool ghost; do
+  assert_not_contains "$redacted" "$term" "redacted report of an invalid configuration leaks [$term]"
+done
+assert_eq "$(jq '.checks[0].details.problems | length' <<<"$plain")" \
+  "$(jq '.checks[0].details.problems | length' <<<"$redacted")"
+problems=$(jq -r '.checks[0].details.problems[]' <<<"$redacted")
+assert_contains "$problems" 'is not a valid Linux user name'
+assert_contains "$problems" 'profiles.names[1]: "names" is reserved'
