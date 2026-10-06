@@ -188,10 +188,12 @@ pkgs.runCommand "dotsteward-check-template-full"
       grep -qx 'export GIT_EDITOR="code --wait"' "$vars" || fail "GIT_EDITOR is not code --wait in $vars"
     done
 
-    # example-term reads its options, and its agent rules link exists only
-    # in the profiles it is active in (workstation).
+    # example-term reads its options, and its greeting and agent rules link
+    # exist only in the profiles it is active in (workstation).
     [[ $(<"$files/.example-term/greeting") == "hello from the full instance" ]] ||
       fail "the example-term greeting: $(<"$files/.example-term/greeting")"
+    [[ ! -e ${checks.home-fresh}/home-files/.example-term/greeting ]] ||
+      fail "example-term writes its greeting in the fresh profile"
     [[ ! -e ${checks.home-fresh}/home-files/.example-term/AGENTS.md ]] ||
       fail "example-term is active in the fresh profile"
     [[ -e ${checks.home-fresh}/home-files/.claude/CLAUDE.md ]] ||
