@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "component": "shell",
+  "flake_inputs": {},
+  "versions_lock": {
+    "nix_packages": {
+      "starship": {
+        "expected": "1.26.0",
+        "official_tag": "v1.26.0",
+        "tag_revision": "fca92d8dcbd5981b0160af2f7ed7a430b6475a72",
+        "source_nix_sha256": "sha256-pStNE8SMMVavL3ld6RO+5QQRJPXpqlU3asccS2tUoMQ=",
+        "cargo_nix_sha256": "sha256-IO/H75FKU3/2oAJ8AKerGujMDfun8w4fV7gETMxWOt0=",
+        "resolved": "1.26.0"
+      },
+      "zsh": {
+        "expected": "locked nixpkgs package",
+        "resolved": "5.9.1"
+      }
+    }
+  }
+}
