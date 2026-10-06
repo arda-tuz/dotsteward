@@ -1,0 +1,11 @@
+{
+  "name": "example-tools",
+  "version": "1.2.3",
+  "description": "Synthetic dependency of the npm-bundle fixture.",
+  "license": "MIT",
+  "bin": {
+    "alpha": "bin/alpha.js",
+    "example-app": "bin/example-app.js",
+    "example-term": "bin/example-term.js"
+  }
+}

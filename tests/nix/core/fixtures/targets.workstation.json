@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "targets": {
+    "alpha": {
+      "component": "example-app",
+      "path": "~/.config/example-app/alpha.json",
+      "format": "json",
+      "create_if_missing": true,
+      "create_mode": "0644",
+      "backup": true,
+      "reload": null
+    },
+    "beta": {
+      "component": "example-term",
+      "path": "~/.config/example-term/beta.toml",
+      "format": "toml",
+      "create_if_missing": true,
+      "create_mode": "0600",
+      "backup": true,
+      "reload": "example-term-reload"
+    },
+    "delta": {
+      "component": "example-term",
+      "path": "~/.config/example-term/delta.jsonc",
+      "format": "jsonc",
+      "create_if_missing": false,
+      "create_mode": "0644",
+      "backup": false,
+      "reload": {
+        "command": ["example-term", "reload", "{home}"],
+        "timeout": 5,
+        "env": {},
+        "unset_env": [],
+        "require_command": null,
+        "on_success": "silent",
+        "on_failure": "warn"
+      }
+    }
+  },
+  "reload_hooks": {
+    "example-term-reload": {
+      "component": "example-term",
+      "command": ["example-term", "server", "reload-config"],
+      "timeout": 15,
+      "env": { "HOME": "{home}" },
+      "unset_env": ["EXAMPLE_TERM_SOCKET"],
+      "require_command": "example-term",
+      "on_success": "log",
+      "on_failure": "silent"
+    }
+  }
+}

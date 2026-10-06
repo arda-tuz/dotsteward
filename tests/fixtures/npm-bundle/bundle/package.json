@@ -1,0 +1,9 @@
+{
+  "name": "example-bundle",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "dependencies": {
+    "example-tools": "1.2.3"
+  }
+}
