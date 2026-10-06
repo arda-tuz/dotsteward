@@ -1,0 +1,52 @@
+# Synthetic settings buffer for the JSONC tests of the settings engine.
+#
+# delta is an editor-style application whose settings file is JSONC (it may
+# hold comments and trailing commas); epsilon is a plain JSON application
+# that must stay unaffected by delta's problems. The whole-file entry keeps a
+# commented JSONC file byte for byte: whole files are never parsed.
+schema_version = 1
+
+[targets.delta]
+path = "~/.config/delta/settings.json"
+format = "jsonc"
+create_if_missing = true
+create_mode = "0644"
+
+[targets.epsilon]
+path = "~/.config/epsilon/settings.json"
+format = "json"
+create_if_missing = true
+
+
+[[entries]]
+id = "delta-size"
+target = "delta"
+key = ["editor.fontSize"]
+value = 14
+
+[[entries]]
+id = "delta-theme"
+target = "delta"
+key = ["workbench.colorTheme"]
+value = "dark"
+
+[[entries]]
+id = "delta-exclude"
+target = "delta"
+key = ["files.exclude"]
+
+[entries.value]
+"**/.git" = true
+
+[[entries]]
+id = "delta-keys"
+kind = "file"
+path = "~/.config/delta/keybindings.json"
+source = "delta-keybindings.json"
+mode = "0644"
+
+[[entries]]
+id = "epsilon-mode"
+target = "epsilon"
+key = ["mode"]
+value = "fast"

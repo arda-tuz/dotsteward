@@ -1,0 +1,7 @@
+{
+  "editor.fontSize": 14,
+  "workbench.colorTheme": "dark",
+  "files.exclude": {
+    "**/.git": true
+  }
+}

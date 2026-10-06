@@ -1,0 +1,4 @@
+// Key bindings of delta; comments are fine in a whole-file entry.
+[
+  { "key": "ctrl+k", "command": "delta.clear" }, // clear the view
+]

@@ -1,0 +1,15 @@
+{
+  "workbench.colorTheme": "dark",
+  "http.proxy": "http://proxy.example.invalid:8080",
+  "search.pattern": "/* not a comment */",
+  "quoted": "a\"//b",
+  "backslash": "c:\\",
+  "list": [
+    "x,",
+    "]"
+  ],
+  "editor.fontSize": 14,
+  "files.exclude": {
+    "**/.git": true
+  }
+}
