@@ -426,13 +426,27 @@ def _terms(
     return sorted(set(substrings), key=len, reverse=True), sorted(set(words), key=len, reverse=True)
 
 
+# Fixed file names of the framework that the checks quote. They are public
+# and stay, even when a private word is their stem (the template's remote
+# repository "workstation" and workstation.toml).
+_PUBLIC_NAMES = (config.CONFIG_FILE,)
+
+
 def _replacer(substrings: Sequence[str], words: Sequence[str]) -> Callable[[str], str]:
     alternatives = [re.escape(term) for term in substrings]
     alternatives += [rf"(?<![A-Za-z0-9]){re.escape(term)}(?![A-Za-z0-9])" for term in words]
     if not alternatives:
         return lambda text: text
-    pattern = re.compile("|".join(alternatives))
-    return lambda text: pattern.sub(REDACTED, text)
+    # The public names come first: at the same position the first matching
+    # alternative wins, so a public name is kept whole, while a private term
+    # that starts earlier (a home path holding the instance) still goes.
+    public = [rf"(?<![A-Za-z0-9]){re.escape(name)}(?![A-Za-z0-9])" for name in _PUBLIC_NAMES]
+    pattern = re.compile("|".join(public + alternatives))
+
+    def replace(match: re.Match[str]) -> str:
+        return match.group() if match.group() in _PUBLIC_NAMES else REDACTED
+
+    return lambda text: pattern.sub(replace, text)
 
 
 def _map_strings(value: Any, replace: Callable[[str], str]) -> Any:
