@@ -125,7 +125,9 @@ git_top=$(git -C "$repo_path" rev-parse --show-toplevel 2>/dev/null) || git_top=
 if [[ -z $git_top || $(cd -P -- "$git_top" && pwd) != "$repo_path" ]]; then
   die "the instance is not the root of a git repository: $repo_path"
 fi
-git_status=$(git -C "$repo_path" status --porcelain) ||
+# --untracked-files=normal overrides the user's status.showUntrackedFiles:
+# the host input copies the whole checkout, untracked files included.
+git_status=$(git -C "$repo_path" status --porcelain --untracked-files=normal) ||
   die "cannot read the git status of the instance: $repo_path"
 untracked=()
 changed=()
