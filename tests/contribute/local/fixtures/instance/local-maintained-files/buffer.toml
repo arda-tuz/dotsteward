@@ -1,0 +1,22 @@
+# Settings buffer of the synthetic contribute instance: one buffer target and
+# two entries. Their target name and entry ids are instance-leak terms; the
+# values are never read by contribute.
+schema_version = 1
+
+[targets.example-term-state]
+path = "~/.config/example-term/state.json"
+format = "json"
+
+[[entries]]
+id = "term-theme"
+kind = "key"
+target = "example-term-state"
+key = "theme"
+value = "sentinel-value"
+
+[[entries]]
+id = "term-font"
+kind = "key"
+target = "example-term-state"
+key = "font"
+absent = true
