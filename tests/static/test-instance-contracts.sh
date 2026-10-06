@@ -215,7 +215,13 @@ fails protected "home/AGENTS.md: protected file is missing"
 fresh
 mkdir -p agent/overlays
 printf 'Extra steps.\n' >agent/overlays/dotsteward-update.md
+# README.md documents the directory (the template ships one); it is not an
+# overlay.
+printf '# Overlays\n' >agent/overlays/README.md
 assert_exit 0 static --only overlays
+printf 'Extra steps.\n' >agent/overlays/README.txt
+fails overlays "agent/overlays/README.txt: README.txt is not a framework skill"
+rm agent/overlays/README.txt
 printf 'Extra steps.\n' >agent/overlays/example-skill.md
 fails overlays "agent/overlays/example-skill.md: example-skill is not a framework skill"
 fresh
