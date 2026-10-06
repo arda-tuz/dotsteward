@@ -51,3 +51,16 @@ assert_contains "$DS_STDERR" "skill installer failed: alpha (exit 5)"
 set_installer "[\"$DS_TEST_ROOT/bin/missing-installer\", \"{source}\"]"
 assert_exit 1 run_agents install
 assert_contains "$DS_STDERR" "skill installer not found: $DS_TEST_ROOT/bin/missing-installer"
+
+# A dangling managed link at the destination (the legacy copy it pointed to
+# is gone) is removed before the installer runs, so the installer never
+# writes through it into the legacy root.
+set_installer "[\"$installer\", \"add\", \"{source}\", \"{name}\", \"{home}\", \"--name={name}\"]"
+export EXAMPLE_INSTALLER_MODE=copy
+mkdir -p "$HOME/.codex/skills"
+ln -s ../../.codex/skills/alpha "$HOME/.agents/skills/alpha"
+assert_exit 0 run_agents install
+assert_contains "$DS_STDOUT" "removed dangling skill link: $HOME/.agents/skills/alpha"
+[[ -d $HOME/.agents/skills/alpha && ! -L $HOME/.agents/skills/alpha ]] || ds_fail "the installer writes a physical copy"
+[[ ! -e $HOME/.codex/skills/alpha ]] || ds_fail "nothing is written through the dangling link"
+assert_exit 0 run_agents check
