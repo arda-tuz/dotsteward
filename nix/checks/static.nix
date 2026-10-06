@@ -28,6 +28,12 @@ in
 cli.mkTestCheck {
   name = "static";
   paths = [ "tests/static" ];
+  # The packaged CLI compares instances with the template's own bytes, so
+  # the instance copied from the template below keeps them too.
+  keepShebangs = [
+    "template/.dotsteward/cli.sh"
+    "template/bootstrap.sh"
+  ];
   nativeBuildInputs = [
     pkgs.shellcheck
     pkgs.gnutar

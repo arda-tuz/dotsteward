@@ -135,6 +135,10 @@ pkgs.stdenvNoCC.mkDerivation {
   nativeBuildInputs = [ pkgs.makeWrapper ];
   # patchShebangs resolves `#!/usr/bin/env bash` against the host bash.
   buildInputs = [ pkgs.bash ];
+  # Only the commands get store shebangs: the template files stay byte for
+  # byte the framework's, which `dotsteward static` compares instances with
+  # and `dotsteward init` copies.
+  dontPatchShebangs = true;
 
   dontConfigure = true;
   dontBuild = true;
@@ -143,6 +147,7 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook preInstall
     mkdir -p "$out/share/dotsteward" "$out/bin"
     cp -R . "$out/share/dotsteward/"
+    patchShebangs --host "$out/share/dotsteward/cli"
     printf '%s' ${lib.escapeShellArg sourceInfo} >"$out/share/dotsteward/source-info"
     printf '%s\n' ${lib.escapeShellArg (builtins.toJSON catalogNames)} >"$out/share/dotsteward/catalog.json"
     makeWrapper "$out/share/dotsteward/cli/dotsteward" "$out/bin/dotsteward" \
@@ -161,6 +166,12 @@ pkgs.stdenvNoCC.mkDerivation {
     if [[ $first_line != ${lib.escapeShellArg "dotsteward ${version}"} ]]; then
       echo "unexpected version output: $first_line" >&2
       exit 1
+    fi
+    # Template files are the source's bytes.
+    if [[ -d template ]]; then
+      while IFS= read -r -d "" file; do
+        cmp -- "template/$file" "$out/share/dotsteward/template/$file"
+      done < <(cd template && find . -type f -print0)
     fi
     # The configuration reader imports with the packaged python and reads
     # the packaged schema and catalog.

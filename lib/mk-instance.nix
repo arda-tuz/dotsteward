@@ -30,7 +30,13 @@
 #                                 mirror is current); manifest-consistent
 #                                 (D20); instance-static ([gate] static
 #                                 scripts); instance-contract (framework
-#                                 checks over the instance); extraChecks
+#                                 checks over the instance: static
+#                                 --sandbox, the offline pins check,
+#                                 settings validate against the evaluated
+#                                 component targets, passthru.targetsFile,
+#                                 and the generic privacy scan); both run
+#                                 with ShellCheck of the instance nixpkgs;
+#                                 extraChecks
 #   dotstewardManifest.<system>   the evaluated manifest (3.7)
 #   dotstewardMirrors             exact contents of the .dotsteward/ mirror
 #                                 files, written by `dotsteward sync`
@@ -101,9 +107,10 @@ let
     "home-manager"
   ];
 
-  # Framework commands run by checks.<system>.instance-contract, in order;
-  # a step runs when the framework CLI ships its command.
-  contractSteps = [
+  # Framework commands run by checks.<system>.instance-contract, in order.
+  # settings validate reads the component targets from TARGETS_FILE, the
+  # evaluated values, not from a committed mirror.
+  contractSteps = targetsFile: [
     [
       "static"
       "--sandbox"
@@ -114,6 +121,8 @@ let
     ]
     [
       "settings"
+      "--targets-file"
+      "${targetsFile}"
       "validate"
     ]
     [
@@ -121,6 +130,11 @@ let
       "--tree"
     ]
   ];
+
+  # A framework without one of the commands cannot check an instance.
+  missingCommands = filter (command: !pathExists "${framework}/cli/commands/${command}.sh") (
+    map head (contractSteps "")
+  );
 in
 {
   inputs,
@@ -394,7 +408,12 @@ let
     pkgs.runCommand name
       (
         {
-          nativeBuildInputs = cli.toolchain ++ [ cli ];
+          # ShellCheck at the instance's version: `dotsteward static` and
+          # the instance's static scripts lint with it.
+          nativeBuildInputs = cli.toolchain ++ [
+            cli
+            pkgs.shellcheck
+          ];
         }
         // extra
       )
@@ -417,7 +436,33 @@ let
     else
       cfg.gate.static;
 
-  presentSteps = filter (step: pathExists "${framework}/cli/commands/${head step}.sh") contractSteps;
+  # The component settings targets and reload hooks of every enabled
+  # component (the manifest is the same in every profile, D20), in the
+  # format of the generation's targets file.
+  targetsFileFor =
+    system:
+    pkgsFor.${system}.writeText "dotsteward-settings-targets.json" (
+      builtins.toJSON {
+        schema_version = 1;
+        targets = manifests.${system}.settings_targets;
+        inherit (manifests.${system}) reload_hooks;
+      }
+    );
+
+  contract =
+    system:
+    let
+      targetsFile = targetsFileFor system;
+    in
+    if missingCommands != [ ] then
+      throw "dotsteward: the framework CLI lacks the command ${head missingCommands} (instance-contract)"
+    else
+      instanceCheck system "instance-contract" { passthru = { inherit targetsFile; }; } (
+        lib.concatMapStrings (step: ''
+          echo "[dotsteward] instance contract: dotsteward ${lib.escapeShellArgs step}"
+          dotsteward ${lib.escapeShellArgs step}
+        '') (contractSteps targetsFile)
+      );
 
   consistency =
     system:
@@ -479,12 +524,7 @@ let
             bash ${lib.escapeShellArg "./${script}"}
           '') staticScripts
         );
-        instance-contract = instanceCheck system "instance-contract" { passthru.steps = presentSteps; } (
-          lib.concatMapStrings (step: ''
-            echo "[dotsteward] instance contract: dotsteward ${lib.escapeShellArgs step}"
-            dotsteward ${lib.escapeShellArgs step}
-          '') presentSteps
-        );
+        instance-contract = contract system;
       };
       sources = [
         {
