@@ -278,8 +278,11 @@ cmd_publish() {
     die "HEAD tree is not the validated tree; run 'dotsteward gate --scope $scope' first"
   fi
   recorded_scope=$(jq -r '.scope | strings' <<<"$record")
+  # Scope is not part of the gate memo key: a plain gate for the same tree
+  # answers from the memo and keeps the recorded scope, so only --force
+  # records the publish scope.
   [[ $recorded_scope == "$scope" ]] ||
-    die "the validation was made for the ${recorded_scope:-(none)} scope, not $scope; run 'dotsteward gate --scope $scope' first"
+    die "the validation was made for the ${recorded_scope:-(none)} scope, not $scope; run 'dotsteward gate --scope $scope --force' first"
   override=$(jq -r '.framework_override // empty | tostring' <<<"$record")
   [[ -z $override ]] ||
     die "the validation used the framework override $override; run 'dotsteward gate --scope $scope' without an override first"
