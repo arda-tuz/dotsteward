@@ -27,6 +27,9 @@ assert_inst_fails "(instance { root = /. + \"$copy\"; }).checks.x86_64-linux.ins
 # instance-contract runs every step, in order; settings validate sees the
 # component targets through --targets-file (the evaluated manifest's
 # settings targets and reload hooks), not only the buffer's own targets.
+# Its privacy scan is the instance scan inside static (SPEC 11.2, D4): no
+# separate `scan`, which would apply the framework policy (home paths,
+# e-mail addresses, non-ASCII text) to personal instance content.
 assert_inst_eq '{"static":true,"pins":true,"settings":true,"scan":true,"order":true,"targets":true,"shellcheck":true}' \
   'let
     c = example.checks.x86_64-linux.instance-contract;
@@ -37,10 +40,9 @@ assert_inst_eq '{"static":true,"pins":true,"settings":true,"scan":true,"order":t
     static = lib.hasInfix "dotsteward static --sandbox\n" command;
     pins = lib.hasInfix "dotsteward pins check\n" command;
     settings = lib.hasInfix settings command;
-    scan = lib.hasInfix "dotsteward scan --tree\n" command;
+    scan = !(lib.hasInfix "dotsteward scan" command);
     order = at "dotsteward static " < at "dotsteward pins "
-      && at "dotsteward pins " < at "dotsteward settings "
-      && at "dotsteward settings " < at "dotsteward scan ";
+      && at "dotsteward pins " < at "dotsteward settings ";
     targets = lib.hasPrefix "dotsteward-settings-targets" c.targetsFile.name;
     shellcheck = lib.any (p: lib.toLower (lib.getName p) == "shellcheck") c.nativeBuildInputs;
   }' "instance-contract steps"

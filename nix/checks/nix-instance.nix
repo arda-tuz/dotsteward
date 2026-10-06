@@ -77,6 +77,26 @@ let
   lintFailure =
     pkgs.testers.testBuildFailure
       (fixtures.instance { root = lintRoot; }).checks.x86_64-linux.instance-contract;
+
+  # The complete instance with personal content (SPEC 11.2: instance scans
+  # apply the generic secret rules and [privacy], never the home path,
+  # e-mail, private address or non-ASCII rules of the framework policy): a
+  # home path of a user the framework policy does not allow, a personal
+  # e-mail address, a private IPv4 address and non-ASCII text, as a real
+  # instance holds them (its manifest mirror names the check identity's
+  # home). Built at build time, so this file holds none of them.
+  personalRoot = pkgs.runCommand "dotsteward-example-instance-personal" { } ''
+    cp -R ${completeRoot} "$out"
+    chmod -R u+w "$out"
+    {
+      printf 'checkout: /%s/%s/projects/workstation\n' home maria
+      printf 'mac: /%s/%s/projects/workstation\n' Users maria
+      printf 'mail: %s@%s\n' maria mail.test
+      printf 'printer: %s.%s.%s.%s\n' 192 168 1 20
+      printf 'note: caf\xc3\xa9\n'
+    } >"$out/notes.md"
+  '';
+  personal = (fixtures.instance { root = personalRoot; }).checks.x86_64-linux;
 in
 cli.mkTestCheck {
   name = "nix-instance";
@@ -114,6 +134,9 @@ cli.mkTestCheck {
     jq -e '.targets["example-app"].component == "example-app"' \
       ${complete.instance-contract.targetsFile} >/dev/null ||
       fail "the contract's targets file lacks the example-app target"
+    # Personal content passes the contract: its privacy scan is the
+    # instance scan of static, not the framework policy.
+    [[ -e ${personal.instance-contract} ]] || fail "the instance with personal content fails its contract"
     # A ShellCheck finding fails the contract, and nothing else does.
     log=${lintFailure}/testBuildFailure.log
     grep -q 'SC2086' "$log" || fail "no ShellCheck finding in the lint contract log"

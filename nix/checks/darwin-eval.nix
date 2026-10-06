@@ -22,10 +22,10 @@
 # login shell, the mirrors), and the check configuration (home directory,
 # packages, the VS Code bundle's command directory on PATH, the editor
 # variables, the agent rules links and the profile-scoped files). The
-# instance contract of the darwin instance (static --sandbox, the offline
-# pins check, settings validate against the evaluated darwin targets, the
-# privacy scan) runs here with DOTSTEWARD_PLATFORM=darwin, as its
-# instance-contract check would run it on a Mac.
+# instance contract of the darwin instance (static --sandbox with the
+# instance privacy scan, the offline pins check, settings validate against
+# the evaluated darwin targets) runs here with DOTSTEWARD_PLATFORM=darwin,
+# as its instance-contract check would run it on a Mac.
 #
 # The darwin platform layer tests run first, with ShellCheck over the layer,
 # its tests and the macOS tool doubles they use.
@@ -235,7 +235,6 @@ cli.mkTestCheck {
       ${lib.getExe cli} static --sandbox
       ${lib.getExe cli} pins check
       ${lib.getExe cli} settings --targets-file ${targetsFile} validate
-      ${lib.getExe cli} scan --tree
     ) || fail "the instance contract of the darwin instance failed"
   '';
 }

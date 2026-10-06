@@ -99,9 +99,9 @@ targets_file() {
 }
 
 # instance_contract DIR SYSTEM: the steps of checks.<system>.instance-contract
-# (static --sandbox, the offline pins check, settings validate with the
-# manifest's targets, the privacy scan of the tree) on the instance DIR;
-# every step must pass.
+# (static --sandbox, whose privacy check is the instance privacy scan, the
+# offline pins check and settings validate with the manifest's targets) on
+# the instance DIR; every step must pass.
 instance_contract() {
   local dir=$1 system=$2 targets
   targets=$DS_TEST_ROOT/targets.$system.json
@@ -112,6 +112,5 @@ instance_contract() {
     assert_exit 0 "$DS_CLI" static --sandbox
     assert_exit 0 "$DS_CLI" pins check
     assert_exit 0 "$DS_CLI" settings --targets-file "$targets" validate
-    assert_exit 0 "$DS_CLI" scan --tree
   )
 }
