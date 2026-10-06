@@ -1,0 +1,404 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/arda-tuz/dotsteward/schema/context.schema.json",
+  "title": "dotsteward context",
+  "description": "The facts of an instance on this machine, as `dotsteward context --json` prints them (schema_version 1): its configuration after defaults and environment overrides, the runtime identity, the state record paths, the components and their surfaces, the settings buffer's target names and entry ids, the instance skills and the framework. Skills and `contribute` read it instead of hard-coding paths and names. It never holds settings values. Paths marked expanded are absolute paths after ~/ and ${VAR:-default} expansion with the runtime environment; instance paths are relative to instance.path.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "instance": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/absolutePath",
+          "description": "The instance root (the directory of workstation.toml, physical path)."
+        },
+        "name": {
+          "type": "string",
+          "description": "instance.name, else the instance directory name."
+        },
+        "remote": {
+          "type": "string",
+          "description": "instance.remote: the exact `git remote get-url origin` value."
+        },
+        "branch": {
+          "type": "string"
+        },
+        "checkout": {
+          "$ref": "#/$defs/absolutePath",
+          "description": "instance.checkout, expanded: the canonical checkout."
+        },
+        "upstream_contribute": {
+          "enum": ["fork", "owner"],
+          "description": "upstream.contribute."
+        }
+      },
+      "required": ["path", "name", "remote", "branch", "checkout", "upstream_contribute"],
+      "additionalProperties": false
+    },
+    "identity": {
+      "type": "object",
+      "description": "The check identity ([identity], used for sandbox checks and homeConfigurations.<username>) and the runtime identity (USER and HOME, used by rebuild). They may differ: installing an instance for another user needs no file edit (SPEC 4.4).",
+      "properties": {
+        "check_username": {
+          "type": "string"
+        },
+        "check_home": {
+          "type": "string",
+          "description": "identity.home on Linux, identity.darwin_home on macOS (the running platform)."
+        },
+        "runtime_user": {
+          "type": ["string", "null"],
+          "description": "USER; null when it is unset or empty."
+        },
+        "runtime_home": {
+          "type": ["string", "null"],
+          "description": "HOME without a trailing slash; null when it is unset or empty."
+        },
+        "runtime_matches_check": {
+          "type": "boolean",
+          "description": "runtime_user equals check_username and runtime_home equals check_home (trailing slashes ignored)."
+        }
+      },
+      "required": ["check_username", "check_home", "runtime_user", "runtime_home", "runtime_matches_check"],
+      "additionalProperties": false
+    },
+    "state": {
+      "type": "object",
+      "description": "Machine state paths (expanded). The gate memo is the passed validation record: memo and validation name the same file.",
+      "properties": {
+        "root": {
+          "$ref": "#/$defs/absolutePath",
+          "description": "DOTSTEWARD_STATE_ROOT, else DOTFILES_STATE_ROOT with compat.legacy_env, else state.root."
+        },
+        "memo": {
+          "$ref": "#/$defs/absolutePath",
+          "description": "<root>/update/validation.json, the record a gate run with the same key answers from."
+        },
+        "log": {
+          "$ref": "#/$defs/absolutePath",
+          "description": "<root>/update/validate.log, the output of the last gate run."
+        },
+        "candidate": {
+          "$ref": "#/$defs/absolutePath",
+          "description": "<root>/update/candidate.json, written by `update prepare`."
+        },
+        "validation": {
+          "$ref": "#/$defs/absolutePath",
+          "description": "<root>/update/validation.json, written by a passed gate."
+        }
+      },
+      "required": ["root", "memo", "log", "candidate", "validation"],
+      "additionalProperties": false
+    },
+    "profiles": {
+      "type": "object",
+      "properties": {
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "current": {
+          "type": "string",
+          "description": "The profile recorded in <state root>/current/profile by the last rebuild when it is one of names, else check (D15)."
+        },
+        "default": {
+          "type": "string"
+        },
+        "check": {
+          "type": "string"
+        },
+        "bootstrap": {
+          "type": "string"
+        },
+        "modes": {
+          "type": "object",
+          "description": "The mode of every profile.",
+          "additionalProperties": {
+            "enum": ["fresh", "adopt"]
+          }
+        }
+      },
+      "required": ["names", "current", "default", "check", "bootstrap", "modes"],
+      "additionalProperties": false
+    },
+    "gate": {
+      "type": "object",
+      "description": "Gate parameters after the DOTSTEWARD_NIX_MAX_JOBS, DOTSTEWARD_NIX_CORES, DOTSTEWARD_MIN_FREE_GB and DOTSTEWARD_CACHE_URL overrides.",
+      "properties": {
+        "nix_max_jobs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "nix_cores": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "min_free_gib": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cache_url": {
+          "type": "string"
+        },
+        "step_keys": {
+          "const": ["preflight", "static", "pins", "flake-check", "cli-probes"],
+          "description": "The gate steps in order, the keys of validation.json step_seconds (D4)."
+        }
+      },
+      "required": ["nix_max_jobs", "nix_cores", "min_free_gib", "cache_url", "step_keys"],
+      "additionalProperties": false
+    },
+    "commit": {
+      "type": "object",
+      "properties": {
+        "update_subject": {
+          "type": "string"
+        },
+        "settings_subject": {
+          "type": "string"
+        },
+        "upgrade_subject": {
+          "type": "string",
+          "description": "{version} stands for the new framework version."
+        },
+        "conventional_types": {
+          "const": ["feat", "fix", "perf", "refactor", "docs", "chore", "test", "build", "ci", "style", "revert"],
+          "description": "The commit types the maintain scope accepts: <type>[(<scope>)][!]: <summary>."
+        }
+      },
+      "required": ["update_subject", "settings_subject", "upgrade_subject", "conventional_types"],
+      "additionalProperties": false
+    },
+    "protected": {
+      "type": "array",
+      "description": "The byte-protected instance paths ([protected] keys, sorted); their digests are not included.",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "overlays": {
+      "type": "object",
+      "description": "The overlay of every framework skill: skills.overlays, else agent/overlays/<skill>.md when it exists, else null. Relative paths are relative to instance.path.",
+      "properties": {
+        "dotsteward-maintain": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "dotsteward-update": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "dotsteward-contribute": {
+          "$ref": "#/$defs/optionalString"
+        }
+      },
+      "required": ["dotsteward-maintain", "dotsteward-update", "dotsteward-contribute"],
+      "additionalProperties": false
+    },
+    "components": {
+      "type": "array",
+      "description": "Every component of the configuration, in components.order (hook and check order). settings_targets and commands come from the .dotsteward manifest mirror of the running system and are empty without it.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "enable": {
+            "type": "boolean"
+          },
+          "source": {
+            "enum": ["catalog", "instance"]
+          },
+          "method": {
+            "$ref": "#/$defs/optionalString",
+            "description": "The method on the running platform: method_by_platform, then method, then the component default recorded in the mirror; null when none is known."
+          },
+          "profiles": {
+            "description": "The profiles where the component is active; null for every profile.",
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "settings_targets": {
+            "description": "Names of the component's settings targets.",
+            "$ref": "#/$defs/names"
+          },
+          "commands": {
+            "description": "Commands the component's checks require on PATH.",
+            "$ref": "#/$defs/names"
+          }
+        },
+        "required": ["name", "enable", "source", "method", "profiles", "settings_targets", "commands"],
+        "additionalProperties": false
+      }
+    },
+    "settings": {
+      "type": "object",
+      "description": "The settings buffer (<buffer_dir>/buffer.toml): names only, never values.",
+      "properties": {
+        "buffer_dir": {
+          "type": "string"
+        },
+        "published_ref": {
+          "type": "string"
+        },
+        "target_names": {
+          "description": "Component targets of the mirror and the buffer's own [targets.<name>], sorted.",
+          "$ref": "#/$defs/names"
+        },
+        "entry_ids": {
+          "description": "Ids of the buffer's entries, in buffer order.",
+          "$ref": "#/$defs/names"
+        }
+      },
+      "required": ["buffer_dir", "published_ref", "target_names", "entry_ids"],
+      "additionalProperties": false
+    },
+    "skills": {
+      "type": "object",
+      "properties": {
+        "hm_root": {
+          "type": "string",
+          "description": "Home-relative directory where Home Manager links skills."
+        },
+        "instance_skill_names": {
+          "description": "The instance's own skills (the skills lock and the mirror's home-managed skills), sorted, without the framework skills.",
+          "$ref": "#/$defs/names"
+        }
+      },
+      "required": ["hm_root", "instance_skill_names"],
+      "additionalProperties": false
+    },
+    "framework": {
+      "type": "object",
+      "description": "The running framework (version, rev, narHash as `dotsteward version` reports them; rev and narHash are null when unknown) and the dotsteward input of the instance flake.lock (D17).",
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "rev": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "narHash": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "upstream": {
+          "$ref": "#/$defs/optionalString",
+          "description": "The flake reference of the input's original source without ref and rev (github:<owner>/<repo>, git+ssh://..., git+https://..., path:...); null without flake.lock or a dotsteward input."
+        },
+        "track": {
+          "$ref": "#/$defs/optionalString",
+          "description": "The tag or branch the input follows (original ref); null when it follows the default branch or is unknown."
+        }
+      },
+      "required": ["version", "rev", "narHash", "upstream", "track"],
+      "additionalProperties": false
+    },
+    "platform": {
+      "type": "object",
+      "properties": {
+        "system": {
+          "type": "string",
+          "pattern": "^(x86_64|aarch64)-(linux|darwin)$",
+          "description": "The Nix system of the running machine."
+        },
+        "name": {
+          "enum": ["linux", "darwin"]
+        },
+        "fast_path": {
+          "description": "platform.<name>.fast_path of the configuration.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/linuxFastPath"
+            },
+            {
+              "$ref": "#/$defs/darwinFastPath"
+            }
+          ]
+        }
+      },
+      "required": ["system", "name", "fast_path"],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "instance",
+    "identity",
+    "state",
+    "profiles",
+    "gate",
+    "commit",
+    "protected",
+    "overlays",
+    "components",
+    "settings",
+    "skills",
+    "framework",
+    "platform"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "absolutePath": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "optionalString": {
+      "type": ["string", "null"]
+    },
+    "names": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "linuxFastPath": {
+      "type": "object",
+      "properties": {
+        "os_id": {
+          "type": "string"
+        },
+        "os_version": {
+          "type": "string"
+        },
+        "architecture": {
+          "type": "string"
+        },
+        "desktop_contains": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "detectors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["os_id", "os_version", "architecture", "desktop_contains", "detectors"],
+      "additionalProperties": false
+    },
+    "darwinFastPath": {
+      "type": "object",
+      "properties": {
+        "min_version": {
+          "type": "string"
+        },
+        "architecture": {
+          "type": "string"
+        }
+      },
+      "required": ["min_version", "architecture"],
+      "additionalProperties": false
+    }
+  }
+}
