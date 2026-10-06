@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "component": "opencode-pi",
+  "flake_inputs": {},
+  "versions_lock": {
+    "agent_tools": {
+      "opencode": {
+        "minimum_version": "1.18.34",
+        "source_revision": "aec0b9a6d8898f68f923aaf08b7306d931fd9d76",
+        "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.34/opencode-linux-x64.tar.gz",
+        "size": 60665582,
+        "sha256": "0f22479647226d1d2dd99595d20082ee7bda3870b62dc6a90b41efc1a71d7e9a",
+        "native_auto_updates": true
+      },
+      "opencode-darwin": {
+        "minimum_version": "1.18.34",
+        "source_revision": "aec0b9a6d8898f68f923aaf08b7306d931fd9d76",
+        "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.34/opencode-darwin-arm64.zip",
+        "size": 45538151,
+        "sha256": "8522b70f545184b3a8d97c5ca4f814093b2476d72aebfda8c48bcd072ec31d1b"
+      },
+      "pi": {
+        "package": "@earendil-works/pi-coding-agent",
+        "version": "1.0.1",
+        "integrity": "sha512-B7FGYpHpBPvS+Ux16CbCuVnE9S4v6c2h6ykocPNarC4msD/4JM/eFrCrO2wbRkedJZ25myFozSWHvCOx4QnN+w==",
+        "source": "https://github.com/earendil-works/pi",
+        "official_tag": "v1.0.1",
+        "tag_revision": "a7229ddc21810d6245105978033b7df645ecc2f7",
+        "source_nix_sha256": "sha256-3llZpAi9YPNS9oRFpkSj/fcNfhvU9E61NY81tTNSizc=",
+        "npm_dependencies_nix_sha256": "sha256-kkUaj0mNZSpK1+4FvD8HULD0P5RsMRXqrusvhSgI2jI=",
+        "model_data_url": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-1.0.1.tgz",
+        "model_data_nix_sha256": "sha256-ip5psTCc+TQF2Hcp+hI8ixHGvnxkaxbzT4vve3kvkTg=",
+        "license": "MIT",
+        "node_engine": ">=22.19.0"
+      }
+    },
+    "nix_packages": {
+      "pi": {
+        "expected": "1.0.1",
+        "resolved": "1.0.1"
+      }
+    }
+  }
+}
