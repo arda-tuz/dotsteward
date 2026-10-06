@@ -10,7 +10,10 @@
 # The package copies cli/, engines/, skills/manifest.json, privacy/, schema/
 # and VERSION by directory (missing ones are skipped), so new command files
 # need no edit here, and bakes the framework rev and narHash into
-# share/dotsteward/source-info for `dotsteward version`.
+# share/dotsteward/source-info for `dotsteward version`. It has no modules/
+# directory, so share/dotsteward/catalog.json lists the catalog component
+# names (the modules/components directories, as lib.catalog), which the
+# Python configuration reader uses as its default catalog.
 {
   version,
   src,
@@ -67,6 +70,13 @@ let
     );
   };
 
+  componentsDir = root + "/modules/components";
+  catalogNames =
+    if builtins.pathExists componentsDir then
+      lib.attrNames (lib.filterAttrs (_: type: type == "directory") (builtins.readDir componentsDir))
+    else
+      [ ];
+
   sourceInfo = lib.concatStrings (
     lib.optional (rev != null) "rev=${rev}\n" ++ lib.optional (narHash != null) "narHash=${narHash}\n"
   );
@@ -113,6 +123,7 @@ pkgs.stdenvNoCC.mkDerivation {
     mkdir -p "$out/share/dotsteward" "$out/bin"
     cp -R . "$out/share/dotsteward/"
     printf '%s' ${lib.escapeShellArg sourceInfo} >"$out/share/dotsteward/source-info"
+    printf '%s\n' ${lib.escapeShellArg (builtins.toJSON catalogNames)} >"$out/share/dotsteward/catalog.json"
     makeWrapper "$out/share/dotsteward/cli/dotsteward" "$out/bin/dotsteward" \
       --prefix PATH : ${lib.escapeShellArg (lib.makeBinPath toolchain)}
     runHook postInstall
@@ -130,11 +141,21 @@ pkgs.stdenvNoCC.mkDerivation {
       echo "unexpected version output: $first_line" >&2
       exit 1
     fi
+    # The configuration reader imports with the packaged python and reads
+    # the packaged schema and catalog.
+    env -i PYTHONPATH="$out/share/dotsteward/cli/python" PYTHONDONTWRITEBYTECODE=1 \
+      ${python.interpreter} -s -P -c '
+    import sys
+    from dotsteward_cli import config
+    assert str(config.FRAMEWORK_ROOT) == sys.argv[1], config.FRAMEWORK_ROOT
+    assert config.schema()["title"] == "dotsteward workstation.toml"
+    assert config.framework_catalog() == sys.argv[2:], config.framework_catalog()
+    ' "$out/share/dotsteward" ${lib.escapeShellArgs catalogNames}
     runHook postInstallCheck
   '';
 
   passthru = {
-    inherit toolchain mkTestCheck;
+    inherit toolchain mkTestCheck python;
   };
 
   meta = {
