@@ -5,8 +5,12 @@
 # the hook, static checks and contribute).
 #
 # A scan has three steps:
-#   1. configuration: ds_privacy_load_policy FILE, ds_privacy_load_allowlist
-#      FILE, ds_privacy_load_terms KIND FILE (KIND: denylist | extra-terms);
+#   1. configuration: ds_privacy_load_policy FILE (the framework policy) or
+#      ds_privacy_load_instance_policy (an instance: generic secret rules
+#      only) followed by ds_privacy_add_forbidden_path GLOB and
+#      ds_privacy_add_file_rule MESSAGE ERE GLOB...; then
+#      ds_privacy_load_allowlist FILE, ds_privacy_load_terms KIND FILE (KIND:
+#      denylist | extra-terms);
 #   2. collection between ds_privacy_begin and ds_privacy_end:
 #      ds_privacy_collect_tree ROOT GIT(0|1), ds_privacy_collect_staged ROOT,
 #      ds_privacy_collect_range DIR RANGE;
@@ -27,7 +31,8 @@
 #   <rule> commit <sha12> [<path>:<line>]    history (range scans)
 #   <rule> commit|tag <sha12> <field>        commit or tag metadata
 # Term rules are denylist:<n> and extra-term:<n>, n being the entry's line in
-# its file. With redaction, a path that contains a term or a generic match
+# its file. File rules are file-rule:<n>, n being the rule's position; their
+# message follows the location in parentheses. With redaction, a path that contains a term or a generic match
 # (one the policy does not allow) prints as path#<k> (its position in the
 # scanned path list), also as the location of its file's other findings;
 # forbidden-path findings print the path, since their globs are public
@@ -553,6 +558,81 @@ ds_privacy_load_policy() {
   done
 }
 
+# ds_privacy_load_instance_policy
+# The policy of an instance scan (SPEC 11.2): the generic secret rules only.
+# Home paths, e-mail addresses, private IPv4 addresses, non-ASCII text and
+# the commit rules do not apply (instance content is personal by design);
+# forbidden paths and file rules start empty. Loaded term tables are kept.
+ds_privacy_load_instance_policy() {
+  # shellcheck disable=SC2034 # read by callers of the library
+  DS_PRIVACY_POLICY_FILE=""
+  DS_PRIVACY_GENERIC_SECRETS=1
+  DS_PRIVACY_HOME_PATHS=0
+  DS_PRIVACY_EMAILS=0
+  DS_PRIVACY_PRIVATE_IPV4=0
+  DS_PRIVACY_NON_ASCII=0
+  DS_PRIVACY_COMMIT_UTC_ONLY=0
+  # shellcheck disable=SC2034 # read by callers of the library
+  DS_PRIVACY_DENYLIST_REQUIRED_FOR_RANGE=0
+  DS_PRIVACY_HOME_ALLOW_USERS=()
+  DS_PRIVACY_HOME_ALLOW_PATHS=()
+  DS_PRIVACY_EMAIL_ALLOW_DOMAINS=()
+  DS_PRIVACY_EMAIL_ALLOW_EXACT=()
+  DS_PRIVACY_NON_ASCII_EXCEPT=()
+  DS_PRIVACY_FORBIDDEN_PATHS=()
+  DS_PRIVACY_COMMIT_FORBIDDEN_LINES=()
+  DS_PRIVACY_COMMIT_EMAIL=""
+  # shellcheck disable=SC2034 # read by callers of the library
+  DS_PRIVACY_DENYLIST_PATH=""
+  _DS_FILE_RULE_MESSAGE=()
+  _DS_FILE_RULE_PATTERN=()
+  _DS_FILE_RULE_GLOBS=()
+}
+
+# ds_privacy_add_forbidden_path GLOB: one more forbidden path glob.
+ds_privacy_add_forbidden_path() {
+  [[ -n ${1:-} ]] || {
+    _ds_privacy_error "empty forbidden path glob"
+    return 1
+  }
+  DS_PRIVACY_FORBIDDEN_PATHS+=("$1")
+}
+
+# ds_privacy_add_file_rule MESSAGE ERE GLOB...
+# A file rule: lines of the files whose path matches a GLOB and that match
+# ERE (case-insensitive) are findings file-rule:<n>, reported with MESSAGE.
+# Errors name the rule number, never its pattern.
+ds_privacy_add_file_rule() {
+  local number=$((${#_DS_FILE_RULE_PATTERN[@]} + 1)) message=${1:-} pattern=${2:-} glob
+  (($# >= 3)) || {
+    _ds_privacy_error "privacy file rule $number: no file globs"
+    return 1
+  }
+  shift 2
+  [[ -n $message ]] || {
+    _ds_privacy_error "privacy file rule $number: empty message"
+    return 1
+  }
+  if [[ -z $pattern ]] || ! _ds_privacy_valid_ere "$pattern"; then
+    _ds_privacy_error "privacy file rule $number: invalid regular expression"
+    return 1
+  fi
+  if LC_ALL=C grep -qE -e "$pattern" <<<""; then
+    _ds_privacy_error "privacy file rule $number: pattern matches the empty string"
+    return 1
+  fi
+  for glob in "$@"; do
+    [[ -n $glob && $glob != *$'\n'* ]] || {
+      _ds_privacy_error "privacy file rule $number: invalid file glob"
+      return 1
+    }
+  done
+  _DS_FILE_RULE_MESSAGE+=("$message")
+  _DS_FILE_RULE_PATTERN+=("$pattern")
+  local IFS=$'\n'
+  _DS_FILE_RULE_GLOBS+=("$*")
+}
+
 # ds_privacy_load_allowlist FILE
 # Public strings masked (case-insensitively) before term matching: one per
 # line, blank lines and # comments ignored. A missing file means none.
@@ -1044,6 +1124,33 @@ _ds_privacy_terms() {
   done
 }
 
+# _ds_privacy_file_rules: every file rule over the text units of the files
+# its globs select (working tree files and blobs alike).
+_ds_privacy_file_rules() {
+  local hits=$_DS_PRIVACY_WORK/hits i seq rest name line match
+  local -a globs=() units=()
+  # shellcheck disable=SC2034 # filled and read through namerefs
+  local -a eres=()
+  for i in "${!_DS_FILE_RULE_PATTERN[@]}"; do
+    mapfile -t globs <<<"${_DS_FILE_RULE_GLOBS[i]}"
+    _ds_privacy_compile_globs eres "${globs[@]}"
+    units=()
+    for seq in "${_DS_TEXT[@]}"; do
+      [[ $seq != paths && ${_DS_U_KIND[$seq]} == file ]] || continue
+      _ds_privacy_glob_match "${_DS_U_PATH[$seq]}" eres && units+=("$seq")
+    done
+    ((${#units[@]})) || continue
+    _ds_privacy_grep "$_DS_PRIVACY_WORK/u" units -o -i -E -e "${_DS_FILE_RULE_PATTERN[i]}" >"$hits" || return 1
+    while IFS= read -r rest; do
+      name=${rest%%:*}
+      rest=${rest#*:}
+      line=${rest%%:*}
+      match=${rest#*:}
+      _ds_privacy_record "$name" "$line" "file-rule:$((i + 1))" "" "$match"
+    done <"$hits"
+  done
+}
+
 # _ds_privacy_metadata: the commit rules for commit and tag units.
 _ds_privacy_metadata() {
   local seq kind first second header hits=$_DS_PRIVACY_WORK/hits entry rest name line
@@ -1177,6 +1284,9 @@ ds_privacy_report() {
     if ((${#_DS_TERM_RULE[@]})); then
       _ds_privacy_terms || return 1
     fi
+    if ((${#_DS_FILE_RULE_PATTERN[@]})); then
+      _ds_privacy_file_rules || return 1
+    fi
   fi
 
   if ((${#DS_PRIVACY_FORBIDDEN_PATHS[@]})); then
@@ -1192,9 +1302,13 @@ ds_privacy_report() {
     _ds_privacy_metadata || return 1
   fi
 
-  local line field match
+  local line field match number
   while IFS=$'\037' read -r seq line rule field match; do
     location=$(_ds_privacy_location "$seq" "$line" "$field" "$redact")
+    if [[ $rule == file-rule:* ]]; then
+      number=${rule#file-rule:}
+      location+=" (${_DS_FILE_RULE_MESSAGE[number - 1]})"
+    fi
     if ((redact)) || [[ -z $match ]]; then
       printf '%s %s\n' "$rule" "$location"
     else
@@ -1204,7 +1318,10 @@ ds_privacy_report() {
   done < <(LC_ALL=C sort -t $'\037' -k1,1n -k2,2n -k3,3 "$_DS_PRIVACY_WORK/findings")
 }
 
-# Term tables start empty when the library is sourced.
+# Term tables and file rules start empty when the library is sourced.
+_DS_FILE_RULE_MESSAGE=()
+_DS_FILE_RULE_PATTERN=()
+_DS_FILE_RULE_GLOBS=()
 _DS_TERM_RULE=()
 _DS_TERM_MODE=()
 _DS_TERM_VALUE=()

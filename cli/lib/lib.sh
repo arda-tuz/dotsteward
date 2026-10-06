@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+# shellcheck shell=bash
 # dotsteward bash library: the generic helpers shared by the framework
 # commands and by component hooks (SPEC 8.4). Hooks source it through
 # DOTSTEWARD_LIB:

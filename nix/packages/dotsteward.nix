@@ -7,13 +7,15 @@
 # (ssh, sudo, platform package managers, catalog CLIs) resolves from the
 # inherited PATH.
 #
-# The package copies cli/, engines/, skills/manifest.json, privacy/, schema/
-# and VERSION by directory (missing ones are skipped), so new command files
-# need no edit here, and bakes the framework rev and narHash into
-# share/dotsteward/source-info for `dotsteward version`. It has no modules/
-# directory, so share/dotsteward/catalog.json lists the catalog component
-# names (the modules/components directories, as lib.catalog), which the
-# Python configuration reader uses as its default catalog.
+# The package copies cli/, engines/, skills/manifest.json, privacy/, schema/,
+# VERSION and the template files `dotsteward static` compares instances with
+# (template/.dotsteward/cli.sh, template/bootstrap.sh) by path (missing ones
+# are skipped), so new command files need no edit here, and bakes the
+# framework rev and narHash into share/dotsteward/source-info for
+# `dotsteward version`. It has no modules/ directory, so
+# share/dotsteward/catalog.json lists the catalog component names (the
+# modules/components directories, as lib.catalog), which the Python
+# configuration reader uses as its default catalog.
 {
   version,
   src,
@@ -66,6 +68,8 @@ let
         (root + "/skills/manifest.json")
         (root + "/privacy")
         (root + "/schema")
+        (root + "/template/.dotsteward/cli.sh")
+        (root + "/template/bootstrap.sh")
       ]
     );
   };
@@ -81,17 +85,34 @@ let
     lib.optional (rev != null) "rev=${rev}\n" ++ lib.optional (narHash != null) "narHash=${narHash}\n"
   );
 
-  # mkTestCheck { name, paths, nativeBuildInputs ? [ ], postCheck ? "" }:
+  # mkTestCheck { name, paths, nativeBuildInputs ? [ ], postCheck ? "",
+  #               keepShebangs ? [ ] }:
   # a check that runs `tests/run.sh PATHS...` on a writable copy of the
   # framework source in the build sandbox, with the CLI toolchain on PATH,
-  # then the shell snippet postCheck. Used by nix/checks/*.nix.
+  # then the shell snippet postCheck. Used by nix/checks/*.nix. Executable
+  # files get their shebangs patched to store paths (the sandbox has no
+  # /usr/bin/env), except the keepShebangs paths (relative to the source
+  # root): fixture data the tests compare byte for byte.
   mkTestCheck =
     {
       name,
       paths,
       nativeBuildInputs ? [ ],
       postCheck ? "",
+      keepShebangs ? [ ],
     }:
+    let
+      patchShebangsCommand =
+        if keepShebangs == [ ] then
+          "patchShebangs --build . >/dev/null"
+        else
+          ''
+            mapfile -d "" patchable < <(find . -type f -perm -0100 ${
+              lib.concatMapStringsSep " " (path: "! -path ${lib.escapeShellArg "./${path}"}") keepShebangs
+            } -print0)
+            patchShebangs --build "''${patchable[@]}" >/dev/null
+          '';
+    in
     pkgs.runCommand "dotsteward-check-${name}"
       {
         nativeBuildInputs = toolchain ++ nativeBuildInputs;
@@ -100,7 +121,7 @@ let
         cp -R ${src} source
         chmod -R u+w source
         cd source
-        patchShebangs --build . >/dev/null
+        ${patchShebangsCommand}
         bash tests/run.sh ${lib.escapeShellArgs paths}
         ${postCheck}
         touch "$out"

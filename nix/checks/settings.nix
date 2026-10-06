@@ -15,6 +15,8 @@ in
 cli.mkTestCheck {
   name = "settings";
   paths = [ "tests/engines/settings/core" ];
+  # Buffer content whose sha256 legacy-state/base.json records.
+  keepShebangs = [ "tests/engines/settings/core/fixtures/buffer/files/alpha-status.sh" ];
   nativeBuildInputs = [
     pkgs.shellcheck
     pkgs.ruff

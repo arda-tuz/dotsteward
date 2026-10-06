@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+# shellcheck shell=bash
 # dotsteward platform layer for Linux. lib.sh sources it on Linux; sourcing
 # it alone brings lib.sh first.
 #

@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/arda-tuz/dotsteward/schema/seed.schema.json",
+  "title": "dotsteward component seed",
+  "description": "modules/components/<name>/seed.json, schema version 1: the pins and flake inputs a catalog component starts from, as proved by the release's clean-install CI. dotsteward init merges versions_lock into the instance versions.lock.json and writes flake_inputs into the instance flake.nix.",
+  "$comment": "Readers interpret the keyword subset of workstation.schema.json: type, enum, const, pattern, minLength, minimum, maximum, items, minItems, uniqueItems, properties, required, additionalProperties, propertyNames and $ref. Patterns are searched for and use the POSIX extended regular expression subset; anchor them with ^ and $.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "component",
+    "flake_inputs",
+    "versions_lock"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Seed schema version."
+    },
+    "component": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "The component name; equals the name of the directory holding the seed."
+    },
+    "flake_inputs": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/inputName"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/flakeInput"
+      },
+      "description": "Instance flake inputs the component needs, by input name; every one has a versions_lock.flake_inputs entry of the same name."
+    },
+    "versions_lock": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/lockKey"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "description": "A component-owned section of versions.lock.json (any lock path a component rule reads)."
+      },
+      "properties": {
+        "flake_inputs": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/inputName"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/lockedFlakeInput"
+          }
+        },
+        "nix_packages": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/lockKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/nixPackage"
+          }
+        }
+      },
+      "description": "Fragment deep-merged into the instance versions.lock.json; a conflicting leaf value is an error."
+    }
+  },
+  "$defs": {
+    "inputName": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+    },
+    "lockKey": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_+-]*$"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "flakeInput": {
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "Flake reference written as inputs.<name>.url."
+        },
+        "flake": {
+          "type": "boolean",
+          "description": "false for a plain source tree."
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/inputName"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "follows"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "follows": {
+                "$ref": "#/$defs/nonEmptyString"
+              }
+            }
+          },
+          "description": "Inputs of the input that follow instance inputs (inputs.<input>.follows)."
+        }
+      }
+    },
+    "lockedFlakeInput": {
+      "type": "object",
+      "required": [
+        "reference",
+        "revision"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "channel": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "version": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "nar_hash": {
+          "type": "string",
+          "pattern": "^sha256-[A-Za-z0-9+/]{43}=$"
+        },
+        "tag_object": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "nixPackage": {
+      "type": "object",
+      "required": [
+        "expected"
+      ],
+      "properties": {
+        "expected": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "Expected version, or the sentinel \"locked nixpkgs package\"."
+        },
+        "resolved": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "description": "Further keys (official_tag, tag_revision, source_revision, *_nix_sha256, notes) are accepted."
+    }
+  }
+}
