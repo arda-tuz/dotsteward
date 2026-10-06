@@ -1,0 +1,31 @@
+# Platform tools the framework may name (SPEC 8.4, command-name rule (b)).
+# Catalog commands (claude codex herdr zsh starship opencode pi code) and the
+# synthetic fixture names (example-app example-term alpha beta gamma delta)
+# are allowed by the rule itself and are not listed here. Shell builtins and
+# keywords are not command names. One or more names per line; # comments.
+
+# Package managers, accounts and macOS system tools.
+sudo apt-get apt-cache dpkg dpkg-query dpkg-deb getent chsh id sw_vers dscl xcode-select
+plutil hdiutil ditto
+
+# Archives, transfer, version control and Nix (nix-instantiate evaluates
+# library tests against an isolated store).
+unzip tar curl git gh nix nix-store nix-instantiate ssh
+
+# Toolchain and linters.
+install mktemp flock jq python3 bash shellcheck actionlint nixfmt
+
+# Text tools of the CLI toolchain (nix/packages/dotsteward.nix).
+grep sed awk
+
+# coreutils (without the names listed above).
+[ arch b2sum base32 base64 basename basenc cat chcon chgrp chmod chown chroot cksum comm
+coreutils cp csplit cut date dd df dir dircolors dirname du echo env expand expr factor
+false fmt fold groups head hostid join kill link ln logname ls md5sum mkdir mkfifo mknod
+mv nice nl nohup nproc numfmt od paste pathchk pinky pr printenv printf ptx pwd readlink
+realpath rm rmdir runcon seq sha1sum sha224sum sha256sum sha384sum sha512sum shred shuf
+sleep sort split stat stdbuf stty sum sync tac tail tee test timeout touch tr true truncate
+tsort tty uname unexpand uniq unlink uptime users vdir wc who whoami yes
+
+# findutils.
+find xargs
