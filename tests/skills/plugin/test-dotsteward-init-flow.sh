@@ -195,6 +195,46 @@ for file in "$new_ref" "$existing_ref" "$platform_ref"; do
     ds_fail "${file#"$DS_REPO_ROOT"/} does not set the login shell of an adopted machine with login-shell set"
 done
 
+# A local-only instance: e2e without --keep-going stops at core:repo-remote
+# (remote-unreachable or remote-mismatch) until the push, the bootstrap that
+# ends with it exits non-zero, so the machine is verified with --keep-going
+# and that one finding is the expected one.
+local_repo=$(section "$new_ref" "Repository")
+for text in "--keep-going" "core:repo-remote" "remote-unreachable" "remote-mismatch" "./bootstrap.sh"; do
+  assert_contains "$local_repo" "$text" "new-instance.md, the local repository"
+done
+# shellcheck disable=SC2016 # literal shell text of the skill
+assert_contains "$(fenced "$new_ref")" 'e2e --profile "$profile" --keep-going' \
+  "new-instance.md verifies a local-only instance with --keep-going"
+assert_contains "$new_flow" "--keep-going" "the new-instance flow verifies a local-only instance with --keep-going"
+assert_contains "$new_flow" "core:repo-remote" "the new-instance flow names the expected finding of a local-only instance"
+
+# Coding-agent shells usually have no terminal: the commands that ask for
+# sudo or an installer confirmation go to the user's own terminal when this
+# shell has none or sudo has no cached credentials.
+rules=$(awk '/^## Rules/ { inside = 1; next } /^## / { inside = 0 } inside { print }' "$skill")
+for text in "in their own terminal" "[ -t 0 ]" "sudo -n true" "--install-nix-only" "login-shell set" "platform-prereqs.md"; do
+  assert_contains "$rules" "$text" "the terminal rule of SKILL.md"
+done
+# Every step that runs one of them points at that rule: the Nix install
+# (3.2), the machine setup (3.6) and the existing-instance flow (section 4,
+# its Nix install and its setup).
+subsection() {
+  awk -v heading="### $2" '
+    /^##+ / { inside = (index($0, heading) == 1) }
+    inside { print }
+  ' "$1"
+}
+for heading in "3.2" "3.6"; do
+  grep -q 'own terminal' <<<"$(subsection "$skill" "$heading")" ||
+    ds_fail "SKILL.md $heading does not point its sudo steps at the terminal rule"
+done
+[[ $(grep -c 'own terminal' <<<"$existing_flow") -ge 2 ]] ||
+  ds_fail "SKILL.md section 4 does not point both its Nix install and its setup at the terminal rule"
+for file in "$new_ref" "$existing_ref" "$platform_ref"; do
+  grep -q 'own terminal' "$file" || ds_fail "${file#"$DS_REPO_ROOT"/} does not send the sudo steps to the user's own terminal"
+done
+
 # The fresh-machine bootstrap refuses another Nix version; the existing
 # machine path is the rebuild.
 grep -qi 'nix --version' "$existing_ref" || ds_fail "existing-instance.md does not check the Nix version against the pin"
@@ -211,6 +251,7 @@ done
 init_help=$("$DS_REPO_ROOT/cli/dotsteward" init --help)
 rebuild_help=$("$DS_REPO_ROOT/cli/dotsteward" rebuild --help)
 login_shell_help=$("$DS_REPO_ROOT/cli/dotsteward" login-shell --help)
+e2e_help=$("$DS_REPO_ROOT/cli/dotsteward" e2e --help)
 bootstrap_help=$(bash "$DS_REPO_ROOT/template/bootstrap.sh" --help)
 check_flags() {
   local what=$1 help=$2 lines=$3 line flag
@@ -225,13 +266,15 @@ check_flags() {
 check_flags "dotsteward init" "$init_help" "$(sed -n 's/.* -- init //p' <<<"$all_fenced")"
 check_flags "rebuild.sh" "$rebuild_help" "$(sed -n 's/.*\.\/rebuild\.sh //p' <<<"$all_fenced" | sed 's/[;&|].*//')"
 check_flags "login-shell" "$login_shell_help" "$(sed -n 's/.*cli\.sh login-shell //p' <<<"$all_fenced" | sed 's/[;&|].*//')"
+check_flags "e2e" "$e2e_help" "$(sed -n 's/.*cli\.sh e2e //p' <<<"$all_fenced" | sed 's/[;&|].*//')"
 check_flags "bootstrap.sh" "$bootstrap_help" "$(sed -n 's/.*bootstrap\.sh"\{0,1\} //p' <<<"$all_fenced" | sed 's/[;&|].*//')"
 
-# No command or path of the single-user scripts the CLI replaced.
+# No command or path of the single-user scripts the CLI replaced, and no
+# CI-only switch (e2e --skip-repo-checks is for CI fixtures).
 for file in "${all_files[@]}" "$skill_dir/agents/openai.yaml"; do
   # shellcheck disable=SC2088 # literal text, not a path
   for stale in '~/.dotfiles' '.local/state/dotfiles' 'update.sh --' 'scripts/pins.py' \
-    'scripts/validate.sh' 'scripts/preflight.sh' 'DOTSTEWARD_ASSUME_YES=1'; do
+    'scripts/validate.sh' 'scripts/preflight.sh' 'DOTSTEWARD_ASSUME_YES=1' '--skip-repo-checks'; do
     if grep -qF -- "$stale" "$file"; then
       ds_fail "${file#"$DS_REPO_ROOT"/} names [$stale]"
     fi
