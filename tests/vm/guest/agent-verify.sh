@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Scenario agent-verify: checks the workstation an agent built with
 # dotsteward-init in the agentic end-to-end test. The instance is
-# initialized and committed, its working tree is clean, Nix works, and the
-# framework's own end-to-end check (`dotsteward e2e`) passes.
+# initialized and committed, its working tree is clean, its branch is pushed
+# to origin, Nix works, and the framework's own end-to-end check
+# (`dotsteward e2e`) passes.
 #
 # Usage: bash tests/vm/guest/agent-verify.sh [--dir DIR] [--profile P]
 #   --dir DIR    the instance the agent created (default ~/workstation)
@@ -51,6 +52,19 @@ git -C "$instance_dir" log -1 --format='last commit: %h %s' || guest_die "$insta
   git -C "$instance_dir" status --short >&2
   guest_die "the instance has uncommitted changes"
 }
+
+# e2e fails at core:repo-remote unless origin holds HEAD; say so plainly
+# here instead of after the Nix checks.
+origin=$(git -C "$instance_dir" remote get-url origin 2>/dev/null) ||
+  guest_die "the instance has no origin remote (agent-prepare made $HOME/remotes/workstation.git for it)"
+guest_log "origin: $origin"
+branch=$(git -C "$instance_dir" symbolic-ref --quiet --short HEAD) ||
+  guest_die "the instance has a detached HEAD"
+remote_oid=$(git -C "$instance_dir" ls-remote origin "refs/heads/$branch" | cut -f1) ||
+  guest_die "cannot read origin: $origin"
+[[ -n $remote_oid ]] || guest_die "origin has no branch $branch: push it (git -C $instance_dir push -u origin $branch)"
+[[ $remote_oid == "$(git -C "$instance_dir" rev-parse HEAD)" ]] ||
+  guest_die "origin $branch ($remote_oid) differs from HEAD: push the instance"
 
 guest_step "Nix"
 guest_load_nix

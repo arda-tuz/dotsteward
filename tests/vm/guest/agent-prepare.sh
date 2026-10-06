@@ -2,7 +2,9 @@
 # Scenario agent-prepare: the starting point of the agentic end-to-end test.
 # The VM becomes the machine of a stranger who has one coding agent and
 # nothing else (no Nix, no instance): the agent is installed with its
-# vendor's documented method for Linux, into the user's home, and the
+# vendor's documented method for Linux, into the user's home, an empty bare
+# repository at ~/remotes/workstation.git stands in for the instance's
+# hosted remote (plain `dotsteward e2e` needs a pushed origin), and the
 # owner's next steps are printed (log in, install the dotsteward plugin from
 # the local marketplace in ~/dotsteward-src, ask for a workstation).
 #
@@ -46,6 +48,7 @@ case $agent in
 esac
 
 bin_dir=$HOME/.local/bin
+remote_dir=$HOME/remotes/workstation.git
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 download() { # URL DEST
@@ -57,6 +60,7 @@ if command -v nix >/dev/null 2>&1 || [[ -e /nix ]]; then
   guest_die "Nix is already present: the agentic test starts from a machine without Nix (use a fresh VM)"
 fi
 [[ ! -e $HOME/workstation ]] || guest_die "$HOME/workstation already exists (use a fresh VM)"
+[[ ! -e $remote_dir ]] || guest_die "$remote_dir already exists (use a fresh VM)"
 
 guest_step "install $agent"
 mkdir -p -- "$bin_dir"
@@ -76,6 +80,10 @@ esac
 [[ -x $bin_dir/$agent ]] || guest_die "$bin_dir/$agent was not installed"
 guest_log "$("$bin_dir/$agent" --version 2>&1 | head -n 1)"
 
+guest_step "local remote $remote_dir"
+mkdir -p -- "$(dirname -- "$remote_dir")"
+git init -q --bare --initial-branch=main "$remote_dir"
+
 guest_step "next steps for the owner"
 case $agent in
   claude) login='claude, then log in when it asks' ;;
@@ -92,8 +100,9 @@ cat <<EOF
      Set up this machine as a new dotsteward workstation with the
      dotsteward-init skill. Use the framework checkout in ~/dotsteward-src
      (git+file://$guest_src) instead of the GitHub release, keep the
-     instance repository local in ~/workstation, and enable all six
-     catalog components.
+     instance repository in ~/workstation with file://$remote_dir
+     (an existing local bare repository) as its remote, push main to it,
+     and enable all six catalog components.
    Answer its questions as a new user would; approve sudo prompts.
 5. When the agent reports success, check the result from the host:
      tests/vm/vm.sh scenario agent-verify --name <this VM> --no-push

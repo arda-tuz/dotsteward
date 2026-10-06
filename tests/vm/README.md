@@ -85,11 +85,13 @@ tests/vm/vm.sh destroy --name claude
 ```
 
 Then the same with `--name codex` and `--agent codex`. `agent-prepare`
-installs the agent with its vendor's method for Linux and prints the exact
-steps and a suggested request. `agent-verify` checks the instance the agent
-created (initialized, committed, clean) and runs `dotsteward e2e` for the
-instance's current profile (as `dotsteward context` reports it), or for the
-profile given with `--profile`.
+installs the agent with its vendor's method for Linux, creates an empty bare
+repository at `~/remotes/workstation.git` as the instance's remote (plain
+`dotsteward e2e` needs a pushed origin), and prints the exact steps and a
+suggested request. `agent-verify` checks the instance the agent created
+(initialized, committed, clean, pushed to origin) and runs `dotsteward e2e`
+for the instance's current profile (as `dotsteward context` reports it), or
+for the profile given with `--profile`.
 
 ## Commands
 
