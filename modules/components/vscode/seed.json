@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "component": "vscode",
+  "flake_inputs": {},
+  "versions_lock": {
+    "desktop_packages": {
+      "vscode": {
+        "minimum_version": "1.140.0",
+        "url": "https://update.code.visualstudio.com/1.140.0/linux-deb-x64/stable",
+        "size": 241278114,
+        "sha256": "e5ddfa528d68ce907c92cba18ed4edd7420874fe828cbaaf8e4484aa33530c3b"
+      },
+      "vscode-darwin-arm64": {
+        "minimum_version": "1.140.0",
+        "url": "https://update.code.visualstudio.com/1.140.0/darwin-arm64/stable",
+        "size": 317901801,
+        "sha256": "86a64f1cc9f4e0b5fc44969530994742f4bd61e7b98d9637238c5e24b26593b0"
+      }
+    }
+  }
+}
