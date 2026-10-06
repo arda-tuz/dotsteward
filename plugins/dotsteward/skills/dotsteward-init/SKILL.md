@@ -126,6 +126,12 @@ Confirm with the user which path applies, then run it from the checkout:
   cd "$dir" && ./rebuild.sh --profile workstation --switch
   ```
 
+  The rebuild does not change the login shell. When the instance enables the `shell` component, the end-to-end checks expect the Nix profile's zsh as the login shell, so set it next, once the user agrees (it asks for sudo, section 2):
+
+  ```bash
+  cd "$dir" && ./.dotsteward/cli.sh login-shell set --profile workstation
+  ```
+
 `fresh` and `workstation` are the default profile names (`profiles.bootstrap` and `profiles.check`); use the names chosen at `init`. Then verify the machine with the profile that was activated (`profile` is `fresh` after the bootstrap, `workstation` after the rebuild); the bootstrap already ended with these checks, and running them again only reads:
 
 ```bash
@@ -173,6 +179,12 @@ Details: `references/existing-instance.md`.
    ```bash
    cd "$HOME/NAME" && ./bootstrap.sh --profile fresh          # a fresh machine
    cd "$HOME/NAME" && ./rebuild.sh --profile workstation --switch   # a machine that is already set up
+   ```
+
+   After the rebuild, when the instance enables the `shell` component and the user agrees (it asks for sudo), set the login shell, which the rebuild leaves alone and the end-to-end checks expect:
+
+   ```bash
+   cd "$HOME/NAME" && ./.dotsteward/cli.sh login-shell set --profile workstation
    ```
 
 5. Verify it with the profile that was activated (`profile`):

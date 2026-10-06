@@ -46,6 +46,12 @@ When the user wants the check identity to follow this machine anyway, that is a 
 | Fresh (no applications yet) | `./bootstrap.sh --profile <profiles.bootstrap>` | fresh mode: backups, prerequisites, verified Nix, system packages, activation, login shell, end-to-end checks |
 | Already set up | `./rebuild.sh --profile <profiles.check> --switch` | adopt mode: user-level parts only; system packages are reported as not managed |
 
+The rebuild sets no login shell (it only moves one on a versioned Nix store path to the stable path). When the instance enables the `shell` component, set it on an adopted machine after the rebuild and before `e2e`, once the user agrees to the sudo prompt:
+
+```bash
+cd "$HOME/NAME" && ./.dotsteward/cli.sh login-shell set --profile <profiles.check>
+```
+
 Confirm with the user before either: activation replaces the files the instance manages with links into the generation. `./rollback.sh --latest --dry-run` shows what a rollback would undo. Preflight exit 3 (the adaptive route) stops the bootstrap before any write: the machine is off the fast path of `platform-prereqs.md`.
 
 Then `./.dotsteward/cli.sh e2e --profile <the activated profile>` checks the commands, the managed links and files, the agent tools, the tracked settings, the login shell, the checkout and its remote. A finding names its check; fix the cause and run it again. An unclean checkout (`repo-clean`) usually means a file was edited during the setup: show `git status` to the user rather than discarding anything.

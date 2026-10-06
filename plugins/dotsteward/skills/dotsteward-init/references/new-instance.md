@@ -106,6 +106,14 @@ Until the push, the `core:repo-remote` check of `e2e` fails (the remote is unrea
 | Fresh (no Nix, no applications) | `./bootstrap.sh --profile <bootstrap profile>` | fresh | preflight, backups, prerequisites, verified Nix, system packages, activation, login shell, end-to-end checks |
 | Already set up (Nix present) | `./rebuild.sh --profile <check profile> --switch` | adopt | build, activation of the user-level parts, settings, agent tools; system packages are reported as not managed |
 
+The rebuild sets no login shell: it only moves a login shell on a versioned Nix store path to the stable one. When the instance enables the `shell` component, `e2e` checks that the Nix profile's zsh is the login shell (`core:login-shell`), so on an adopted machine set it after the rebuild, once the user agrees to the sudo prompt:
+
+```bash
+cd "$dir" && ./.dotsteward/cli.sh login-shell set --profile <check profile>
+```
+
+Without the `shell` component the command only reports that the instance does not manage the login shell, and `e2e` has no login-shell check.
+
 Before either, tell the user that activation replaces the managed files with links into the generation, and that `./rollback.sh --latest --dry-run` shows what a rollback would undo (`--apply` undoes it). A build failure changes nothing in the home directory; report the failing step from the output.
 
 Preflight exit 3 (the adaptive route) means the machine is off the fast path of `platform-prereqs.md`; the bootstrap stopped before any write. Report the preflight document and do not work around it.

@@ -32,7 +32,7 @@ Install a missing tool only after the user agrees. A fresh machine bootstrap (`.
 | System packages | Ubuntu: one APT transaction (the base packages and the components' packages, such as a DEB install method) | fresh profiles only |
 | Login shell | adds the Nix profile's zsh to `/etc/shells` and changes the user's shell (`chsh` on Ubuntu, `dscl` on macOS) | when the `shell` component is enabled |
 
-Each of these asks for the password itself. Nothing else needs sudo; a machine that is already set up and adopted by `./rebuild.sh --switch` needs it only for the login shell.
+Each of these asks for the password itself. Nothing else needs sudo. A fresh machine bootstrap sets the login shell itself. A machine that is already set up and adopted by `./rebuild.sh --switch` needs sudo only for the login shell, which the rebuild does not set: run `./.dotsteward/cli.sh login-shell set --profile <check profile>` after the rebuild.
 
 ## Free space
 
