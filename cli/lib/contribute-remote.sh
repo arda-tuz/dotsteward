@@ -14,11 +14,15 @@
 #                            git+ URL with ?ref=), on the GitHub repository
 #                            FORK (owner/repo) when given
 #
-# The instance commands (gate, rebuild, e2e, update, sync) run through the
-# running CLI with DOTSTEWARD_FRAMEWORK_OVERRIDE removed from their
-# environment, so a framework override is exactly the --framework-override
-# flag the trial passes (D9) and never leaks into the recovery or the
-# upgrade.
+# The instance commands (gate, rebuild, e2e, update, sync) run with
+# DOTSTEWARD_FRAMEWORK_OVERRIDE removed from their environment, so a
+# framework override is exactly the --framework-override flag the trial
+# passes (D9) and never leaks into the recovery or the upgrade. They run
+# through the running CLI, except in the upgrade once flake.lock pins the
+# release: from there on they run through the instance launcher
+# (.dotsteward/cli.sh), so the release's CLI validates, rebuilds and
+# publishes the upgraded instance and `static` compares the refreshed
+# template files with the release's template/, not the running one's.
 #
 # Run state fields added by these steps (next to those of `start`):
 #   profile          the profile of the trial (the current profile, else
@@ -116,6 +120,17 @@ _contribute_seconds() {
 _contribute_instance() {
   log "dotsteward $*"
   env -u DOTSTEWARD_FRAMEWORK_OVERRIDE "$framework_root/cli/dotsteward" --instance "$DS_INSTANCE_ROOT" "$@"
+}
+
+# _contribute_pinned COMMAND [ARG...]: dotsteward COMMAND ARG... on the
+# instance through its launcher, so with the CLI pinned by its flake.lock
+# (built once per lock; a dirty tracked tree is fine), without an inherited
+# framework override.
+_contribute_pinned() {
+  [[ -x $DS_INSTANCE_ROOT/.dotsteward/cli.sh ]] ||
+    _contribute_red "the instance has no executable launcher .dotsteward/cli.sh, so it cannot run the CLI pinned by flake.lock"
+  log "dotsteward $* (the CLI pinned by flake.lock)"
+  env -u DOTSTEWARD_FRAMEWORK_OVERRIDE "$DS_INSTANCE_ROOT/.dotsteward/cli.sh" "$@"
 }
 
 # _contribute_profile: the profile of the run, else the current profile
@@ -1010,10 +1025,10 @@ contribute_cmd_upgrade() {
       _contribute_red "upgrade: nix flake update dotsteward failed; the changes stay uncommitted, run upgrade again"
     _contribute_verify_lock "$tag" "$commit"
     _contribute_refresh_template "$tag"
-    _contribute_instance sync ||
+    _contribute_pinned sync ||
       _contribute_red "upgrade: dotsteward sync failed; the changes stay uncommitted, run upgrade again"
     git -C "$DS_INSTANCE_ROOT" add -A
-    _contribute_instance gate --scope maintain ||
+    _contribute_pinned gate --scope maintain ||
       _contribute_red "upgrade: the gate failed on the upgraded instance; the changes stay uncommitted (staged), nothing is published"
     if git -C "$DS_INSTANCE_ROOT" diff --cached --quiet; then
       log "the instance already uses $tag"
@@ -1031,24 +1046,24 @@ contribute_cmd_upgrade() {
   fi
 
   if ((build_only)); then
-    _contribute_instance rebuild --profile "$profile" --build-only ||
+    _contribute_pinned rebuild --profile "$profile" --build-only ||
       _contribute_red "upgrade: rebuild --build-only failed; run upgrade again once it is fixed"
   else
-    _contribute_instance rebuild --profile "$profile" --switch ||
+    _contribute_pinned rebuild --profile "$profile" --switch ||
       _contribute_red "upgrade: rebuild --switch failed; run upgrade again once it is fixed"
     _contribute_set '.trial_switched = false'
     if [[ $instance_commit == "$base" ]]; then
-      _contribute_instance e2e --profile "$profile" ||
+      _contribute_pinned e2e --profile "$profile" ||
         _contribute_red "upgrade: e2e failed on the upgraded instance; run upgrade again once it is fixed"
     else
-      _contribute_instance e2e --profile "$profile" --expected-remote-base "$base" ||
+      _contribute_pinned e2e --profile "$profile" --expected-remote-base "$base" ||
         _contribute_red "upgrade: e2e failed on the upgraded instance; run upgrade again once it is fixed"
     fi
   fi
   if [[ $instance_commit == "$base" ]]; then
     log "nothing to publish: the instance's published commit ${base:0:12} already uses $tag"
   else
-    _contribute_instance update publish --scope maintain --expected-base "$base" ||
+    _contribute_pinned update publish --scope maintain --expected-base "$base" ||
       _contribute_red "upgrade: update publish failed; run upgrade again once it is fixed"
   fi
   if ((build_only)) && [[ $(_contribute_get trial_switched) == true ]]; then
