@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "component": "claude-code",
+  "flake_inputs": {},
+  "versions_lock": {
+    "agent_tools": {
+      "claude-code": {
+        "linux-x64": {
+          "version": "2.1.285",
+          "url": "https://downloads.claude.ai/claude-code-releases/2.1.285/linux-x64/claude",
+          "size": 240327864,
+          "sha256": "33dad1ec615a2e08cc78b494f05c110e49916de2c79d78ec8799ebf46b233d29"
+        },
+        "darwin-arm64": {
+          "version": "2.1.285",
+          "url": "https://downloads.claude.ai/claude-code-releases/2.1.285/darwin-arm64/claude",
+          "size": 223821616,
+          "sha256": "51f09bd1e021d9fa8a1864c179799bd37cb39962a937935c5cf6823398e86db4"
+        }
+      }
+    },
+    "desktop_packages": {
+      "claude-code": {
+        "minimum_version": "2.1.285-1",
+        "url": "https://downloads.claude.ai/claude-code/apt/stable/pool/main/c/claude-code/claude-code_2.1.285-1_amd64.deb",
+        "size": 108105792,
+        "sha256": "e4216bcc1efe4f367e57e3a874122d673c10b5c004c28c32c3134e1e67c492bf"
+      }
+    }
+  }
+}
