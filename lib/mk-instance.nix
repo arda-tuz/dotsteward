@@ -198,8 +198,12 @@ let
       "dotsteward: unknown component ${name} in workstation.toml: neither a catalog component nor an instance component (components/${name}/default.nix)"
   ) tableNames;
 
-  guarded =
-    outputs:
+  # Each output refuses on its own, so the output names never depend on the
+  # instance: in a flake the root is inputs.self, the flake result built from
+  # these outputs, and a guard around the whole set would need the root to
+  # decide the set itself (infinite recursion).
+  guarded = builtins.mapAttrs (
+    _: output:
     if missingInputs != [ ] then
       throw "dotsteward: mkInstance: inputs lacks ${concatStringsSep ", " missingInputs} (required: ${concatStringsSep ", " requiredInputs})"
     else if followsProblems != [ ] then
@@ -207,7 +211,8 @@ let
     else if componentProblems != [ ] then
       throw (concatStringsSep "\n" componentProblems)
     else
-      outputs;
+      output
+  );
 
   # --- Components and packages ------------------------------------------------
 
