@@ -14,9 +14,10 @@
 # `nix flake init -t`), writes workstation.toml, merges the chosen catalog
 # components' seeds into the locks and their flake inputs into flake.nix,
 # then runs `nix flake lock`, `dotsteward sync --nix` and `dotsteward pins
-# check --nix` and commits the instance with the user's git identity (SPEC
-# 10.3, 5.6). All or nothing: the work happens in a temporary directory and
-# DIR changes only when every step passed. init never prompts. The engine is
+# check --nix` in a temporary directory, moves the instance into DIR and
+# commits it there with the user's git identity (SPEC 10.3, 5.6). All or
+# nothing: DIR changes only when every step passed, and a failed commit puts
+# it back as it was. init never prompts. The engine is
 # cli/python/dotsteward_cli/init.py, run with the python3 first on PATH (the
 # package puts its own python, with tomlkit, there). Exit 0, 1 for a refusal
 # or a failed step, 2 for a usage error.
