@@ -13,11 +13,11 @@
 # modules/components/*/seed.json (which `dotsteward init` merges) by path
 # (missing ones are skipped), so new command files need no edit here, and
 # bakes the framework rev and narHash into share/dotsteward/source-info for
-# `dotsteward version`. Of modules/ it ships only the seeds, so
+# `dotsteward version`. Of modules/ it ships only the seeds, so the
+# packaged modules/components directories are not the catalog:
 # share/dotsteward/catalog.json lists the catalog component names (the
-# modules/components directories, as lib.catalog), which the Python
-# configuration reader uses as its default catalog when the seeds are
-# absent.
+# source's modules/components directories, as lib.catalog), and the Python
+# configuration reader takes its default catalog from it.
 {
   version,
   src,

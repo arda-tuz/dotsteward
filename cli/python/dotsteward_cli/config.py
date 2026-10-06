@@ -444,12 +444,10 @@ class _Validator:
 
 def framework_catalog(root: Path = FRAMEWORK_ROOT) -> list[str]:
     """The catalog component names of the framework, like ``lib.catalog``:
-    the directories of modules/components in a checkout, else the
-    catalog.json the CLI package writes (the package has no modules/), else
-    none."""
-    components = root / "modules" / "components"
-    if components.is_dir():
-        return _sort_strings([entry.name for entry in os.scandir(components) if entry.is_dir(follow_symlinks=False)])
+    the catalog.json the CLI package writes (the package's modules/components
+    holds only the directories of the components that carry a seed, so its
+    listing is not the catalog), else the directories of modules/components
+    in a checkout, else none."""
     catalog_file = root / "catalog.json"
     if catalog_file.exists():
         try:
@@ -460,6 +458,9 @@ def framework_catalog(root: Path = FRAMEWORK_ROOT) -> list[str]:
         if not isinstance(names, list) or not all(isinstance(n, str) and _is_component_name(n) for n in names):
             raise DotstewardError(f"invalid catalog file {catalog_file}: expected a JSON array of component names")
         return list(dict.fromkeys(names))
+    components = root / "modules" / "components"
+    if components.is_dir():
+        return _sort_strings([entry.name for entry in os.scandir(components) if entry.is_dir(follow_symlinks=False)])
     return []
 
 
