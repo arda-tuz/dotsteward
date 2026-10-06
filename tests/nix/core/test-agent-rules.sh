@@ -67,6 +67,12 @@ json_check "$actual" '[.targets, .source]' '[{},null]'
 assert_core_fails '(homeOf { config = "workstation"; root = fixtures + "/missing"; modules = componentModules; }).home.username' \
   "- dotsteward: agent rules source " "/missing/agent/AGENTS.md does not exist"
 assert_core_eq '"alice"' '(homeOf { root = fixtures + "/missing"; }).home.username'
+# The manifest (part of home.packages) still evaluates then: it names no
+# source, for a path root and for the store path string root mkInstance
+# passes.
+assert_core_eq '{"source":null,"targets":[]}' '(homeOf { root = fixtures + "/missing"; }).dotsteward.manifest.agent_rules'
+nix_core_read_write=1 assert_core_eq '{"source":null,"targets":[]}' \
+  '(homeOf { root = "${fixtures + "/instance"}/missing"; }).dotsteward.manifest.agent_rules'
 nix_core_read_write=1 assert_core_fails '(homeOf { config = "workstation"; root = "${fixtures + "/instance"}/missing"; modules = componentModules; }).home.username' \
   "- dotsteward: agent rules source " "/missing/agent/AGENTS.md does not exist"
 
