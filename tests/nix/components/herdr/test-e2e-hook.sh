@@ -3,8 +3,9 @@
 # shellcheck disable=SC2016 # zsh startup lines with a literal $ are written on purpose
 # The E2E hook of herdr: an interactive login zsh, the shell a terminal
 # opens, finds herdr on PATH. The hook is declared only when the shell
-# component (zsh) is enabled; it runs with the hook environment (SPEC 8.4)
-# and fails with a message when the login shell does not see herdr.
+# component (zsh) is enabled, for the profiles of that component; it runs
+# with the hook environment (SPEC 8.4) and fails with a message when the
+# login shell does not see herdr.
 # shellcheck source=tests/nix/components/herdr/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/components/herdr/helpers.sh"
 
@@ -13,11 +14,17 @@ command -v zsh >/dev/null 2>&1 || ds_fail "the herdr E2E hook tests need zsh on 
 # Without the shell component there is no zsh login shell to check.
 assert_herdr_eq '[]' '(herdrOf (herdrInstance { }) "x86_64-linux").checks.e2e'
 
-# With it (a stand-in definition: the check only reads its enable flag), the
-# hook is declared for every profile in the main phase.
+# With it (a stand-in definition: the check only reads its enable flag and
+# its profiles), the hook is declared in the main phase for the profiles of
+# the shell component: every profile here.
 with_shell='herdrInstance { homeModules = [ { dotsteward.components.shell = { enable = true; method = "nix"; }; } ]; }'
 hooks=$(herdr_json "map (hook: hook // { script = baseNameOf (toString hook.script); }) (herdrOf ($with_shell) \"x86_64-linux\").checks.e2e")
 assert_eq '[{"name":"herdr-login-zsh","phase":"main","profiles":null,"script":"e2e-login-zsh.sh"}]' "$(jq -cS . <<<"$hooks")"
+# A shell component scoped to some profiles scopes the hook to the same
+# profiles: elsewhere the generation has no zsh login shell to check.
+scoped_shell='herdrInstance { homeModules = [ { dotsteward.components.shell = { enable = true; method = "nix"; profiles = [ "workstation" ]; }; } ]; }'
+scoped=$(herdr_json "map (hook: hook // { script = baseNameOf (toString hook.script); }) (herdrOf ($scoped_shell) \"x86_64-linux\").checks.e2e")
+assert_eq '[{"name":"herdr-login-zsh","phase":"main","profiles":["workstation"],"script":"e2e-login-zsh.sh"}]' "$(jq -cS . <<<"$scoped")"
 # The manifest lists it with the script copied into the store.
 script=$(nix_core_read_write=1 herdr_json "(manifestOf ($with_shell) \"aarch64-darwin\").checks.e2e" |
   jq -er '.[] | select(.component == "herdr" and .name == "herdr-login-zsh") | .script')
