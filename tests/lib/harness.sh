@@ -23,7 +23,11 @@
 #                   getent, id, chsh and dscl stubs
 # The host environment is neutralized: every XDG_*, GIT_*, DOTSTEWARD_*,
 # DOTFILES_* and application variable (CODEX_*, HERDR_*, PI_*, OPENCODE_*,
-# CLAUDE*) is removed, and the DS_* variables the harness and its helpers own
+# CLAUDE*) is removed, so are the SSH agent (SSH_AUTH_SOCK, SSH_AGENT_PID) and
+# the GitHub CLI credentials (GH_TOKEN, GITHUB_TOKEN, GH_ENTERPRISE_TOKEN,
+# GITHUB_ENTERPRISE_TOKEN, GH_HOST, GH_CONFIG_DIR), so a test that forgets the
+# fake SSH transport or the gh stub cannot reach a real remote with the host
+# user's identity, and the DS_* variables the harness and its helpers own
 # are reset (any other DS_* variable is an input from the caller, such as a
 # Nix check's setup hook, and is kept). git reads only a temporary global
 # config with the identity `dotsteward-test <dotsteward-test@example.invalid>`
@@ -108,6 +112,9 @@ ds_harness_init() {
     DS_HTTPFIX_URL DS_HTTPFIX_PID DS_HTTPFIX_LOG \
     DS_FAKESSH_MAP DS_FAKESSH_LOG DS_FAKESSH_SLEEP DS_FAKESSH_FAIL \
     DS_STDOUT DS_STDERR DS_STATUS
+  # Host credentials: the SSH agent and the GitHub CLI tokens.
+  unset SSH_AUTH_SOCK SSH_AGENT_PID GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN \
+    GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR
 
   mkdir -p "$DS_TEST_ROOT"/{home,tmp,work,state,platform,stubs}
   export HOME=$DS_TEST_ROOT/home
