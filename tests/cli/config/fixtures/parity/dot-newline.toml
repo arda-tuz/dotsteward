@@ -1,0 +1,17 @@
+# Valid: "." in ^https?://.+$ matches a newline, as in Nix.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]
+
+[gate]
+cache_url = "https://cache.example.invalid/\nsecond-line"

@@ -1,0 +1,31 @@
+# Key names outside [A-Za-z0-9_-] are shown as JSON strings; non-ASCII stays
+# raw, control characters are escaped.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+name = "caf\u00e9\ttab\u0001"
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]
+"bad name" = { mode = "fresh" }
+
+[components."Bad Name"]
+enable = true
+
+[components."\u00e7"]
+enable = true
+
+[protected]
+"dir with space/file.txt" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+"/absolute" = "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+
+[compat.check_aliases]
+"alias.with.dots" = "main"
+"bad alias" = "main"

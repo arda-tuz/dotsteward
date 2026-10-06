@@ -1,0 +1,21 @@
+# Pattern semantics shared with Nix builtins.match: "$" does not match before
+# a trailing newline, "." matches a newline, and a bracket expression keeps
+# "$" and the backslash literal.
+schema_version = 1
+
+[identity]
+username = "alice\n"
+home = "/home/alice\\x"
+
+[instance]
+name = "workstation\n"
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05\n"
+
+[profiles]
+names = ["main"]
+
+[gate]
+cache_url = "https://cache.example.invalid/\nsecond-line"

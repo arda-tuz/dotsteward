@@ -1,0 +1,48 @@
+# Valid: free component options keep every TOML type except dates; instance
+# components sort after the catalog; a catalog name can come from the
+# instance; empty tables get their defaults.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+checkout = "/srv/workstation"
+
+[state]
+
+[nix]
+systems = ["aarch64-darwin", "x86_64-linux"]
+state_version = "26.05"
+
+[profiles]
+names = ["main", "fresh.v2", "Upper_case"]
+check = "fresh.v2"
+
+[profiles.Upper_case]
+
+[platform]
+
+[platform.linux]
+
+[upstream]
+fork = "alice/dotsteward"
+
+[components]
+order = ["vscode", "zz-extra"]
+
+[components.zz-extra]
+enable = true
+options = { ratio = 0.25, big = 1e20, small = -1.5e-7, int = -42, unicode = "\u00e7\u00f6", empty = {}, list = [], tables = [{ a = 1 }, { b = [true, false] }] }
+
+[components.example-app]
+method = "app-archive"
+method_by_platform = { linux = "external" }
+profiles = ["Upper_case"]
+
+[components.shell]
+enable = true
+source = "instance"
+
+[components.herdr]

@@ -1,0 +1,19 @@
+# Duplicates are reported in the order of their first occurrence; numbers
+# compare like Nix (1 == 1.0), booleans never equal numbers.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+systems = [1, 1.0, true, true, "x86_64-linux"]
+state_version = "26.05"
+
+[profiles]
+names = ["main", "b", "a", "b", "a", "main"]
+
+[pins]
+excluded_flake_inputs = ["a", "a", "b", "b", "a"]

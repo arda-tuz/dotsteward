@@ -1,0 +1,39 @@
+# Cross-key rules: reserved profile names, roles, unknown profile tables,
+# catalog sources, component profiles, order entries and check aliases.
+schema_version = 1
+
+[identity]
+username = "Alice.B"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+systems = ["aarch64-darwin", "x86_64-linux"]
+state_version = "26.05"
+
+[profiles]
+names = ["main", "check", "home-x"]
+default = "missing"
+bootstrap = "main"
+
+[profiles.stale]
+mode = "adopt"
+
+[components]
+order = ["zz-unknown", "herdr", "example-term", "also-missing"]
+
+[components.example-app]
+source = "catalog"
+profiles = ["main", "nope"]
+
+[components.example-term]
+enable = true
+
+[components.zz-extra]
+enable = true
+
+[compat.check_aliases]
+home = "main"
+home-main = "main"
+fresh = "nope"

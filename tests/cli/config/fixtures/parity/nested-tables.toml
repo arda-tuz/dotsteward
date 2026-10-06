@@ -1,0 +1,48 @@
+# Errors deep inside arrays of tables and nested tables.
+schema_version = 1
+
+[identity]
+username = "alice"
+unknown = true
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]
+
+[profiles.main]
+mode = "later"
+extra = 1
+
+[platform.linux.fast_path]
+detectors = ["ok", "not ok", "ok"]
+desktop_contains = ""
+
+[platform.darwin.fast_path]
+min_version = "fourteen"
+
+[platform.windows]
+enabled = true
+
+[[privacy.file_rules]]
+files = ["a", ""]
+pattern = 1
+
+[[privacy.file_rules]]
+files = []
+pattern = "x"
+message = "m"
+extra = "y"
+
+[skills]
+hm_root = "/absolute"
+installer = []
+overlays = { dotsteward-maintain = "~/overlay.md", other-skill = "agent/overlays/other.md" }
+
+[components.example-app]
+method_by_platform = { linux = "snap", windows = "nix" }
+profiles = []
