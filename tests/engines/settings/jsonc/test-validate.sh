@@ -130,6 +130,15 @@ value = 1
 EOF
 invalid unknown-target "nowhere-x: unknown target 'nowhere'"
 
+append_entry target-type <<'EOF'
+[[entries]]
+id = "delta-list"
+target = ["delta"]
+key = ["x"]
+value = 1
+EOF
+invalid target-type "delta-list: target must be a target name"
+
 append_entry value-and-absent <<'EOF'
 [[entries]]
 id = "delta-both"
