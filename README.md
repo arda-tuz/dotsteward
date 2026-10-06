@@ -6,8 +6,8 @@ machine in one `workstation.toml`; dotsteward builds it, activates it,
 validates it end to end, keeps its pinned versions current and carries
 locally changed application settings back into the repository.
 
-Status: under development, not released yet (version `0.0.0`). Interfaces
-may change without notice until the first release.
+Status: under development (version `0.0.1`). Interfaces may change without
+notice before version 1.0.0.
 
 ## Catalog
 
