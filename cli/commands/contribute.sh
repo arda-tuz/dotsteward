@@ -61,10 +61,13 @@
 #
 # Privacy: the denylist is ~/.config/dotsteward/denylist.txt, the file the
 # pre-push hook reads; check needs it in both modes. Findings are always
-# redacted. Instance-leak terms shorter than 4 characters, part of a line of
-# the clone's privacy/allowlist.txt or of the contributor's public identity
-# (the clone's user.name and user.email) are skipped. Any finding (or scan
-# failure) is a hard stop: exit 4, nothing may be published.
+# redacted. Instance-leak terms are skipped when they are shorter than 4
+# characters, equal to a line of the clone's privacy/allowlist.txt (the
+# scanner masks those strings), part of the contributor's public identity
+# (the clone's user.name and user.email, carried by every commit) or already
+# in the content of the fetched upstream main outside the allowlisted
+# strings (published before, so no new leak). Any finding (or scan failure)
+# is a hard stop: exit 4, nothing may be published.
 #
 # Exit status:
 #   0  done

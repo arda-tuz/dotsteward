@@ -19,16 +19,27 @@
 #   contribute_fetch_main DIR REMOTE
 #                            fetches main of REMOTE into
 #                            refs/remotes/REMOTE/main (180 s)
-#   contribute_leak_terms CONTEXT_JSON ALLOWLIST PUBLIC...
+#   contribute_leak_terms CONTEXT_JSON ALLOWLIST BASE PUBLIC...
 #                            the instance-leak terms in the denylist format:
 #                            runtime and check user and home, the instance
 #                            remote's owner and repository, instance
 #                            component names and settings targets, the
 #                            other settings targets except the catalog
 #                            components', settings entry ids, instance
-#                            skill names and the hostname; terms shorter
-#                            than 4 characters or contained in an allowlist
-#                            line or a PUBLIC string are skipped
+#                            skill names and the hostname. Skipped: terms
+#                            shorter than 4 characters; terms equal to an
+#                            ALLOWLIST line (the scanner masks allowlisted
+#                            strings, so a term inside a longer one still
+#                            finds its other occurrences); terms contained
+#                            in a PUBLIC string (the contributor's user.name
+#                            and user.email, which every commit carries as
+#                            its unmasked author and committer, so such a
+#                            term could never pass); and terms the content
+#                            of BASE (a commit of CT_CLONE, the fetched
+#                            upstream main; empty: no such skip) already
+#                            holds outside the allowlisted strings, which
+#                            are no new leak of the branch and would stop
+#                            every change of a file that mentions them
 #
 # Facts set by contribute_resolve_mode (the remote steps use them too):
 #   CT_CONTEXT          `dotsteward context --json` of the instance
@@ -523,9 +534,9 @@ _contribute_ere_escape() {
 }
 
 contribute_leak_terms() {
-  local context=$1 allowlist=$2 line term lower key path host public
-  shift 2
-  local -a candidates=() publics=() segments=()
+  local context=$1 allowlist=$2 base=$3 line term lower key path host public
+  shift 3
+  local -a candidates=() allowed=() publics=() segments=()
   local -A seen=()
   # Settings targets of catalog components are public framework names.
   mapfile -t candidates < <(jq -r '
@@ -555,7 +566,7 @@ contribute_leak_terms() {
     while IFS= read -r line || [[ -n $line ]]; do
       line=${line#"${line%%[![:space:]]*}"}
       line=${line%"${line##*[![:space:]]}"}
-      [[ -z $line || $line == '#'* ]] || publics+=("${line,,}")
+      [[ -z $line || $line == '#'* ]] || allowed+=("${line,,}")
     done <"$allowlist"
   fi
   for public in "$@"; do
@@ -569,14 +580,49 @@ contribute_leak_terms() {
     lower=${term,,}
     [[ -z ${seen[$lower]:-} ]] || continue
     seen[$lower]=1
+    for public in "${allowed[@]}"; do
+      [[ $public != "$lower" ]] || continue 2
+    done
     for public in "${publics[@]}"; do
       [[ $public != *"$lower"* ]] || continue 2
     done
+    if [[ -n $base ]] && _contribute_published "$base" "$lower" "${allowed[@]}"; then
+      continue
+    fi
     case $term in
       '#'* | word:* | re:*) printf 're:%s\n' "$(_contribute_ere_escape "$term")" ;;
       *) printf '%s\n' "$term" ;;
     esac
   done
+}
+
+# _contribute_published BASE TERM ALLOWED...: TERM (lower case) occurs in the
+# content of commit BASE of CT_CLONE once the ALLOWED strings (lower case)
+# are blanked out, as the scanner masks them before matching terms; binary
+# files are ignored. Any git failure counts as absent, so the term is kept.
+_contribute_published() {
+  local base=$1 term=$2 found
+  shift 2
+  found=$(
+    { git -C "$CT_CLONE" grep -h -i -I -F -e "$term" "$base" -- 2>/dev/null || true; } |
+      CT_TERM=$term CT_ALLOWED=$(printf '%s\n' "$@") LC_ALL=C awk '
+        BEGIN { n = split(ENVIRON["CT_ALLOWED"], list, "\n"); term = ENVIRON["CT_TERM"]; found = 0 }
+        found { next }
+        {
+          low = tolower($0)
+          for (i = 1; i <= n; i++) {
+            len = length(list[i])
+            if (len == 0) continue
+            while ((p = index(low, list[i])) > 0) {
+              pad = ""; for (j = 0; j < len; j++) pad = pad " "
+              low = substr(low, 1, p - 1) pad substr(low, p + len)
+            }
+          }
+          if (index(low, term) > 0) found = 1
+        }
+        END { print found }'
+  )
+  [[ $found == 1 ]]
 }
 
 _contribute_expect_fail() {
@@ -667,7 +713,7 @@ contribute_cmd_check() {
   local terms=$CT_TERMS_DIR/terms count
   (
     umask 077
-    contribute_leak_terms "$CT_CONTEXT" "$CT_CLONE/privacy/allowlist.txt" \
+    contribute_leak_terms "$CT_CONTEXT" "$CT_CLONE/privacy/allowlist.txt" "$base" \
       "$(git -C "$CT_CLONE" config user.name || true)" "$(git -C "$CT_CLONE" config user.email || true)" >"$terms"
   )
   chmod 0600 "$terms"
