@@ -33,9 +33,18 @@ owner and repository become ``<redacted>`` in every string value and in the
 profile names that key ``profiles.modes`` (homes and the remote as
 substrings, the other terms as whole words), and so do the settings entry ids
 and target names, the names, targets and commands of instance components, and
-the instance skill names. Field names never change, so the redacted document
-has the shape of the plain one (its redacted values, such as
-``<redacted>/.local/state``, no longer meet the schema's value patterns).
+the instance skill names. The check identity, the remote and the instance
+component names are read from the context and also from the unvalidated
+workstation.toml (``identity.username``, ``identity.home``,
+``identity.darwin_home``, ``instance.remote``, the ``components`` tables that
+are not in the catalog), so they are redacted when the configuration is
+invalid and there is no context. The config check's problems quote the
+offending values: every quoted value there becomes ``"<redacted>"`` unless it
+is a fact of the schema (a pattern, an enum or const value, a default), a
+reserved key of ``[profiles]`` or a catalog component name. Field names
+never change, so the redacted document has the shape of the plain one (its
+redacted values, such as ``<redacted>/.local/state``, no longer meet the
+schema's value patterns).
 Settings values are never read.
 
 JSON document (one, on stdout)::
@@ -348,10 +357,58 @@ def remote_parts(remote: str) -> list[str]:
     return parts[-2:]
 
 
-def _terms(report: Mapping[str, Any], env: Mapping[str, str]) -> tuple[list[str], list[str]]:
+def _catalog() -> list[str]:
+    """The catalog component names, or none when the catalog cannot be read
+    (redaction then treats every component as private)."""
+    try:
+        return config.framework_catalog()
+    except config.DotstewardError:
+        return []
+
+
+def instance_toml(env: Mapping[str, str]) -> dict[str, Any] | None:
+    """The parsed workstation.toml of the instance, not validated, or None
+    when it cannot be found, read or parsed. Redaction takes its private
+    values from here too, because an invalid configuration has no context
+    but its problems still quote them."""
+    try:
+        return config.read_toml(config.discover_instance(env=env) / config.CONFIG_FILE)
+    except config.DotstewardError:
+        return None
+
+
+def _raw_terms(raw: Mapping[str, Any] | None) -> tuple[list[str], list[str]]:
+    """(substring terms, word terms) of an unvalidated workstation.toml:
+    the check homes, the remote, the check username, the remote's owner and
+    repository, and the names of the components that are not in the catalog
+    (instance components, private as in the context). Values of the wrong
+    type are skipped."""
+
+    def table(name: str) -> Mapping[str, Any]:
+        value = raw.get(name) if raw is not None else None
+        return value if isinstance(value, dict) else {}
+
+    def string(section: str, key: str) -> str:
+        value = table(section).get(key)
+        return value if isinstance(value, str) else ""
+
+    remote = string("instance", "remote")
+    substrings = [string("identity", "home"), string("identity", "darwin_home"), remote]
+    words = [string("identity", "username"), *remote_parts(remote)]
+    components = table("components")
+    if components:
+        catalog = _catalog()
+        words += [name for name in components if name != "order" and name not in catalog]
+    return substrings, words
+
+
+def _terms(
+    report: Mapping[str, Any], env: Mapping[str, str], raw: Mapping[str, Any] | None = None
+) -> tuple[list[str], list[str]]:
     """(substring terms, word terms) to redact."""
-    substrings = [env.get("HOME", "").rstrip("/")]
-    words = [env.get("USER", ""), report["host"]["hostname"], report["host"]["hostname"].split(".")[0]]
+    substrings, words = _raw_terms(raw)
+    substrings.append(env.get("HOME", "").rstrip("/"))
+    words += [env.get("USER", ""), report["host"]["hostname"], report["host"]["hostname"].split(".")[0]]
     document = report["context"]
     if document is not None:
         identity = document["identity"]
@@ -386,11 +443,58 @@ def _map_strings(value: Any, replace: Callable[[str], str]) -> Any:
     return value
 
 
-def redact(report: Mapping[str, Any], env: Mapping[str, str] | None = None) -> dict[str, Any]:
+# A JSON string literal, as the configuration problems quote values.
+_JSON_STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
+# Schema keywords whose values are public facts a problem may quote.
+_PUBLIC_KEYWORDS = ("pattern", "enum", "const", "default")
+
+
+def _schema_strings(node: Any, public: set[str]) -> None:
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in _PUBLIC_KEYWORDS:
+                values = value if isinstance(value, list) else [value]
+                public.update(item for item in values if isinstance(item, str))
+            _schema_strings(value, public)
+    elif isinstance(node, list):
+        for item in node:
+            _schema_strings(item, public)
+
+
+def public_strings() -> set[str]:
+    """The strings a configuration problem may quote that are not private:
+    the patterns, enum and const values and defaults of the workstation
+    schema, the reserved keys of [profiles] and the catalog component
+    names."""
+    public: set[str] = set(config.PROFILE_KEYS)
+    _schema_strings(config.schema(), public)
+    public.update(_catalog())
+    return public
+
+
+def _redact_literals(text: str, public: set[str]) -> str:
+    """text with every quoted value that is not in public replaced by
+    "<redacted>"."""
+
+    def replace(match: re.Match[str]) -> str:
+        try:
+            value = json.loads(match.group())
+        except ValueError:
+            value = None
+        return match.group() if value in public else f'"{REDACTED}"'
+
+    return _JSON_STRING.sub(replace, text)
+
+
+def redact(
+    report: Mapping[str, Any], env: Mapping[str, str] | None = None, raw: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     """A copy of report with the private terms replaced (see the module
-    documentation). Check ids and statuses are kept."""
+    documentation). Check ids and statuses are kept. raw is the unvalidated
+    workstation.toml (``instance_toml``); the caller reads it, since the
+    context is null when the configuration is invalid."""
     env = os.environ if env is None else env
-    replace = _replacer(*_terms(report, env))
+    replace = _replacer(*_terms(report, env, raw))
     result = json.loads(json.dumps(report))
     document = result["context"]
     if document is not None:
@@ -408,15 +512,24 @@ def redact(report: Mapping[str, Any], env: Mapping[str, str] | None = None) -> d
         profiles = document["profiles"]
         profiles["modes"] = {replace(name): mode for name, mode in profiles["modes"].items()}
     result["host"]["hostname"] = REDACTED
-    result["checks"] = [
-        {
-            "id": check["id"],
-            "status": check["status"],
-            "message": replace(check["message"]),
-            "details": _map_strings(check["details"], replace),
-        }
-        for check in result["checks"]
-    ]
+    public = public_strings()
+
+    def replace_problem(text: str) -> str:
+        return replace(_redact_literals(text, public))
+
+    checks = []
+    for check in result["checks"]:
+        # The config check's problems quote values of workstation.toml.
+        replace_check = replace_problem if check["id"] == "config" else replace
+        checks.append(
+            {
+                "id": check["id"],
+                "status": check["status"],
+                "message": replace_check(check["message"]),
+                "details": _map_strings(check["details"], replace_check),
+            }
+        )
+    result["checks"] = checks
     result["context"] = _map_strings(document, replace)
     result["redacted"] = True
     return result
@@ -450,7 +563,8 @@ Each check is ok, warn, fail or skip.
               (`dotsteward context --json`); without it, a line per check
   --redact    replace home directories, usernames, the hostname, the remote
               and private names (settings entries and targets, instance
-              components and skills) with <redacted>, to share the report
+              components and skills, values quoted by configuration
+              problems) with <redacted>, to share the report
   -h, --help  this help
 
 Exit 0, or 1 when a check fails or for a usage error."""
@@ -466,7 +580,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     report = run()
     if args.redact:
-        report = redact(report)
+        report = redact(report, raw=instance_toml(os.environ))
     if args.json:
         config._write(json.dumps(report, indent=2, ensure_ascii=False))
     else:
