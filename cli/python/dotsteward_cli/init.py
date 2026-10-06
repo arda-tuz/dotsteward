@@ -13,7 +13,9 @@ committed there; a failed commit puts ``--dir`` back as it was):
    ``template/``; a directory that ``nix flake init -t`` filled (its
    ``workstation.toml`` holds the ``# dotsteward:template`` line) is filled
    in place, unless it is a git repository kept elsewhere (a ``.git`` file
-   or symbolic link, or ``core.worktree``); anything else is refused.
+   or symbolic link, or ``core.worktree``), and the files executable in the
+   framework template get the executable bits ``nix flake init`` drops;
+   anything else is refused.
 2. The check identity from ``--username`` and ``--home``, else ``$USER``
    and ``$HOME``, through ``require_safe_identity`` (``cli/lib/lib.sh``).
 3. ``workstation.toml``, edited with tomlkit so the template's comments
@@ -980,6 +982,23 @@ def make_writable(root: Path) -> None:
                 os.chmod(path, stat.S_IMODE(mode) | stat.S_IWUSR)
 
 
+def restore_executable_bits(root: Path, template: Path) -> None:
+    """Gives every file below root that is executable in the framework
+    template its executable bits back (`nix flake init` drops them)."""
+    for directory, _dirnames, filenames in os.walk(template):
+        for name in filenames:
+            source = os.path.join(directory, name)
+            if os.path.islink(source):
+                continue
+            bits = stat.S_IMODE(os.lstat(source).st_mode) & 0o111
+            target = root / os.path.relpath(source, template)
+            if not bits or target.is_symlink() or not target.is_file():
+                continue
+            mode = stat.S_IMODE(os.lstat(target).st_mode)
+            if mode & bits != bits:
+                os.chmod(target, mode | bits)
+
+
 def temp_root() -> Path:
     return Path(tempfile.gettempdir()).resolve()
 
@@ -1166,6 +1185,7 @@ def build_and_place(
         stage = temp / "instance"
         shutil.copytree(source, stage, symlinks=True)
         make_writable(stage)
+        restore_executable_bits(stage, FRAMEWORK_ROOT / "template")
         for relative, text in files.items():
             (stage / relative).write_text(text, encoding="utf-8")
 
