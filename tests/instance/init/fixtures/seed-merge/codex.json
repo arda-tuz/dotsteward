@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "component": "codex",
+  "flake_inputs": {},
+  "versions_lock": {
+    "agent_tools": {
+      "shared": {
+        "version": "1.0.0",
+        "platforms": [
+          "linux",
+          "darwin"
+        ]
+      },
+      "codex": {
+        "version": "0.1.0",
+        "size": 1024
+      }
+    },
+    "nix_packages": {
+      "codex-helper": {
+        "expected": "2.0.0",
+        "resolved": "2.0.0"
+      }
+    },
+    "desktop_packages": {
+      "codex": {
+        "minimum_version": "0.1.0"
+      }
+    }
+  },
+  "skills_lock": {
+    "nix_tools": {
+      "codex-helper": "2.0.0"
+    },
+    "release_tools": {
+      "codex": {
+        "version": "0.1.0"
+      }
+    }
+  }
+}

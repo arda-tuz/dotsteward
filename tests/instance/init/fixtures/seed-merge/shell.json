@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "component": "shell",
+  "flake_inputs": {},
+  "versions_lock": {
+    "nix_packages": {
+      "zsh": {
+        "expected": "locked nixpkgs package",
+        "resolved": "5.9.1"
+      }
+    },
+    "agent_tools": {
+      "shared": {
+        "version": "1.0.0",
+        "platforms": [
+          "linux",
+          "darwin"
+        ]
+      }
+    }
+  },
+  "skills_lock": {
+    "nix_tools": {}
+  }
+}

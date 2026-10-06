@@ -1,0 +1,10 @@
+{
+  "nix_tools": {
+    "codex-helper": "2.0.0"
+  },
+  "release_tools": {
+    "codex": {
+      "version": "0.1.0"
+    }
+  }
+}

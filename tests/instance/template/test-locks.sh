@@ -2,7 +2,8 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # The template lock files (SPEC 10.1, 5.1, 5.2): versions.lock.json holds the
 # framework sections only (policy, the Nix installer pin, nixpkgs and
-# home-manager at the framework's revisions, no packages), the base that
+# home-manager at the framework's revisions, and of the packages only core's
+# tomlkit, which lib.pinnedVersions of every instance holds), the base that
 # `dotsteward init` merges the component seeds into; agent/skills.lock.json
 # holds no skill; local-maintained-files/buffer.toml no target and no entry.
 # shellcheck source=tests/instance/template/helpers.sh
@@ -32,7 +33,11 @@ assert_json "$versions" '.policy == {
   native_application_updates: true,
   major_version_review_required: true
 }' "policy"
-assert_json "$versions" '.nix_packages == {}' "no packages before init"
+# Only core's pinned package before init: tomlkit, from the locked nixpkgs
+# (`dotsteward sync --nix` writes its resolved version).
+assert_json "$versions" '.nix_packages | keys == ["tomlkit"]' "only core's package before init"
+assert_json "$versions" '.nix_packages.tomlkit.expected == "locked nixpkgs package"' "tomlkit follows nixpkgs"
+assert_json "$versions" '.nix_packages.tomlkit.resolved | test("^[0-9]+([.][0-9]+)+$")' "tomlkit resolved version"
 
 # The Nix installer pin stage-0 and tests/ci/install-nix.sh read: the
 # official release installer, verified by size and SHA-256.

@@ -1,0 +1,30 @@
+{
+  "nix_packages": {
+    "zsh": {
+      "expected": "locked nixpkgs package",
+      "resolved": "5.9.1"
+    },
+    "codex-helper": {
+      "expected": "2.0.0",
+      "resolved": "2.0.0"
+    }
+  },
+  "agent_tools": {
+    "shared": {
+      "version": "1.0.0",
+      "platforms": [
+        "linux",
+        "darwin"
+      ]
+    },
+    "codex": {
+      "version": "0.1.0",
+      "size": 1024
+    }
+  },
+  "desktop_packages": {
+    "codex": {
+      "minimum_version": "0.1.0"
+    }
+  }
+}
