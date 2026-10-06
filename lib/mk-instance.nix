@@ -492,6 +492,27 @@ let
         touch "$out"
       '';
 
+  # The narHash of the framework that flake.lock pins (the node the root's
+  # dotsteward edge names), or null when the lock does not say.
+  pinnedFrameworkHash =
+    let
+      lockFile = at "flake.lock";
+      lock = if pathExists lockFile then builtins.fromJSON (builtins.readFile lockFile) else { };
+      edge = lock.nodes.root.inputs.dotsteward or null;
+    in
+    if builtins.isString edge then lock.nodes.${edge}.locked.narHash or null else null;
+
+  # The evaluated framework differs from the pinned one: an override
+  # (`--override-input dotsteward`, the contribute trial and `gate
+  # --framework-override`). The mirrors describe the pinned framework, so
+  # their staleness is not checked then; `dotsteward sync` refreshes them
+  # when the instance moves to the new framework (contribute upgrade).
+  evaluatedFrameworkHash = inputs.dotsteward.narHash or null;
+  frameworkOverridden =
+    pinnedFrameworkHash != null
+    && evaluatedFrameworkHash != null
+    && pinnedFrameworkHash != evaluatedFrameworkHash;
+
   mirrorCheck =
     system:
     let
@@ -500,7 +521,12 @@ let
         inherit mirrors;
       };
     in
-    if problems != [ ] then
+    if frameworkOverridden then
+      pkgsFor.${system}.runCommand "dotsteward-manifest" { } ''
+        echo "framework overridden (pinned ${pinnedFrameworkHash}, evaluated ${evaluatedFrameworkHash}): mirror staleness not checked; dotsteward sync refreshes the mirrors on upgrade"
+        touch "$out"
+      ''
+    else if problems != [ ] then
       throw (concatStringsSep "\n" problems)
     else
       pkgsFor.${system}.runCommand "dotsteward-manifest" { } ''
