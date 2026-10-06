@@ -1,0 +1,72 @@
+# The full darwin fixture instance (nix/checks/darwin-eval.nix): the
+# instance `dotsteward init` writes for a stranger on a Mac (SPEC 4.2) with
+# every catalog component, on aarch64-darwin only, plus two synthetic private
+# components:
+#   example-app    method nix (its default and its only darwin method)
+#   example-term   official-binary by default, which it supports on Linux
+#                  only: method_by_platform selects nix on darwin;
+#                  workstation profile only
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+name = "workstation"
+remote = "git@github.com:alice/workstation.git"
+checkout = "~/workstation"
+
+[nix]
+systems = ["aarch64-darwin"]
+allow_unfree = true
+state_version = "26.05"
+
+[profiles]
+names = ["workstation", "fresh"]
+default = "workstation"
+check = "workstation"
+bootstrap = "fresh"
+
+[profiles.workstation]
+mode = "adopt"
+
+[profiles.fresh]
+mode = "fresh"
+
+[gate]
+static = ["tests/static.sh"]
+
+[components]
+order = ["shell", "herdr", "claude-code", "codex", "opencode-pi", "vscode", "example-app", "example-term"]
+
+[components.shell]
+enable = true
+
+[components.herdr]
+enable = true
+
+[components.claude-code]
+enable = true
+
+[components.codex]
+enable = true
+
+[components.opencode-pi]
+enable = true
+
+[components.vscode]
+enable = true
+method_by_platform = { linux = "deb", darwin = "app-archive" }
+options = { set_default_editor = true }
+
+[components.example-app]
+enable = true
+
+[components.example-term]
+enable = true
+method_by_platform = { darwin = "nix" }
+profiles = ["workstation"]
+options = { greeting = "hello from the full instance" }
+
+[upstream]
+contribute = "fork"

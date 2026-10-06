@@ -26,8 +26,11 @@ assert_exit 1 env DOTSTEWARD_PLATFORM=linux bash -c 'source "$1" && declare -F x
 assert_exit 1 env DOTSTEWARD_PLATFORM=linux bash -c 'source "$1" && declare -F platform_app_archive_install' _ "$darwin_lib_dir/lib.sh"
 # Sourcing the platform file alone also brings lib.sh.
 assert_exit 0 bash -c 'source "$1" && declare -F die && declare -F xcode_clt_installed' _ "$darwin_lib_dir/platform-darwin.sh"
-# Sourcing it needs none of the macOS tools.
-assert_exit 0 env PATH=/nonexistent "$BASH" -c 'source "$1"' _ "$darwin_lib_dir/lib.sh"
+# Sourcing it runs none of the macOS tools.
+ds_use_stubs sw_vers dscl xcode-select sudo
+: >"$DS_CALL_LOG"
+assert_exit 0 bash -c 'source "$1"' _ "$darwin_lib_dir/lib.sh"
+assert_calls
 
 # --- OS facts ---------------------------------------------------------------
 # The harness points DOTSTEWARD_SW_VERS at a synthetic sw_vers (15.0).
@@ -60,7 +63,12 @@ assert_eq "[dotsteward] ERROR: the Xcode Command Line Tools are not installed; r
 assert_eq "" "$(ds_calls_of xcode-select | grep -v -- ' -p$' || true)" "only checked, never installed"
 ds_stub_set xcode-select installed 1
 assert_exit 0 require_xcode_clt
-assert_exit 1 env PATH=/nonexistent "$BASH" -c 'source "$1"; xcode_clt_installed' _ "$darwin_lib_dir/lib.sh"
+# Without xcode-select (a host that is not a Mac) they are not installed.
+rm -f -- "$DS_TEST_ROOT/bin/xcode-select"
+hash -r
+if ! command -v xcode-select >/dev/null 2>&1; then
+  ! xcode_clt_installed || ds_fail "no xcode-select, no Command Line Tools"
+fi
 
 # --- Shells file and login shell ----------------------------------------------
 ds_use_stubs sudo dscl
@@ -74,12 +82,12 @@ platform_shells_contains /bin/bash || ds_fail "/bin/bash is listed"
 # The user database of DOTSTEWARD_PASSWD_CMD answers first (as on Linux).
 : >"$DS_CALL_LOG"
 assert_eq /bin/bash "$(platform_login_shell)"
-ds_passwd_set other /bin/zsh
-assert_eq /bin/zsh "$(platform_login_shell other)"
+ds_passwd_set example /bin/zsh
+assert_eq /bin/zsh "$(platform_login_shell example)"
 assert_calls
 # Without it, dscl's UserShell attribute.
-assert_eq /bin/zsh "$(unset DOTSTEWARD_PASSWD_CMD; platform_login_shell other)"
-assert_calls "dscl . -read /Users/other UserShell"
+assert_eq /bin/zsh "$(unset DOTSTEWARD_PASSWD_CMD; platform_login_shell example)"
+assert_calls "dscl . -read /Users/example UserShell"
 no_user_shell() {
   unset DOTSTEWARD_PASSWD_CMD
   platform_login_shell no-such-user
@@ -87,8 +95,8 @@ no_user_shell() {
 assert_exit 1 no_user_shell
 assert_eq "[dotsteward] ERROR: cannot read the login shell of no-such-user" "$DS_STDERR"
 # A shell path with a space survives the attribute parsing.
-ds_passwd_set other "/opt/my shells/zsh"
-assert_eq "/opt/my shells/zsh" "$(unset DOTSTEWARD_PASSWD_CMD; platform_login_shell other)"
+ds_passwd_set example "/opt/my shells/zsh"
+assert_eq "/opt/my shells/zsh" "$(unset DOTSTEWARD_PASSWD_CMD; platform_login_shell example)"
 
 : >"$DS_CALL_LOG"
 platform_shells_add "$HOME/.nix-profile/bin/zsh"
@@ -112,13 +120,13 @@ assert_calls "sudo dscl . -create /Users/$USER UserShell $HOME/.nix-profile/bin/
   "dscl . -create /Users/$USER UserShell $HOME/.nix-profile/bin/zsh"
 assert_eq "$HOME/.nix-profile/bin/zsh" "$(platform_login_shell)"
 : >"$DS_CALL_LOG"
-platform_set_login_shell /bin/zsh other
-assert_calls "sudo dscl . -create /Users/other UserShell /bin/zsh" "dscl . -create /Users/other UserShell /bin/zsh"
-assert_eq /bin/zsh "$(ds_passwd_field other 7)"
+platform_set_login_shell /bin/zsh example
+assert_calls "sudo dscl . -create /Users/example UserShell /bin/zsh" "dscl . -create /Users/example UserShell /bin/zsh"
+assert_eq /bin/zsh "$(ds_passwd_field example 7)"
 # A refused sudo fails the change.
 ds_stub_route sudo '*' --exit 1 --stderr 'sudo: a password is required'
-assert_exit 1 platform_set_login_shell /bin/bash other
-assert_eq /bin/zsh "$(ds_passwd_field other 7)"
+assert_exit 1 platform_set_login_shell /bin/bash example
+assert_eq /bin/zsh "$(ds_passwd_field example 7)"
 ds_stub_clear_routes sudo
 
 # --- Bundle version -----------------------------------------------------------

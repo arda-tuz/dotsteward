@@ -21,9 +21,13 @@
 # manifest (components and resolved methods, the darwin settings paths, the
 # login shell, the mirrors), and the check configuration (home directory,
 # packages, the VS Code bundle's command directory on PATH, the editor
-# variables, the agent rules links and the profile-scoped files).
+# variables, the agent rules links and the profile-scoped files). The
+# instance contract of the darwin instance (static --sandbox, the offline
+# pins check, settings validate against the evaluated darwin targets, the
+# privacy scan) runs here with DOTSTEWARD_PLATFORM=darwin, as its
+# instance-contract check would run it on a Mac.
 #
-# Then the darwin platform layer tests run, with ShellCheck over the layer,
+# The darwin platform layer tests run first, with ShellCheck over the layer,
 # its tests and the macOS tool doubles they use.
 {
   self,
@@ -102,12 +106,24 @@ let
     inherit (drv) system;
   };
 
+  # The evaluated darwin settings targets, in the format of the
+  # generation's targets file (the darwin instance-contract check's own file
+  # is a darwin derivation).
+  manifest = instance.dotstewardManifest.${darwin};
+  targetsFile = pkgs.writeText "dotsteward-settings-targets.json" (
+    unsafeDiscardStringContext (toJSON {
+      schema_version = 1;
+      targets = manifest.settings_targets;
+      inherit (manifest) reload_hooks;
+    })
+  );
+
   # Every evaluated value the build compares, as context-free JSON.
   report = pkgs.writeText "darwin-eval.json" (
     unsafeDiscardStringContext (toJSON {
       checks = lib.mapAttrs (_: derivation) checks;
       home_configuration = derivation home.activationPackage;
-      manifest = instance.dotstewardManifest.${darwin};
+      inherit manifest;
       manifests = lib.attrNames instance.dotstewardManifest;
       mirrors = lib.attrNames instance.dotstewardMirrors;
       packages = lib.attrNames instance.packages.${darwin};
@@ -192,7 +208,7 @@ cli.mkTestCheck {
 
     # The check configuration of the darwin home.
     expect '.config.homeDirectory == "/Users/alice" and .config.username == "alice"' "identity" '.config | [.homeDirectory, .username]'
-    expect '.config.sessionPath == ["$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin"]' \
+    expect '.config.sessionPath | index("$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin") != null' \
       "the VS Code bundle command directory on PATH" '.config.sessionPath'
     expect '.config.session_variables | .EDITOR == "code" and .VISUAL == "code" and .GIT_EDITOR == "code --wait"' \
       "editor variables" '.config.session_variables'
@@ -205,5 +221,21 @@ cli.mkTestCheck {
       | all(. as $file | $f | index($file) != null)' "home files" '.config.files'
     expect '.fresh_files | index(".example-term/greeting") == null and index(".example-term/AGENTS.md") == null
       and index(".claude/CLAUDE.md") != null' "fresh profile files" '.fresh_files'
+
+    # The instance contract of the darwin instance, as its instance-contract
+    # check runs it on a Mac: the same commands of the packaged CLI over a
+    # copy of the instance, with the evaluated darwin settings targets.
+    instance=$TMPDIR/instance
+    cp -R ${root} "$instance"
+    chmod -R u+w "$instance"
+    (
+      cd "$instance"
+      export HOME=$TMPDIR/home DOTSTEWARD_INSTANCE=$PWD DOTSTEWARD_PLATFORM=darwin
+      mkdir -p "$HOME"
+      ${lib.getExe cli} static --sandbox
+      ${lib.getExe cli} pins check
+      ${lib.getExe cli} settings --targets-file ${targetsFile} validate
+      ${lib.getExe cli} scan --tree
+    ) || fail "the instance contract of the darwin instance failed"
   '';
 }

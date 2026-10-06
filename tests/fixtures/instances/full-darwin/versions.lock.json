@@ -1,0 +1,138 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-01-01T00:00:00+00:00",
+  "policy": {
+    "official_sources_only": true,
+    "persistent_agentic_updates": false,
+    "scheduled_repository_updates": false,
+    "native_application_updates": true,
+    "major_version_review_required": true
+  },
+  "nix": {
+    "version": "2.35.2",
+    "installer_url": "https://releases.example.invalid/nix/nix-2.35.2/install",
+    "installer_size": 4499,
+    "installer_sha256": "99d0ddf3c86a252730207c4cf7d2fafaca9f76d14bb98ef588307da33e264d84"
+  },
+  "flake_inputs": {
+    "nixpkgs": {
+      "reference": "github:NixOS/nixpkgs/774debe7a0d1b496e35677ad955a1011c6ff74f3",
+      "revision": "774debe7a0d1b496e35677ad955a1011c6ff74f3"
+    },
+    "home-manager": {
+      "reference": "github:nix-community/home-manager/db7d5e2332710f5abb088f6b5de927d7f9511b35",
+      "revision": "db7d5e2332710f5abb088f6b5de927d7f9511b35"
+    },
+    "herdr": {
+      "reference": "github:herdrdev/herdr/v0.9.3",
+      "revision": "7b116c05bfda646af39d2524c54e70c751f57ee8",
+      "version": "0.9.3",
+      "nar_hash": "sha256-uu452Xe23pSvFk7w7fKPjiaqY5QenUIljao2SFAxpc0="
+    }
+  },
+  "nix_packages": {
+    "starship": {
+      "expected": "1.26.0",
+      "official_tag": "v1.26.0",
+      "tag_revision": "fca92d8dcbd5981b0160af2f7ed7a430b6475a72",
+      "source_nix_sha256": "sha256-pStNE8SMMVavL3ld6RO+5QQRJPXpqlU3asccS2tUoMQ=",
+      "cargo_nix_sha256": "sha256-IO/H75FKU3/2oAJ8AKerGujMDfun8w4fV7gETMxWOt0=",
+      "resolved": "1.26.0"
+    },
+    "zsh": {
+      "expected": "locked nixpkgs package",
+      "resolved": "5.9.1"
+    },
+    "herdr": {
+      "expected": "0.9.3",
+      "resolved": "0.9.3"
+    },
+    "pi": {
+      "expected": "1.0.1",
+      "resolved": "1.0.1"
+    },
+    "example-app": {
+      "expected": "1.2.3",
+      "resolved": "1.2.3"
+    }
+  },
+  "agent_tools": {
+    "claude-code": {
+      "linux-x64": {
+        "version": "2.1.285",
+        "url": "https://downloads.claude.ai/claude-code-releases/2.1.285/linux-x64/claude",
+        "size": 240327864,
+        "sha256": "33dad1ec615a2e08cc78b494f05c110e49916de2c79d78ec8799ebf46b233d29"
+      },
+      "darwin-arm64": {
+        "version": "2.1.285",
+        "url": "https://downloads.claude.ai/claude-code-releases/2.1.285/darwin-arm64/claude",
+        "size": 223821616,
+        "sha256": "51f09bd1e021d9fa8a1864c179799bd37cb39962a937935c5cf6823398e86db4"
+      }
+    },
+    "codex": {
+      "linux": {
+        "version": "0.160.1",
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.160.1/codex-x86_64-unknown-linux-musl.tar.gz",
+        "size": 109327135,
+        "sha256": "9226581be592d18f7e7f740a352fdb63aa61e45e39f7eb9b09d3888c84bba33f"
+      },
+      "darwin": {
+        "version": "0.160.1",
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.160.1/codex-aarch64-apple-darwin.tar.gz",
+        "size": 95904314,
+        "sha256": "670af2b049d9c95afb74d7da385f30c5033d13a07175001dd8958c51944984d0"
+      }
+    },
+    "opencode": {
+      "minimum_version": "1.18.34",
+      "source_revision": "aec0b9a6d8898f68f923aaf08b7306d931fd9d76",
+      "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.34/opencode-linux-x64.tar.gz",
+      "size": 60665582,
+      "sha256": "0f22479647226d1d2dd99595d20082ee7bda3870b62dc6a90b41efc1a71d7e9a",
+      "native_auto_updates": true
+    },
+    "opencode-darwin": {
+      "minimum_version": "1.18.34",
+      "source_revision": "aec0b9a6d8898f68f923aaf08b7306d931fd9d76",
+      "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.34/opencode-darwin-arm64.zip",
+      "size": 45538151,
+      "sha256": "8522b70f545184b3a8d97c5ca4f814093b2476d72aebfda8c48bcd072ec31d1b"
+    },
+    "pi": {
+      "package": "@earendil-works/pi-coding-agent",
+      "version": "1.0.1",
+      "integrity": "sha512-B7FGYpHpBPvS+Ux16CbCuVnE9S4v6c2h6ykocPNarC4msD/4JM/eFrCrO2wbRkedJZ25myFozSWHvCOx4QnN+w==",
+      "source": "https://github.com/earendil-works/pi",
+      "official_tag": "v1.0.1",
+      "tag_revision": "a7229ddc21810d6245105978033b7df645ecc2f7",
+      "source_nix_sha256": "sha256-3llZpAi9YPNS9oRFpkSj/fcNfhvU9E61NY81tTNSizc=",
+      "npm_dependencies_nix_sha256": "sha256-kkUaj0mNZSpK1+4FvD8HULD0P5RsMRXqrusvhSgI2jI=",
+      "model_data_url": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-1.0.1.tgz",
+      "model_data_nix_sha256": "sha256-ip5psTCc+TQF2Hcp+hI8ixHGvnxkaxbzT4vve3kvkTg=",
+      "license": "MIT",
+      "node_engine": ">=22.19.0"
+    }
+  },
+  "desktop_packages": {
+    "claude-code": {
+      "minimum_version": "2.1.285-1",
+      "url": "https://downloads.claude.ai/claude-code/apt/stable/pool/main/c/claude-code/claude-code_2.1.285-1_amd64.deb",
+      "size": 108105792,
+      "sha256": "e4216bcc1efe4f367e57e3a874122d673c10b5c004c28c32c3134e1e67c492bf"
+    },
+    "vscode": {
+      "minimum_version": "1.140.0",
+      "url": "https://update.code.visualstudio.com/1.140.0/linux-deb-x64/stable",
+      "size": 241278114,
+      "sha256": "e5ddfa528d68ce907c92cba18ed4edd7420874fe828cbaaf8e4484aa33530c3b"
+    },
+    "vscode-darwin-arm64": {
+      "minimum_version": "1.140.0",
+      "url": "https://update.code.visualstudio.com/1.140.0/darwin-arm64/stable",
+      "size": 317901801,
+      "sha256": "86a64f1cc9f4e0b5fc44969530994742f4bd61e7b98d9637238c5e24b26593b0"
+    }
+  }
+}

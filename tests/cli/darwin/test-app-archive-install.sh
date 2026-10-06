@@ -117,11 +117,13 @@ pin_archive desktop_packages.example-app-darwin "$DS_TEST_ROOT/example-1.2.3.zip
 
 # A failed download, a wrong size, a wrong digest.
 reset_old
-ds_curl_fail "$url" 6 "Could not resolve host: downloads.example.invalid"
+unreachable=https://unreachable.example.invalid/example-app.zip
+lock_set desktop_packages.example-app-darwin.url "\"$unreachable\""
+ds_curl_fail "$unreachable" 6 "Could not resolve host: unreachable.example.invalid"
 assert_exit 1 install_app
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: example-app (app-archive): download failed (curl exit 6): $url"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: example-app (app-archive): download failed (curl exit 6): $unreachable"
 assert_untouched "download failure"
-ds_curl_serve "$url" "$DS_TEST_ROOT/example-1.2.3.zip"
+lock_set desktop_packages.example-app-darwin.url "\"$url\""
 reset_old
 lock_set desktop_packages.example-app-darwin.size 12
 assert_exit 1 install_app

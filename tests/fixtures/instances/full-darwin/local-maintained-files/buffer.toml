@@ -1,0 +1,41 @@
+# Local maintained files: one tracked setting in a settings target of each
+# catalog component that declares one (no [targets] here: the component
+# targets apply). Written with `dotsteward settings flush`, applied with
+# `dotsteward settings apply`.
+schema_version = 1
+
+[[entries]]
+id = "claude-settings-cleanup"
+target = "claude-settings"
+key = ["cleanupPeriodDays"]
+value = 30
+
+[[entries]]
+id = "codex-approval-policy"
+target = "codex"
+key = ["approval_policy"]
+value = "on-request"
+
+[[entries]]
+id = "herdr-onboarding"
+target = "herdr"
+key = ["onboarding"]
+value = false
+
+[[entries]]
+id = "opencode-autoupdate"
+target = "opencode"
+key = ["autoupdate"]
+value = false
+
+[[entries]]
+id = "vscode-tab-size"
+target = "vscode-settings"
+key = ["editor.tabSize"]
+value = 2
+
+[[entries]]
+id = "example-app-theme"
+target = "example-app"
+key = ["theme"]
+value = "dark"
