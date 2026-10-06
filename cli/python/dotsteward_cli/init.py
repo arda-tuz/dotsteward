@@ -11,7 +11,8 @@ directory and moved into ``--dir`` only when every step passed):
 1. The target: a missing or empty ``--dir`` gets a copy of the framework's
    ``template/``; a directory that ``nix flake init -t`` filled (its
    ``workstation.toml`` holds the ``# dotsteward:template`` line) is filled
-   in place; anything else is refused.
+   in place, unless it is a git repository kept elsewhere (a ``.git`` file
+   or symbolic link, or ``core.worktree``); anything else is refused.
 2. The check identity from ``--username`` and ``--home``, else ``$USER``
    and ``$HOME``, through ``require_safe_identity`` (``cli/lib/lib.sh``).
 3. ``workstation.toml``, edited with tomlkit so the template's comments
@@ -390,7 +391,46 @@ def is_template_dir(directory: Path) -> bool:
     return any(line.strip() == TEMPLATE_MARKER for line in text.splitlines())
 
 
-def classify_target(directory: Path) -> str:
+STANDALONE_HINT = "run init in a standalone repository or a new directory"
+
+
+def require_standalone_repository(directory: Path, env: Mapping[str, str]) -> None:
+    """A template directory that is a git repository must hold the whole
+    repository in its own .git directory: init copies it into a temporary
+    directory and runs git there, so a .git file (a linked worktree, a
+    submodule or a --separate-git-dir checkout), a .git symbolic link or a
+    core.worktree setting would point those git calls at another
+    repository's git directory or work tree."""
+    git_entry = directory / ".git"
+    if git_entry.is_symlink():
+        raise Refusal(f"{git_entry} is a symbolic link to another directory; {STANDALONE_HINT}")
+    if not git_entry.exists():
+        return
+    if not git_entry.is_dir():
+        raise Refusal(
+            f"{directory} is a linked git worktree or a submodule (its .git is a file that points at "
+            f"another repository's git directory); {STANDALONE_HINT}"
+        )
+    try:
+        result = subprocess.run(
+            ["git", "config", "--includes", "--file", str(git_entry / "config"), "--get", "core.worktree"],
+            env=dict(env),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as problem:
+        raise Refusal(f"{directory} is a git repository and git could not run: {problem.strerror}") from problem
+    worktree = result.stdout.strip()
+    if result.returncode == 0 and worktree:
+        raise Refusal(
+            f"{git_entry / 'config'} sets core.worktree ({worktree}), so git works on another directory; "
+            f"{STANDALONE_HINT}"
+        )
+
+
+def classify_target(directory: Path, env: Mapping[str, str]) -> str:
     """missing, empty or template; anything else is refused."""
     if not directory.exists() and not directory.is_symlink():
         parent = directory.parent
@@ -406,6 +446,7 @@ def classify_target(directory: Path) -> str:
     if not entries:
         return "empty"
     if is_template_dir(directory):
+        require_standalone_repository(directory, env)
         return "template"
     raise Refusal(
         f"{directory} is not empty and is not a dotsteward template "
@@ -1025,7 +1066,7 @@ def next_steps(options: Options, commit: str | None) -> list[dict[str, str]]:
 
 def initialize(options: Options, env: dict[str, str]) -> Result:
     env = {key: value for key, value in env.items() if key not in GIT_REPOSITORY_ENV}
-    kind = classify_target(options.dir)
+    kind = classify_target(options.dir, env)
     identity = resolve_identity(options, env)
 
     source = options.dir if kind == "template" else FRAMEWORK_ROOT / "template"
