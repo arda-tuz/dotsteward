@@ -6,7 +6,8 @@
 #
 # Usage: bash tests/vm/guest/agent-verify.sh [--dir DIR] [--profile P]
 #   --dir DIR    the instance the agent created (default ~/workstation)
-#   --profile P  the profile to check (default: e2e's own default)
+#   --profile P  the profile to check (default: the instance's current
+#                profile, as `dotsteward context --json` reports it)
 #
 # Runs only inside a VM made by tests/vm/vm.sh (`vm.sh scenario
 # agent-verify --no-push`); elsewhere it refuses before doing anything.
@@ -23,7 +24,7 @@ fi
 guest_require_vm
 
 instance_dir=$HOME/workstation
-profile_args=()
+profile=
 while (($#)); do
   case $1 in
     --dir)
@@ -33,7 +34,7 @@ while (($#)); do
       ;;
     --profile)
       (($# >= 2)) || guest_die "--profile needs a value"
-      profile_args=(--profile "$2")
+      profile=$2
       shift 2
       ;;
     *) guest_die "unknown argument: $1" ;;
@@ -56,8 +57,19 @@ guest_load_nix
 command -v nix >/dev/null 2>&1 || guest_die "nix is not installed"
 guest_nix --version
 
-guest_step "dotsteward e2e"
-(cd "$instance_dir" && ./.dotsteward/cli.sh e2e "${profile_args[@]}")
+# e2e has no default profile: without --profile, check the one the
+# bootstrap activated (the last rebuild's profile, else the check profile).
+if [[ -z $profile ]]; then
+  guest_step "current profile"
+  profile=$(cd "$instance_dir" && ./.dotsteward/cli.sh context --json |
+    python3 -I -c 'import json, sys; print(json.load(sys.stdin)["profiles"]["current"])') ||
+    guest_die "cannot read the current profile from dotsteward context"
+  [[ -n $profile ]] || guest_die "dotsteward context reports no current profile"
+  guest_log "profile: $profile"
+fi
+
+guest_step "dotsteward e2e --profile $profile"
+(cd "$instance_dir" && ./.dotsteward/cli.sh e2e --profile "$profile")
 guest_log "login shell: $(guest_login_shell)"
 
 guest_step "agent-verify passed"
