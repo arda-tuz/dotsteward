@@ -46,11 +46,19 @@ nix_core_init() {
 # nix_core_eval EXPR: evaluates EXPR strictly to JSON with the core prelude
 # in scope. Output and status land in DS_STDOUT, DS_STDERR and DS_STATUS; the
 # status of the evaluation is returned.
+#
+# The evaluation runs in read-only mode: paths coerced to strings get their
+# store paths computed but not copied. With nix_core_read_write=1 (e.g.
+# `nix_core_read_write=1 core_json EXPR`) it writes to the isolated store,
+# which an expression needs when it reads below a store path string with
+# context, the shape mkInstance gives `root` ("${self}").
 nix_core_eval() {
   (($# == 1)) || ds_fail "nix_core_eval: usage: nix_core_eval EXPR"
   [[ -n ${DS_HOME_MANAGER:-} && -n ${nix_lib_store:-} ]] || nix_core_init
   local expr="{ nixpkgs, homeManager, repo }: with import (/. + repo + \"/tests/nix/core/prelude.nix\") { inherit nixpkgs homeManager repo; }; ($1)"
   local out_file=$DS_TEST_ROOT/nix-eval.out err_file=$DS_TEST_ROOT/nix-eval.err
+  local mode=()
+  [[ ${nix_core_read_write:-0} != 1 ]] || mode=(--read-write-mode)
   DS_STATUS=0
   env -u NIX_REMOTE -u NIX_PATH \
     NIX_STORE_DIR="$nix_lib_store/store" \
@@ -58,7 +66,7 @@ nix_core_eval() {
     NIX_LOG_DIR="$nix_lib_store/log" \
     NIX_CONF_DIR="$nix_lib_store/etc" \
     NIX_LOCALSTATE_DIR="$nix_lib_store/state" \
-    nix-instantiate --eval --strict --json --show-trace \
+    nix-instantiate --eval --strict --json --show-trace "${mode[@]}" \
     --argstr nixpkgs "$DS_NIXPKGS" --argstr homeManager "$DS_HOME_MANAGER" \
     --argstr repo "$DS_REPO_ROOT" \
     --expr "$expr" >"$out_file" 2>"$err_file" || DS_STATUS=$?

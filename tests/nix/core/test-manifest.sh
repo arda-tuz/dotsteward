@@ -8,7 +8,7 @@
 source "$DS_REPO_ROOT/tests/nix/core/helpers.sh"
 
 modules='componentModules ++ [ {
-  dotsteward.skills.frameworkRoot = fixtures + "/framework-skills";
+  dotsteward.skills.frameworkRoot = fixtures + "/framework/skills";
   dotsteward.skills.homeManaged.example-skill = fixtures + "/instance/skills/example-skill";
 } ]'
 
@@ -26,14 +26,14 @@ json_check "$actual" "$without_paths" "$(jq -cS . "$nix_core_fixtures/manifest.w
 assert_eq "$(core_json 'loadToml "workstation"' | jq -cS .)" "$(jq -cS .config <<<"$actual")" "resolved configuration"
 json_check "$actual" .framework "{\"version\":\"$(<"$DS_REPO_ROOT/VERSION")\"}"
 
-# Hook scripts and the agent rules source are the store copies of their
-# sources.
+# Hook scripts are the store copies of their sources; the agent rules
+# source is the store file the targets link to.
 hook=$(core_json '"${fixtures + "/instance/hook.sh"}"')
 for filter in '.checks.e2e[0].script' '.checks.agents[0].script' '.hooks.pre_activate[0].script'; do
   assert_eq "$hook" "$(jq "$filter" <<<"$actual")" "$filter"
 done
-assert_eq "$(core_json '"${fixtures + "/instance/agent/AGENTS.md"}"')" "$(jq .agent_rules.source <<<"$actual")" \
-  "agent rules source"
+assert_eq "$(core_json '(homeOf { config = "workstation"; modules = componentModules; }).home.file.".example-term/RULES.md".source')" \
+  "$(jq .agent_rules.source <<<"$actual")" "agent rules source: the file the targets link to"
 
 # D20: the manifest does not depend on the profile.
 assert_eq "$actual" "$(manifest 'profile = "fresh";')" "same manifest in every profile"

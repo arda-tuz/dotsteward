@@ -20,7 +20,7 @@ if [[ -d $DS_REPO_ROOT/skills ]]; then
 fi
 assert_core_eq "$expected" 'lib.sort lib.lessThan (homeOf { }).dotsteward.skills.framework'
 
-stub_root='{ dotsteward.skills.frameworkRoot = fixtures + "/framework-skills"; }'
+stub_root='{ dotsteward.skills.frameworkRoot = fixtures + "/framework/skills"; }'
 
 # skills ARGS: the skill home.file entries (name -> source) and assertions.
 skills() {
@@ -30,18 +30,26 @@ skills() {
   }"
 }
 
-# Framework skills present in the framework root are linked; homeManaged
-# skills are linked next to them.
-actual=$(skills "{ config = \"workstation\"; modules = [ $stub_root { dotsteward.skills.homeManaged.example-skill = fixtures + \"/instance/skills/example-skill\"; } ]; }")
+# The framework skills link into the framework source itself (3.3, the 9.4
+# invariant): with the framework flake's source, a store path string with
+# context ("${self}"), each link source is "${self}/skills/<name>", not a
+# copy of the skill. homeManaged skills are linked next to them.
+framework='"${fixtures + "/framework"}"'
+actual=$(nix_core_read_write=1 core_json "let c = homeOf { config = \"workstation\"; framework = $framework; modules = [ { dotsteward.skills.homeManaged.example-skill = fixtures + \"/instance/skills/example-skill\"; } ]; }; in {
+  framework = c.dotsteward.skills.framework;
+  files = lib.mapAttrs (_: f: { source = toString f.source; context = builtins.hasContext (toString f.source); }) (lib.filterAttrs (n: _: lib.hasPrefix \".codex/skills/\" n) c.home.file);
+}")
 json_check "$actual" '.framework' '["dotsteward-maintain","dotsteward-update"]'
 json_check "$actual" '.files | keys' '[".codex/skills/dotsteward-maintain",".codex/skills/dotsteward-update",".codex/skills/example-skill"]'
-# The links point at the store copies of the skill directories.
-expected=$(core_json '{
-  ".codex/skills/dotsteward-maintain" = "${fixtures + "/framework-skills/dotsteward-maintain"}";
-  ".codex/skills/dotsteward-update" = "${fixtures + "/framework-skills/dotsteward-update"}";
-  ".codex/skills/example-skill" = "${fixtures + "/instance/skills/example-skill"}";
-}')
-json_check "$actual" '.files' "$(jq -cS . <<<"$expected")"
+source_dir=$(core_raw "$framework")
+json_check "$actual" '.files[".codex/skills/dotsteward-maintain"]' "$(jq -cS -n --arg s "$source_dir/skills/dotsteward-maintain" '{source: $s, context: true}')"
+json_check "$actual" '.files[".codex/skills/dotsteward-update"]' "$(jq -cS -n --arg s "$source_dir/skills/dotsteward-update" '{source: $s, context: true}')"
+# An instance skill directory (a path) is linked as its own store copy.
+json_check "$actual" '.files[".codex/skills/example-skill"]' \
+  "$(jq -cS -n --arg s "$(core_raw "toString (fixtures + \"/instance/skills/example-skill\")")" '{source: $s, context: false}')"
+assert_eq "$(core_json '"${fixtures + "/instance/skills/example-skill"}"')" \
+  "$(skills "{ config = \"workstation\"; modules = [ $stub_root { dotsteward.skills.homeManaged.example-skill = fixtures + \"/instance/skills/example-skill\"; } ]; }" | jq '.files[".codex/skills/example-skill"]')" \
+  "the store copy of an instance skill"
 
 # An explicit framework list is honoured.
 actual=$(skills "{ modules = [ $stub_root { dotsteward.skills.framework = [ \"dotsteward-update\" ]; } ]; }")

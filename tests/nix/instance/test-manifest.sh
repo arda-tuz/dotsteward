@@ -93,7 +93,7 @@ assert_eq "$(jq -S --indent 2 . "$mirror")" "$(cat "$mirror")" "pretty JSON"
 store=$(inst_raw 'builtins.storeDir')
 assert_not_contains "$(<"$mirror")" "$store/" "no store path in the mirror"
 json_check "$(<"$mirror")" '[.framework, .checks.e2e[0].script, .agent_rules.source]' \
-  "[{\"version\":\"$version\"},\"<store>/hook.sh\",\"<store>/AGENTS.md\"]"
+  "[{\"version\":\"$version\"},\"<store>/hook.sh\",\"<store>/hm_AGENTS.md\"]"
 assert_eq "$(jq -S 'del(.framework, .checks.e2e[0].script, .agent_rules.source)' "$DS_TEST_ROOT/manifest.x86_64-linux.json")" \
   "$(jq -S 'del(.framework, .checks.e2e[0].script, .agent_rules.source)' "$mirror")" "mirror content"
 

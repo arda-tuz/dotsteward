@@ -6,7 +6,11 @@
 #   pkgsFor SYSTEM          nixpkgs for SYSTEM (no overlays, empty config)
 #   loadToml NAME           fixtures/NAME.toml loaded with the test catalog
 #   mkHome { ... }          a Home Manager configuration with modules/core,
-#                           built the way mkInstance builds it (3.2 step 5)
+#                           built the way mkInstance builds it (3.2 step 5);
+#                           framework (default: the checkout path) is the
+#                           framework source the dotsteward.lib it passes is
+#                           made from, e.g. a store path string with context
+#                           as the framework flake gives it ("${self}")
 #   homeOf ARGS             (mkHome ARGS).config; Home Manager fails the
 #                           evaluation with "Failed assertions:" and the
 #                           messages when an assertion fails
@@ -26,17 +30,21 @@ let
 
   hmLib = import (homeManagerPath + "/lib") { inherit lib; };
 
-  dsLib = import (repoPath + "/lib") {
-    dotsteward = repoPath;
-    nixpkgs = {
-      inherit lib;
-      outPath = nixpkgsPath;
+  libFor =
+    framework:
+    import (repoPath + "/lib") {
+      dotsteward = framework;
+      nixpkgs = {
+        inherit lib;
+        outPath = nixpkgsPath;
+      };
+      home-manager = {
+        lib = hmLib;
+        outPath = homeManagerPath;
+      };
     };
-    home-manager = {
-      lib = hmLib;
-      outPath = homeManagerPath;
-    };
-  };
+
+  dsLib = libFor repoPath;
 
   fixtures = repoPath + "/tests/nix/core/fixtures";
 
@@ -77,6 +85,7 @@ let
       modules ? [ ],
       packages ? null,
       root ? fixtures + "/instance",
+      framework ? null,
       dotstewardExtra ? { },
     }:
     let
@@ -93,7 +102,7 @@ let
         packages = if packages == null then { dotsteward = dsLib.mkCli pkgs; } else packages;
         dotsteward = {
           inherit cfg root system;
-          lib = dsLib;
+          lib = if framework == null then dsLib else libFor framework;
         }
         // dotstewardExtra;
       };

@@ -1,10 +1,12 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and settings_* variables come from the harness and helpers.sh
 # Defaults: the repository (--repo > DOTSTEWARD_INSTANCE > DOTFILES_ROOT
-# with compat.legacy_env > the instance above the working directory), the
-# state directory (--state-dir > DOTSTEWARD_STATE_ROOT > DOTFILES_STATE_ROOT
-# with compat.legacy_env > state.root, each with /local-maintained-files),
-# and settings.buffer_dir and settings.published_ref of workstation.toml.
+# with compat.legacy_env > the instance above the working directory >
+# --repo-default), the state directory (--state-dir > DOTSTEWARD_STATE_ROOT >
+# DOTFILES_STATE_ROOT with compat.legacy_env > state.root, each with
+# /local-maintained-files; without workstation.toml --state-dir-default
+# comes before the built-in default), and settings.buffer_dir and
+# settings.published_ref of workstation.toml.
 # shellcheck source=tests/engines/settings/core/helpers.sh
 source "$DS_REPO_ROOT/tests/engines/settings/core/helpers.sh"
 
@@ -70,6 +72,23 @@ in_dir() {
 assert_exit 2 in_dir "$DS_TEST_ROOT/outside" settings status
 assert_contains "$DS_STDERR" "no instance found"
 
+# --repo-default (the checkout baked into the local-maintained-files alias)
+# is the last resort: after --repo, the environment and the instance above
+# the working directory.
+assert_eq second-key "$(cd "$DS_TEST_ROOT/outside" && ids settings --repo-default "$second")"
+assert_eq first-key "$(cd "$first/sub/dir" && ids settings --repo-default "$second")" "discovery wins"
+assert_eq first-key "$(cd "$DS_TEST_ROOT/outside" && ids settings --repo-default "$second" --repo "$first")"
+assert_eq first-key "$(cd "$DS_TEST_ROOT/outside" && DOTSTEWARD_INSTANCE=$first ids settings --repo-default "$second")"
+assert_eq legacy-key "$(cd "$DS_TEST_ROOT/outside" && DOTFILES_ROOT=$legacy ids settings --repo-default "$second")"
+# A stale DOTFILES_ROOT (no instance with legacy_env) falls back to it.
+mkdir -p "$DS_TEST_ROOT/stale"
+assert_eq legacy-key "$(cd "$DS_TEST_ROOT/outside" && DOTFILES_ROOT=$DS_TEST_ROOT/stale ids settings --repo-default "$legacy")" \
+  "stale DOTFILES_ROOT"
+# An invalid DOTSTEWARD_INSTANCE stays an error.
+assert_exit 2 in_dir "$DS_TEST_ROOT/outside" env DOTSTEWARD_INSTANCE="$DS_TEST_ROOT/stale" \
+  "$DS_REPO_ROOT/cli/dotsteward" settings --repo-default "$second" status
+assert_contains "$DS_STDERR" "DOTSTEWARD_INSTANCE: no workstation.toml in $DS_TEST_ROOT/stale"
+
 # The state directory.
 apply_in() {
   (cd "$1" && shift && "$@" apply >/dev/null)
@@ -116,6 +135,26 @@ assert_json - '.published_available == false and .entries[0].base == null' \
 settings_repo "$DS_TEST_ROOT/plain"
 assert_json - '[.entries[].id] | index("beta-threads") != null' \
   <<<"$(cd "$DS_TEST_ROOT/outside" && settings --repo "$DS_TEST_ROOT/plain" status --json)"
+
+# --state-dir-default (baked into the alias) is the state directory of a
+# repository without workstation.toml, after --state-dir and
+# DOTSTEWARD_STATE_ROOT; an instance's own state.root comes first. apply
+# takes the lock in the state directory it uses.
+apply_in "$DS_TEST_ROOT/outside" settings --repo "$DS_TEST_ROOT/plain" --state-dir-default "$DS_TEST_ROOT/baked-plain"
+[[ ! -e $DS_TEST_ROOT/baked-plain ]] || ds_fail "DOTSTEWARD_STATE_ROOT must win over --state-dir-default"
+(
+  unset DOTSTEWARD_STATE_ROOT
+  apply_in "$DS_TEST_ROOT/outside" settings --repo "$DS_TEST_ROOT/plain" --state-dir-default "$DS_TEST_ROOT/baked-plain"
+  [[ -f $DS_TEST_ROOT/baked-plain/lock ]] || ds_fail "--state-dir-default was not used"
+  apply_in "$DS_TEST_ROOT/outside" settings --repo "$DS_TEST_ROOT/plain" --state-dir-default "$DS_TEST_ROOT/baked-plain" \
+    --state-dir "$DS_TEST_ROOT/explicit-plain"
+  [[ -f $DS_TEST_ROOT/explicit-plain/lock ]] || ds_fail "--state-dir must win over --state-dir-default"
+  rm -rf "$HOME/.config/app"
+  before=$(wc -l <"$(journal "$HOME/configured-state")")
+  apply_in "$first" settings --state-dir-default "$DS_TEST_ROOT/baked-instance"
+  (($(wc -l <"$(journal "$HOME/configured-state")") > before)) && [[ ! -e $DS_TEST_ROOT/baked-instance ]] ||
+    ds_fail "state.root must win over --state-dir-default"
+)
 
 # An invalid workstation.toml is reported, not ignored.
 printf 'schema_version = 1\n[settings]\nbuffer_dir = 7\n' >"$DS_TEST_ROOT/plain/workstation.toml"

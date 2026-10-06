@@ -4,7 +4,9 @@
 # shellcheck source=tests/nix/lib/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/lib/helpers.sh"
 
-assert_nix_eq '["catalog","config","contract","mkCli","mkInstance","mkNpmBundle","pinAt","platform","version"]' 'lib.attrNames dsLib'
+assert_nix_eq '["catalog","config","contract","mkCli","mkInstance","mkNpmBundle","pinAt","platform","source","version"]' 'lib.attrNames dsLib'
+# The framework source as a string; a path is not copied to the store.
+assert_nix_eq "$(jq -n --arg s "$DS_REPO_ROOT" '$s')" 'dsLib.source'
 assert_nix_eq "\"$(<"$DS_REPO_ROOT/VERSION")\"" 'dsLib.version'
 assert_nix_eq '{"config":"set","contract":"set","pinAt":"lambda","platform":"set"}' \
   '{ config = builtins.typeOf dsLib.config; contract = builtins.typeOf dsLib.contract; pinAt = builtins.typeOf dsLib.pinAt; platform = builtins.typeOf dsLib.platform; }'

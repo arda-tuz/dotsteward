@@ -53,40 +53,37 @@ workstation='{ config = "workstation"; modules = componentModules; }'
 targets_file=$(targets "$workstation")
 
 # Baked defaults: the expanded checkout and the state directory under the
-# configured state root; user arguments come last.
-assert_eq "$(printf '%s\n' settings --targets-file "$targets_file" --repo /home/alice/workstation \
-  --state-dir /home/alice/.local/state/workstation/local-maintained-files status --json)" \
+# configured state root, as the engine's last-resort defaults (section 7:
+# the environment and instance discovery come first, which the engine
+# resolves); user arguments come last.
+assert_eq "$(printf '%s\n' settings --targets-file "$targets_file" --repo-default /home/alice/workstation \
+  --state-dir-default /home/alice/.local/state/workstation/local-maintained-files status --json)" \
   "$(run_alias "$workstation" -- status --json)" "baked defaults"
 
-# The environment keeps precedence over the baked defaults (section 7):
-# DOTSTEWARD_INSTANCE and DOTSTEWARD_STATE_ROOT, and with [compat]
-# legacy_env the DOTFILES_* names.
-assert_eq "$(printf '%s\n' settings --targets-file "$targets_file" status)" \
-  "$(run_alias "$workstation" DOTSTEWARD_INSTANCE=/srv/instance DOTSTEWARD_STATE_ROOT=/srv/state -- status)" \
-  "dotsteward environment"
-assert_eq "$(printf '%s\n' settings --targets-file "$targets_file" apply)" \
-  "$(run_alias "$workstation" DOTFILES_ROOT=/srv/instance DOTFILES_STATE_ROOT=/srv/state -- apply)" \
-  "legacy environment"
-assert_eq "$(printf '%s\n' settings --targets-file "$targets_file" --state-dir /home/alice/.local/state/workstation/local-maintained-files verify)" \
-  "$(run_alias "$workstation" DOTSTEWARD_INSTANCE=/srv/instance -- verify)" \
-  "repository from the environment only"
+# The alias leaves the environment to the engine: DOTSTEWARD_INSTANCE,
+# DOTSTEWARD_STATE_ROOT and the legacy DOTFILES_* names do not change its
+# arguments.
+assert_eq "$(printf '%s\n' settings --targets-file "$targets_file" --repo-default /home/alice/workstation \
+  --state-dir-default /home/alice/.local/state/workstation/local-maintained-files apply)" \
+  "$(run_alias "$workstation" DOTSTEWARD_INSTANCE=/srv/instance DOTSTEWARD_STATE_ROOT=/srv/state \
+    DOTFILES_ROOT=/srv/legacy DOTFILES_STATE_ROOT=/srv/legacy-state -- apply)" \
+  "environment"
 
-# Without legacy_env the DOTFILES_* names are ignored. The default state root
-# is expanded at run time, so XDG_STATE_HOME applies.
+# The default state root is expanded at run time, so XDG_STATE_HOME applies.
 minimal_targets=$(targets '{ }')
-assert_eq "$(printf '%s\n' settings --targets-file "$minimal_targets" --repo /home/alice/workstation \
-  --state-dir /home/alice/.local/state/dotsteward/local-maintained-files status)" \
-  "$(run_alias '{ }' DOTFILES_ROOT=/srv/instance DOTFILES_STATE_ROOT=/srv/state -- status)" \
-  "legacy environment off"
-assert_eq "$(printf '%s\n' settings --targets-file "$minimal_targets" --repo /home/alice/workstation \
-  --state-dir /srv/xdg-state/dotsteward/local-maintained-files status)" \
+assert_eq "$(printf '%s\n' settings --targets-file "$minimal_targets" --repo-default /home/alice/workstation \
+  --state-dir-default /home/alice/.local/state/dotsteward/local-maintained-files status)" \
+  "$(run_alias '{ }' -- status)" \
+  "default state root"
+assert_eq "$(printf '%s\n' settings --targets-file "$minimal_targets" --repo-default /home/alice/workstation \
+  --state-dir-default /srv/xdg-state/dotsteward/local-maintained-files status)" \
   "$(run_alias '{ }' XDG_STATE_HOME=/srv/xdg-state -- status)" \
   "XDG_STATE_HOME"
 
 # Without a checkout (no instance name), no baked repository.
 no_checkout='{ config = dsLib.config.loadWith { catalog = testCatalog; } (fixtures + "/minimal.toml"); }'
 assert_eq "$(printf '%s\n' settings --targets-file "$(targets "$no_checkout")" \
-  --state-dir /home/alice/.local/state/dotsteward/local-maintained-files status)" \
+  --state-dir-default /home/alice/.local/state/dotsteward/local-maintained-files status)" \
   "$(run_alias "$no_checkout" -- status)" "no checkout"
 
 # State roots with $VAR, ${VAR} and ~ are expanded by the shell; other shell
@@ -94,14 +91,14 @@ assert_eq "$(printf '%s\n' settings --targets-file "$(targets "$no_checkout")" \
 with_root() {
   printf '{ config = let c = loadToml "minimal"; in c // { state = { root = %s; }; }; }' "$1"
 }
-assert_eq "$(printf '%s\n' settings --targets-file "$minimal_targets" --repo /home/alice/workstation \
-  --state-dir '/srv/data/state/~x/local-maintained-files')" \
+assert_eq "$(printf '%s\n' settings --targets-file "$minimal_targets" --repo-default /home/alice/workstation \
+  --state-dir-default '/srv/data/state/~x/local-maintained-files')" \
   "$(run_alias "$(with_root '"\${DATA:-~/data}/state/~x"')" DATA=/srv/data)" "default word not used"
-assert_eq "$(printf '%s\n' settings --targets-file "$minimal_targets" --repo /home/alice/workstation \
-  --state-dir '/home/alice/data/state/~x/local-maintained-files')" \
+assert_eq "$(printf '%s\n' settings --targets-file "$minimal_targets" --repo-default /home/alice/workstation \
+  --state-dir-default '/home/alice/data/state/~x/local-maintained-files')" \
   "$(run_alias "$(with_root '"\${DATA:-~/data}/state/~x"')")" "tilde in the default word"
-assert_eq "$(printf '%s\n' settings --targets-file "$minimal_targets" --repo /home/alice/workstation \
-  --state-dir '/home/alice/state/srv/local-maintained-files')" \
+assert_eq "$(printf '%s\n' settings --targets-file "$minimal_targets" --repo-default /home/alice/workstation \
+  --state-dir-default '/home/alice/state/srv/local-maintained-files')" \
   "$(run_alias "$(with_root '"$HOME/state/\${SUB}"')" SUB=srv)" "plain variables"
 for root in '"$(id)/state"' '"`id`/state"' '"/state/\"quoted\""' '"/state\\\\x"' '"\${A:=x}/state"' '"\${A:-\${B}}/state"'; do
   assert_core_fails "(homeOf ($(with_root "$root"))).dotsteward.cli.aliasPackage.text" \
