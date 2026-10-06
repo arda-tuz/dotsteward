@@ -9,7 +9,8 @@
 #                     main) served for CT_UPSTREAM_URL through the fake SSH
 #                     transport; its tree holds privacy/policy.toml (the
 #                     framework's), privacy/allowlist.txt (the framework's
-#                     plus "example-app"), a minimal tests/run.sh, the test
+#                     plus "example-app" and "example-grid-public"), a
+#                     minimal tests/run.sh, the test
 #                     tests/example/test-feature.sh (fails until feature.txt
 #                     exists at the root), flake.nix and README.md
 #   ct_fork_bare      a fork of it (same history) served for CT_FORK_URL
@@ -92,7 +93,7 @@ mkdir -p "$ct_upstream_src/privacy" "$ct_upstream_src/tests/example"
 cp "$DS_REPO_ROOT/privacy/policy.toml" "$ct_upstream_src/privacy/policy.toml"
 {
   cat "$DS_REPO_ROOT/privacy/allowlist.txt"
-  printf '# A public name of the synthetic framework.\nexample-app\n'
+  printf '# Public names of the synthetic framework.\nexample-app\nexample-grid-public\n'
 } >"$ct_upstream_src/privacy/allowlist.txt"
 cat >"$ct_upstream_src/tests/run.sh" <<'EOF'
 #!/usr/bin/env bash

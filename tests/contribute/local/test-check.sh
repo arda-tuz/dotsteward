@@ -9,9 +9,11 @@
 #                       --json` (runtime and check identity, remote owner and
 #                       repository, private components, settings targets
 #                       (not the catalog components' public ones) and
-#                       entry ids, instance skills, hostname; shorter than 4
-#                       characters, allowlisted or part of the contributor's
-#                       public identity: skipped), then `nix flake check`
+#                       entry ids, instance skills, hostname; skipped when
+#                       shorter than 4 characters, equal to an allowlist
+#                       line, part of the contributor's public identity or
+#                       already in the content of upstream main outside the
+#                       allowlisted strings), then `nix flake check`
 #                       with the gate's parallelism. Any privacy finding is
 #                       exit 4 before Nix runs; findings are redacted; the
 #                       run records test_sha and tested_tree only on success;
@@ -119,7 +121,7 @@ expect_privacy_stop "non-UTC commit"
 assert_contains "$DS_STDOUT" "commit-timezone"
 
 # Instance-leak terms from the context.
-terms=(alice /home/alice workstation example-term example-term-state example-term-config term-theme term-font
+terms=(/home/alice workstation example-term example-term-state example-term-config term-theme term-font
   example-notes "$HOME")
 for term in "${terms[@]}"; do
   fresh_commit notes.md "see $term here"
@@ -128,10 +130,19 @@ for term in "${terms[@]}"; do
   assert_not_contains "$DS_STDOUT$DS_STDERR" "see $term" "redacted instance-leak finding"
 done
 
-# The hostname is a term too, unless it is too short or public.
+# A term inside an allowlisted public string is still a term: the scanner
+# masks only the allowlisted string itself.
+printf '\n[components.example-grid]\nenable = true\nsource = "instance"\n' >>"$ct_inst/workstation.toml"
+fresh_commit notes.md 'see example-grid here'
+expect_privacy_stop "instance term inside an allowlist line"
+assert_contains "$DS_STDOUT" "extra-term:" "instance term inside an allowlist line"
+
+# The hostname is a term too, unless it is too short, an allowlist line, part
+# of the public identity or already published by the upstream.
 host=$(uname -n)
-if ((${#host} >= 4)) && ! grep -qiF -e "$host" "$DS_REPO_ROOT/privacy/allowlist.txt" &&
-  [[ dotsteward-test != *"${host,,}"* && $CT_NOREPLY != *"${host,,}"* && example-app != *"${host,,}"* ]]; then
+if ((${#host} >= 4)) && ! grep -qixF -e "$host" "$ct_clone/privacy/allowlist.txt" &&
+  ! git -C "$ct_clone" grep -qiF -e "$host" "$base" -- &&
+  [[ dotsteward-test != *"${host,,}"* && $CT_NOREPLY != *"${host,,}"* ]]; then
   fresh_commit notes.md "built on $host"
   expect_privacy_stop "hostname"
   assert_contains "$DS_STDOUT" "extra-term:"
@@ -153,13 +164,17 @@ assert_eq fix "$(field .step)" "step after a failed flake check"
 
 # --- pass ---------------------------------------------------------------------
 
-# Short, allowlisted, public-identity and catalog terms are skipped: the
-# instance remote owner "bob" (3 characters), the component example-app (in
-# the clone's privacy/allowlist.txt), the runtime user dotsteward-test (the
-# contributor's GitHub login, already public as the commit author) and the
-# settings target herdr-config of the catalog component herdr.
+# Short, allowlisted, public-identity, published and catalog terms are
+# skipped: the instance remote owner "bob" (3 characters), the component
+# example-app (a line of the clone's privacy/allowlist.txt), the runtime user
+# dotsteward-test (the contributor's GitHub login, already public as the
+# commit author), the runtime user alice (named by the upstream's
+# privacy/policy.toml) and the settings target herdr-config of the catalog
+# component herdr. The allowlisted example-grid-public is masked, so the
+# component example-grid inside it stays a term without a finding.
 sed -i "s|^remote = .*|remote = \"git@github.com:bob/workstation.git\"|" "$ct_inst/workstation.toml"
-fresh_commit feature.txt 'feature by bob for example-app and herdr-config as dotsteward-test' \
+fresh_commit feature.txt \
+  'feature by bob and alice for example-app, example-grid-public and herdr-config as dotsteward-test' \
   'feat: add the feature'
 # The nix stub records the terms file while the check runs.
 ds_stub_override nix <<'EOF'
@@ -188,11 +203,11 @@ assert_eq "" "$(temp_leftovers)" "temporary files after the gate"
 # ones.
 assert_eq 600 "$(<"$DS_TEST_ROOT/terms.mode")" "terms file mode"
 assert_eq 700 "$(<"$DS_TEST_ROOT/terms-dir.mode")" "terms directory mode"
-for term in alice /home/alice workstation example-term example-term-state example-term-config term-theme \
+for term in /home/alice workstation example-term example-grid example-term-state example-term-config term-theme \
   term-font example-notes "$HOME"; do
   grep -qxF -e "$term" "$DS_TEST_ROOT/terms.copy" || ds_fail "the terms file lacks [$term]"
 done
-for term in bob example-app dotsteward-test herdr-config; do
+for term in bob example-app dotsteward-test alice herdr-config; do
   if grep -qixF -e "$term" "$DS_TEST_ROOT/terms.copy"; then
     ds_fail "the terms file holds the skipped term [$term]"
   fi
@@ -203,3 +218,19 @@ assert_eq "$(sort -u "$DS_TEST_ROOT/terms.copy" | wc -l)" "$(wc -l <"$DS_TEST_RO
 if network_calls | grep -q 'git-receive-pack'; then
   ds_fail "check pushed: $(network_calls)"
 fi
+
+# --- terms the upstream already publishes -------------------------------------
+
+# A generic fix of a file that already mentions an instance term in upstream
+# main passes: the term is no new leak of the branch, even though the scan
+# reads the whole changed file and the commit message names it too.
+push_upstream config.sh 'reads workstation.toml' 'feat: read the configuration'
+start_run read-config
+clone_commit config.sh 'reads workstation.toml once' 'fix: read workstation.toml once'
+rm -f "$DS_TEST_ROOT/terms.copy"
+assert_exit 0 run_contribute check
+assert_contains "$DS_STDOUT" "[dotsteward] contribute check passed: "
+if grep -qixF workstation "$DS_TEST_ROOT/terms.copy"; then
+  ds_fail "the terms file holds the published term [workstation]"
+fi
+grep -qxF /home/alice "$DS_TEST_ROOT/terms.copy" || ds_fail "the terms file lacks [/home/alice]"
