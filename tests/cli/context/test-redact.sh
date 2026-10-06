@@ -147,9 +147,11 @@ for term in Alice Carol Smith Danvers; do
 done
 
 # Semantic problems: a username that is not a Linux user name, the remote's
-# owner in a profile role and its repository in a profile table name, and an
-# instance component (a private name, as in the context) in a problem path.
-# The reserved profile name is a schema fact and stays.
+# owner in a profile role and its repository in a profile table name, an
+# instance component (a private name, as in the context) in a problem path,
+# and a components.order entry without a table (also a private name, quoted
+# once and repeated in the hint). The reserved profile name is a schema fact
+# and stays.
 cat >"$private/workstation.toml" <<'TOML'
 schema_version = 1
 
@@ -169,6 +171,9 @@ default = "carol-corp"
 [profiles.carol-dotfiles]
 mode = "fresh"
 
+[components]
+order = ["secret-tool", "hidden-order"]
+
 [components.secret-tool]
 enable = true
 source = "instance"
@@ -177,12 +182,13 @@ TOML
 assert_exit 1 ds_cli --instance "$private" doctor --json
 plain=$DS_STDOUT
 for term in '\"Carol\" is not a valid Linux user name' '\"carol-corp\" is not in profiles.names' \
-  'unknown key profiles.carol-dotfiles' components.secret-tool.profiles '\"names\" is reserved'; do
+  'unknown key profiles.carol-dotfiles' components.secret-tool.profiles '\"names\" is reserved' \
+  '\"hidden-order\" (neither a catalog component nor a [components.hidden-order] table)'; do
   assert_contains "$plain" "$term"
 done
 assert_exit 1 ds_cli --instance "$private" doctor --json --redact
 redacted=$DS_STDOUT
-for term in Carol carol-corp carol-dotfiles secret-tool ghost; do
+for term in Carol carol-corp carol-dotfiles secret-tool ghost hidden-order; do
   assert_not_contains "$redacted" "$term" "redacted report of an invalid configuration leaks [$term]"
 done
 assert_eq "$(jq '.checks[0].details.problems | length' <<<"$plain")" \
@@ -190,3 +196,8 @@ assert_eq "$(jq '.checks[0].details.problems | length' <<<"$plain")" \
 problems=$(jq -r '.checks[0].details.problems[]' <<<"$redacted")
 assert_contains "$problems" 'is not a valid Linux user name'
 assert_contains "$problems" 'profiles.names[1]: "names" is reserved'
+assert_contains "$problems" 'components.order[1]: unknown component name "<redacted>" (neither a catalog component nor a [components.<redacted>] table)'
+assert_exit 1 ds_cli --instance "$private" doctor --redact
+for term in Carol carol-corp carol-dotfiles secret-tool ghost hidden-order; do
+  assert_not_contains "$DS_STDOUT" "$term" "redacted human report of an invalid configuration leaks [$term]"
+done
