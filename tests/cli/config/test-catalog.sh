@@ -1,9 +1,10 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh and config_load
 # The default catalog of the Python reader is the framework's own, like
-# lib.catalog: the directories of modules/components in a checkout, or the
-# catalog.json the package writes next to cli/ (the package has no
-# modules/), or no catalog at all.
+# lib.catalog: the catalog.json the package writes next to cli/ (the
+# package's modules/components holds only the component seeds, so its
+# directories are not the catalog), else the directories of
+# modules/components in a checkout, else no catalog at all.
 # shellcheck source=tests/cli/config/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/config/helpers.sh"
 
@@ -26,12 +27,20 @@ load_config "$checkout" "$instance"
 assert_eq catalog "${DS_COMPONENT_SOURCE[zz-new]}"
 assert_eq instance "${DS_COMPONENT_SOURCE[example-term]}"
 
-# The package layout: catalog.json, no modules/.
+# The package layout: catalog.json lists every catalog component, while
+# modules/components holds only the directories of the components that
+# carry a seed.json. catalog.json is the catalog.
 package=$DS_TEST_ROOT/package
-make_framework "$package"
+make_framework "$package" shell
+printf '{}\n' >"$package/modules/components/shell/seed.json"
+printf '["codex","shell","herdr"]\n' >"$package/catalog.json"
+assert_eq "shell herdr codex example-term" "$(order_with "$package")"
+load_config "$package" "$instance"
+assert_eq catalog "${DS_COMPONENT_SOURCE[codex]}"
+
+# A package without seeds: catalog.json, no modules/.
 rm -rf "$package/modules"
-printf '["codex","shell"]\n' >"$package/catalog.json"
-assert_eq "shell codex example-term" "$(order_with "$package")"
+assert_eq "shell herdr codex example-term" "$(order_with "$package")"
 
 # Neither: no catalog components.
 bare=$DS_TEST_ROOT/bare
