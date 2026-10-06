@@ -179,6 +179,39 @@ assert_eq '["ok","ok","skip","skip","skip","skip"]' \
   "$(jq -c '[.checks[] | select(.id != "config") | .status]' <<<"$DS_STDOUT")"
 assert_eq null "$(jq -c .context <<<"$DS_STDOUT")"
 
+# A context source that cannot be read (a file left behind by a root run):
+# the configuration check fails with the reason and the report still
+# renders, without a traceback; --redact hides the home path in the reason.
+# Skipped where permissions do not apply (a root builder reads mode 000).
+chmod 000 "$inst/settings-buffer/buffer.toml"
+if [[ ! -r $inst/settings-buffer/buffer.toml ]]; then
+  assert_exit 1 doctor_json
+  assert_not_contains "$DS_STDERR" Traceback
+  assert_eq fail "$(jq -r '.checks[0].status' <<<"$DS_STDOUT")"
+  assert_contains "$(message config)" "settings-buffer/buffer.toml: cannot read the settings buffer: Permission denied"
+  assert_eq '["ok","ok","skip","skip","skip","skip"]' \
+    "$(jq -c '[.checks[] | select(.id != "config") | .status]' <<<"$DS_STDOUT")"
+  assert_eq null "$(jq -c .context <<<"$DS_STDOUT")"
+  assert_exit 1 ds_cli --instance "$inst" doctor
+  assert_not_contains "$DS_STDERR" Traceback
+  assert_contains "$DS_STDOUT" "[dotsteward] fail config: "
+fi
+chmod 644 "$inst/settings-buffer/buffer.toml"
+home_state=$HOME/.local/state/workstation
+write_state "$home_state"
+chmod 000 "$home_state/current/profile"
+if [[ ! -r $home_state/current/profile ]]; then
+  assert_exit 1 env DOTSTEWARD_STATE_ROOT="$home_state" \
+    "$context_framework/cli/dotsteward" --instance "$inst" doctor --json --redact
+  assert_not_contains "$DS_STDERR" Traceback
+  assert_eq 'fail true' "$(jq -r '"\(.checks[0].status) \(.redacted)"' <<<"$DS_STDOUT")"
+  assert_contains "$(message config)" "/current/profile: Permission denied"
+  assert_not_contains "$DS_STDOUT" "$HOME"
+  assert_not_contains "$DS_STDERR" "$HOME"
+fi
+chmod 644 "$home_state/current/profile"
+rm -r "$home_state"
+
 # --- Human report -----------------------------------------------------------------
 
 assert_exit 0 ds_cli --instance "$inst" doctor
