@@ -49,7 +49,10 @@
 #       is searched (canonical root, legacy roots, the Home Manager root;
 #       directory before legacy_directory). Missing: home-managed skills are
 #       fatal, copy skills are installed (install mode) with the native copy
-#       or the [skills] installer argv. Present copy skills with a
+#       or the [skills] installer argv, after a dangling link at
+#       <canonical>/<directory> whose literal target is in a managed root
+#       (what the sweep removes) is removed; any other existing
+#       destination is refused. Present copy skills with a
 #       directory digest are refreshed when they differ (check: fatal).
 #       Home-managed skills must be links with the lock digest. Then the
 #       canonical entry and the link-root links.
@@ -456,6 +459,13 @@ _skills_copy_tree() {
 _skills_install() {
   local name=$1 directory=$2 source=$3 destination staging argument status=0
   local -a argv=()
+  destination=$SKILLS_CANONICAL/$directory
+  # A dangling managed link here is what the sweep removes; it would block
+  # the copy (or let an installer write through it) before the sweep runs.
+  if [[ -L $destination && ! -e $destination ]] && _skills_is_managed_target "$(readlink -- "$destination")"; then
+    unlink -- "$destination"
+    log "removed dangling skill link: $destination"
+  fi
   if ((${#DS_SKILLS_INSTALLER[@]})); then
     for argument in "${DS_SKILLS_INSTALLER[@]}"; do
       argument=${argument//\{source\}/$source}
@@ -474,7 +484,6 @@ _skills_install() {
     ((status == 0)) || skills_fail installer-failed "$source" "skill installer failed: $name (exit $status)"
     return 0
   fi
-  destination=$SKILLS_CANONICAL/$directory
   if [[ -e $destination || -L $destination ]]; then
     skills_fail install-destination-exists "$destination" "skill install destination exists: $destination"
   fi
@@ -627,22 +636,24 @@ skills_process_instance() {
 
 # --- Sweep ----------------------------------------------------------------
 
+# _skills_is_managed_target TARGET: whether the literal link TARGET points
+# into a managed root (one of SKILLS_SWEEP_PREFIXES followed by a name).
+_skills_is_managed_target() {
+  local target=$1 prefix
+  for prefix in "${SKILLS_SWEEP_PREFIXES[@]}"; do
+    [[ $target == "$prefix"?* ]] && return 0
+  done
+  return 1
+}
+
 skills_sweep() {
-  local root link target prefix managed failed=0
+  local root link failed=0
   local -a links=()
   for root in "$SKILLS_CANONICAL" "${SKILLS_LINK_ROOTS[@]}"; do
     [[ -d $root ]] || continue
     mapfile -d '' links < <(find "$root" -mindepth 1 -maxdepth 1 -xtype l -print0 | LC_ALL=C sort -z)
     for link in "${links[@]}"; do
-      target=$(readlink -- "$link")
-      managed=0
-      for prefix in "${SKILLS_SWEEP_PREFIXES[@]}"; do
-        if [[ $target == "$prefix"?* ]]; then
-          managed=1
-          break
-        fi
-      done
-      ((managed)) || continue
+      _skills_is_managed_target "$(readlink -- "$link")" || continue
       if ((SKILLS_CHECK_ONLY)); then
         skills_finding dangling-link "$link" "dangling skill link not removed: $link"
         ((SKILLS_KEEP_GOING)) || exit 1
