@@ -1,0 +1,44 @@
+name: clean-install
+
+# The clean-install test (tests/ci/clean-install.sh): on a fresh
+# ubuntu-24.04 runner, a new instance with every catalog component from
+# `dotsteward init`, installed through its stage-0 ./bootstrap.sh with the
+# fresh profile, switched, checked end to end, carried to a second home
+# through the settings buffer and rolled back. Runs on every push to main
+# and on demand (`dotsteward contribute` dispatches it on a pull request
+# branch after a build-only trial).
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clean-install-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  clean-install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      # Authenticated GitHub fetches of the locked flake inputs. Nothing else
+      # is configured: the CLI enables the Nix features it needs, as on a
+      # machine where stage 0 installed Nix.
+      NIX_CONFIG: access-tokens = github.com=${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # One step: stage 0 adds nothing to GITHUB_PATH, so Nix is on PATH
+      # only inside the script that sourced its profile.
+      - name: Clean install (Nix, init, bootstrap, e2e, settings round, rollback)
+        run: bash tests/ci/clean-install.sh
