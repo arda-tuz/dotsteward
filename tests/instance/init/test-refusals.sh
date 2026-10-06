@@ -75,6 +75,56 @@ refused 1 "[dotsteward] ERROR: the parent directory of --dir does not exist: $DS
   --dir "$DS_TEST_ROOT/missing/workstation" --remote "$init_remote"
 [[ ! -e $DS_TEST_ROOT/missing ]] || ds_fail "the missing parent was created"
 
+# A template directory whose repository lives elsewhere: git calls in the
+# temporary copy would reach the other repository's git directory (its
+# index, objects and refs) or its work tree, so init refuses before it
+# copies anything. A linked worktree (its .git is a file naming the main
+# repository's git directory), a .git symbolic link and a .git directory
+# whose core.worktree names another directory.
+main=$DS_TEST_ROOT/main
+mkdir -p "$main"
+printf 'main\n' >"$main/README"
+git -C "$main" init -q -b main
+commit_all "$main" "chore: the main repository"
+git -C "$main" worktree add -q -b station "$dir"
+cp -R "$tpl/." "$dir/"
+chmod -R u+w "$dir"
+commit_all "$dir" "chore: nix flake init"
+printf '# edited\n' >>"$dir/workstation.toml"
+index=$(sha256sum <"$main/.git/worktrees/workstation/index")
+status=$(git -C "$dir" status --porcelain)
+main_head=$(git -C "$main" rev-parse HEAD)
+before=$(tree_state "$dir")
+refused 1 "[dotsteward] ERROR: $dir is a linked git worktree or a submodule (its .git is a file that points at another repository's git directory); run init in a standalone repository or a new directory" -- "${ok[@]}"
+assert_unchanged "$dir" "$before" "the linked worktree"
+assert_eq "$index" "$(sha256sum <"$main/.git/worktrees/workstation/index")" "the linked worktree's index"
+assert_eq "$status" "$(git -C "$dir" status --porcelain)" "the linked worktree's status"
+assert_eq "$main_head" "$(git -C "$main" rev-parse HEAD)" "the main repository's HEAD"
+git -C "$main" worktree remove --force "$dir"
+
+mkdir -p "$dir"
+cp -R "$tpl/." "$dir/"
+git init -q -b main --separate-git-dir "$DS_TEST_ROOT/separate.git" "$dir"
+rm "$dir/.git"
+ln -s "$DS_TEST_ROOT/separate.git" "$dir/.git"
+commit_all "$dir" "chore: nix flake init"
+separate_index=$(sha256sum <"$DS_TEST_ROOT/separate.git/index")
+before=$(tree_state "$dir")
+refused 1 "[dotsteward] ERROR: $dir/.git is a symbolic link to another directory; run init in a standalone repository or a new directory" -- "${ok[@]}"
+assert_unchanged "$dir" "$before" "the .git symbolic link"
+assert_eq "$separate_index" "$(sha256sum <"$DS_TEST_ROOT/separate.git/index")" "the linked git directory's index"
+rm -rf "$dir"
+
+mkdir -p "$dir" "$DS_TEST_ROOT/elsewhere"
+cp -R "$tpl/." "$dir/"
+git -C "$dir" init -q -b main
+git -C "$dir" config core.worktree "$DS_TEST_ROOT/elsewhere"
+before=$(tree_state "$dir")
+refused 1 "[dotsteward] ERROR: $dir/.git/config sets core.worktree ($DS_TEST_ROOT/elsewhere), so git works on another directory; run init in a standalone repository or a new directory" -- "${ok[@]}"
+assert_unchanged "$dir" "$before" "the repository with core.worktree"
+assert_eq "" "$(ls -A "$DS_TEST_ROOT/elsewhere")" "the other work tree stays empty"
+rm -rf "$dir"
+
 # --- the identity ---------------------------------------------------------------------
 
 refused 1 "unsafe user name" USER='Bad User' -- "${ok[@]}"
