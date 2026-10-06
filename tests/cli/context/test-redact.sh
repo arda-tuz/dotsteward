@@ -64,6 +64,29 @@ assert_eq '["github:example-org/dotsteward","v1.2.0"]' \
 assert_eq '["feat","fix","perf","refactor","docs","chore","test","build","ci","style","revert"]' \
   "$(jq -c .context.commit.conventional_types <<<"$redacted")"
 
+# Profile names are data and go; profile modes stay.
+assert_eq '{"<redacted>":"adopt","fresh":"fresh"}' "$(jq -c .context.profiles.modes <<<"$redacted")"
+
+# Field names are never redacted, even when the runtime user is also a
+# schema key or a part of one (root: state.root and skills.hm_root; user:
+# identity.runtime_user; name: instance.name, components[].name). The
+# redacted context keeps the schema's shape; its redacted values do not meet
+# the value constraints (paths lose their leading /, names repeat).
+key_paths='[paths | map(if type == "string" then . else 0 end)]
+  | map(select(.[0:3] != ["context","profiles","modes"])) | unique'
+for user in root user name; do
+  USER=$user LOGNAME=$user ds_cli --instance "$inst" doctor --json >"$DS_TEST_ROOT/plain-$user.json" \
+    || [[ -s $DS_TEST_ROOT/plain-$user.json ]] || ds_fail "doctor --json printed nothing for USER=$user"
+  USER=$user LOGNAME=$user ds_cli --instance "$inst" doctor --json --redact >"$DS_TEST_ROOT/redacted-$user.json" \
+    || [[ -s $DS_TEST_ROOT/redacted-$user.json ]] || ds_fail "doctor --json --redact printed nothing for USER=$user"
+  assert_eq "$(jq -c "$key_paths" "$DS_TEST_ROOT/plain-$user.json")" \
+    "$(jq -c "$key_paths" "$DS_TEST_ROOT/redacted-$user.json")" "USER=$user changes the field names"
+  assert_eq '["string","string"]' \
+    "$(jq -c '[.context.state.root, .context.skills.hm_root] | map(type)' "$DS_TEST_ROOT/redacted-$user.json")"
+  jq .context "$DS_TEST_ROOT/redacted-$user.json" >"$DS_TEST_ROOT/redacted-context-$user.json"
+  validate_shape "$DS_TEST_ROOT/redacted-context-$user.json"
+done
+
 # The human report is redacted the same way.
 assert_exit 0 ds_cli --instance "$inst" doctor --redact
 leaks "$DS_STDOUT"

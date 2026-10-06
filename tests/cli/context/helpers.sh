@@ -36,6 +36,10 @@
 #                             non-zero exit or a non-empty standard error
 #   validate_schema FILE      FILE is valid against schema/context.schema.json
 #                             (python jsonschema, Draft 2020-12)
+#   validate_shape FILE       FILE has the shape of schema/context.schema.json:
+#                             the schema without its value constraints
+#                             (pattern, uniqueItems), which redacted values
+#                             such as <redacted>/.local/state cannot meet
 #   use_fake_nix              puts the nix stub first on PATH
 
 context_fixtures=$DS_REPO_ROOT/tests/cli/context/fixtures
@@ -127,12 +131,35 @@ _context_jsonschema_python() {
 }
 
 validate_schema() {
-  local file=$1 python
+  _context_validate "$1" ""
+}
+
+validate_shape() {
+  _context_validate "$1" pattern,uniqueItems
+}
+
+# _context_validate FILE KEYWORDS: validates FILE against the context schema
+# with the comma-separated KEYWORDS removed from every schema object.
+_context_validate() {
+  local file=$1 keywords=$2 python
   python=$(_context_jsonschema_python)
-  "$python" - "$DS_REPO_ROOT/schema/context.schema.json" "$file" <<'EOF' || ds_fail "$file is not valid against the context schema"
+  "$python" - "$DS_REPO_ROOT/schema/context.schema.json" "$file" "$keywords" <<'EOF' || ds_fail "$file is not valid against the context schema${keywords:+ without $keywords}"
 import json, sys
 import jsonschema
-schema = json.load(open(sys.argv[1]))
+dropped = {keyword for keyword in sys.argv[3].split(",") if keyword}
+
+def strip(node, in_properties=False):
+    if isinstance(node, dict):
+        return {
+            key: strip(value, key in ("properties", "$defs") and not in_properties)
+            for key, value in node.items()
+            if in_properties or key not in dropped
+        }
+    if isinstance(node, list):
+        return [strip(item) for item in node]
+    return node
+
+schema = strip(json.load(open(sys.argv[1])))
 jsonschema.Draft202012Validator.check_schema(schema)
 errors = sorted(jsonschema.Draft202012Validator(schema).iter_errors(json.load(open(sys.argv[2]))), key=str)
 for error in errors:
