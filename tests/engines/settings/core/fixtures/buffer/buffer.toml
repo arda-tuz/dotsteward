@@ -1,0 +1,102 @@
+# Synthetic settings buffer for the settings engine tests.
+#
+# Three fake applications: alpha (JSON, created when missing), beta (TOML,
+# created with mode 0600) and gamma (JSON holding account data: never created
+# and never fully backed up), plus one whole-file entry.
+schema_version = 1
+
+[targets.alpha]
+path = "~/.config/alpha/settings.json"
+format = "json"
+create_if_missing = true
+create_mode = "0644"
+
+[targets.beta]
+# The engine writes only the tracked keys; the rest of the file belongs to beta.
+path = "~/.config/beta/config.toml"
+format = "toml"
+create_if_missing = true
+create_mode = "0600"
+
+[targets.gamma]
+path = "~/.gamma.json"
+format = "json"
+create_if_missing = false
+backup = false
+
+
+[[entries]]
+id = "alpha-status"
+target = "alpha"
+key = ["statusLine"]
+note = "status line command and refresh interval"
+
+[entries.value]
+type = "command"
+command = "~/.config/alpha/status.sh"
+refreshInterval = 30
+
+[[entries]]
+id = "alpha-env-model"
+target = "alpha"
+key = ["env", "DEFAULT_MODEL"]
+value = "small"
+
+[[entries]]
+id = "alpha-env-limit"
+target = "alpha"
+key = ["env", "SEARCH_LIMIT"]
+value = "5"
+
+[[entries]]
+id = "alpha-script"
+kind = "file"
+path = "~/.config/alpha/status.sh"
+source = "alpha-status.sh"
+mode = "0755"
+
+[[entries]]
+id = "beta-threads"
+target = "beta"
+key = ["agents", "max_threads"]
+value = 10
+
+[[entries]]
+id = "beta-onboarding"
+target = "beta"
+key = ["onboarding"]
+value = false
+
+[[entries]]
+id = "beta-theme"
+target = "beta"
+key = ["theme"]
+absent = true
+note = "beta picks its theme from the desktop"
+
+[[entries]]
+id = "beta-plugins"
+target = "beta"
+key = ["plugins"]
+value = ["one", "two"]
+
+[[entries]]
+id = "beta-mode"
+target = "beta"
+key = ["notifications", "preferences", "mode"]
+value = "enabled"
+
+[[entries]]
+id = "beta-ui"
+target = "beta"
+key = ["ui"]
+
+[entries.value]
+copy_on_select = true
+theme_mode = "dark"
+
+[[entries]]
+id = "gamma-guideline"
+target = "gamma"
+key = ["guideline"]
+value = "short"

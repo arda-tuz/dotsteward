@@ -1,0 +1,43 @@
+# A buffer written by hand: the header and the targets stay byte for byte,
+# the entries are rendered canonically on the next save.
+schema_version = 1
+
+[targets.alpha]
+path = "~/.config/alpha/settings.json"
+format = "json"
+create_if_missing = true
+
+[targets.beta]
+path = "~/.config/beta/config.toml"
+format = "toml"
+create_if_missing = true
+[[entries]]
+id = "beta-count"
+target = "beta"
+key = ["count"]
+value = 3
+note = "keys out of order"
+
+[[entries]]
+id = "alpha-table"
+target = "alpha"
+key = ["table"]
+
+[entries.value]
+b = 1
+
+[entries.value.a]
+nested = "x"
+
+[[entries]]
+id = "beta-gone"
+target = "beta"
+key = ["gone"]
+absent = true
+
+[[entries]]
+id = "notes"
+kind = "file"
+path = "~/notes.txt"
+source = "notes.txt"
+mode = "0644"

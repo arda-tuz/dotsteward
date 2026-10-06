@@ -1,0 +1,11 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "~/.config/alpha/status.sh",
+    "refreshInterval": 30
+  },
+  "env": {
+    "DEFAULT_MODEL": "small",
+    "SEARCH_LIMIT": "5"
+  }
+}

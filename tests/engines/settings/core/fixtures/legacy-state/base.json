@@ -1,0 +1,46 @@
+{
+  "entries": {
+    "alpha|[\"env\", \"DEFAULT_MODEL\"]": {
+      "value": "small"
+    },
+    "alpha|[\"env\", \"SEARCH_LIMIT\"]": {
+      "value": "5"
+    },
+    "alpha|[\"statusLine\"]": {
+      "value": {
+        "command": "~/.config/alpha/status.sh",
+        "refreshInterval": 30,
+        "type": "command"
+      }
+    },
+    "beta|[\"agents\", \"max_threads\"]": {
+      "value": 10
+    },
+    "beta|[\"notifications\", \"preferences\", \"mode\"]": {
+      "value": "enabled"
+    },
+    "beta|[\"onboarding\"]": {
+      "value": false
+    },
+    "beta|[\"plugins\"]": {
+      "value": [
+        "one",
+        "two"
+      ]
+    },
+    "beta|[\"theme\"]": {
+      "absent": true
+    },
+    "beta|[\"ui\"]": {
+      "value": {
+        "copy_on_select": true,
+        "theme_mode": "dark"
+      }
+    },
+    "file|~/.config/alpha/status.sh": {
+      "mode": "0755",
+      "sha256": "cdb5a00ad59cad18570d64a5f5f32c599ddaab1e56e1c3cdcdccfd8cf3da3527"
+    }
+  },
+  "schema_version": 1
+}

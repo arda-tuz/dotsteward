@@ -1,0 +1,12 @@
+onboarding = false
+plugins = ["one", "two"]
+
+[agents]
+max_threads = 10
+
+[notifications.preferences]
+mode = "enabled"
+
+[ui]
+copy_on_select = true
+theme_mode = "dark"
