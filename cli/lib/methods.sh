@@ -66,9 +66,10 @@
 #                                    <dotsteward>/ paths of a mirror are
 #                                    resolved, <store>/ paths need a
 #                                    generation
-#   methods_run_hook HOOK_JSON PROFILE CHECK_ONLY
-#                                    runs a hook with the hook environment;
-#                                    returns its exit status
+#   methods_run_hook HOOK_JSON PROFILE CHECK_ONLY [ARG...]
+#                                    runs a hook with the hook environment
+#                                    and the given arguments; returns its
+#                                    exit status
 
 _DS_METHODS_LIB_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 
@@ -785,8 +786,9 @@ methods_hook_path() {
 }
 
 methods_run_hook() {
-  (($# == 3)) || die "usage: methods_run_hook HOOK_JSON PROFILE CHECK_ONLY"
+  (($# >= 3)) || die "usage: methods_run_hook HOOK_JSON PROFILE CHECK_ONLY [ARG...]"
   local hook=$1 profile=$2 check_only=$3 path component status=0
+  shift 3
   path=$(methods_hook_path "$hook") || exit 1
   component=$(jq -r '.component' <<<"$hook")
   env DOTSTEWARD_LIB="$_DS_METHODS_LIB_DIR" \
@@ -798,6 +800,6 @@ methods_run_hook() {
     DOTSTEWARD_COMPONENT="$component" \
     DOTSTEWARD_CHECK_ONLY="$check_only" \
     DOTSTEWARD_ASSUME_YES="${DOTSTEWARD_ASSUME_YES:-0}" \
-    "$path" || status=$?
+    "$path" "$@" || status=$?
   return "$status"
 }
