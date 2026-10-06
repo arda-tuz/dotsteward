@@ -753,7 +753,7 @@ stage0_install_nix() {
 
 # stage0_main ARG...: the stage-0 bootstrap (see the top of this file).
 stage0_main() {
-  local source_path link_dir root profile='' nix_only=0 platform launcher
+  local source_path link_dir root profile='' nix_only=0 platform launcher state_root stamp
   # The instance root is the directory of this script (symlinks resolved
   # without GNU-only tools).
   source_path=${BASH_SOURCE[0]}
@@ -816,7 +816,11 @@ stage0_main() {
   preflight_parse --read-only --json --profile "$profile"
   preflight_run
 
-  stage0_backups "$(stage0_state_root)/backups/$(timestamp_utc)"
+  # Assigned first: a refusal inside a command substitution that is only
+  # an argument would exit the subshell alone.
+  state_root=$(stage0_state_root) || exit 1
+  stamp=$(timestamp_utc) || exit 1
+  stage0_backups "$state_root/backups/$stamp"
   stage0_prerequisites "$platform"
   stage0_install_nix
 
