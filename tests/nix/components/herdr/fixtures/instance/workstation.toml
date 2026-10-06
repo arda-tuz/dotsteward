@@ -1,0 +1,20 @@
+# An instance with the herdr catalog component on both systems. Tests call
+# lib.mkInstance with constructed inputs; the herdr input is a stand-in
+# package (tests/nix/components/herdr/scope.nix).
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+systems = ["x86_64-linux", "aarch64-darwin"]
+state_version = "25.11"
+
+[profiles]
+names = ["workstation"]
+
+[components.herdr]
+enable = true

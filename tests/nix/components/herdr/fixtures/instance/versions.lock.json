@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-01-01T00:00:00+00:00",
+  "policy": {
+    "official_sources_only": true,
+    "persistent_agentic_updates": false,
+    "scheduled_repository_updates": false,
+    "native_application_updates": true,
+    "major_version_review_required": true
+  },
+  "nix": {
+    "version": "2.35.2",
+    "installer_url": "https://releases.example.invalid/nix/nix-2.35.2/install",
+    "installer_size": 4499,
+    "installer_sha256": "99d0ddf3c86a252730207c4cf7d2fafaca9f76d14bb98ef588307da33e264d84"
+  },
+  "flake_inputs": {
+    "nixpkgs": {
+      "reference": "github:NixOS/nixpkgs/774debe7a0d1b496e35677ad955a1011c6ff74f3",
+      "revision": "774debe7a0d1b496e35677ad955a1011c6ff74f3"
+    },
+    "home-manager": {
+      "reference": "github:nix-community/home-manager/db7d5e2332710f5abb088f6b5de927d7f9511b35",
+      "revision": "db7d5e2332710f5abb088f6b5de927d7f9511b35"
+    },
+    "herdr": {
+      "reference": "github:herdrdev/herdr/v0.9.3",
+      "revision": "7b116c05bfda646af39d2524c54e70c751f57ee8",
+      "version": "0.9.3",
+      "nar_hash": "sha256-uu452Xe23pSvFk7w7fKPjiaqY5QenUIljao2SFAxpc0="
+    }
+  },
+  "nix_packages": {
+    "herdr": {
+      "expected": "0.9.3",
+      "resolved": "0.9.3"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+# Settings tracked in the herdr target of the component (no [targets.herdr]
+# here: the component's target applies).
+schema_version = 1
+
+[[entries]]
+id = "herdr-onboarding"
+target = "herdr"
+key = ["onboarding"]
+value = false
+
+[[entries]]
+id = "herdr-prefix"
+target = "herdr"
+key = ["keys", "prefix"]
+value = "ctrl+b"

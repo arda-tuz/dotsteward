@@ -19,13 +19,18 @@ nix_instance_fixtures=$nix_instance_dir/fixtures
 
 # nix_instance_eval_in REPO EXPR: evaluates EXPR strictly to JSON with the
 # instance prelude of the framework checkout REPO in scope. Output and status
-# land in DS_STDOUT, DS_STDERR and DS_STATUS; the status is returned.
+# land in DS_STDOUT, DS_STDERR and DS_STATUS; the status is returned. Like
+# nix_core_eval, it runs in read-only mode unless nix_core_read_write=1, which
+# copies the paths the result names (hook scripts, for example) into the
+# isolated store.
 nix_instance_eval_in() {
   (($# == 2)) || ds_fail "nix_instance_eval_in: usage: nix_instance_eval_in REPO EXPR"
   [[ -n ${DS_HOME_MANAGER:-} && -n ${nix_lib_store:-} ]] || nix_core_init
   local repo=$1
   local expr="{ nixpkgs, homeManager, repo }: with import (/. + repo + \"/tests/nix/instance/prelude.nix\") { inherit nixpkgs homeManager repo; }; ($2)"
   local out_file=$DS_TEST_ROOT/nix-eval.out err_file=$DS_TEST_ROOT/nix-eval.err
+  local mode=()
+  [[ ${nix_core_read_write:-0} != 1 ]] || mode=(--read-write-mode)
   DS_STATUS=0
   env -u NIX_REMOTE -u NIX_PATH \
     NIX_STORE_DIR="$nix_lib_store/store" \
@@ -33,7 +38,7 @@ nix_instance_eval_in() {
     NIX_LOG_DIR="$nix_lib_store/log" \
     NIX_CONF_DIR="$nix_lib_store/etc" \
     NIX_LOCALSTATE_DIR="$nix_lib_store/state" \
-    nix-instantiate --eval --strict --json --show-trace \
+    nix-instantiate --eval --strict --json --show-trace "${mode[@]}" \
     --argstr nixpkgs "$DS_NIXPKGS" --argstr homeManager "$DS_HOME_MANAGER" \
     --argstr repo "$repo" \
     --expr "$expr" >"$out_file" 2>"$err_file" || DS_STATUS=$?
