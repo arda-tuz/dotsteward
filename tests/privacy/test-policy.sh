@@ -18,7 +18,7 @@ join() {
 ds_privacy_load_policy "$DS_REPO_ROOT/privacy/policy.toml"
 assert_eq 1 "$DS_PRIVACY_GENERIC_SECRETS" generic_secrets
 assert_eq 1 "$DS_PRIVACY_HOME_PATHS" home_paths.enabled
-assert_eq "alice dotsteward-test runner user example" "$(join ' ' "${DS_PRIVACY_HOME_ALLOW_USERS[@]}")"
+assert_eq "alice dotsteward-test runner user example other" "$(join ' ' "${DS_PRIVACY_HOME_ALLOW_USERS[@]}")"
 assert_eq "/homeless-shelter" "$(join ' ' "${DS_PRIVACY_HOME_ALLOW_PATHS[@]}")"
 assert_eq 1 "$DS_PRIVACY_EMAILS" emails.enabled
 assert_eq "example.invalid example.com example.org users.noreply.github.com" \
