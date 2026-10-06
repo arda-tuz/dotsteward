@@ -18,6 +18,10 @@ install mktemp flock jq python3 bash shellcheck actionlint nixfmt
 # Text tools of the CLI toolchain (nix/packages/dotsteward.nix).
 grep sed awk
 
+# Tools of the pre-Nix stage-0 (cli/lib/stage0.sh): the type check of the Nix
+# installer and the macOS SHA-256 tool.
+file shasum
+
 # coreutils (without the names listed above).
 [ arch b2sum base32 base64 basename basenc cat chcon chgrp chmod chown chroot cksum comm
 coreutils cp csplit cut date dd df dir dircolors dirname du echo env expand expr factor
