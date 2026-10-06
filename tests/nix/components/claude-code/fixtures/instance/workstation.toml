@@ -1,0 +1,25 @@
+# An instance that enables the claude-code catalog component on both systems
+# with its default method, a fresh-mode and an adopt-mode profile.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+systems = ["x86_64-linux", "aarch64-darwin"]
+state_version = "25.11"
+
+[profiles]
+names = ["workstation", "baseline"]
+
+[profiles.workstation]
+mode = "fresh"
+
+[profiles.baseline]
+mode = "adopt"
+
+[components.claude-code]
+enable = true

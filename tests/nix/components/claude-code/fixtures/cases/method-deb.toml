@@ -1,0 +1,18 @@
+# claude-code with method = "deb" (Linux only).
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "25.11"
+
+[profiles]
+names = ["workstation"]
+
+[components.claude-code]
+enable = true
+method = "deb"
