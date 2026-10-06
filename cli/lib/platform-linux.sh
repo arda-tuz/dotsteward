@@ -22,7 +22,9 @@
 #                                         the os-release(5) quoting rules,
 #                                         never executed
 #   dpkg_installed PACKAGE                the package is installed
-#   dpkg_version PACKAGE                  its version (empty when unknown)
+#   dpkg_version PACKAGE                  its version in the dpkg database
+#                                         (also kept for a package removed
+#                                         but not purged; empty when unknown)
 #   dpkg_version_at_least PACKAGE MINIMUM installed at MINIMUM or later
 #   package_provides PACKAGE REGEX        the installed package lists a path
 #                                         matching the bash ERE REGEX that
@@ -150,6 +152,7 @@ dpkg_version() {
 
 dpkg_version_at_least() {
   local version
+  dpkg_installed "$1" || return 1
   version=$(dpkg_version "$1")
   [[ -n $version ]] && dpkg --compare-versions "$version" ge "$2"
 }

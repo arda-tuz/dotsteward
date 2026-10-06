@@ -583,12 +583,15 @@ _methods_deb_block() {
   fi
 }
 
-# _methods_deb_floor_met: prints "PACKAGE VERSION" of the first package
-# name at or above the floor; status 1 (printing the first installed
-# version, if any) when none is.
+# _methods_deb_floor_met: prints "PACKAGE VERSION" of the first installed
+# package name at or above the floor; status 1 (printing the first
+# installed version, if any) when none is. A package removed but not purged
+# (dpkg state config-files) keeps its version in the dpkg database and is
+# not installed.
 _methods_deb_floor_met() {
   local package version first=''
   for package in "${_deb_names[@]}"; do
+    dpkg_installed "$package" || continue
     version=$(dpkg_version "$package")
     [[ -n $version ]] || continue
     if dpkg --compare-versions "$version" ge "$_deb_floor"; then

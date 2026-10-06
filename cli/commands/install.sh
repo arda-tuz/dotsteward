@@ -8,6 +8,14 @@
 # line before any other step (D14). --check-only checks every active
 # component by its method instead (system-level methods are not-managed in
 # adopt mode) and runs only the forbid hooks.
+#
+# A real manifest carries every hook script as a Nix store path (the
+# mirror shows it as <store>/NAME). Without --generation, when a hook to
+# run is such a path, the fresh-mode phase builds the generation once the
+# preflight gate passed (rebuild --build-only, which changes nothing
+# outside the state directory) and runs with the built manifest;
+# --check-only, which writes nothing, runs those forbid hooks from the
+# active generation instead.
 set -Eeuo pipefail
 
 # shellcheck source=cli/lib/lib.sh
@@ -16,6 +24,8 @@ source "$DOTSTEWARD_LIB/lib.sh"
 source "$DOTSTEWARD_LIB/config.sh"
 # shellcheck source=cli/lib/methods.sh
 source "$DOTSTEWARD_LIB/methods.sh"
+# shellcheck source=cli/lib/skills.sh
+source "$DOTSTEWARD_LIB/skills.sh"
 
 usage() {
   cat <<'EOF'
@@ -25,11 +35,15 @@ Runs the system-install phase of PROFILE: in fresh mode the preflight gate,
 one apt transaction for the deb components (DEBs below their floor are
 downloaded and verified first; -y only with DOTSTEWARD_ASSUME_YES=1), the
 floors verified afterwards, then the systemInstall, postInstall and forbid
-hooks. In adopt mode the phase is skipped.
+hooks. When a hook to run is a Nix store path of the manifest mirror, the
+generation is built first (dotsteward rebuild --build-only, after the
+preflight gate) and its manifest is used. In adopt mode the phase is
+skipped.
 
   --profile PROFILE   a profile of the instance (required)
   --check-only        check every active component by its method, run only
-                      the forbid hooks; no change, no preflight
+                      the forbid hooks (store-path hooks from the active
+                      generation); no change, no preflight
   --json              print the report as one JSON document on standard
                       output; logs go to standard error
   --generation PATH   read the manifest of a built generation (its hook
@@ -93,9 +107,17 @@ if ((json)); then
   exec 3>&1 1>&2
 fi
 
-# The lists are read into variables first, so a failure stops the command.
-active_text=$(methods_components "$profile")
-mapfile -t components < <(grep -v '^$' <<<"$active_text" || true)
+# load_components: the components active in the profile, from the loaded
+# manifest. The list is read into a variable first, so a failure stops the
+# command.
+load_components() {
+  local active_text
+  active_text=$(methods_components "$profile")
+  mapfile -t components < <(grep -v '^$' <<<"$active_text" || true)
+}
+
+components=()
+load_components
 report_components=()
 report_hooks=()
 result=passed
@@ -162,6 +184,21 @@ validate_hooks() {
   done
 }
 
+# first_store_hook LIST...: the first hook of the lists, among those to run
+# in the profile, whose script is a <store>/ path of the manifest mirror
+# (JSON); empty when there is none.
+first_store_hook() {
+  local list hooks_text hook
+  for list in "$@"; do
+    hooks_text=$(methods_hooks "$list" "$profile")
+    hook=$(jq -sc 'map(select(.script | startswith("<store>/"))) | first // empty' <<<"$hooks_text")
+    if [[ -n $hook ]]; then
+      printf '%s\n' "$hook"
+      return 0
+    fi
+  done
+}
+
 emit_report() {
   if ((json)); then
     jq -n --arg profile "$profile" --arg mode "$mode" --argjson check_only "$check_only" \
@@ -209,6 +246,18 @@ fi
 
 # --- check-only -----------------------------------------------------------
 if ((check_only)); then
+  # The components are checked against the loaded manifest; forbid hooks
+  # that run from the Nix store come from the active generation, resolved
+  # before the first check.
+  hooks_generation=''
+  if [[ $mode == fresh && -z $generation ]]; then
+    store_hook=$(first_store_hook forbid)
+    if [[ -n $store_hook ]]; then
+      hooks_generation=$(skills_active_generation)
+      [[ -n $hooks_generation ]] ||
+        die "component $(jq -r '.component' <<<"$store_hook") hook $(jq -r '.name' <<<"$store_hook"): $(jq -r '.script' <<<"$store_hook") is a Nix store path and no Home Manager generation is active; switch to a generation (dotsteward rebuild --profile $profile --switch) or pass --generation with a built generation"
+    fi
+  fi
   for name in "${components[@]}"; do
     method=$(methods_component_method "$name")
     status=0
@@ -220,6 +269,9 @@ if ((check_only)); then
     fi
   done
   if [[ $mode == fresh ]]; then
+    if [[ -n $hooks_generation ]]; then
+      methods_manifest_load "$hooks_generation"
+    fi
     validate_hooks forbid
     run_hooks forbid 1
   fi
@@ -231,12 +283,39 @@ fi
 for name in "${components[@]}"; do
   methods_validate "$name"
 done
-validate_hooks system_install post_install forbid
+build=0
+store_hook=''
+if [[ -z $generation ]]; then
+  store_hook=$(first_store_hook system_install post_install forbid)
+fi
+if [[ -n $store_hook ]]; then
+  build=1
+else
+  validate_hooks system_install post_install forbid
+fi
 
 status=0
 "$DOTSTEWARD_FRAMEWORK_ROOT/cli/dotsteward" --instance "$DS_INSTANCE_ROOT" \
   preflight --read-only --json --profile "$profile" >/dev/null || status=$?
 ((status == 0)) || exit "$status"
+
+# Store-path hooks: build the generation (no activation) and continue with
+# its manifest, before any package or hook step.
+if ((build)); then
+  log "a phase hook runs from the Nix store; building the generation of profile $profile"
+  status=0
+  "$DOTSTEWARD_FRAMEWORK_ROOT/cli/dotsteward" --instance "$DS_INSTANCE_ROOT" \
+    rebuild --profile "$profile" --build-only || status=$?
+  ((status == 0)) || exit "$status"
+  record=$(state_root)/current/last-built-activation
+  [[ -s $record ]] || die "rebuild did not record the built generation: $record"
+  methods_manifest_load "$(<"$record")"
+  load_components
+  for name in "${components[@]}"; do
+    methods_validate "$name"
+  done
+  validate_hooks system_install post_install forbid
+fi
 
 deb_components=()
 for name in "${components[@]}"; do
