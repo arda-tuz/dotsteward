@@ -64,6 +64,13 @@ assert_eq '["github:example-org/dotsteward","v1.2.0"]' \
 assert_eq '["feat","fix","perf","refactor","docs","chore","test","build","ci","style","revert"]' \
   "$(jq -c .context.commit.conventional_types <<<"$redacted")"
 
+# The configuration file name is a framework fact and stays, even when the
+# remote's repository is named like its stem (the template's "workstation");
+# the instance directory named after the repository still goes.
+config_message=$(jq -r '.checks[] | select(.id == "config") | .message' <<<"$redacted")
+assert_contains "$config_message" "<redacted>/workstation.toml is valid"
+assert_not_contains "$redacted" "<redacted>.toml"
+
 # Profile names are data and go; profile modes stay.
 assert_eq '{"<redacted>":"adopt","fresh":"fresh"}' "$(jq -c .context.profiles.modes <<<"$redacted")"
 
@@ -91,6 +98,8 @@ done
 assert_exit 0 ds_cli --instance "$inst" doctor --redact
 leaks "$DS_STDOUT"
 [[ $(head -n 1 <<<"$DS_STDOUT") == "[dotsteward] doctor: "*"<redacted>"* ]] || ds_fail "the instance path is not redacted: $DS_STDOUT"
+assert_contains "$DS_STDOUT" "/workstation.toml is valid"
+assert_not_contains "$DS_STDOUT" "<redacted>.toml"
 assert_contains "$DS_STDOUT" "[dotsteward] summary: "
 
 # --redact also works when the configuration is invalid (no context).
@@ -100,6 +109,9 @@ printf '\n[gate]\nbogus = 1\n' >>"$bad/workstation.toml"
 assert_exit 1 ds_cli --instance "$bad" doctor --json --redact
 leaks "$DS_STDOUT"
 assert_eq null "$(jq -c .context <<<"$DS_STDOUT")"
+# Its problems keep the file name they start with.
+assert_eq 'workstation.toml: unknown key gate.bogus' \
+  "$(jq -r '.checks[] | select(.id == "config") | .details.problems[]' <<<"$DS_STDOUT")"
 
 # An invalid configuration still names its private values in the config
 # check's problems; --redact removes them (the raw identity and remote of
