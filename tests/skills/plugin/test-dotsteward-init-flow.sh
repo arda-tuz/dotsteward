@@ -7,9 +7,10 @@
 # from the catalog, init, a private repository, bootstrap or rebuild, e2e,
 # the hand-over to dotsteward-maintain), the existing-instance flow (clone,
 # the identity facts of `dotsteward context --json`, no edit needed,
-# bootstrap or rebuild, e2e), the supported platforms, every flag the
-# commands outside the dotsteward CLI pass, and no command or path of the
-# single-user scripts the CLI replaced.
+# bootstrap or rebuild, e2e), the login shell of an adopted machine set
+# before e2e, the supported platforms, every flag the commands outside the
+# dotsteward CLI pass, and no command or path of the single-user scripts the
+# CLI replaced.
 
 skill_dir=$DS_REPO_ROOT/plugins/dotsteward/skills/dotsteward-init
 skill=$skill_dir/SKILL.md
@@ -114,6 +115,7 @@ in_order "$skill" \
   "git -C" \
   "./bootstrap.sh --profile" \
   "./rebuild.sh --profile" \
+  "login-shell set --profile" \
   ".dotsteward/cli.sh e2e --profile" \
   "dotsteward-maintain"
 
@@ -166,6 +168,7 @@ in_order "$skill" \
   "runtime_matches_check" \
   "./bootstrap.sh --profile" \
   "./rebuild.sh --profile" \
+  "login-shell set --profile" \
   ".dotsteward/cli.sh e2e --profile"
 existing_flow=$(section "$skill" "4.")
 grep -q 'references/existing-instance.md' <<<"$existing_flow" ||
@@ -182,6 +185,16 @@ grep -qi 'new instances only' "$existing_ref" || ds_fail "existing-instance.md d
 for field in check_username runtime_user runtime_home profiles.bootstrap profiles.check instance.checkout; do
   grep -q "$field" "$existing_ref" || ds_fail "existing-instance.md does not read $field"
 done
+# The adopt path: the rebuild only moves a versioned Nix zsh login shell to
+# the stable path (login-shell migrate), and only the bootstrap sets it, so
+# an adopted machine whose instance manages the login shell sets it with
+# login-shell set before e2e checks it (core:login-shell).
+for file in "$new_ref" "$existing_ref" "$platform_ref"; do
+  # shellcheck disable=SC2016 # literal shell text of the skill
+  grep -q '\.dotsteward/cli\.sh login-shell set --profile' "$file" ||
+    ds_fail "${file#"$DS_REPO_ROOT"/} does not set the login shell of an adopted machine with login-shell set"
+done
+
 # The fresh-machine bootstrap refuses another Nix version; the existing
 # machine path is the rebuild.
 grep -qi 'nix --version' "$existing_ref" || ds_fail "existing-instance.md does not check the Nix version against the pin"
@@ -197,6 +210,7 @@ done
 # through nix run), the instance wrappers and the stage-0 bootstrap.
 init_help=$("$DS_REPO_ROOT/cli/dotsteward" init --help)
 rebuild_help=$("$DS_REPO_ROOT/cli/dotsteward" rebuild --help)
+login_shell_help=$("$DS_REPO_ROOT/cli/dotsteward" login-shell --help)
 bootstrap_help=$(bash "$DS_REPO_ROOT/template/bootstrap.sh" --help)
 check_flags() {
   local what=$1 help=$2 lines=$3 line flag
@@ -210,6 +224,7 @@ check_flags() {
 }
 check_flags "dotsteward init" "$init_help" "$(sed -n 's/.* -- init //p' <<<"$all_fenced")"
 check_flags "rebuild.sh" "$rebuild_help" "$(sed -n 's/.*\.\/rebuild\.sh //p' <<<"$all_fenced" | sed 's/[;&|].*//')"
+check_flags "login-shell" "$login_shell_help" "$(sed -n 's/.*cli\.sh login-shell //p' <<<"$all_fenced" | sed 's/[;&|].*//')"
 check_flags "bootstrap.sh" "$bootstrap_help" "$(sed -n 's/.*bootstrap\.sh"\{0,1\} //p' <<<"$all_fenced" | sed 's/[;&|].*//')"
 
 # No command or path of the single-user scripts the CLI replaced.
