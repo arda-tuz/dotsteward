@@ -139,7 +139,10 @@ cmd_prepare() {
   root=$DS_INSTANCE_ROOT
   txn_require_clone
 
-  dirty=$(git -C "$root" status --porcelain) || die "cannot read the status of $root"
+  # --untracked-files=normal overrides the user's status.showUntrackedFiles:
+  # an untracked file is a change in both scopes.
+  dirty=$(git -C "$root" status --porcelain --untracked-files=normal) ||
+    die "cannot read the status of $root"
   if [[ $scope == update && -n $dirty ]]; then
     die "update prepare requires a clean clone"
   fi
@@ -213,7 +216,9 @@ sync_canonical_checkout() {
   [[ $canonical != "$DS_INSTANCE_ROOT" ]] || return 0
   [[ $(git -C "$canonical" rev-parse --show-toplevel 2>/dev/null) == "$canonical" ]] || return 0
 
-  status=$(git -C "$canonical" status --porcelain 2>/dev/null) || status="unreadable"
+  # --untracked-files=normal: see cmd_prepare.
+  status=$(git -C "$canonical" status --porcelain --untracked-files=normal 2>/dev/null) ||
+    status="unreadable"
   current=$(git -C "$canonical" symbolic-ref --quiet --short HEAD 2>/dev/null) || current=""
   origin=$(git -C "$canonical" remote get-url origin 2>/dev/null) || origin=""
   at=$(git -C "$canonical" rev-parse --verify --quiet HEAD 2>/dev/null) || at=""
@@ -258,7 +263,9 @@ cmd_publish() {
   branch=$DS_INSTANCE_BRANCH
   txn_require_clone
 
-  [[ -z $(git -C "$root" status --porcelain) ]] || die "update publish needs a committed, clean candidate"
+  # --untracked-files=normal: see cmd_prepare.
+  [[ -z $(git -C "$root" status --porcelain --untracked-files=normal) ]] ||
+    die "update publish needs a committed, clean candidate"
   base=$(txn_resolve_base "$expected_base")
   head=$(git -C "$root" rev-parse HEAD)
   [[ $head != "$base" ]] || die "nothing to publish after the base OID $base"
