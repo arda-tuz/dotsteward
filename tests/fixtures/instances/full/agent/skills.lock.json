@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-01-01T00:00:00Z",
+  "expected_skill_count": 0,
+  "layout": {
+    "canonical_user_directory": "~/.agents/skills"
+  },
+  "skills": [],
+  "release_tools": {
+    "opencode": {
+      "version": "1.18.34",
+      "source_revision": "aec0b9a6d8898f68f923aaf08b7306d931fd9d76",
+      "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.34/opencode-linux-x64.tar.gz",
+      "size": 60665582,
+      "sha256": "0f22479647226d1d2dd99595d20082ee7bda3870b62dc6a90b41efc1a71d7e9a",
+      "native_auto_updates": true
+    }
+  },
+  "nix_tools": {
+    "pi": "1.0.1"
+  }
+}

@@ -1,0 +1,69 @@
+# The full Linux fixture instance (nix/checks/template-full.nix): the
+# instance `dotsteward init` writes for a stranger (SPEC 4.2) with every
+# catalog component, on x86_64-linux only, plus two synthetic private
+# components:
+#   example-app    method nix (its default): a packaged, checked command
+#   example-term   official-binary (its default), workstation profile only
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+name = "workstation"
+remote = "git@github.com:alice/workstation.git"
+checkout = "~/workstation"
+
+[nix]
+systems = ["x86_64-linux"]
+allow_unfree = true
+state_version = "26.05"
+
+[profiles]
+names = ["workstation", "fresh"]
+default = "workstation"
+check = "workstation"
+bootstrap = "fresh"
+
+[profiles.workstation]
+mode = "adopt"
+
+[profiles.fresh]
+mode = "fresh"
+
+[gate]
+static = ["tests/static.sh"]
+
+[components]
+order = ["shell", "herdr", "claude-code", "codex", "opencode-pi", "vscode", "example-app", "example-term"]
+
+[components.shell]
+enable = true
+
+[components.herdr]
+enable = true
+
+[components.claude-code]
+enable = true
+
+[components.codex]
+enable = true
+
+[components.opencode-pi]
+enable = true
+
+[components.vscode]
+enable = true
+method_by_platform = { linux = "deb", darwin = "app-archive" }
+options = { set_default_editor = true }
+
+[components.example-app]
+enable = true
+
+[components.example-term]
+enable = true
+profiles = ["workstation"]
+options = { greeting = "hello from the full instance" }
+
+[upstream]
+contribute = "fork"

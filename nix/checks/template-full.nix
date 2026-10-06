@@ -12,10 +12,11 @@
 # component tests (an application input is never a framework input).
 #
 # Built: every check of the instance on x86_64-linux, among them the
-# generations of both profiles, the Pi and starship packages, the private
-# example-app package, the manifest checks, the instance static scripts and
-# the instance contract (static --sandbox, the offline pins check, settings
-# validate, the privacy scan). Then the check-profile generation is
+# generations of both profiles (which hold the starship package), the Pi
+# package, the private example-app package, the manifest checks, the
+# instance static scripts and the instance contract (static --sandbox, the
+# offline pins check, settings validate, the privacy scan). Then the
+# check-profile generation is
 # inspected (packages, agent rules, managed links, the default editor, the
 # manifest) and its probe registry runs exactly as the gate's cli-probes
 # step runs it: `dotsteward --instance ROOT probes --generation GENERATION`.
@@ -98,6 +99,8 @@ assert lib.assertMsg (checkNames == expectedChecks)
 pkgs.runCommand "dotsteward-check-template-full"
   {
     nativeBuildInputs = cli.toolchain ++ [ cli ];
+    # The instance root and outputs, to build one of its checks alone.
+    passthru = { inherit root instance; };
   }
   ''
     fail() {
@@ -154,8 +157,9 @@ pkgs.runCommand "dotsteward-check-template-full"
     # One agent rules source behind every agent rules link; every managed
     # link is in the generation.
     files=$gen/home-files
+    rules_source=$(cd ${fixture} && realpath home/AGENTS.md)
     for rules in .claude/CLAUDE.md .codex/AGENTS.md .pi/agent/AGENTS.md .example-term/AGENTS.md; do
-      cmp ${fixture}/home/AGENTS.md "$files/$rules" || fail "$rules is not home/AGENTS.md"
+      cmp "$rules_source" "$files/$rules" || fail "$rules is not home/AGENTS.md"
     done
     mapfile -t links < <(jq -r '.managed_links[]' "$manifest")
     expected_links=(
@@ -184,12 +188,14 @@ pkgs.runCommand "dotsteward-check-template-full"
       grep -qx 'export GIT_EDITOR="code --wait"' "$vars" || fail "GIT_EDITOR is not code --wait in $vars"
     done
 
-    # The profile scope of example-term: its options file only in the
-    # workstation profile.
+    # example-term reads its options, and its agent rules link exists only
+    # in the profiles it is active in (workstation).
     [[ $(<"$files/.example-term/greeting") == "hello from the full instance" ]] ||
-      fail "the example-term greeting"
-    [[ ! -e ${checks.home-fresh}/home-files/.example-term/greeting ]] ||
+      fail "the example-term greeting: $(<"$files/.example-term/greeting")"
+    [[ ! -e ${checks.home-fresh}/home-files/.example-term/AGENTS.md ]] ||
       fail "example-term is active in the fresh profile"
+    [[ -e ${checks.home-fresh}/home-files/.claude/CLAUDE.md ]] ||
+      fail "claude-code is not active in the fresh profile"
 
     # The probe registry of the check profile, as the gate runs it.
     export HOME=$TMPDIR/home
