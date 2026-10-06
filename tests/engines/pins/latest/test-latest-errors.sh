@@ -46,6 +46,18 @@ invalid '{"component":"example-x","id":"example.row","adapter":"npm","package":"
   "example-x/example.row: invalid declaration: 'only_with' needs 'for_each'"
 invalid '{"component":"example-x","id":"example.row","adapter":"github-release","repo":"example-org/example-term","asset":"example-{arch}.tar.gz"}' \
   "example-x/example.row: invalid declaration: field 'asset': unknown placeholder {arch} (known: {version}, {tag})"
+# Per-platform asset maps: not empty, known systems or platforms only, each
+# platform once, every value a release template.
+invalid '{"component":"example-x","id":"example.row","adapter":"github-release","repo":"example-org/example-term","asset":{}}' \
+  "example-x/example.row: invalid declaration: field 'asset': expected a template string or a non-empty object of templates per system or platform, found {}"
+invalid '{"component":"example-x","id":"example.row","adapter":"github-release","repo":"example-org/example-term","asset":{"x86_64-linux":"a.tar.gz","riscv64-linux":"b.tar.gz"}}' \
+  "example-x/example.row: invalid declaration: field 'asset': unknown system or platform 'riscv64-linux' (known: x86_64-linux, aarch64-darwin, linux, darwin)"
+invalid '{"component":"example-x","id":"example.row","adapter":"github-release","repo":"example-org/example-term","asset":{"linux":"a.tar.gz","x86_64-linux":"b.tar.gz"}}' \
+  "example-x/example.row: invalid declaration: field 'asset': 'linux' and 'x86_64-linux' name the same platform"
+invalid '{"component":"example-x","id":"example.row","adapter":"github-release","repo":"example-org/example-term","asset":{"darwin":"example-{arch}.zip"}}' \
+  "example-x/example.row: invalid declaration: field 'asset': darwin: unknown placeholder {arch} (known: {version}, {tag})"
+invalid '{"component":"example-x","id":"example.row","adapter":"github-release","repo":"example-org/example-term","asset":{"darwin":7}}' \
+  "example-x/example.row: invalid declaration: field 'asset': darwin: expected a non-empty template string, found 7"
 invalid '{"component":"example-x","id":"example.row","adapter":"github-release","repo":"example-org/example-term","at":"flake_inputs[x"}' \
   "example-x/example.row: invalid declaration: field 'at': invalid lock path"
 invalid '{"component":"example-x","id":"example.row","adapter":"git-compare","repo":"example-org/example-watch","revision_at":"example_watch.inspected_revision","watched":["("]}' \

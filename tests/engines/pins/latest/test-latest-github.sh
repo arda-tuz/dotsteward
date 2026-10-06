@@ -2,8 +2,10 @@
 # github-release rows: the git ls-remote fallback when gh fails or answers
 # another tag family, tag prefixes, stable tag selection, asset templates
 # ({version}, {tag}) and missing assets, the status model (0.x minor and
-# major bumps are reviews, holdbacks are held), and the error row of a
-# flake input whose reference is not on GitHub.
+# major bumps are reviews, holdbacks are held), the error row of a flake
+# input whose reference is not on GitHub, and per-platform assets of an
+# instance with two systems (one row, every platform's asset from the same
+# release; different declarations of one id across the mirrors are refused).
 # shellcheck source=tests/engines/pins/latest/helpers.sh
 source "$DS_REPO_ROOT/tests/engines/pins/latest/helpers.sh"
 
@@ -98,3 +100,45 @@ assert_eq '["github-release","1.0.0",null,"error"]' "$(row flake_inputs.example-
 assert_contains "$(row flake_inputs.example-git .details.error)" "not a GitHub reference"
 assert_contains "$DS_STDOUT" $'\nerror    flake_inputs.example-git'
 assert_eq '"update"' "$(row flake_inputs.example-term .status)"
+
+# Per-platform assets (SPEC 5.5): both systems' mirrors carry the same
+# declaration with one asset template per system (or per platform); each
+# declaration is one row whose details.assets hold every platform's asset,
+# all from the same release answer.
+json_edit "$versions" 'del data["flake_inputs"]["example-git"]'
+sed -i 's/^state_version = .*/&\nsystems = ["x86_64-linux", "aarch64-darwin"]/' "$inst/workstation.toml"
+darwin_manifest=$inst/.dotsteward/manifest.aarch64-darwin.json
+per_system='{"component":"example-term","id":"agent_tools.example-term","adapter":"github-release","repo":"example-org/example-term","at":"flake_inputs.example-term","asset":{"x86_64-linux":"example-term_{version}_amd64.deb","aarch64-darwin":"example-term-{tag}-darwin.zip"}}'
+per_platform='{"component":"example-term","id":"agent_tools.example-term-archive","adapter":"github-release","repo":"example-org/example-term","at":"flake_inputs.example-term","asset":{"linux":"SHA256SUMS","darwin":"example-term_{version}_arm64.zip"}}'
+declare_latest "$per_system" "$per_platform"
+cp -- "$manifest" "$darwin_manifest"
+ds_stub_clear_routes gh
+latest_gh_routes
+assert_exit 0 latest --out "$report"
+assert_not_contains "$DS_STDERR" "duplicate"
+assert_json "$report" '[.items[] | select(.id == "agent_tools.example-term")] | length == 1'
+assert_eq '{"id":"agent_tools.example-term","kind":"github-release","current":"0.8.9","latest":"0.9.0","status":"review","source":"https://github.com/example-org/example-term/releases","details":{"tag":"v0.9.0","assets":{"x86_64-linux":{"asset":"example-term_0.9.0_amd64.deb","size":194,"sha256":"950f43fd2ac691e81cbe68303e3aa30904a4b55a82eac7dcc01687dbd351ff46","url":"https://github.com/example-org/example-term/releases/download/v0.9.0/example-term_0.9.0_amd64.deb"},"aarch64-darwin":{"asset_missing":"example-term-v0.9.0-darwin.zip"}}}}' \
+  "$(row agent_tools.example-term)"
+assert_eq '{"tag":"v0.9.0","assets":{"linux":{"asset":"SHA256SUMS","size":95,"sha256":"8acfe6209e718be45de0ccc09ffcb4c676a99c6f9ebb23f7181bddf886583ca4","url":"https://github.com/example-org/example-term/releases/download/v0.9.0/SHA256SUMS"},"darwin":{"asset_missing":"example-term_0.9.0_arm64.zip"}}}' \
+  "$(row agent_tools.example-term-archive .details)"
+
+# Without a release (the tags answer), there are no asset details.
+ds_stub_clear_routes gh
+ds_stub_route gh "api repos/example-org/example-term/releases/latest" --exit 1 --stderr "HTTP 404: Not Found"
+latest_gh_routes
+assert_exit 0 latest --out "$report"
+assert_eq '["0.9.0","review",{"tag":"v0.9.0"}]' "$(row agent_tools.example-term '[.latest, .status, .details]')"
+
+# Two different declarations of one row id, one per system's mirror (an
+# asset that changes from system to system instead of an asset map), are
+# still refused before any query.
+declare_latest '{"component":"example-term","id":"agent_tools.example-term","adapter":"github-release","repo":"example-org/example-term","at":"flake_inputs.example-term","asset":"example-term_{version}_amd64.deb"}'
+cp -- "$manifest" "$darwin_manifest"
+declare_latest '{"component":"example-term","id":"agent_tools.example-term","adapter":"github-release","repo":"example-org/example-term","at":"flake_inputs.example-term","asset":"example-term-{tag}-darwin.zip"}'
+: >"$DS_CALL_LOG"
+rm -f -- "$report"
+assert_exit 2 latest --out "$report"
+assert_contains "$DS_STDERR" "[pins] ERROR: duplicate latest row id 'agent_tools.example-term' (components example-term and example-term)"
+assert_not_contains "$DS_STDERR" "Traceback"
+assert_calls
+[[ ! -e $report ]] || ds_fail "a report was written for duplicate row ids"
