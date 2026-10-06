@@ -8,7 +8,10 @@
 # bootstrap.sh and .dotsteward/cli.sh from the release's template/, sync,
 # the gate after `git add -A`, one commit with commit.upgrade_subject,
 # rebuild --switch and e2e (no override; e2e against the remote base),
-# `update publish --scope maintain`. Re-runs resume after the commit;
+# `update publish --scope maintain`; every step after the verified lock
+# runs through the instance launcher (the CLI pinned by the new flake.lock,
+# whose template/ the refreshed files match), only `update prepare` through
+# the running CLI. Re-runs resume after the commit;
 # --build-only rebuilds without switching and skips e2e; a red step keeps
 # the instance's changes uncommitted and reports when the recovery cannot
 # run on a dirty instance.
@@ -21,13 +24,20 @@ released_run add-feature
 merged=$(field .merged_sha)
 base=$(git -C "$ct_inst" rev-parse HEAD)
 
+# pinned COMMAND ARG...: the call log lines of COMMAND run through the
+# instance launcher.
+pinned() {
+  call_line dotsteward-launcher "$@"
+  call_line "dotsteward-$1" "${@:2}"
+}
+
 upgrade_calls() {
   call_line dotsteward-update prepare --official-sources-only --scope maintain
-  call_line dotsteward-sync
-  call_line dotsteward-gate --scope maintain
-  call_line dotsteward-rebuild --profile main --switch
-  call_line dotsteward-e2e --profile main --expected-remote-base "$base"
-  call_line dotsteward-update publish --scope maintain --expected-base "$base"
+  pinned sync
+  pinned gate --scope maintain
+  pinned rebuild --profile main --switch
+  pinned e2e --profile main --expected-remote-base "$base"
+  pinned update publish --scope maintain --expected-base "$base"
 }
 
 # --- refusals -----------------------------------------------------------------------
@@ -100,9 +110,9 @@ reset_calls
 assert_exit 0 run_contribute upgrade --tag v0.1.2
 assert_contains "$DS_STDOUT" "[dotsteward] resuming the upgrade at the instance commit ${commit:0:12}"
 assert_eq "$(
-  call_line dotsteward-rebuild --profile main --switch
-  call_line dotsteward-e2e --profile main --expected-remote-base "$base"
-  call_line dotsteward-update publish --scope maintain --expected-base "$base"
+  pinned rebuild --profile main --switch
+  pinned e2e --profile main --expected-remote-base "$base"
+  pinned update publish --scope maintain --expected-base "$base"
 )" "$(instance_calls)" "calls of the resumed upgrade"
 assert_call_count 0 nix
 
@@ -138,10 +148,10 @@ reset_calls
 assert_exit 0 run_contribute upgrade --build-only
 assert_eq "$(
   call_line dotsteward-update prepare --official-sources-only --scope maintain
-  call_line dotsteward-sync
-  call_line dotsteward-gate --scope maintain
-  call_line dotsteward-rebuild --profile main --build-only
-  call_line dotsteward-update publish --scope maintain --expected-base "$base"
+  pinned sync
+  pinned gate --scope maintain
+  pinned rebuild --profile main --build-only
+  pinned update publish --scope maintain --expected-base "$base"
 )" "$(instance_calls)" "calls of the build-only upgrade"
 state_json | assert_json - '.upgrade == "build-only" and .step == "report"'
 assert_contains "$DS_STDERR" "[dotsteward] WARNING: the live generation still uses the trial framework (a build-only upgrade does not switch); switch to the upgraded instance with: dotsteward rebuild --profile main --switch"
@@ -165,10 +175,10 @@ assert_eq "$base" "$(git -C "$ct_inst" rev-parse HEAD)" "no commit for an instan
 assert_eq "$base" "$(field .instance_commit)" "instance commit of an instance on the release"
 assert_eq "$(
   call_line dotsteward-update prepare --official-sources-only --scope maintain
-  call_line dotsteward-sync
-  call_line dotsteward-gate --scope maintain
-  call_line dotsteward-rebuild --profile main --switch
-  call_line dotsteward-e2e --profile main
+  pinned sync
+  pinned gate --scope maintain
+  pinned rebuild --profile main --switch
+  pinned e2e --profile main
 )" "$(instance_calls)" "calls of the upgrade of an instance on the release"
 assert_eq report "$(field .step)" "step of an instance on the release"
 

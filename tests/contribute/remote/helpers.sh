@@ -7,8 +7,9 @@
 # Sourcing this file sources tests/contribute/local/helpers.sh (the
 # synthetic upstream, fork, instance and clone; see there) and adds:
 #   a release of the synthetic framework: VERSION 0.1.0, template/bootstrap.sh
-#                     and template/.dotsteward/cli.sh, tagged v0.1.0 (an
-#                     annotated tag) on the upstream and the fork
+#                     and template/.dotsteward/cli.sh (the framework's real
+#                     instance launcher), tagged v0.1.0 (an annotated tag) on
+#                     the upstream and the fork
 #   rt_fw             a copy of the framework under test whose gate,
 #                     rebuild, e2e, update and sync commands are recording
 #                     stand-ins: each records "dotsteward-<command> ARG..."
@@ -19,6 +20,10 @@
 #                     (the --framework-override value, else "pinned"); sync
 #                     writes the untracked mirror .dotsteward/synced; gate
 #                     refuses untracked files, as the real gate does
+#   DOTSTEWARD_CLI    (exported) the CLI the instance launcher runs (its
+#                     step 1): a wrapper that records "dotsteward-launcher
+#                     ARG..." and runs rt_fw, standing in for the CLI pinned
+#                     by the instance's flake.lock
 #   ct_inst           a git clone on main (origin CT_INSTANCE_REMOTE, served
 #                     from rt_inst_bare) with flake.nix (the github form of
 #                     the dotsteward input, write_flake changes it), the
@@ -82,13 +87,12 @@ export DOTSTEWARD_CONTRIBUTE_CI_TIMEOUT_SECONDS=60
 rt_bootstrap() {
   printf '#!/usr/bin/env bash\n# Stage-0 of the synthetic framework, release %s.\n' "$1"
 }
-rt_launcher_v1='#!/usr/bin/env bash
-# Launcher of the synthetic framework, release 0.1.0.
-'
+# The instance launcher of every release is the framework's own.
+rt_launcher=$DS_REPO_ROOT/template/.dotsteward/cli.sh
 mkdir -p "$ct_upstream_src/template/.dotsteward"
 printf '0.1.0\n' >"$ct_upstream_src/VERSION"
 rt_bootstrap 0.1.0 >"$ct_upstream_src/template/bootstrap.sh"
-printf '%s' "$rt_launcher_v1" >"$ct_upstream_src/template/.dotsteward/cli.sh"
+cp "$rt_launcher" "$ct_upstream_src/template/.dotsteward/cli.sh"
 chmod 0755 "$ct_upstream_src/template/bootstrap.sh" "$ct_upstream_src/template/.dotsteward/cli.sh"
 git -C "$ct_upstream_src" add -A
 git -C "$ct_upstream_src" commit -q -m "feat: add the release files"
@@ -159,6 +163,17 @@ done
 run_contribute() {
   "$rt_fw/cli/dotsteward" --instance "$ct_inst" contribute "$@" </dev/null
 }
+
+DOTSTEWARD_CLI=$DS_TEST_ROOT/pinned-cli
+{
+  printf '#!%s\n' "$BASH"
+  printf 'set -euo pipefail\n'
+  printf 'source %q\n' "$DS_REPO_ROOT/tests/lib/harness.sh"
+  printf 'ds_record_call dotsteward-launcher "$@"\n'
+  printf 'exec %q "$@"\n' "$rt_fw/cli/dotsteward"
+} >"$DOTSTEWARD_CLI"
+chmod 0755 "$DOTSTEWARD_CLI"
+export DOTSTEWARD_CLI
 
 # --- fake GitHub and Nix ------------------------------------------------------------
 
@@ -237,7 +252,7 @@ EOF
 write_mirror
 mkdir -p "$ct_inst/.dotsteward"
 rt_bootstrap 0.1.0 >"$ct_inst/bootstrap.sh"
-printf '%s' "$rt_launcher_v1" >"$ct_inst/.dotsteward/cli.sh"
+cp "$rt_launcher" "$ct_inst/.dotsteward/cli.sh"
 chmod 0755 "$ct_inst/bootstrap.sh" "$ct_inst/.dotsteward/cli.sh"
 git init -q -b main "$ct_inst"
 git -C "$ct_inst" add -A
