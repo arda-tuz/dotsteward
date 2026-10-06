@@ -1,0 +1,125 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-01-01T00:00:00+00:00",
+  "nix": {
+    "version": "2.30.0",
+    "installer_url": "@HTTPFIX@/nix/nix-2.30.0/install",
+    "installer_size": 120,
+    "installer_sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb"
+  },
+  "flake_inputs": {
+    "nixpkgs": {
+      "reference": "github:example-org/nixpkgs/nixos-25.11",
+      "channel": "nixos-25.11",
+      "revision": "@REV:example-org/nixpkgs:nixos-25.11~1@"
+    },
+    "home-manager": {
+      "reference": "github:example-org/home-manager/release-25.11",
+      "channel": "release-25.11",
+      "revision": "@REV:example-org/home-manager:release-25.11@"
+    },
+    "example-term": {
+      "reference": "github:example-org/example-term/v0.8.0",
+      "revision": "@REV:example-org/example-term:v0.8.0@",
+      "version": "0.8.0"
+    },
+    "example-lib": {
+      "reference": "github:example-org/example-lib/v2.0.0",
+      "revision": "@REV:example-org/example-lib:v2.0.0@",
+      "version": "2.0.0"
+    },
+    "example-src": {
+      "reference": "github:example-org/example-src/3e23e8160039594a33894f6564e1b1348bbd7a00",
+      "revision": "3e23e8160039594a33894f6564e1b1348bbd7a00"
+    }
+  },
+  "nix_packages": {
+    "example-term": {
+      "expected": "0.8.0",
+      "resolved": "0.8.0"
+    },
+    "example-shell": {
+      "expected": "locked nixpkgs package",
+      "resolved": "5.9"
+    },
+    "example-lint": {
+      "expected": "0.11.0",
+      "resolved": "0.11.0"
+    },
+    "example-manual": {
+      "expected": "35.0.0",
+      "resolved": "35.0.0",
+      "latest_stable_version": "36.0.0",
+      "official_repository": "https://example.invalid/example-manual/",
+      "holdback_reason": "36.x needs a newer host library"
+    }
+  },
+  "agent_tools": {
+    "example-cli": {
+      "package": "@example/example-app",
+      "version": "1.1.0"
+    },
+    "example-release": {
+      "minimum_version": "1.3.0",
+      "url": "https://github.com/example-org/example-cli/releases/download/cli-v1.3.0/example-cli-linux-x64.tar.gz",
+      "size": 4096,
+      "sha256": "2e7d2c03a9507ae265ecf5b5356885a53393a2029d241394997265a1a25aefc6"
+    },
+    "example-bin": {
+      "linux-x64": {
+        "version": "1.0.0",
+        "url": "@HTTPFIX@/bin/1.0.0/linux-x64/example-bin",
+        "size": 2048,
+        "sha256": "18ac3e7343f016890c510e93f935261169d9e3f565436429830faf0934f4f8e4"
+      }
+    },
+    "npm_security_overrides": {
+      "@example/example-app": {
+        "version": "1.2.3"
+      },
+      "example-dep": {
+        "version": "1.0.0",
+        "holdback_reason": "2.x drops the API the bundle uses"
+      }
+    },
+    "example-plugin": {
+      "source": "https://github.com/example-org/example-plugins",
+      "observed_revision": "@REV:example-org/example-plugins:main~1@"
+    }
+  },
+  "desktop_packages": {
+    "example-app": {
+      "minimum_version": "1.1.0",
+      "url": "@HTTPFIX@/apt/pool/main/e/example-app/example-app_1.1.0_amd64.deb",
+      "size": 193,
+      "sha256": "1cf8d525d00656b0b6ae0c14334027c6fb085c7cc49ee2479fd4bc42ee58749a"
+    },
+    "example-editor": {
+      "minimum_version": "1.100.0",
+      "url": "@HTTPFIX@/editor/1.100.0/linux-deb-x64/stable",
+      "size": 1024,
+      "sha256": "3f79bb7b435b05321651daefd374cdc681dc06faa65e374e38337b88ca046dea"
+    },
+    "example-viewer": {
+      "minimum_version": "2.0.0",
+      "url": "@HTTPFIX@/viewer/pool/example-viewer_2.0.0_amd64.deb",
+      "size": 512,
+      "sha256": "252f10c83610ebca1a059c0bae8255eba2f95be4d1d7bcfa89d7248a82d9f111"
+    }
+  },
+  "example_watch": {
+    "source": "https://github.com/example-org/example-watch",
+    "inspected_revision": "@REV:example-org/example-watch:main~1@",
+    "exact_versions": {
+      "example-lint": "0.11.0"
+    }
+  },
+  "ubuntu_packages": {
+    "example-app": {
+      "minimum_version": "1.0.0"
+    },
+    "example-plain": {
+      "purpose": "installed without a version floor"
+    }
+  }
+}

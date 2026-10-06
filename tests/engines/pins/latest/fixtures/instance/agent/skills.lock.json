@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-01-01T00:00:00Z",
+  "expected_skill_count": 5,
+  "npm_tools": {
+    "@example/example-app": "1.1.0"
+  },
+  "skills": [
+    {
+      "name": "example-local",
+      "directory": "example-local",
+      "source": "https://github.com/example-org/workstation",
+      "revision": "same-as-instance-checkout",
+      "source_path": "agent/skills/example-local"
+    },
+    {
+      "name": "example-vendored",
+      "directory": "example-vendored",
+      "source": "https://github.com/example-org/example-skills",
+      "revision": "@REV:example-org/example-skills:main~1@",
+      "source_path": "skills/example-vendored"
+    },
+    {
+      "name": "example-second",
+      "directory": "example-second",
+      "source": "https://github.com/example-org/example-skills",
+      "revision": "@REV:example-org/example-skills:main~1@",
+      "source_path": "skills/example-second/"
+    },
+    {
+      "name": "example-snapshot",
+      "directory": "example-snapshot",
+      "source": "https://github.com/example-org/example-snapshot",
+      "revision": "local-snapshot",
+      "source_path": "."
+    },
+    {
+      "name": "example-bound",
+      "directory": "example-bound",
+      "source": "https://github.com/example-org/example-tool",
+      "revision": "@REV:example-org/example-tool:v1.0.0@",
+      "source_path": "skill",
+      "release_bound": true
+    }
+  ]
+}

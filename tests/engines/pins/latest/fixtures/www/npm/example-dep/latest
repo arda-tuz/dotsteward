@@ -1,0 +1,7 @@
+{
+  "name": "example-dep",
+  "version": "2.0.0",
+  "dist": {
+    "integrity": "sha512-CK5+spDgnG/oNgXP0DFfWNvK9Nq9DLFtBb90fdultaYgTFpqHyHvw+VleZ3wB9vQrD8a+NpcS6LYLHjg84/ykQ=="
+  }
+}

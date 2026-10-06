@@ -1,0 +1,13 @@
+{
+  "name": "@example/example-app",
+  "version": "1.2.3",
+  "dist": {
+    "tarball": "https://registry.example.invalid/@example/example-app/-/example-app-1.2.3.tgz",
+    "integrity": "sha512-UXdR2pq5/a9k4BKS7ZdgEF4hCSEpWBhCl2PIm/7hIHsdPWSMXMi9ndlvlfCqmYFWmxv8l1377nVJhTT3M364HQ==",
+    "shasum": "070aa7d37ee6db03834de73a488e5573be37e5df"
+  },
+  "gitHead": "11f6ad8ec52a2984abaafd7c3b516503785c2072",
+  "engines": {
+    "node": ">=20"
+  }
+}

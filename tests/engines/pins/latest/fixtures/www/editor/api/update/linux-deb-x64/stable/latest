@@ -1,0 +1,7 @@
+{
+  "url": "@HTTPFIX@/editor/download/example-editor_1.105.1_amd64.deb",
+  "name": "1.105.1",
+  "version": "7e048bc08f047871926853fd272c039b001e15e0",
+  "productVersion": "1.105.1",
+  "sha256hash": "aaa9402664f1a41f40ebbc52c9993eb66aeb366602958fdfaa283b71e64db123"
+}

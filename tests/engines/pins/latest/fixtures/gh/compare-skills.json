@@ -1,0 +1,9 @@
+{
+  "ahead_by": 1,
+  "files": [
+    { "filename": "README.md", "status": "modified" },
+    { "filename": "skills/example-vendored/references/notes.md", "status": "modified" },
+    { "filename": "skills/example-vendored/NOTES.txt", "status": "added" },
+    { "filename": "skills/example-second/docs/extra.md", "status": "added" }
+  ]
+}

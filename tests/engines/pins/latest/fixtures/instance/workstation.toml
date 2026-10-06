@@ -1,0 +1,15 @@
+# Synthetic instance for the pins latest tests: every latest adapter is
+# declared in .dotsteward/manifest.x86_64-linux.json.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "25.11"
+
+[profiles]
+names = ["workstation"]

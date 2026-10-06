@@ -35,6 +35,13 @@ assert_eq "$DS_REPO_ROOT/tests/fixtures/common/apt/Packages" "$(ds_fixture commo
 assert_exit 1 ds_fixture common/no-such-file
 assert_contains "$DS_STDERR" "no such fixture"
 
+# git starts no background maintenance after a commit: a detached repack
+# races with tests that copy or inspect the repository right after.
+git init -q "$DS_TEST_ROOT/maintenance"
+GIT_TRACE=1 git -C "$DS_TEST_ROOT/maintenance" commit -q --allow-empty -m "chore: empty" 2>"$DS_TEST_ROOT/trace.log"
+assert_not_contains "$(<"$DS_TEST_ROOT/trace.log")" "maintenance run"
+assert_not_contains "$(<"$DS_TEST_ROOT/trace.log")" "gc --auto"
+
 # The helper libraries are separate files a test sources when it needs them.
 for lib in bare-remote.sh fakessh.sh httpfix.py; do
   [[ -f $DS_REPO_ROOT/tests/lib/$lib ]] || ds_fail "missing tests/lib/$lib"

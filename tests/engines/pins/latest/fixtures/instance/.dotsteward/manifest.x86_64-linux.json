@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "pins": {
+    "flake_inputs": [
+      "example-term",
+      "example-lib",
+      "example-src"
+    ],
+    "latest": [
+      {
+        "adapter": "github-release",
+        "asset": "example-term_{version}_amd64.deb",
+        "component": "example-term",
+        "id": "flake_inputs.example-term",
+        "repo": "example-org/example-term"
+      },
+      {
+        "adapter": "npm",
+        "at": "agent_tools.example-cli",
+        "component": "example-cli",
+        "id": "agent_tools.example-cli",
+        "package_at": "agent_tools.example-cli.package",
+        "registry": "@HTTPFIX@/npm"
+      },
+      {
+        "adapter": "github-release",
+        "asset": "example-cli-linux-x64.tar.gz",
+        "at": "agent_tools.example-release",
+        "component": "example-cli",
+        "id": "agent_tools.example-release",
+        "repo": "example-org/example-cli",
+        "tag_prefix": "cli-v"
+      },
+      {
+        "adapter": "npm",
+        "component": "example-bundle",
+        "current": "{value}",
+        "for_each": "skills:npm_tools",
+        "id": "npm.{key}",
+        "package": "{key}",
+        "registry": "@HTTPFIX@/npm"
+      },
+      {
+        "adapter": "npm",
+        "component": "example-bundle",
+        "for_each": "agent_tools.npm_security_overrides",
+        "id": "npm_security_overrides.{key}",
+        "package": "{key}",
+        "registry": "@HTTPFIX@/npm"
+      },
+      {
+        "adapter": "official-manifest",
+        "at": "agent_tools.example-bin.linux-x64",
+        "component": "example-bin",
+        "id": "agent_tools.example-bin.linux-x64",
+        "manifest_url": "@HTTPFIX@/bin/{version}/manifest.json",
+        "sha256_field": "platforms.linux-x64.checksum",
+        "size_field": "platforms.linux-x64.size",
+        "url_template": "@HTTPFIX@/bin/{version}/linux-x64/example-bin",
+        "version_field": "version",
+        "version_url": "@HTTPFIX@/bin/stable"
+      },
+      {
+        "adapter": "official-manifest",
+        "at": "desktop_packages.example-editor",
+        "component": "example-editor",
+        "current_field": "minimum_version",
+        "id": "desktop_packages.example-editor",
+        "manifest_url": "@HTTPFIX@/editor/api/update/linux-deb-x64/stable/latest",
+        "sha256_field": "sha256hash",
+        "size_url_field": "url",
+        "source": "https://example.invalid/editor/updates",
+        "url_template": "@HTTPFIX@/editor/{version}/linux-deb-x64/stable",
+        "version_field": "productVersion"
+      },
+      {
+        "adapter": "apt-index",
+        "at": "desktop_packages.example-app",
+        "base": "@HTTPFIX@/apt",
+        "component": "example-app",
+        "dist": "stable",
+        "id": "desktop_packages.example-app",
+        "package": "example-app"
+      },
+      {
+        "adapter": "deb-url",
+        "component": "example-viewer",
+        "id": "desktop_packages.example-viewer",
+        "latest_url": "@HTTPFIX@/viewer/latest/linux-deb",
+        "url_template": "@HTTPFIX@/viewer/pool/example-viewer_{version}_amd64.deb"
+      },
+      {
+        "adapter": "git-compare",
+        "at": "agent_tools.example-plugin",
+        "component": "example-plugin",
+        "id": "agent_tools.example-plugin",
+        "repo_at": ".source",
+        "revision_at": ".observed_revision",
+        "watched": [
+          "plugins/example-web/.+"
+        ]
+      },
+      {
+        "adapter": "git-compare",
+        "at": "example_watch",
+        "component": "example-watch",
+        "id": "example_watch",
+        "repo_at": ".source",
+        "revision_at": ".inspected_revision",
+        "watched": [
+          "README\\.md",
+          "bin/example-[a-z]+\\.sh"
+        ]
+      },
+      {
+        "adapter": "follows",
+        "component": "example-watch",
+        "current": "{value}",
+        "follows": "example-watch",
+        "for_each": "example_watch.exact_versions",
+        "id": "nix_packages.{key}",
+        "note": "pinned by the example-watch lint requirements"
+      },
+      {
+        "adapter": "manual",
+        "component": "example-manual",
+        "id": "nix_packages.example-manual",
+        "latest_at": ".latest_stable_version",
+        "source_at": ".official_repository"
+      },
+      {
+        "adapter": "local-apt",
+        "component": "example-host",
+        "for_each": "ubuntu_packages",
+        "id": "ubuntu_packages.{key}",
+        "only_with": "minimum_version",
+        "package": "{key}"
+      }
+    ],
+    "resolved_versions": {},
+    "rules": []
+  }
+}

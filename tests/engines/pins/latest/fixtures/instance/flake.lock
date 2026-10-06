@@ -1,0 +1,27 @@
+{
+  "nodes": {
+    "dotsteward": {
+      "locked": {
+        "lastModified": 1767225600,
+        "narHash": "sha256-PgTKXg49YHHVFMhfLfpO4uVAyTbRLrmL8V2n6C4rKTA=",
+        "owner": "example",
+        "repo": "dotsteward",
+        "rev": "2e170704dcd8d62afbaaa0c492e016f586251217",
+        "type": "github"
+      },
+      "original": {
+        "owner": "example",
+        "ref": "v0.1.0",
+        "repo": "dotsteward",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "dotsteward": "dotsteward"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

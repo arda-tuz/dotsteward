@@ -1,0 +1,7 @@
+{
+  "ahead_by": 1,
+  "files": [
+    { "filename": "plugins/example-web/index.md", "status": "modified" },
+    { "filename": "plugins/example-other/index.md", "status": "modified" }
+  ]
+}

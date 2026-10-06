@@ -1,0 +1,10 @@
+{
+  "version": "1.0.2",
+  "buildDate": "2026-09-01T12:00:00Z",
+  "platforms": {
+    "linux-x64": {
+      "checksum": "cd0aa9856147b6c5b4ff2b7dfee5da20aa38253099ef1b4a64aced233c9afe29",
+      "size": 4096
+    }
+  }
+}

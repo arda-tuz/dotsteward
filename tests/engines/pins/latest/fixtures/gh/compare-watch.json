@@ -1,0 +1,7 @@
+{
+  "ahead_by": 1,
+  "files": [
+    { "filename": "docs/unrelated.md", "status": "added" },
+    { "filename": "bin/example-extra/tool.sh", "status": "added" }
+  ]
+}
