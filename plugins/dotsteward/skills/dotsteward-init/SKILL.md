@@ -16,6 +16,7 @@ This skill runs before an instance exists on the machine, so there is no instanc
 
 - **Read-only until the user agrees.** Section 2 only reads. Nothing is installed, created or changed before the user has seen what will happen and agreed to it.
 - **Explain sudo before using it.** Name every step that needs administrator rights (section 2) before the first write. Never run `sudo` silently, never answer installers on the user's behalf, and never set `DOTSTEWARD_ASSUME_YES` (it exists for CI runners only).
+- **Sudo steps run in a terminal.** Commands that ask for sudo or an installer confirmation (`bootstrap.sh --install-nix-only`, `./bootstrap.sh --profile ...`, `login-shell set`, any `sudo apt-get` from `references/platform-prereqs.md`) need a terminal: when this shell has none (`[ -t 0 ]` fails) or `sudo -n true` fails, give the user the exact command, `cd` included, to run in their own terminal, wait for them to report the result, then continue with the read-only steps (`nix --version`, `context --json`, `e2e`).
 - **Verified installers only.** Nix comes from the pinned installer of a dotsteward release, which `bootstrap.sh --install-nix-only` checks by size and SHA-256 before running it. Never `curl | sh`, never pipe any download into a shell.
 - **One framework release per run.** The release chosen in section 3.1 serves the Nix install, `init` and the instance's pinned framework.
 - **Private by default.** The instance repository is created private. It holds no secrets, tokens, keys or machine state.
@@ -71,7 +72,7 @@ git clone --depth 1 --branch "$tag" https://github.com/arda-tuz/dotsteward "$wor
 nix --version
 ```
 
-The installer asks for sudo itself. The release can also be fetched with `gh release download` (`references/new-instance.md`). Remove `"$work"` afterwards. Never install Nix by `curl | sh` or by an installer the release did not pin.
+The installer asks for sudo and for confirmation, so unless this shell has a terminal and cached sudo credentials, give the user `cd <the clone> && ./template/bootstrap.sh --install-nix-only` with the clone's real path to run in their own terminal (rules), and continue with the last two lines once they report it finished. The release can also be fetched with `gh release download` (`references/new-instance.md`). Remove `"$work"` afterwards. Never install Nix by `curl | sh` or by an installer the release did not pin.
 
 ### 3.3 Ask the choices
 
@@ -108,11 +109,11 @@ git -C "$dir" remote get-url origin
 gh repo view "OWNER/NAME" --json visibility --jq .visibility
 ```
 
-The URL must equal `remote` exactly (else `git -C "$dir" remote set-url origin "$remote"`), and the visibility must be `PRIVATE`. When the user keeps the repository local, add only the remote now and push once the repository exists; until then the end-to-end checks of the remote fail (`references/new-instance.md`).
+The URL must equal `remote` exactly (else `git -C "$dir" remote set-url origin "$remote"`), and the visibility must be `PRIVATE`. When the user keeps the repository local, add only the remote now and push once the repository exists. Until the push, `e2e` stops at `core:repo-remote` and the bootstrap that ends with it exits non-zero after everything else is installed; verify such a machine with `e2e --keep-going` (3.6, `references/new-instance.md`).
 
 ### 3.6 Set up this machine
 
-Confirm with the user which path applies, then run it from the checkout:
+Confirm with the user which path applies, then run it from the checkout; the bootstrap and `login-shell set` ask for sudo, so without a terminal or cached sudo credentials give them to the user to run in their own terminal (rules):
 
 - **A fresh machine** (nothing installed yet): `bootstrap.sh` checks the machine (read-only preflight; exit 3 means the machine is off the supported fast path, and nothing was written), backs up every file the instance manages, installs the prerequisites, the pinned Nix and the system packages, activates the generation, sets the login shell and runs the end-to-end checks.
 
@@ -126,7 +127,7 @@ Confirm with the user which path applies, then run it from the checkout:
   cd "$dir" && ./rebuild.sh --profile workstation --switch
   ```
 
-  The rebuild does not change the login shell. When the instance enables the `shell` component, the end-to-end checks expect the Nix profile's zsh as the login shell, so set it next, once the user agrees (it asks for sudo, section 2):
+  The rebuild does not change the login shell. When the instance enables the `shell` component, the end-to-end checks expect the Nix profile's zsh as the login shell, so set it next, once the user agrees (it asks for sudo, section 2; in the user's own terminal when the rules say so):
 
   ```bash
   cd "$dir" && ./.dotsteward/cli.sh login-shell set --profile workstation
@@ -138,7 +139,11 @@ Confirm with the user which path applies, then run it from the checkout:
 cd "$dir" && ./.dotsteward/cli.sh e2e --profile "$profile"
 ```
 
-Every finding names its check; fix the cause (usually a missing prerequisite or a component choice) and run the same command again.
+Every finding names its check; fix the cause (usually a missing prerequisite or a component choice) and run the same command again. A repository kept local (3.5) cannot pass `core:repo-remote` before the push, and `e2e` stops at that check; verify it with `--keep-going` instead and treat a `core:repo-remote` finding as the only expected one until the push:
+
+```bash
+cd "$dir" && ./.dotsteward/cli.sh e2e --profile "$profile" --keep-going
+```
 
 ### 3.7 Summary
 
@@ -160,7 +165,7 @@ Details: `references/existing-instance.md`.
    gh repo clone "OWNER/NAME" "$HOME/NAME"
    ```
 
-2. When Nix is missing and the user agrees, install the Nix version the instance pins, with the same verified installer:
+2. When Nix is missing and the user agrees, install the Nix version the instance pins, with the same verified installer (it asks for sudo and for confirmation: in the user's own terminal unless this shell has one and cached sudo credentials, rules):
 
    ```bash
    cd "$HOME/NAME" && ./bootstrap.sh --install-nix-only
@@ -174,14 +179,14 @@ Details: `references/existing-instance.md`.
 
    Show `identity.runtime_matches_check` with the check and runtime user and home. Explain: `[identity]` in `workstation.toml` is only for checks (sandbox builds, `homeConfigurations.<username>`, the gate); activation always uses the user who runs it (`$USER` and `$HOME`). Installing on a machine with another user name or home therefore needs no file edit. If the user wants the check identity to follow this machine, that is a normal personal change: after the setup, ask `dotsteward-maintain` to change `[identity]`.
 
-4. Confirm the activation with the user, then set up the machine, using the profile names of the context document:
+4. Confirm the activation with the user, then set up the machine, using the profile names of the context document (the bootstrap asks for sudo: in the user's own terminal when the rules say so):
 
    ```bash
    cd "$HOME/NAME" && ./bootstrap.sh --profile fresh          # a fresh machine
    cd "$HOME/NAME" && ./rebuild.sh --profile workstation --switch   # a machine that is already set up
    ```
 
-   After the rebuild, when the instance enables the `shell` component and the user agrees (it asks for sudo), set the login shell, which the rebuild leaves alone and the end-to-end checks expect:
+   After the rebuild, when the instance enables the `shell` component and the user agrees (it asks for sudo; in the user's own terminal when the rules say so), set the login shell, which the rebuild leaves alone and the end-to-end checks expect:
 
    ```bash
    cd "$HOME/NAME" && ./.dotsteward/cli.sh login-shell set --profile workstation

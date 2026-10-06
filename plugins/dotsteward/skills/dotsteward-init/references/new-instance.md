@@ -20,7 +20,7 @@ The same tag is used three times: the Nix installer comes from it, `nix run` run
 
 ## Installing Nix
 
-Only when `command -v nix` finds nothing, and only after the user agrees. The release's `template/bootstrap.sh --install-nix-only` reads the installer pin (URL, size, SHA-256 and the expected Nix version) from the `versions.lock.json` beside it, downloads the installer over HTTPS, refuses it on any size or digest difference, runs the official multi-user installer (which asks for sudo and creates the Nix daemon), and checks `nix --version` against the pin. It does nothing else: no backups, no packages, no instance.
+Only when `command -v nix` finds nothing, and only after the user agrees. The release's `template/bootstrap.sh --install-nix-only` reads the installer pin (URL, size, SHA-256 and the expected Nix version) from the `versions.lock.json` beside it, downloads the installer over HTTPS, refuses it on any size or digest difference, runs the official multi-user installer (which asks for sudo and for confirmation, and creates the Nix daemon; without a terminal it cannot ask, so the user runs it in their own terminal, see the rules of the skill), and checks `nix --version` against the pin. It does nothing else: no backups, no packages, no instance.
 
 Fetching the release with `gh` instead of `git clone`:
 
@@ -97,7 +97,13 @@ gh repo create "OWNER/NAME" --private
 git -C "$dir" push -u origin main
 ```
 
-Until the push, the `core:repo-remote` check of `e2e` fails (the remote is unreachable or differs); every other check works.
+Until the push, `e2e` stops at `core:repo-remote` (code `remote-unreachable` or `remote-mismatch`), and the checks after it (`core:repo-skill-count`, late component hooks, `core:framework-skills`) do not run. This includes the `e2e` that ends `./bootstrap.sh`: the bootstrap then exits non-zero after everything else is installed (the login shell is already set), without its final `bootstrap complete` line. Verify such a machine with `--keep-going`, which runs every check, and treat a `core:repo-remote` finding as the only expected one until the push (`profile` is the profile that was activated):
+
+```bash
+cd "$dir" && ./.dotsteward/cli.sh e2e --profile "$profile" --keep-going
+```
+
+After the push, run `e2e` once more without `--keep-going`; it must pass.
 
 ## Setting up the machine
 
@@ -106,7 +112,7 @@ Until the push, the `core:repo-remote` check of `e2e` fails (the remote is unrea
 | Fresh (no Nix, no applications) | `./bootstrap.sh --profile <bootstrap profile>` | fresh | preflight, backups, prerequisites, verified Nix, system packages, activation, login shell, end-to-end checks |
 | Already set up (Nix present) | `./rebuild.sh --profile <check profile> --switch` | adopt | build, activation of the user-level parts, settings, agent tools; system packages are reported as not managed |
 
-The rebuild sets no login shell: it only moves a login shell on a versioned Nix store path to the stable one. When the instance enables the `shell` component, `e2e` checks that the Nix profile's zsh is the login shell (`core:login-shell`), so on an adopted machine set it after the rebuild, once the user agrees to the sudo prompt:
+The rebuild sets no login shell: it only moves a login shell on a versioned Nix store path to the stable one. When the instance enables the `shell` component, `e2e` checks that the Nix profile's zsh is the login shell (`core:login-shell`), so on an adopted machine set it after the rebuild, once the user agrees to the sudo prompt (in their own terminal when the agent shell has none, see the rules of the skill):
 
 ```bash
 cd "$dir" && ./.dotsteward/cli.sh login-shell set --profile <check profile>

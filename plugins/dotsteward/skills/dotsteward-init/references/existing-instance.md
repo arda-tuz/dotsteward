@@ -46,7 +46,7 @@ When the user wants the check identity to follow this machine anyway, that is a 
 | Fresh (no applications yet) | `./bootstrap.sh --profile <profiles.bootstrap>` | fresh mode: backups, prerequisites, verified Nix, system packages, activation, login shell, end-to-end checks |
 | Already set up | `./rebuild.sh --profile <profiles.check> --switch` | adopt mode: user-level parts only; system packages are reported as not managed |
 
-The rebuild sets no login shell (it only moves one on a versioned Nix store path to the stable path). When the instance enables the `shell` component, set it on an adopted machine after the rebuild and before `e2e`, once the user agrees to the sudo prompt:
+The rebuild sets no login shell (it only moves one on a versioned Nix store path to the stable path). When the instance enables the `shell` component, set it on an adopted machine after the rebuild and before `e2e`, once the user agrees to the sudo prompt (in their own terminal when the agent shell has none, see the rules of the skill):
 
 ```bash
 cd "$HOME/NAME" && ./.dotsteward/cli.sh login-shell set --profile <profiles.check>
