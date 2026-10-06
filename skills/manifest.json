@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "skills": [
+    {
+      "name": "dotsteward-contribute",
+      "directory": "dotsteward-contribute",
+      "skill_sha256": "a4fd2a8c9ce98d4e6e4ec91a63f6a2478852ac9ce10869b7d551ccaa723df2b7",
+      "directory_sha256": "5f3692a861dd55b7614992b4f5d70210c449ae0b4b189db785b97ccf30d205bd"
+    },
+    {
+      "name": "dotsteward-maintain",
+      "directory": "dotsteward-maintain",
+      "skill_sha256": "17e5ea0b739162d83a8b1f01d10c70e68679f79b71f481fec1b4cc8f89872bd1",
+      "directory_sha256": "c1e56de54e0e8eaeb7a054a1000908ab4d00b113fb27bfa79a82705e630c7cc4"
+    },
+    {
+      "name": "dotsteward-update",
+      "directory": "dotsteward-update",
+      "skill_sha256": "8bce4084e9734baf045f9553aeff403f6754efe1df0add302f4d12782095dbf1",
+      "directory_sha256": "96a06f3bf2b0ae2594acaf2dcd20862d33f3a2bacaf9f8eb02d67f928d316812"
+    }
+  ]
+}
