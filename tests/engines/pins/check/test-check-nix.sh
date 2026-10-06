@@ -1,10 +1,11 @@
 # shellcheck shell=bash
 # `pins check --nix` and `pins sync --nix` (nix-resolved): the resolved
 # versions against `nix eval --json --no-update-lock-file <instance>#
-# lib.pinnedVersions` (stub nix), key set and value mismatches, untracked
-# files refused before any Nix call, evaluation failures as exit 2, and sync
-# writing resolved versions (and their skills-lock mirrors) without creating
-# entries or touching flake.lock.
+# lib.pinnedVersions` (stub nix; with DOTSTEWARD_FRAMEWORK_OVERRIDE also
+# `--override-input dotsteward REF --no-write-lock-file`), key set and value
+# mismatches, untracked files refused before any Nix call, evaluation
+# failures as exit 2, and sync writing resolved versions (and their
+# skills-lock mirrors) without creating entries or touching flake.lock.
 # shellcheck source=tests/engines/pins/check/helpers.sh
 source "$DS_REPO_ROOT/tests/engines/pins/check/helpers.sh"
 
@@ -30,6 +31,24 @@ assert_call_count 1 nix '*lib.pinnedVersions'
 assert_eq "$(printf 'nix %q %q %q %q %q %q' --extra-experimental-features 'nix-command flakes' \
   eval --json --no-update-lock-file "$inst#lib.pinnedVersions")" "$(ds_calls_of nix)"
 assert_eq "$lock_sha" "$(sha256sum "$inst/flake.lock")" "flake.lock changed"
+
+# A framework override (DOTSTEWARD_FRAMEWORK_OVERRIDE, which the gate sets
+# for its steps) replaces the dotsteward input in memory; an empty value is
+# no override.
+ds_stub_clear_routes nix
+ds_stub_route nix "$eval_glob --override-input dotsteward path:/srv/dotsteward --no-write-lock-file" \
+  --stdout '{"example-lint":"0.9.0","example-shell":"5.9","example-term":"1.2.0"}'
+: >"$DS_CALL_LOG"
+assert_exit 0 env DOTSTEWARD_FRAMEWORK_OVERRIDE=path:/srv/dotsteward \
+  "$DS_REPO_ROOT/cli/dotsteward" --instance "$inst" pins check --nix
+assert_eq "$(printf 'nix %q %q %q %q %q %q %q %q %q %q' --extra-experimental-features 'nix-command flakes' \
+  eval --json --no-update-lock-file "$inst#lib.pinnedVersions" \
+  --override-input dotsteward path:/srv/dotsteward --no-write-lock-file)" "$(ds_calls_of nix)"
+assert_eq "$lock_sha" "$(sha256sum "$inst/flake.lock")" "flake.lock changed"
+pinned '{"example-lint":"0.9.0","example-shell":"5.9","example-term":"1.2.0"}'
+: >"$DS_CALL_LOG"
+assert_exit 0 env DOTSTEWARD_FRAMEWORK_OVERRIDE= "$DS_REPO_ROOT/cli/dotsteward" --instance "$inst" pins check --nix
+assert_call_count 0 nix '*--override-input*'
 
 pinned '{"example-lint":"0.9.0","example-new":"1.0","example-term":"1.2.0"}'
 check_fails_nix() {
