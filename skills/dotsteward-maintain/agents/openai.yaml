@@ -1,0 +1,4 @@
+interface:
+  display_name: "dotsteward Maintain"
+  short_description: "Make a component reproducible in your instance"
+  default_prompt: "Use $dotsteward-maintain to add this tool to my reproducible dotsteward workstation."

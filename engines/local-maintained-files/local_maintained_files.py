@@ -66,7 +66,12 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import tomlkit
+try:
+    import tomlkit
+except ModuleNotFoundError as missing:  # --help works without it; main() refuses every command
+    if missing.name != "tomlkit":
+        raise
+    tomlkit = None  # type: ignore[assignment]
 
 try:
     from dotsteward_cli import config as ds_config
@@ -1564,6 +1569,9 @@ CONTEXT_COMMANDS = {
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    if tomlkit is None:
+        report_error("this python3 lacks tomlkit; run the dotsteward package, whose python provides it")
+        return EXIT_ERROR
     try:
         context = resolve_context(args)
         if args.command in CONTEXT_COMMANDS:
