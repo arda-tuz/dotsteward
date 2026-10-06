@@ -3,9 +3,10 @@
 # The methods of claude-code: official-binary (default, both platforms), deb
 # (Linux) and external (both), selected with [components.claude-code]
 # method and method_by_platform. The manifest carries the install block of
-# the resolved method, and the pins declarations (download-pin rules,
-# latest adapters) follow the resolved method, so an instance lock needs
-# only the pin its method reads.
+# the resolved method. The pins declarations (download-pin rules, latest
+# adapters) follow the method of each platform in nix.systems and are the
+# same on every system, so an instance lock needs only the pins its methods
+# read.
 # shellcheck source=tests/nix/components/claude-code/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/components/claude-code/helpers.sh"
 
@@ -71,7 +72,7 @@ assert_cc_eq '{
   }
 }' 'let e = ccEntry (cc { config = ccCase "method-deb"; }) "x86_64-linux"; in { inherit (e) method install; }' \
   "deb install block"
-assert_eq "$(jq -S -n '{
+deb_pins=$(jq -S -n '{
   rules: [{
     kind: "download-pin",
     at: "desktop_packages.claude-code",
@@ -86,7 +87,8 @@ assert_eq "$(jq -S -n '{
     package: "claude-code",
     dist: "stable"
   }]
-}')" "$(pins_of 'cc { config = ccCase "method-deb"; }' x86_64-linux)" "deb pins"
+}')
+assert_eq "$deb_pins" "$(pins_of 'cc { config = ccCase "method-deb"; }' x86_64-linux)" "deb pins"
 
 # external: claude on PATH, no floor and no pins.
 assert_cc_eq '{
@@ -102,6 +104,37 @@ assert_cc_eq '["deb","external"]' 'let i = cc { config = ccCase "method-by-platf
   [ (ccEntry i "x86_64-linux").method (ccEntry i "aarch64-darwin").method ]' "method_by_platform"
 assert_cc_eq '["deb","external"]' 'let i = cc { config = ccCase "method-by-platform"; }; in
   [ (ccComponent i "x86_64-linux").method (ccComponent i "aarch64-darwin").method ]' "resolved methods"
+
+# The pins of a mixed method_by_platform follow the method of each
+# platform, never the method of the system being evaluated, and every
+# system declares the same set: deb on Linux and external on darwin need the
+# deb pin only.
+for system in x86_64-linux aarch64-darwin; do
+  assert_eq "$deb_pins" "$(pins_of 'cc { config = ccCase "method-by-platform"; }' "$system")" \
+    "deb (Linux) and external (darwin) pins on $system"
+done
+# official-binary on Linux and external on darwin: the Linux release pin
+# only.
+for system in x86_64-linux aarch64-darwin; do
+  assert_eq "$(official_pins linux-x64)" \
+    "$(pins_of 'cc { config = ccCase "official-linux-external-darwin"; }' "$system")" \
+    "official-binary (Linux) and external (darwin) pins on $system"
+done
+# deb on Linux and official-binary on darwin (the README example): the darwin
+# release pin and the deb pin, no Linux release pin.
+deb_official_pins=$(jq -S -n --argjson official "$(official_pins darwin-arm64)" --argjson deb "$deb_pins" \
+  '{ rules: ($official.rules + $deb.rules), latest: ($official.latest + $deb.latest) }')
+for system in x86_64-linux aarch64-darwin; do
+  assert_eq "$deb_official_pins" \
+    "$(pins_of 'cc { config = ccCase "deb-linux-official-darwin"; }' "$system")" \
+    "deb (Linux) and official-binary (darwin) pins on $system"
+done
+assert_cc_eq '["deb","official-binary"]' 'let i = cc { config = ccCase "deb-linux-official-darwin"; }; in
+  [ (ccEntry i "x86_64-linux").method (ccEntry i "aarch64-darwin").method ]' \
+  "deb (Linux) and official-binary (darwin) methods"
+assert_cc_eq '"agent_tools.claude-code.darwin-arm64"' \
+  '(ccEntry (cc { config = ccCase "deb-linux-official-darwin"; }) "aarch64-darwin").install.pin' \
+  "darwin release pin with deb on Linux"
 
 # deb on darwin is refused by the supported-methods assertion; Linux still
 # evaluates.
