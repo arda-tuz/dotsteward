@@ -33,8 +33,9 @@ Fields every declaration accepts:
 
 Fields ending in ``_at`` are lock paths (relative to ``at`` when they
 start with "."); templates of upstream values (``asset``, ``url_template``,
-``manifest_url``) are release templates (templates.py). The other fields
-are listed in each adapter module.
+``manifest_url``) are release templates (templates.py); github-release's
+``asset`` may also be an object of them per system or platform. The other
+fields are listed in each adapter module.
 
 Planning reads the lock files only: a value a declaration needs but the
 lock lacks becomes an error row with the row id, before any query. An
