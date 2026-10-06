@@ -26,8 +26,9 @@
 # CLAUDE*) is removed, and the DS_* variables the harness and its helpers own
 # are reset (any other DS_* variable is an input from the caller, such as a
 # Nix check's setup hook, and is kept). git reads only a temporary global
-# config with the identity `dotsteward-test <dotsteward-test@example.invalid>`,
-# TZ=UTC and the C locale apply, and the platform injection points
+# config with the identity `dotsteward-test <dotsteward-test@example.invalid>`
+# and automatic maintenance off (a detached repack after a commit races with
+# the test), TZ=UTC and the C locale apply, and the platform injection points
 # (DOTSTEWARD_ETC_SHELLS, DOTSTEWARD_OS_RELEASE, DOTSTEWARD_PASSWD_CMD,
 # DOTSTEWARD_SW_VERS) point at synthetic files inside DS_TEST_ROOT.
 #
@@ -135,6 +136,10 @@ gpgsign = false
 gpgsign = false
 [advice]
 detachedHead = false
+[maintenance]
+auto = false
+[gc]
+auto = 0
 EOF
 
   _ds_write_platform_files
