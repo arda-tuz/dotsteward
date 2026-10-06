@@ -14,13 +14,14 @@
 #   external  claude is installed by something else; only its presence is
 #     checked.
 #
-# Only the pins of the resolved method are declared (download-pin rules and
-# latest adapters), so an instance lock needs the entries of its method
-# only; the official-binary pins cover the release platforms of every
-# system in nix.systems, since one lock serves all of them. Settings
-# targets, backups, the agent rules link and the skill link root do not
-# depend on the method. Nothing joins home.packages: every method installs
-# outside Home Manager.
+# The pins (download-pin rules and latest adapters) follow the method of
+# each platform in nix.systems, and every system declares the same set,
+# since one lock serves all of them: the official-binary pin of the release
+# platform of every system whose platform uses official-binary, and the deb
+# pin when Linux uses deb. An instance lock needs the entries of its
+# methods only. Settings targets, backups, the agent rules link and the
+# skill link root do not depend on the method. Nothing joins home.packages:
+# every method installs outside Home Manager.
 {
   config,
   lib,
@@ -29,9 +30,24 @@
 }:
 let
   inherit (dotsteward) cfg system;
+  inherit (dotsteward.lib.platform) platformOf;
 
   name = "claude-code";
-  method = config.dotsteward.components.${name}.method;
+  defaultMethod = "official-binary";
+  platform = platformOf system;
+
+  # The method of a platform of nix.systems: the resolved method of this
+  # system's platform, the configured one (or the default) of the others.
+  methodOn =
+    platformName:
+    if platformName == platform then
+      config.dotsteward.components.${name}.method
+    else
+      let
+        configured =
+          if cfg.components ? ${name} then dotsteward.lib.config.methodFor cfg name platformName else null;
+      in
+      if configured == null then defaultMethod else configured;
 
   # Release platforms of the native builds, per Nix system.
   releasePlatforms = {
@@ -42,7 +58,11 @@ let
     system':
     releasePlatforms.${system'}
       or (throw "dotsteward: component claude-code has no native build for ${system'} (supported: ${lib.concatStringsSep ", " (lib.attrNames releasePlatforms)})");
-  instanceReleasePlatforms = map releasePlatformOf cfg.nix.systems;
+  # The release platforms whose system uses official-binary.
+  officialReleasePlatforms = map releasePlatformOf (
+    lib.filter (system': methodOn (platformOf system') == "official-binary") cfg.nix.systems
+  );
+  debOnLinux = lib.elem "linux" (map platformOf cfg.nix.systems) && methodOn "linux" == "deb";
 
   releases = "https://downloads.claude.ai/claude-code-releases";
   aptBase = "https://downloads.claude.ai/claude-code/apt/stable";
@@ -55,7 +75,7 @@ let
       kind = "download-pin";
       at = releasePin platform;
       url_contains = "/{.version}/${platform}/claude";
-    }) instanceReleasePlatforms;
+    }) officialReleasePlatforms;
     latest = map (platform: {
       id = releasePin platform;
       adapter = "official-manifest";
@@ -66,7 +86,7 @@ let
       sha256_field = "platforms.${platform}.checksum";
       size_field = "platforms.${platform}.size";
       url_template = "${releases}/{version}/${platform}/claude";
-    }) instanceReleasePlatforms;
+    }) officialReleasePlatforms;
   };
 
   debPins = {
@@ -90,19 +110,15 @@ let
     ];
   };
 
-  pinsOf = {
-    official-binary = officialBinaryPins;
-    deb = debPins;
+  # The same on every system of the instance.
+  instancePins = {
+    rules = officialBinaryPins.rules ++ lib.optionals debOnLinux debPins.rules;
+    latest = officialBinaryPins.latest ++ lib.optionals debOnLinux debPins.latest;
   };
-  methodPins =
-    pinsOf.${method} or {
-      rules = [ ];
-      latest = [ ];
-    };
 in
 {
   dotsteward.components.${name} = {
-    method = lib.mkDefault "official-binary";
+    method = lib.mkDefault defaultMethod;
     supportedMethods = {
       linux = [
         "official-binary"
@@ -144,7 +160,7 @@ in
       };
     };
 
-    pins = { inherit (methodPins) rules latest; };
+    pins = { inherit (instancePins) rules latest; };
 
     # settings.json holds the user's settings (created when the buffer
     # tracks an entry); ~/.claude.json is the application's own state

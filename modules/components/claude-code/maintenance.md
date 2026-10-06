@@ -2,7 +2,8 @@
 
 Used by `dotsteward-update` when it refreshes an instance that enables
 claude-code, and by framework maintainers when they refresh `seed.json`.
-Only the pins of the instance's resolved method are declared; refresh those.
+Only the pins of the methods the instance uses on the platforms of
+`nix.systems` are declared; refresh those.
 
 ## official-binary
 

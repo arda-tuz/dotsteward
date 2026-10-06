@@ -130,8 +130,12 @@ start.
 | `deb` | `download-pin` at `desktop_packages.claude-code`; the URL contains `/claude-code_<minimum_version>_amd64.deb` | `apt-index` of `https://downloads.claude.ai/claude-code/apt/stable`, package `claude-code`; a `holdback_reason` keeps the pin |
 | `external` | none | none |
 
-Only the pins of the resolved method are declared, so an instance lock needs
-the entries of its own method only. `seed.json` holds all of them; `dotsteward
+The pins follow the method of each platform in `nix.systems`, and every
+system declares the same set, so an instance lock needs the entries of its own
+methods only. With `method_by_platform = { linux = "deb", darwin =
+"official-binary" }`, for example, the lock needs `desktop_packages.claude-code`
+and `agent_tools.claude-code.darwin-arm64`, not
+`agent_tools.claude-code.linux-x64`. `seed.json` holds all of them; `dotsteward
 init` merges it into the instance lock.
 
 ## Verification status
