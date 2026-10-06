@@ -36,9 +36,9 @@ and target names, the names, targets and commands of instance components, and
 the instance skill names. The check identity, the remote and the instance
 component names are read from the context and also from the unvalidated
 workstation.toml (``identity.username``, ``identity.home``,
-``identity.darwin_home``, ``instance.remote``, the ``components`` tables that
-are not in the catalog), so they are redacted when the configuration is
-invalid and there is no context. The config check's problems quote the
+``identity.darwin_home``, ``instance.remote``, the ``components`` tables and
+the ``components.order`` entries that are not in the catalog), so they are
+redacted when the configuration is invalid and there is no context. The config check's problems quote the
 offending values: every quoted value there becomes ``"<redacted>"`` unless it
 is a fact of the schema (a pattern, an enum or const value, a default), a
 reserved key of ``[profiles]`` or a catalog component name. Field names
@@ -380,9 +380,11 @@ def instance_toml(env: Mapping[str, str]) -> dict[str, Any] | None:
 def _raw_terms(raw: Mapping[str, Any] | None) -> tuple[list[str], list[str]]:
     """(substring terms, word terms) of an unvalidated workstation.toml:
     the check homes, the remote, the check username, the remote's owner and
-    repository, and the names of the components that are not in the catalog
-    (instance components, private as in the context). Values of the wrong
-    type are skipped."""
+    repository, and the component names that are not in the catalog, from
+    the [components.<name>] tables and the components.order entries
+    (instance components, private as in the context; an order entry without
+    a table is still quoted by the config check). Values of the wrong type
+    are skipped."""
 
     def table(name: str) -> Mapping[str, Any]:
         value = raw.get(name) if raw is not None else None
@@ -399,6 +401,9 @@ def _raw_terms(raw: Mapping[str, Any] | None) -> tuple[list[str], list[str]]:
     if components:
         catalog = _catalog()
         words += [name for name in components if name != "order" and name not in catalog]
+        order = components.get("order")
+        entries = order if isinstance(order, list) else []
+        words += [entry for entry in entries if isinstance(entry, str) and entry not in catalog]
     return substrings, words
 
 
