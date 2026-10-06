@@ -648,6 +648,16 @@ _contribute_scan() {
   (cd -- "$CT_CLONE" && "$BASH" "$framework_root/cli/commands/scan.sh" "$@" --redact) </dev/null
 }
 
+# _contribute_check_red ID: a red framework gate (a privacy stop or a failed
+# nix flake check) of run ID: after a trial switch, publish sent the run back
+# here with the live generation on the trial framework, so the recovery of
+# the remote steps switches it back (SPEC 9.4) when that library is loaded.
+_contribute_check_red() {
+  if declare -F contribute_recover_run >/dev/null; then
+    contribute_recover_run "$1"
+  fi
+}
+
 contribute_cmd_check() {
   local id="" expect="" have_expect=0
   while (($#)); do
@@ -755,13 +765,17 @@ contribute_cmd_check() {
   if ((${#stopped[@]})); then
     printf '[dotsteward] ERROR: privacy hard stop (%s): nothing may be published; remove the findings from the branch, rewriting its commits, and run check again\n' \
       "${stopped[*]}" >&2
+    _contribute_check_red "$id"
     exit "$CONTRIBUTE_PRIVACY_STOP"
   fi
 
   log "nix flake check in $CT_CLONE"
   nix_cmd flake check "$CT_CLONE" --no-update-lock-file --keep-going -L \
-    --max-jobs "$DS_GATE_NIX_MAX_JOBS" --cores "$DS_GATE_NIX_CORES" </dev/null ||
-    die "nix flake check failed in $CT_CLONE"
+    --max-jobs "$DS_GATE_NIX_MAX_JOBS" --cores "$DS_GATE_NIX_CORES" </dev/null || {
+    printf '[dotsteward] ERROR: nix flake check failed in %s\n' "$CT_CLONE" >&2
+    _contribute_check_red "$id"
+    exit 1
+  }
 
   [[ $(git -C "$CT_CLONE" rev-parse HEAD) == "$head" ]] || die "the clone moved during the check; run check again"
   contribute_require_clean "$CT_CLONE"

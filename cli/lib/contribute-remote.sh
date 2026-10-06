@@ -8,6 +8,10 @@
 #   contribute_cmd_trial, contribute_cmd_publish, contribute_cmd_release,
 #   contribute_cmd_upgrade, contribute_cmd_abort, contribute_cmd_report
 #                            the steps (arguments as in the command usage)
+#   contribute_recover_run ID
+#                            the recovery after a trial switch of run ID
+#                            (nothing when the run never switched), for the
+#                            red outcomes of `check`
 #   contribute_flake_url_for_tag URL TAG [FORK]
 #                            the dotsteward input URL URL moved to the
 #                            release tag TAG (github:owner/repo[/ref] or a
@@ -198,6 +202,15 @@ _contribute_recover() {
   fi
   _contribute_set '.recovery = "done"'
   log "recovery done: the live generation and its framework skills use the instance's pinned framework again"
+}
+
+# contribute_recover_run ID: the recovery after a trial switch for run ID,
+# for a red step outside this library (a privacy stop or a failed nix flake
+# check of `check` on a run that publish sent back after its trial). Never
+# fails: a failed recovery prints its error and is recorded in the run.
+contribute_recover_run() {
+  CT_RUN_ID=$1
+  _contribute_recover || true
 }
 
 # _contribute_red MESSAGE: a red step: the message, the recovery after a

@@ -43,7 +43,9 @@
 #                           `nix flake check` with the gate's parallelism.
 #                           Records test_sha and tested_tree on success; any
 #                           failure before publish withdraws an earlier pass
-#                           (the run goes back to check). A branch that
+#                           (the run goes back to check); a privacy stop or
+#                           a failed nix flake check after a trial switch
+#                           also runs the recovery (see abort). A branch that
 #                           changes privacy/allowlist.txt or
 #                           privacy/policy.toml is a privacy hard stop: they
 #                           change only in their own, manually reviewed
