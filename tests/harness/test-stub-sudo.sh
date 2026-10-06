@@ -4,7 +4,7 @@
 # user with system paths moved under DS_SYSTEM_ROOT, and marks the child as
 # running with root rights for the other stubs.
 
-ds_use_stubs sudo id
+ds_use_stubs sudo id dscl
 
 # A system file write lands in the fixture root.
 printf 'KEY=value\n' >"$TMPDIR/default-file"
@@ -99,6 +99,46 @@ $DS_SYSTEM_ROOT/Library/X
 $DS_SYSTEM_ROOT/etc
 $HOME/.zshrc
 relative/etc/x" "$out"
+
+# The areas a user can write on a real host are moved below the fixture root
+# too, so no path given to sudo reaches the host; only the test root itself
+# (HOME and TMPDIR included) is left in place.
+out=$(sudo printf '%s\n' /home/example/x /root/x /tmp/x /tmp /run/user/1000 /dev/shm/x \
+  /mnt/x /media/x /private/tmp/x /Volumes/X /Users/example/x --dir=/tmp/x /dev/null)
+assert_eq "$DS_SYSTEM_ROOT/home/example/x
+$DS_SYSTEM_ROOT/root/x
+$DS_SYSTEM_ROOT/tmp/x
+$DS_SYSTEM_ROOT/tmp
+$DS_SYSTEM_ROOT/run/user/1000
+$DS_SYSTEM_ROOT/dev/shm/x
+$DS_SYSTEM_ROOT/mnt/x
+$DS_SYSTEM_ROOT/media/x
+$DS_SYSTEM_ROOT/private/tmp/x
+$DS_SYSTEM_ROOT/Volumes/X
+$DS_SYSTEM_ROOT/Users/example/x
+--dir=$DS_SYSTEM_ROOT/tmp/x
+/dev/null" "$out"
+
+# A write to such an area lands in the fixture root and never on the host.
+probe=$(basename -- "$DS_TEST_ROOT")-sudo-probe
+ds_defer rm -rf -- "/tmp/$probe"
+sudo mkdir -p "/tmp/$probe" "/home/$probe/x"
+sudo touch "/tmp/$probe/file"
+[[ -d $DS_SYSTEM_ROOT/tmp/$probe && -f $DS_SYSTEM_ROOT/tmp/$probe/file ]] ||
+  ds_fail "sudo mkdir/touch below /tmp did not land in the fixture root"
+[[ -d $DS_SYSTEM_ROOT/home/$probe/x ]] ||
+  ds_fail "sudo mkdir below /home did not land in the fixture root"
+[[ ! -e /tmp/$probe && ! -e /home/$probe ]] || ds_fail "sudo wrote to the host"
+
+# Paths inside the test root stay where they are.
+sudo touch "$TMPDIR/written-by-root" "$HOME/written-by-root"
+[[ -f $TMPDIR/written-by-root && -f $HOME/written-by-root ]] ||
+  ds_fail "sudo moved a path inside the test root"
+
+# dscl takes /Users/<name> as a record path, not a file: it is passed on
+# unchanged and still updates the user database.
+sudo dscl . -create "/Users/$USER" UserShell /bin/zsh
+assert_eq /bin/zsh "$(ds_passwd_field "$USER" 7)"
 
 # The child sees root rights through the id stub; the caller does not.
 assert_eq 1000 "$(id -u)"
