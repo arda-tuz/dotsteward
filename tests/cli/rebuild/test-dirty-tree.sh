@@ -33,6 +33,26 @@ assert_contains "$DS_STDERR" "the instance repository is not clean; review and c
 refused_before_writes
 git -C "$rb_inst" reset -q --hard
 
+# The user's status configuration does not hide untracked files: the host
+# input copies the whole checkout into the store, untracked files included.
+git -C "$rb_inst" config status.showUntrackedFiles no
+printf 'token\n' >"$rb_inst/secret.txt"
+assert_exit 1 run_rebuild --profile workstation --build-only
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: Nix does not see untracked files; run 'git add -A' first: secret.txt"
+refused_before_writes
+# Nor does it list every file of an untracked directory.
+git -C "$rb_inst" config status.showUntrackedFiles all
+rm -f -- "$rb_inst/secret.txt"
+mkdir -p "$rb_inst/components/example-term"
+printf '{ }\n' >"$rb_inst/components/example-term/default.nix"
+assert_exit 1 run_rebuild --profile workstation --build-only
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: Nix does not see untracked files; run 'git add -A' first: components/"
+assert_not_contains "$DS_STDERR" "default.nix"
+refused_before_writes
+git -C "$rb_inst" config --unset status.showUntrackedFiles
+rm -rf -- "$rb_inst/components/example-term"
+rmdir -- "$rb_inst/components"
+
 # Ignored files do not make the tree dirty.
 printf 'cache/\n' >"$rb_inst/.gitignore"
 instance_commit "ignore the cache"
