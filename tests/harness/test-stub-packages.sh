@@ -38,6 +38,11 @@ assert_eq 1.2.3 "$(dpkg-query -W -f='${Version}' example-app)"
 assert_eq "install ok installed 1.2.3" "$(dpkg-query -W --showformat='${Status} ${Version}\n' example-app)"
 assert_eq "ii |installed|example-app|amd64" "$(dpkg-query -W -f '${db:Status-Abbrev}|${db:Status-Status}|${binary:Package}|${Architecture}\n' example-app)"
 assert_eq "example-app	1.2.3" "$(dpkg-query -W example-app)"
+# A removed but not purged package keeps its Version in the database.
+ds_dpkg_config_files example-removed 2.0.0
+assert_eq "" "$(ds_dpkg_version example-removed)"
+assert_eq "rc |deinstall|ok|config-files|2.0.0" "$(dpkg-query -W -f '${db:Status-Abbrev}|${db:Status-Want}|${db:Status-Eflag}|${db:Status-Status}|${Version}' example-removed)"
+assert_eq "deinstall ok config-files" "$(dpkg-query -W -f '${Status}' example-removed)"
 assert_exit 1 dpkg-query -W -f='${Version}' example-term
 assert_eq "dpkg-query: no packages found matching example-term" "$DS_STDERR"
 assert_exit 1 dpkg-query -W example-app example-term

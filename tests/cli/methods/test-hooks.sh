@@ -8,7 +8,11 @@
 # failing hook stops the phase with "component <name> hook <hook> failed
 # (exit N)". --check-only runs only the forbid hooks, with
 # DOTSTEWARD_CHECK_ONLY=1. Script paths of a manifest mirror resolve
-# <instance>/ and <dotsteward>/; a <store>/ path needs --generation.
+# <instance>/ and <dotsteward>/. A real manifest renders every hook script
+# as a Nix store path (<store>/NAME in the mirror): without --generation,
+# install builds the generation (rebuild --build-only, after the preflight
+# gate) and runs the built manifest's hooks; --check-only, which writes
+# nothing, reads the active generation instead.
 # shellcheck source=tests/cli/methods/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/methods/helpers.sh"
 
@@ -98,8 +102,8 @@ assert_json - '.result == "failed" and .hooks == [
 ]' <<<"$DS_STDOUT"
 manifest_edit '.hooks.forbid |= map(select(.name != "guard"))'
 
-# Script paths: <dotsteward>/ is the framework root, a <store>/ path cannot
-# run from a mirror, a script must be an executable file.
+# Script paths: <dotsteward>/ is the framework root, a <store>/ path runs
+# from a built generation, a script must be an executable file.
 mkdir -p "$methods_fw/tests-hooks"
 printf '#!%s\ntouch %q\n' "$BASH" "$DS_TEST_ROOT/framework-hook-ran" >"$methods_fw/tests-hooks/hook.sh"
 chmod 0755 "$methods_fw/tests-hooks/hook.sh"
@@ -107,9 +111,61 @@ manifest_edit '.hooks.forbid += [{component: "example-app", name: "framework", p
 assert_exit 0 run_install --profile fresh
 [[ -e $DS_TEST_ROOT/framework-hook-ran ]] || ds_fail "the <dotsteward>/ hook did not run"
 
+# A <store>/ hook (what a real manifest carries): install builds the
+# generation once the preflight gate passed and runs the hooks of the built
+# manifest, whose script paths are absolute.
+mkdir -p "$methods_store"
+cat >"$methods_store/hook.sh" <<EOF
+#!$BASH
+printf '%s\n' "store forbid \$DOTSTEWARD_CHECK_ONLY" >>'$order'
+EOF
+chmod 0755 "$methods_store/hook.sh"
 manifest_edit '.hooks.forbid += [{component: "example-app", name: "stored", phase: "main", profiles: null, script: "<store>/hook.sh"}]'
-assert_exit 1 run_install --profile fresh
-assert_eq "[dotsteward] ERROR: component example-app hook stored: <store>/hook.sh is a Nix store path the manifest mirror does not carry; pass --generation with a built generation" "$DS_STDERR"
+rm -f "$order"
+: >"$DS_CALL_LOG"
+assert_exit 0 run_install --profile fresh
+assert_calls "preflight --read-only --json --profile fresh" "rebuild --profile fresh --build-only"
+assert_eq "term system fresh
+app system
+app post early
+term post main
+app post main
+term post late
+app forbid
+store forbid 0" "$(<"$order")"
+assert_eq "$methods_generation" "$(<"$DOTSTEWARD_STATE_ROOT/current/last-built-activation")"
+
+# The preflight gate stops before the build; a failing build stops the
+# phase with its status before any hook or package step.
+preflight_exit 3
+rm -f "$order"
+: >"$DS_CALL_LOG"
+assert_exit 3 run_install --profile fresh
+assert_calls "preflight --read-only --json --profile fresh"
+[[ ! -e $order ]] || ds_fail "a hook ran after the preflight gate stopped the phase"
+preflight_exit 0
+rebuild_exit 4
+: >"$DS_CALL_LOG"
+assert_exit 4 run_install --profile fresh
+assert_calls "preflight --read-only --json --profile fresh" "rebuild --profile fresh --build-only"
+[[ ! -e $order ]] || ds_fail "a hook ran after the build failed"
+rm -f "$DS_TEST_ROOT/rebuild-status"
+
+# --check-only builds nothing: the forbid hooks come from the active
+# generation; without one it refuses.
+: >"$DS_CALL_LOG"
+assert_exit 1 run_install --profile fresh --check-only
+assert_eq "[dotsteward] ERROR: component example-app hook stored: <store>/hook.sh is a Nix store path and no Home Manager generation is active; switch to a generation (dotsteward rebuild --profile fresh --switch) or pass --generation with a built generation" "$DS_STDERR"
+assert_calls
+hm_profile=$HOME/.local/state/nix/profiles/home-manager
+mkdir -p "$(dirname "$hm_profile")"
+ln -sfn "$methods_generation" "$hm_profile"
+rm -f "$order"
+assert_exit 0 run_install --profile fresh --check-only
+assert_eq "app forbid
+store forbid 1" "$(<"$order")"
+assert_calls
+rm -f "$hm_profile"
 manifest_edit '.hooks.forbid |= map(select(.name != "stored"))'
 
 chmod 0644 "$methods_inst/components/example-app/forbid.sh"

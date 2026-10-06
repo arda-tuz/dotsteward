@@ -55,7 +55,8 @@
 # "NAME:env VAR=VALUE ... -UNSET_VAR" with values quoted by printf %q.
 # A route or override answers after the call is recorded.
 #
-# Packages: ds_dpkg_installed, ds_dpkg_version, ds_apt_available, ds_fake_deb.
+# Packages: ds_dpkg_installed, ds_dpkg_config_files, ds_dpkg_version,
+# ds_apt_available, ds_fake_deb.
 # Users: ds_passwd_set, ds_passwd_field, ds_group_add.
 # Downloads: ds_curl_serve, ds_curl_fail, ds_curl_delay, ds_curl_redirect;
 # a real loopback server: ds_httpfix_start, ds_httpfix_stop.
@@ -801,22 +802,37 @@ ds_dpkg_installed() {
   _ds_pkgdb_install "$paragraph"
 }
 
-# _ds_pkgdb_install PARAGRAPH: installs a control paragraph (Status added).
+# ds_dpkg_config_files PACKAGE VERSION [ARCH]
+# Records PACKAGE as removed but not purged (dpkg state config-files): the
+# database keeps its Version, db:Status-Status is "config-files" and
+# ds_dpkg_version reports nothing.
+ds_dpkg_config_files() {
+  (($# == 2 || $# == 3)) || _ds_usage "ds_dpkg_config_files PACKAGE VERSION [ARCH]" || return
+  _ds_pkg_valid_name "$1" || _ds_error "invalid package name: $1" || return
+  local paragraph
+  paragraph=$(_ds_control_paragraph "$1" "$2" "${3:-amd64}") || return
+  _ds_pkgdb_install "$paragraph" "deinstall ok config-files"
+}
+
+# _ds_pkgdb_install PARAGRAPH [STATUS]: installs a control paragraph with
+# the Status line STATUS (default "install ok installed").
 _ds_pkgdb_install() {
-  local paragraph=$1 package dir=$DS_STUB_STATE/dpkg/installed
+  local paragraph=$1 status=${2:-install ok installed} package dir=$DS_STUB_STATE/dpkg/installed
   package=$(sed -n 's/^Package: //p' <<<"$paragraph" | head -n 1)
   mkdir -p "$dir"
   {
-    printf 'Package: %s\nStatus: install ok installed\n' "$package"
+    printf 'Package: %s\nStatus: %s\n' "$package" "$status"
     grep -v -e '^Package: ' -e '^Status: ' <<<"$paragraph" || true
   } >"$dir/$package"
 }
 
-# ds_dpkg_version PACKAGE: the installed version, empty when not installed.
+# ds_dpkg_version PACKAGE: the installed version, empty when not installed
+# (also when only its configuration files are left).
 ds_dpkg_version() {
   (($# == 1)) || _ds_usage "ds_dpkg_version PACKAGE" || return
   local file=$DS_STUB_STATE/dpkg/installed/$1
   [[ -f $file ]] || return 0
+  [[ $(sed -n 's/^Status: //p' "$file") == *' installed' ]] || return 0
   sed -n 's/^Version: //p' "$file"
 }
 
@@ -972,7 +988,7 @@ _ds_pkgdb_file() {
 # case-insensitive, plus binary:Package and the db:Status-* virtual fields;
 # \n, \t and \\ escapes).
 _ds_dpkg_format() {
-  local format out="" rest spec name width value line open=\$\{
+  local format out="" rest spec name width value line open=\$\{ want eflag state abbrev
   local -A fields=()
   printf -v format '%b' "$1"
   while IFS= read -r line; do
@@ -980,10 +996,31 @@ _ds_dpkg_format() {
     fields[${BASH_REMATCH[1],,}]=${BASH_REMATCH[2]}
   done <"$2"
   fields[binary:package]=${fields[package]-}
-  fields[db:status-abbrev]="ii "
-  fields[db:status-want]=install
-  fields[db:status-eflag]=ok
-  fields[db:status-status]=installed
+  # The db:Status-* fields come from the paragraph's "Status: WANT EFLAG
+  # STATUS" line; the abbreviation uses dpkg's letters (dpkg -l).
+  read -r want eflag state <<<"${fields[status]:-install ok installed}"
+  fields[db:status-want]=$want
+  fields[db:status-eflag]=$eflag
+  fields[db:status-status]=$state
+  case $want in
+    deinstall) abbrev=r ;;
+    *) abbrev=${want:0:1} ;;
+  esac
+  case $state in
+    config-files) abbrev+=c ;;
+    half-installed) abbrev+=H ;;
+    half-configured) abbrev+=F ;;
+    triggers-awaited) abbrev+=W ;;
+    triggers-pending) abbrev+=t ;;
+    unpacked) abbrev+=U ;;
+    *) abbrev+=${state:0:1} ;;
+  esac
+  if [[ $eflag == ok ]]; then
+    abbrev+=' '
+  else
+    abbrev+=R
+  fi
+  fields[db:status-abbrev]=$abbrev
   while [[ $format == *"$open"*"}"* ]]; do
     out+=${format%%"$open"*}
     rest=${format#*"$open"}

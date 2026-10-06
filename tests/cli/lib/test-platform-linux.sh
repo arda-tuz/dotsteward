@@ -112,6 +112,9 @@ dpkg_version_at_least example-app 1.2.3 || ds_fail "1.2.3-1 >= 1.2.3"
 dpkg_version_at_least example-app 1.2.3-1 || ds_fail "equal versions"
 ! dpkg_version_at_least example-app 1.10 || ds_fail "1.2.3-1 < 1.10"
 ! dpkg_version_at_least example-term 0.1 || ds_fail "a missing package is never recent enough"
+ds_dpkg_config_files example-removed 2.0.0
+! dpkg_installed example-removed || ds_fail "a config-files package is not installed"
+! dpkg_version_at_least example-removed 1.0 || ds_fail "a config-files package is never recent enough"
 # package_provides PACKAGE REGEX: a listed path matches and is a regular file.
 ! package_provides example-app '/udev/rules\.d/[0-9]+-example\.rules$' || ds_fail "the rules file does not exist yet"
 ds_dpkg_installed example-app 1.2.3-1 amd64 "Files=$DS_TEST_ROOT/fsroot/usr/lib/udev/rules.d/51-example.rules $DS_TEST_ROOT/fsroot/usr/lib/udev/rules.d"

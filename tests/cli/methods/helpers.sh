@@ -8,7 +8,14 @@
 #                 an empty modules/components, so the catalog is empty) with
 #                 a fake `preflight` command: it records "preflight ARG..." in
 #                 the call log, prints a JSON line like the real one and
-#                 exits with the status set by preflight_exit (default 0)
+#                 exits with the status set by preflight_exit (default 0);
+#                 and a fake `rebuild` command: it records "rebuild ARG...",
+#                 exits with the status set by rebuild_exit (default 0) or
+#                 else builds the generation methods_generation from the
+#                 manifest mirror (<store>/NAME becomes the absolute path
+#                 methods_store/NAME, <instance>/ and <dotsteward>/ are
+#                 resolved) and records it in
+#                 <state>/current/last-built-activation, like the real one
 #   methods_inst  a synthetic instance: workstation.toml with the profiles
 #                 "workstation" (adopt mode) and "fresh" (fresh mode), an
 #                 empty versions.lock.json and the manifest mirror
@@ -33,6 +40,8 @@
 #                 { minimum_version, url, size, sha256 } of FILE at PATH
 #   preflight_exit STATUS
 #                 the exit status of the fake preflight command
+#   rebuild_exit STATUS
+#                 the exit status of the fake rebuild command
 #   run_install ARG...
 #                 runs `dotsteward --instance <instance> install ARG...` of
 #                 the copy
@@ -46,6 +55,8 @@
 methods_fw=$DS_TEST_ROOT/framework
 methods_inst=$DS_TEST_ROOT/instance
 methods_manifest=$methods_inst/.dotsteward/manifest.x86_64-linux.json
+methods_store=$DS_TEST_ROOT/store
+methods_generation=$DS_TEST_ROOT/built-generation
 
 mkdir -p "$methods_fw/modules/components" "$methods_inst/.dotsteward" "$methods_inst/components"
 cp -R "$DS_REPO_ROOT/cli" "$DS_REPO_ROOT/schema" "$DS_REPO_ROOT/VERSION" "$methods_fw/"
@@ -63,6 +74,22 @@ if [[ -f '$DS_TEST_ROOT/preflight-status' ]]; then
 fi
 printf '{"route": "%s"}\n' "\$( ((status == 0)) && echo fast || echo adaptive)"
 exit "\$status"
+EOF
+
+cat >"$methods_fw/cli/commands/rebuild.sh" <<EOF
+# summary: fake rebuild of the install methods tests
+set -euo pipefail
+source '$DS_REPO_ROOT/tests/lib/harness.sh'
+ds_record_call rebuild "\$@"
+if [[ -f '$DS_TEST_ROOT/rebuild-status' ]]; then
+  exit "\$(<'$DS_TEST_ROOT/rebuild-status')"
+fi
+mkdir -p '$methods_generation/home-path/share/dotsteward' "\$DOTSTEWARD_STATE_ROOT/current"
+jq --arg store '$methods_store' --arg root '$methods_inst' --arg fw '$methods_fw' '
+  .hooks |= map_values(map(.script |= (sub("^<store>"; \$store) | sub("^<instance>"; \$root)
+    | sub("^<dotsteward>"; \$fw))))' \\
+  '$methods_manifest' >'$methods_generation/home-path/share/dotsteward/manifest.json'
+printf '%s\n' '$methods_generation' >"\$DOTSTEWARD_STATE_ROOT/current/last-built-activation"
 EOF
 
 cat >"$methods_inst/workstation.toml" <<'EOF'
@@ -178,6 +205,10 @@ pin_download() {
 
 preflight_exit() {
   printf '%s\n' "$1" >"$DS_TEST_ROOT/preflight-status"
+}
+
+rebuild_exit() {
+  printf '%s\n' "$1" >"$DS_TEST_ROOT/rebuild-status"
 }
 
 run_install() {

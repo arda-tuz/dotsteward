@@ -90,6 +90,21 @@ assert_exit 0 run_install --profile fresh
 unset DOTSTEWARD_ASSUME_YES
 assert_eq "1" "$(ds_call_count sudo 'apt-get install -y --no-install-recommends *')"
 
+# A removed but not purged DEB (dpkg state config-files) keeps its version
+# in the dpkg database but is not installed: its floor is not met, so
+# --check-only fails and install downloads it and installs it again.
+ds_dpkg_config_files example-app 1.3.0
+assert_exit 1 run_install --profile fresh --check-only
+assert_eq "[dotsteward] ERROR: example-app (deb): example-app 1.2.3 or newer is not installed (found none)" "$DS_STDERR"
+: >"$DS_CALL_LOG"
+assert_exit 0 run_install --profile fresh
+assert_eq "1" "$(ds_call_count curl)"
+assert_contains "$(ds_calls_of curl)" "$app_url"
+[[ $(ds_calls_of sudo) == *"apt-get install --no-install-recommends $TMPDIR/dotsteward-install."*"/example-app_1.2.3.deb" ]] ||
+  ds_fail "the config-files DEB was not installed: $(ds_calls_of sudo)"
+assert_eq "1.2.3" "$(ds_dpkg_version example-app)"
+assert_contains "$DS_STDOUT" "[dotsteward] example-app (deb): installed: example-app 1.2.3"
+
 # An apt-only component (no pin) adds its packages to the same transaction.
 manifest_edit '.components = []'
 add_component example-app deb '{"pin": null, "packageNames": [], "architecture": null, "verifyAfterInstall": true, "apt": ["gamma"]}'
