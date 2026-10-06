@@ -18,9 +18,10 @@ The document (``schema/context.schema.json``, ``schema_version`` 1) joins:
   (D17).
 
 A missing mirror, buffer, skills lock, ``flake.lock`` or state record is not
-an error: the facts it would add are empty or null. A buffer or skills lock
-that cannot be read is a refusal, because the facts would be incomplete; a
-mirror that cannot be read is ignored here and reported by ``doctor``.
+an error: the facts it would add are empty or null. A buffer, skills lock,
+``flake.lock``, recorded profile or ``source-info`` that exists but cannot be
+read is a refusal, because the facts would be incomplete; a mirror that
+cannot be read is ignored here and reported by ``doctor``.
 
 Command line (used by ``cli/commands/context.sh``)::
 
@@ -157,7 +158,10 @@ def framework_version(root: Path = config.FRAMEWORK_ROOT) -> dict[str, str | Non
         raise ContextError(f"cannot read the framework version {root / 'VERSION'}: {error.strerror}") from error
     rev: str | None = None
     nar_hash: str | None = None
-    info = _read_text(root / "source-info")
+    try:
+        info = _read_text(root / "source-info")
+    except OSError as error:
+        raise ContextError(f"cannot read the framework source-info {root / 'source-info'}: {error.strerror}") from error
     if info is not None:
         for line in info.splitlines():
             if line.startswith("rev="):
@@ -246,7 +250,10 @@ def read_buffer(instance: config.Instance) -> tuple[list[str], list[str]]:
     Only the names are read: values stay out of the document."""
     relative = f"{instance.config['settings']['buffer_dir']}/{BUFFER_FILE}"
     path = instance.root / relative
-    text = _read_text(path)
+    try:
+        text = _read_text(path)
+    except OSError as error:
+        raise ContextError(f"{relative}: cannot read the settings buffer: {error.strerror}") from error
     if text is None:
         return [], []
     try:
@@ -292,7 +299,11 @@ def read_skills_lock(instance: config.Instance) -> list[str]:
 def current_profile(state_root: str, profiles: Mapping[str, Any]) -> str:
     """The profile of the last rebuild (<state root>/current/profile) when it
     names a profile of the instance, else the check profile (D15)."""
-    text = _read_text(Path(state_root) / CURRENT_PROFILE)
+    path = Path(state_root) / CURRENT_PROFILE
+    try:
+        text = _read_text(path)
+    except OSError as error:
+        raise ContextError(f"cannot read {path}: {error.strerror}") from error
     recorded = text.strip() if text is not None else ""
     return recorded if recorded in profiles["names"] else profiles["check"]
 
@@ -310,7 +321,17 @@ def _strip_slash(path: str | None) -> str | None:
 def build_context(instance: config.Instance, env: Mapping[str, str] | None = None) -> dict[str, Any]:
     """The context document of instance (SPEC 6.5). Raises DotstewardError
     for an invalid environment or an unreadable source."""
-    env = os.environ if env is None else env
+    try:
+        return _build_context(instance, os.environ if env is None else env)
+    except OSError as error:
+        # The readers above name the sources they refuse; this keeps any
+        # other unreadable path (an instance directory without permissions)
+        # a refusal rather than a traceback.
+        where = error.filename if error.filename is not None else "a context source"
+        raise ContextError(f"cannot read {where}: {error.strerror}") from error
+
+
+def _build_context(instance: config.Instance, env: Mapping[str, str]) -> dict[str, Any]:
     c = instance.config
     values = config.runtime_values(instance, env)
     platform_name = values["platform"]

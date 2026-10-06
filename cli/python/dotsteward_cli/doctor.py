@@ -317,7 +317,7 @@ def run(env: Mapping[str, str] | None = None) -> dict[str, Any]:
         ]
     else:
         checks += [
-            _check(check_id, "skip", "needs a valid configuration")
+            _check(check_id, "skip", "needs a valid configuration and context")
             for check_id in ("launcher-cache", "mirrors", "generation", "gate-memo")
         ]
     status = max((check["status"] for check in checks), key=STATUS_ORDER.index)
@@ -418,7 +418,7 @@ def redact(report: Mapping[str, Any], env: Mapping[str, str] | None = None) -> d
 
 def human_lines(report: Mapping[str, Any]) -> list[str]:
     document = report["context"]
-    where = document["instance"]["path"] if document is not None else "(no valid instance configuration)"
+    where = document["instance"]["path"] if document is not None else "(no valid instance configuration or context)"
     lines = [f"[dotsteward] doctor: {where}"]
     lines += [f"[dotsteward] {check['status']:<4} {check['id']}: {check['message']}" for check in report["checks"]]
     counts = {status: sum(check["status"] == status for check in report["checks"]) for status in STATUS_ORDER}
