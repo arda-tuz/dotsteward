@@ -99,7 +99,7 @@ dotsteward contribute check
 
 The framework gate runs the privacy scans (the tree, the new commits with the denylist, and the instance-leak scan with terms from the instance facts) and `nix flake check` in the clone. It takes long: start it in the background (Claude Code `run_in_background`; Codex with a timeout of at least 60 minutes) and wait for it once instead of polling.
 
-- Exit 4 is a privacy hard stop: nothing may be published. The findings are redacted to a rule and a location; remove them from the branch (rewrite the commits that carry them, for example with `git reset --soft` onto the branch base and two fresh commits, the test and then the fix), then run the check again.
+- Exit 4 is a privacy hard stop: nothing may be published. The findings are redacted to a rule and a location; remove them from the branch (rewrite the commits that carry them, for example with `git reset --soft` onto the branch base and two fresh commits, the test and then the fix), then run the check again. Never answer a finding by allowlisting the term or relaxing the policy: a branch that changes `privacy/allowlist.txt` or `privacy/policy.toml` is itself a hard stop (`privacy-config`); such changes go only in their own, manually reviewed pull request.
 - Any other failure: fix it in a new commit and run the check again.
 
 ```bash

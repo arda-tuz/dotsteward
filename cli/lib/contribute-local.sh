@@ -693,6 +693,13 @@ contribute_cmd_check() {
   fi
 
   contribute_require_clean "$CT_CLONE"
+  # Only the latest gate run counts: an earlier pass is withdrawn until this
+  # one succeeds, so a failed check never leaves a commit trial and publish
+  # would accept. Past publish the merge already happened and stays recorded.
+  if (($(contribute_step_index "$step" || echo 0) <= $(contribute_step_index publish))); then
+    contribute_state_update "$id" '.test_sha = null | .tested_tree = null
+      | .step = (if .step == "trial" or .step == "publish" then "check" else .step end)'
+  fi
   local remote=origin base head tree
   [[ $mode == owner ]] || remote=upstream
   contribute_fetch_main "$CT_CLONE" "$remote"
@@ -712,15 +719,17 @@ contribute_cmd_check() {
     die "the privacy scans need the denylist $CONTRIBUTE_DENYLIST_SHOWN (the pre-push hook reads it too); create it with one private term per line"
 
   # The instance-leak terms: a private file in a private directory, removed
-  # when the command exits.
+  # when the command exits. The allowlist comes from upstream main, never
+  # from the branch under check.
   _contribute_load_context
   CT_TERMS_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dotsteward-contribute.XXXXXX")
   trap 'cleanup_temp_dir "$CT_TERMS_DIR"' EXIT
   chmod 0700 "$CT_TERMS_DIR"
-  local terms=$CT_TERMS_DIR/terms count
+  local terms=$CT_TERMS_DIR/terms allowlist=$CT_TERMS_DIR/allowlist count
+  git -C "$CT_CLONE" show "$base:privacy/allowlist.txt" >"$allowlist" 2>/dev/null || : >"$allowlist"
   (
     umask 077
-    contribute_leak_terms "$CT_CONTEXT" "$CT_CLONE/privacy/allowlist.txt" "$base" \
+    contribute_leak_terms "$CT_CONTEXT" "$allowlist" "$base" \
       "$(git -C "$CT_CLONE" config user.name || true)" "$(git -C "$CT_CLONE" config user.email || true)" >"$terms"
   )
   chmod 0600 "$terms"
@@ -729,6 +738,13 @@ contribute_cmd_check() {
 
   local range=$base..$head
   local -a stopped=()
+  # The scanner reads the privacy policy and allowlist of the clone it scans,
+  # so the branch must not change them: that would turn its own scans off.
+  if ((ahead)) && ! git -C "$CT_CLONE" diff --quiet "$base" "$head" -- privacy/allowlist.txt privacy/policy.toml; then
+    printf '[dotsteward] ERROR: the branch changes privacy/allowlist.txt or privacy/policy.toml (or is behind %s/main where they changed): changes to the privacy configuration land only in their own, manually reviewed pull request, never through contribute\n' \
+      "$remote" >&2
+    stopped+=(privacy-config)
+  fi
   _contribute_scan tree --tree || stopped+=(tree)
   if ((ahead)); then
     _contribute_scan "commits $remote/main..$branch" --range "$range" --metadata \

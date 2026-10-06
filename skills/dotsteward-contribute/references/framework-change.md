@@ -12,7 +12,7 @@ How to write the reproduction and the fix in the framework clone of a run (`.clo
 | Catalog components | `modules/components/<name>/` (`default.nix`, `seed.json`, `README.md`, `maintenance.md`) | `nix/checks/`, `tests/nix/`, `tests/probes/` |
 | Framework skills | `skills/<name>/` (`SKILL.md`, `agents/openai.yaml`, `LICENSE`, `references/*.md`), digests in the generated `skills/manifest.json` | `tests/skills/` |
 | Template of new instances | `template/` (the stage-0 part of `template/bootstrap.sh` is generated from `cli/lib/stage0.sh` by `tools/gen-stage0.sh`) | `tests/instance/` |
-| Privacy policy and scanner | `privacy/policy.toml`, `privacy/allowlist.txt`, `cli/lib/privacy.sh`, `.githooks/pre-push` | `tests/privacy/`, `tests/hooks/` |
+| Privacy scanner | `cli/lib/privacy.sh`, `.githooks/pre-push` (`privacy/policy.toml` and `privacy/allowlist.txt` change only in their own, manually reviewed pull request: `contribute check` stops on a branch that changes them) | `tests/privacy/`, `tests/hooks/` |
 | Schemas and docs | `schema/*.json`, `docs/*.md`, `README.md` | `tests/static/` |
 
 Nix checks are files too: `nix/checks/<name>.nix`, discovered by name; most wrap test directories with `mkTestCheck`, so a new test file under an existing directory is picked up without a Nix edit.

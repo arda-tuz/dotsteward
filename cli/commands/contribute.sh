@@ -41,9 +41,16 @@
 #                           and the denylist; the instance-leak scan with
 #                           terms from `dotsteward context --json`), then
 #                           `nix flake check` with the gate's parallelism.
-#                           Records test_sha and tested_tree on success. A
-#                           branch without commits after upstream main is
-#                           refused, except after a tree mismatch
+#                           Records test_sha and tested_tree on success; any
+#                           failure before publish withdraws an earlier pass
+#                           (the run goes back to check). A branch that
+#                           changes privacy/allowlist.txt or
+#                           privacy/policy.toml is a privacy hard stop: they
+#                           change only in their own, manually reviewed
+#                           pull request; the leak terms skip only the
+#                           allowlist of upstream main. A branch without
+#                           commits after upstream main is refused, except
+#                           after a tree mismatch
 #   trial [--build-only]    the trial on this machine (SPEC 9.4 step 7): gate,
 #                           rebuild --switch and e2e of the instance with
 #                           --framework-override git+file://<clone>?rev=<the
