@@ -187,7 +187,9 @@ class Instance:
             raise Refusal(f"Nix does not see untracked files; run 'git add -A' first: {' '.join(files)}")
 
     def nix_eval(self, attribute: str) -> Any:
-        """``nix eval --json --no-update-lock-file <root>#<attribute>``."""
+        """``nix eval --json --no-update-lock-file <root>#<attribute>``; with
+        a framework override (``DOTSTEWARD_FRAMEWORK_OVERRIDE``, set by the
+        gate for its steps) the dotsteward input is replaced in memory."""
         command = [
             "nix",
             "--extra-experimental-features",
@@ -197,6 +199,9 @@ class Instance:
             "--no-update-lock-file",
             f"{self.root}#{attribute}",
         ]
+        override = os.environ.get("DOTSTEWARD_FRAMEWORK_OVERRIDE", "")
+        if override:
+            command += ["--override-input", "dotsteward", override, "--no-write-lock-file"]
         try:
             result = subprocess.run(command, capture_output=True, text=True, timeout=NIX_TIMEOUT_SECONDS, check=False)
         except FileNotFoundError as error:
