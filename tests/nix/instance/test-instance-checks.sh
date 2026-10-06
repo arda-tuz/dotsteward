@@ -50,7 +50,8 @@ assert_inst_eq 'true' \
 assert_inst_eq 'false' 'example.checks.x86_64-linux.instance-contract ? steps' "no step filter"
 
 # The example fixture is a complete instance for the contract, except for
-# the generated mirrors: its launcher is the framework's template copy.
+# the generated files (the mirrors and bootstrap.sh, which checks.nix-instance
+# adds): its launcher is the framework's template copy.
 assert_eq "$(sha256sum <"$DS_REPO_ROOT/template/.dotsteward/cli.sh")" \
   "$(sha256sum <"$nix_instance_fixtures/example/.dotsteward/cli.sh")" \
   "fixtures/example/.dotsteward/cli.sh equals template/.dotsteward/cli.sh"
