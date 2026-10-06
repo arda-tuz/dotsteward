@@ -103,14 +103,14 @@ refused "HEAD tree is not the validated tree; run 'dotsteward gate --scope updat
 
 # The validated scope differs from the publish scope (both directions).
 write_validation '.scope = "update"'
-refused "the validation was made for the update scope, not maintain; run 'dotsteward gate --scope maintain' first" \
+refused "the validation was made for the update scope, not maintain; run 'dotsteward gate --scope maintain --force' first" \
   --scope maintain
 write_validation
-refused "the validation was made for the maintain scope, not update; run 'dotsteward gate --scope update' first"
-refused "the validation was made for the maintain scope, not update; run 'dotsteward gate --scope update' first" \
+refused "the validation was made for the maintain scope, not update; run 'dotsteward gate --scope update --force' first"
+refused "the validation was made for the maintain scope, not update; run 'dotsteward gate --scope update --force' first" \
   --scope update
 write_validation '.scope = null'
-refused "the validation was made for the (none) scope, not maintain; run 'dotsteward gate --scope maintain' first" \
+refused "the validation was made for the (none) scope, not maintain; run 'dotsteward gate --scope maintain --force' first" \
   --scope maintain
 
 # The validation used a framework override (D9).

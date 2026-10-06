@@ -90,3 +90,34 @@ assert_exit 0 ds update publish --scope maintain
 assert_eq "[dotsteward] main is already $(head_oid) on the remote; nothing to push" "$DS_STDOUT"
 # The canonical checkout already holds the published commit: nothing to say.
 assert_eq "" "$DS_STDERR"
+
+# --- a validation made for the other scope ------------------------------------------------
+# Scope is not part of the memo key, so a plain gate in the publish scope
+# answers from the memo and keeps the recorded scope; the refusal hint
+# therefore asks for --force, which runs the gate again and records the
+# publish scope.
+
+assert_exit 0 ds update prepare --official-sources-only --scope maintain
+base=$(head_oid)
+printf '{\n  "schema_version": "1.0",\n  "maintained": true\n}\n' >"$up_inst/versions.lock.json"
+assert_exit 0 ds gate --scope update
+commit_all "chore: maintain the versions lock"
+scope_hint="[dotsteward] ERROR: the validation was made for the update scope, not maintain; run 'dotsteward gate --scope maintain --force' first"
+assert_exit 1 ds update publish --scope maintain
+assert_eq "$scope_hint" "$DS_STDERR"
+
+# The plain gate is a memo hit and leaves the update scope in the record.
+assert_exit 0 ds gate --scope maintain
+assert_contains "$DS_STDOUT" '"memo":true'
+assert_json "$up_validation" '.scope == "update"'
+assert_exit 1 ds update publish --scope maintain
+assert_eq "$scope_hint" "$DS_STDERR"
+assert_eq "$base" "$(remote_oid)"
+
+# The command the hint names records the publish scope; publish then ships.
+assert_exit 0 ds gate --scope maintain --force
+assert_not_contains "$DS_STDOUT" '"memo":true'
+assert_json "$up_validation" '.result == "passed" and .scope == "maintain" and .tree_oid == "'"$(head_tree)"'"'
+assert_exit 0 ds update publish --scope maintain
+assert_eq "$(head_oid)" "$(remote_oid)"
+assert_eq "$(head_oid)" "$(git -C "$canon" rev-parse HEAD)"
