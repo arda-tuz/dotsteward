@@ -53,5 +53,19 @@ for expected in 'context --json' 'e2e --profile'; do
   assert_contains "$verify" "$expected" "agent-verify step"
 done
 
+# Plain e2e stops at core:repo-remote for an instance without a pushed
+# origin, so the agentic test gives the agent a reachable local remote, as
+# the clean install does: agent-prepare creates a bare repository and the
+# suggested request names it, and agent-verify checks origin and that
+# nothing is unpushed before it runs e2e.
+prepare=$(text_of agent-prepare)
+for expected in 'remotes/workstation.git' 'git init -q --bare' 'push main to it'; do
+  assert_contains "$prepare" "$expected" "agent-prepare remote"
+done
+assert_not_contains "$prepare" 'instance repository local' "agent-prepare remote"
+for expected in 'remote get-url origin' 'ls-remote origin'; do
+  assert_contains "$verify" "$expected" "agent-verify remote"
+done
+
 # The shared guest helpers are not a scenario.
 [[ -f $guest/common.sh ]] || ds_fail "missing guest/common.sh"
