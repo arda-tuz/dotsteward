@@ -2,8 +2,9 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # The launcher's own state root resolution (spec 6.3): DOTSTEWARD_STATE_ROOT
 # > DOTFILES_STATE_ROOT when [compat] legacy_env = true > state.root from
-# workstation.toml > ${XDG_STATE_HOME:-~/.local/state}/dotsteward. state.root
-# expands like the CLI's own resolver: a leading ${NAME:-DEFAULT} (NAME when
+# workstation.toml > the schema default
+# ${XDG_STATE_HOME:-~/.local/state}/dotsteward. state.root and the default
+# expand like the CLI's own resolver: a leading ${NAME:-DEFAULT} (NAME when
 # set and non-empty), then a leading ~. The cache entry $STATE/cli/<key>
 # shows which root was used.
 # shellcheck source=tests/cli/launcher/helpers.sh
@@ -36,12 +37,19 @@ expect_root() {
 
 r=$DS_TEST_ROOT/roots
 
-# Default: ~/.local/state/dotsteward, or under XDG_STATE_HOME.
+# Default: the schema default ${XDG_STATE_HOME:-~/.local/state}/dotsteward,
+# expanded like a configured state.root: ~/.local/state/dotsteward when
+# XDG_STATE_HOME is unset or empty, else under XDG_STATE_HOME.
 instance_with ""
 expect_root "$HOME/.local/state/dotsteward"
+expect_root "$HOME/.local/state/dotsteward" XDG_STATE_HOME=
 expect_root "$r/xdg/dotsteward" XDG_STATE_HOME="$r/xdg"
-# A relative XDG_STATE_HOME is invalid per the XDG specification: ignored.
-expect_root "$HOME/.local/state/dotsteward" XDG_STATE_HOME=relative/xdg
+# A relative XDG_STATE_HOME makes the default relative: refused, as the CLI
+# does, before any Nix call.
+: >"$DS_CALL_LOG"
+assert_exit 1 env XDG_STATE_HOME=relative/xdg "$inst/.dotsteward/cli.sh" version
+assert_eq "[dotsteward] ERROR: the state root must be an absolute path: relative/xdg/dotsteward" "$DS_STDERR"
+assert_calls
 
 # state.root in a [state] table, with ~/ expansion and comments.
 instance_with $'[state]\nroot = "~/custom-state"'
