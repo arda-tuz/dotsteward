@@ -87,6 +87,20 @@ assert_eq "$main_before" "$(git -C "$ct_upstream_bare" rev-parse "$merged^")" "p
 state_json | assert_json - ".merged_sha == \"$merged\" and .step == \"release\" and .pr == \"$pr_url\""
 assert_eq "" "$(instance_calls)" "instance commands of a green publish"
 
+# Interrupted after the merge, before the run recorded it: the re-run finds
+# the merged pull request and verifies it, without treating the squash
+# commit as a moved main (no rebase, no second merge).
+state_set '.step = "publish" | .merged_sha = null'
+reset_calls
+assert_exit 0 run_contribute publish
+assert_call_count 0 gh 'pr merge*'
+assert_call_count 0 gh 'pr create*'
+assert_not_contains "$DS_STDOUT" "moved to"
+assert_eq "$sha" "$(git -C "$ct_clone" rev-parse HEAD)" "clone HEAD after the resumed publish"
+assert_eq "$merged" "$(upstream_main)" "upstream main after the resumed publish"
+state_json | assert_json - ".merged_sha == \"$merged\" and .step == \"release\" and .test_sha == \"$sha\""
+assert_eq "" "$(instance_calls)" "instance commands of the resumed publish"
+
 # A published run answers without doing anything.
 reset_calls
 assert_exit 0 run_contribute publish
