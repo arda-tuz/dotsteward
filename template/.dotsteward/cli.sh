@@ -23,8 +23,9 @@
 #
 # $STATE: DOTSTEWARD_STATE_ROOT > DOTFILES_STATE_ROOT when [compat]
 # legacy_env = true > state.root in workstation.toml (a leading
-# ${NAME:-DEFAULT} and ~ expanded as the CLI does) >
-# ${XDG_STATE_HOME:-~/.local/state}/dotsteward.
+# ${NAME:-DEFAULT} and ~ expanded as the CLI does) > the schema default
+# ${XDG_STATE_HOME:-~/.local/state}/dotsteward, expanded the same way. A
+# relative result is refused, as the CLI refuses it.
 #
 # Runs with /bin/bash 3.2 and BSD tools (stock macOS) as well as GNU ones.
 set -Eeuo pipefail
@@ -171,14 +172,6 @@ expand_path() {
   expand_home "$value"
 }
 
-# The default state home: XDG_STATE_HOME when absolute, else ~/.local/state.
-xdg_state_home() {
-  case ${XDG_STATE_HOME:-} in
-    /*) printf '%s\n' "$XDG_STATE_HOME" ;;
-    *) printf '%s/.local/state\n' "$HOME" ;;
-  esac
-}
-
 resolve_state_root() {
   local raw value
   if [ -n "${DOTSTEWARD_STATE_ROOT:-}" ]; then
@@ -193,7 +186,8 @@ resolve_state_root() {
     expand_path "$value"
     return 0
   fi
-  printf '%s/dotsteward\n' "$(xdg_state_home)"
+  # shellcheck disable=SC2016 # the schema default, spelled out literally
+  expand_path '${XDG_STATE_HOME:-~/.local/state}/dotsteward'
 }
 
 state=$(resolve_state_root)
