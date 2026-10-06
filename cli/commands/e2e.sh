@@ -3,7 +3,9 @@
 #
 # The E2E runner (SPEC 8.3). Checks, in run order, each with an id
 # (<component>:<check-name> or core:<check-name>) that --list prints:
-#    1. flags, configuration, profile, the Nix environment
+#    1. flags, configuration, profile, the Nix environment, the shape of
+#       the manifest sections the checks read (a setup error finding on
+#       the manifest file)
 #    2. core:commands             the union of checks.commands of core and
 #                                 the active components is on PATH
 #    3. <component>:<hook>        early checks.e2e hooks
@@ -300,6 +302,40 @@ if [[ -z $generation ]]; then
   generation=$(skills_active_generation)
 fi
 methods_manifest_load "$generation"
+
+# The planners and checks read the manifest sections below with jq in
+# command and process substitutions, whose errors bash does not report: a
+# section with the wrong shape would read as nothing to check. They are
+# checked once, here, with a status-checked jq call.
+_e2e_manifest_shape() {
+  jq -e '
+    def optional(f): . == null or f;
+    def string_list: type == "array" and all(.[]; type == "string");
+    def hooks: type == "array" and all(.[]; type == "object"
+      and (.component | type) == "string" and (.name | type) == "string"
+      and (.script | type) == "string" and (.phase | optional(type == "string"))
+      and (.profiles | optional(string_list)));
+    (.components | type == "array" and all(.[]; type == "object"
+      and (.name | type) == "string" and (.modes | optional(type == "object"))
+      and (.platforms | optional(string_list))))
+    and (.checks | optional(type == "object"
+      and (.commands | optional(type == "array" and all(.[]; type == "object"
+        and (.command | type) == "string" and (.component | type) == "string")))
+      and (.e2e | optional(hooks))))
+    and (.managed_links | optional(string_list))
+    and (.agent_rules | optional(type == "object"
+      and (.source | optional(type == "string"))
+      and (.targets | optional(type == "array" and all(.[]; type == "object"
+        and (.component | type) == "string" and (.path | type) == "string")))))
+    and (.files | optional(type == "object" and all(.[]; type == "object"
+      and (.source | type) == "string" and (.target | type) == "string"
+      and (.mode | optional(type == "string")) and (.policy | optional(type == "string")))))
+    and (.skills | optional(type == "object" and (.framework | optional(string_list))))
+    and (.login_shell | optional(type == "string"))' <<<"$DS_MANIFEST_JSON" >/dev/null 2>&1
+}
+_e2e_manifest_shape ||
+  skills_fail error "$DS_MANIFEST_FILE" \
+    "invalid manifest $DS_MANIFEST_FILE: a section the E2E checks read (components, checks.commands, checks.e2e, managed_links, agent_rules, files, skills.framework or login_shell) has the wrong shape"
 skills_init "$profile" 1 "$generation"
 # A built generation's commands come first, like after its activation.
 if [[ -n $explicit_generation ]]; then

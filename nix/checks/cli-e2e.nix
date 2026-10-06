@@ -2,9 +2,9 @@
 # list, flag matrix, repository checks against a bare remote through a fake
 # SSH transport, managed links and agent-rule bytes, dotsteward.files,
 # settings integration, login shell, hook phases, framework skills sync,
-# keep-going JSON, --generation) and `dotsteward component run` against a
-# synthetic instance and temporary homes, then shellcheck over both
-# commands and the tests.
+# keep-going JSON, --generation, manifest shape refusals) and `dotsteward
+# component run` against a synthetic instance and temporary homes, then
+# shellcheck over both commands and the tests.
 {
   pkgs,
   dsLib,
