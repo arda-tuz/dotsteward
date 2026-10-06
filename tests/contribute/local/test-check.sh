@@ -153,6 +153,21 @@ git -C "$ct_clone" reset -q --hard "$base"
 clone_commit feature.txt feature 'feat: add the feature for example-term'
 expect_privacy_stop "instance term in the message"
 
+# The gate never trusts the privacy configuration of the branch it checks:
+# an allowlist line for a leaked term, or a relaxed policy, is itself a hard
+# stop (such changes land only in their own, manually reviewed pull request).
+fresh_commit notes.md 'see example-notes here'
+clone_commit privacy/allowlist.txt "$(cat "$ct_clone/privacy/allowlist.txt")"$'\nexample-notes' \
+  'chore: allow a public name'
+expect_privacy_stop "allowlisted instance term"
+assert_contains "$DS_STDERR" "privacy-config" "allowlisted instance term"
+assert_contains "$DS_STDERR" "privacy/allowlist.txt or privacy/policy.toml" "allowlisted instance term"
+assert_not_contains "$DS_STDOUT$DS_STDERR" "see example-notes" "allowlisted instance term"
+fresh_commit privacy/policy.toml "$(sed 's/^private_ipv4 = true$/private_ipv4 = false/' "$ct_clone/privacy/policy.toml")" \
+  'chore: relax the policy'
+expect_privacy_stop "relaxed policy"
+assert_contains "$DS_STDERR" "privacy-config" "relaxed policy"
+
 # --- Nix ----------------------------------------------------------------------
 
 fresh_commit feature.txt feature 'feat: add the feature'
@@ -176,8 +191,11 @@ sed -i "s|^remote = .*|remote = \"git@github.com:bob/workstation.git\"|" "$ct_in
 fresh_commit feature.txt \
   'feature by bob and alice for example-app, example-grid-public and herdr-config as dotsteward-test' \
   'feat: add the feature'
-# The nix stub records the terms file while the check runs.
-ds_stub_override nix <<'EOF'
+# The nix stub records the terms file while the check runs, then exits with
+# STATUS.
+nix_records_terms() {
+  {
+    cat <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 for file in "$TMPDIR"/dotsteward-contribute.*/terms; do
@@ -186,8 +204,11 @@ for file in "$TMPDIR"/dotsteward-contribute.*/terms; do
   stat -c %a "$(dirname "$file")" >"$DS_TEST_ROOT/terms-dir.mode"
   cp "$file" "$DS_TEST_ROOT/terms.copy"
 done
-exit 0
 EOF
+    printf 'exit %s\n' "$1"
+  } | ds_stub_override nix
+}
+nix_records_terms 0
 : >"$DS_CALL_LOG"
 assert_exit 0 run_contribute check
 head_sha=$(git -C "$ct_clone" rev-parse HEAD)
@@ -218,6 +239,26 @@ assert_eq "$(sort -u "$DS_TEST_ROOT/terms.copy" | wc -l)" "$(wc -l <"$DS_TEST_RO
 if network_calls | grep -q 'git-receive-pack'; then
   ds_fail "check pushed: $(network_calls)"
 fi
+
+# --- a failed check withdraws an earlier pass ----------------------------------
+
+# Only the latest gate run counts: a privacy stop or a failed flake check on
+# the commit that passed before clears test_sha and tested_tree and sends
+# the run back to check, so trial and publish refuse it.
+write_denylist_lines '# synthetic private terms' 'feature by bob'
+expect_privacy_stop "denylist term after a pass"
+assert_eq check "$(field .step)" "step after a privacy stop that follows a pass"
+write_denylist
+assert_exit 0 run_contribute check
+assert_eq "$head_sha" "$(field .test_sha)" "test_sha after passing again"
+assert_eq trial "$(field .step)" "step after passing again"
+nix_records_terms 1
+assert_exit 1 run_contribute check
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: nix flake check failed in $ct_clone"
+assert_eq null "$(field .test_sha)" "test_sha after a failed flake check that follows a pass"
+assert_eq null "$(field .tested_tree)" "tested_tree after a failed flake check that follows a pass"
+assert_eq check "$(field .step)" "step after a failed flake check that follows a pass"
+nix_records_terms 0
 
 # --- terms the upstream already publishes -------------------------------------
 
