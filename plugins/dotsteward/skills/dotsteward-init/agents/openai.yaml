@@ -1,0 +1,4 @@
+interface:
+  display_name: "dotsteward Init"
+  short_description: "Set up a reproducible dotsteward workstation"
+  default_prompt: "Use $dotsteward-init to set up my dotsteward workstation on this machine."
