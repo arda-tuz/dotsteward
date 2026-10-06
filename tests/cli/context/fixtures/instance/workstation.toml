@@ -1,0 +1,84 @@
+# A rich instance for the context and doctor tests: two profiles, catalog and
+# instance components, a settings buffer, overlays and protected files.
+schema_version = 1
+
+[identity]
+username = "alice"
+home = "/home/alice"
+darwin_home = "/Users/alice"
+
+[instance]
+name = "workstation"
+remote = "git@github.com:alice/workstation.git"
+branch = "trunk"
+checkout = "~/src/workstation"
+
+[state]
+root = "~/.local/state/workstation"
+
+[nix]
+systems = ["x86_64-linux", "aarch64-darwin"]
+state_version = "26.05"
+
+[profiles]
+names = ["workstation", "fresh"]
+default = "workstation"
+check = "workstation"
+bootstrap = "fresh"
+
+[profiles.workstation]
+mode = "adopt"
+
+[profiles.fresh]
+mode = "fresh"
+
+[platform.linux.fast_path]
+os_id = "ubuntu"
+os_version = "24.04"
+architecture = "x86_64"
+desktop_contains = "example"
+
+[gate]
+nix_max_jobs = 4
+nix_cores = 8
+min_free_gib = 10
+cache_url = "https://cache.example.invalid"
+
+[commit]
+update_subject = "chore: refresh pins"
+
+[components.shell]
+enable = true
+
+[components.herdr]
+enable = true
+profiles = ["workstation"]
+
+[components.codex]
+enable = true
+method = "external"
+
+[components.vscode]
+enable = true
+method_by_platform = { linux = "deb", darwin = "app-archive" }
+
+[components.opencode-pi]
+enable = false
+
+[components.example-term]
+enable = true
+source = "instance"
+
+[settings]
+buffer_dir = "settings-buffer"
+
+[skills]
+hm_root = ".codex/skills"
+overlays = { dotsteward-maintain = "agent/overlays/maintain.md" }
+
+[protected]
+"home/AGENTS.md" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+"agent/AGENTS.md" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[upstream]
+contribute = "owner"

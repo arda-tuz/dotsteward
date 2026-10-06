@@ -1,0 +1,28 @@
+# Settings buffer with a buffer target and three entries. The values are
+# sentinels: context and doctor must never print them.
+schema_version = 1
+
+[targets.example-term-state]
+path = "~/.config/example-term/state.json"
+format = "json"
+
+[[entries]]
+id = "codex-model"
+kind = "key"
+target = "codex-config"
+key = "model"
+value = "sentinel-value-one"
+
+[[entries]]
+id = "term-theme"
+kind = "key"
+target = "example-term-state"
+key = "theme"
+value = "sentinel-value-two"
+
+[[entries]]
+id = "term-font"
+kind = "key"
+target = "example-term-state"
+key = "font"
+absent = true

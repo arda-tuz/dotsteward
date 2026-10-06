@@ -1,0 +1,24 @@
+{
+  "nodes": {
+    "dotsteward_2": {
+      "locked": {
+        "lastModified": 1767225600,
+        "narHash": "sha256-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+        "rev": "89abcdef0123456789abcdef0123456789abcdef",
+        "type": "git",
+        "url": "ssh://git@example.invalid/team/dotsteward.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@example.invalid/team/dotsteward.git"
+      }
+    },
+    "root": {
+      "inputs": {
+        "dotsteward": "dotsteward_2"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

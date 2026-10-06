@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "system": "x86_64-linux",
+  "platform": "linux",
+  "framework": { "version": "0.0.0" },
+  "config": {},
+  "components": [
+    { "name": "shell", "source": "catalog", "method": "nix" },
+    { "name": "herdr", "source": "catalog", "method": "official-binary" },
+    { "name": "codex", "source": "catalog", "method": "external" },
+    { "name": "vscode", "source": "catalog", "method": "deb" },
+    { "name": "example-term", "source": "instance", "method": "official-binary" }
+  ],
+  "settings_targets": {
+    "codex-config": { "component": "codex", "path": "~/.codex/config.toml", "format": "toml" },
+    "vscode-settings": { "component": "vscode", "path": "~/.config/Code/User/settings.json", "format": "jsonc" },
+    "example-term-config": { "component": "example-term", "path": "~/.config/example-term/config.json", "format": "json" }
+  },
+  "checks": {
+    "commands": [
+      { "component": "core", "command": "jq" },
+      { "component": "shell", "command": "zsh" },
+      { "component": "shell", "command": "starship" },
+      { "component": "herdr", "command": "herdr" },
+      { "component": "codex", "command": "codex" },
+      { "component": "vscode", "command": "code" },
+      { "component": "example-term", "command": "example-term" }
+    ]
+  },
+  "skills": {
+    "hm_root": ".codex/skills",
+    "framework": ["dotsteward-maintain", "dotsteward-update"],
+    "home_managed": ["example-review", "example-local"]
+  }
+}
