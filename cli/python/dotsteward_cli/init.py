@@ -5,8 +5,9 @@ Command line (used by ``cli/commands/init.sh``)::
 
     python3 -m dotsteward_cli.init --dir DIR --remote URL [OPTION]...
 
-The steps, all or nothing (the instance is composed in a temporary
-directory and moved into ``--dir`` only when every step passed):
+The steps, all or nothing (the instance is composed and checked in a
+temporary directory, moved into ``--dir`` only when every step passed and
+committed there; a failed commit puts ``--dir`` back as it was):
 
 1. The target: a missing or empty ``--dir`` gets a copy of the framework's
    ``template/``; a directory that ``nix flake init -t`` filled (its
@@ -29,12 +30,13 @@ directory and moved into ``--dir`` only when every step passed):
    ``--framework-url``.
 5. ``nix flake lock``, ``dotsteward sync --nix`` and ``dotsteward pins check
    --nix`` on the composed instance.
-6. Unless ``--no-git``: ``git init -b main`` (kept when the directory is a
-   repository already), ``git add -A`` and the commit ``chore: initialize
-   dotsteward instance`` with the user's own git identity.
-7. The instance moves into ``--dir``; the next steps are printed (``--json``:
-   one JSON document on standard output, and the output of the steps goes
-   to standard error).
+6. The instance moves into ``--dir``. Unless ``--no-git``, in ``--dir``
+   itself (so git uses the identity, signing and hooks it chooses for that
+   location, as for the user's own commits): ``git init -b main`` (kept
+   when the directory is a repository already), ``git add -A`` and the
+   commit ``chore: initialize dotsteward instance``.
+7. The next steps are printed (``--json``: one JSON document on standard
+   output, and the output of the steps goes to standard error).
 
 ``init`` never prompts and never writes outside ``--dir`` (the temporary
 directory below ``TMPDIR`` is removed on every exit). Exit status 0, 1 for
@@ -60,17 +62,19 @@ import subprocess
 import sys
 import tempfile
 import tomllib
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import FrameType
-from typing import Any, NoReturn
+from typing import Any, NoReturn, TypeVar
 
 from dotsteward_cli import config
 
 PREFIX = "[dotsteward]"
 EXIT_REFUSAL = 1
 EXIT_USAGE = 2
+
+T = TypeVar("T")
 
 FRAMEWORK_ROOT = config.FRAMEWORK_ROOT
 
@@ -117,6 +121,9 @@ GIT_REPOSITORY_ENV = (
 )
 # Seconds a step's processes get to exit after SIGTERM when init stops.
 STOP_GRACE_SECONDS = 5
+# The directory inside a non-empty target that holds its previous entries
+# until the instance is in place and committed.
+PREVIOUS_PREFIX = ".dotsteward-init-previous."
 # Where a daemon or single-user Nix installation puts nix when PATH lacks it.
 NIX_PROFILE_DIRS = ("/nix/var/nix/profiles/default/bin", "~/.nix-profile/bin")
 
@@ -502,21 +509,40 @@ def resolve_identity(options: Options, env: Mapping[str, str]) -> Identity:
     return Identity(username=username, home=home, platform=platform_name)
 
 
-def require_git_identity(cwd: Path, env: Mapping[str, str]) -> None:
-    for variable in ("GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"):
+def _git_succeeds(argv: Sequence[str], cwd: Path, env: Mapping[str, str]) -> bool:
+    try:
         result = subprocess.run(
-            ["git", "-c", "user.useConfigOnly=true", "var", variable],
-            cwd=cwd,
-            env=dict(env),
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            check=False,
+            ["git", *argv], cwd=cwd, env=dict(env), stdin=subprocess.DEVNULL, capture_output=True, check=False
         )
-        if result.returncode != 0:
-            raise Refusal(
-                "git has no identity for the commit; set user.name and user.email "
-                "(git config --global), or pass --no-git"
-            )
+    except OSError as problem:
+        raise Refusal(f"git could not run: {problem.strerror}; install git, or pass --no-git") from problem
+    return result.returncode == 0
+
+
+def require_git_identity(directory: Path, env: Mapping[str, str]) -> None:
+    """Refuses before any write or Nix step when the commit in --dir would
+    have no identity. The commit itself runs in --dir, where git chooses the
+    identity by the repository's location, so this check is exact only for
+    a directory that is a repository already. Before `git init` creates one
+    an includeIf rule (or a template directory's config) may still supply
+    the identity, so then it refuses only when no such configuration
+    exists; otherwise the commit decides, and its failure leaves --dir as it
+    was."""
+    repository = (directory / ".git").is_dir()
+    cwd = directory if directory.is_dir() else directory.parent
+    if all(
+        _git_succeeds(["-c", "user.useConfigOnly=true", "var", variable], cwd, env)
+        for variable in ("GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT")
+    ):
+        return
+    if not repository and (
+        env.get("GIT_TEMPLATE_DIR")
+        or _git_succeeds(["config", "--includes", "--get-regexp", r"^(includeif\.|init\.templatedir$)"], cwd, env)
+    ):
+        return
+    raise Refusal(
+        "git has no identity for the commit; set user.name and user.email (git config --global), or pass --no-git"
+    )
 
 
 def find_nix(env: dict[str, str]) -> None:
@@ -977,45 +1003,57 @@ def _remove(path: Path) -> None:
         path.unlink()
 
 
-def place(stage: Path, target: Path, kind: str) -> None:
-    """Moves the composed instance into the target: a rename when the
+def place(stage: Path, target: Path, kind: str, finish: Callable[[Path | None], T]) -> T:
+    """Moves the composed instance into the target (a rename when the
     target is missing and on the same file system, else entry by entry with
-    the previous entries kept aside (inside the target) until every entry is
-    in place; any failure restores the target as it was."""
-    created = False
+    the previous entries kept aside inside the target), then runs finish in
+    the target with the directory holding the previous entries (None when
+    there were none). The previous entries are removed only when finish
+    returned; any failure or interruption before, in finish too, restores
+    the target as it was."""
+    created = renamed = False
     if kind == "missing":
         try:
             os.rename(stage, target)
-            return
+            renamed = True
         except OSError as problem:
             if problem.errno != errno.EXDEV:
                 raise
-        os.mkdir(target)
+            os.mkdir(target)
         created = True
     previous: Path | None = None
     moved: list[Path] = []
+    finishing = False
     try:
-        existing = sorted(target.iterdir())
-        if existing:
-            previous = Path(tempfile.mkdtemp(prefix=".dotsteward-init-previous.", dir=target))
-            for entry in existing:
-                os.rename(entry, previous / entry.name)
-        for entry in sorted(stage.iterdir()):
-            destination = target / entry.name
-            moved.append(destination)
-            shutil.move(entry, destination)
+        if not renamed:
+            existing = sorted(target.iterdir())
+            if existing:
+                previous = Path(tempfile.mkdtemp(prefix=PREVIOUS_PREFIX, dir=target))
+                for entry in existing:
+                    os.rename(entry, previous / entry.name)
+            for entry in sorted(stage.iterdir()):
+                destination = target / entry.name
+                moved.append(destination)
+                shutil.move(entry, destination)
+        finishing = True
+        result = finish(previous)
     except BaseException:
-        for destination in moved:
+        if created:
+            shutil.rmtree(target, ignore_errors=True)
+            raise
+        # Once every entry is in place, everything in the target but the
+        # previous entries is init's (finish may add more, such as .git).
+        leftovers = [entry for entry in target.iterdir() if entry != previous] if finishing else moved
+        for destination in leftovers:
             _remove(destination)
         if previous is not None:
             for entry in previous.iterdir():
                 os.rename(entry, target / entry.name)
             previous.rmdir()
-        if created:
-            shutil.rmtree(target, ignore_errors=True)
         raise
     if previous is not None:
         shutil.rmtree(previous)
+    return result
 
 
 # --- Main ---------------------------------------------------------------------------
@@ -1098,7 +1136,7 @@ def initialize(options: Options, env: dict[str, str]) -> Result:
     composed_flake, framework_url = compose_flake(flake_text, collect_inputs(seeds), options)
 
     if options.git:
-        require_git_identity(options.dir if kind != "missing" else options.dir.parent, env)
+        require_git_identity(options.dir, env)
     find_nix(env)
 
     files = {
@@ -1119,9 +1157,10 @@ def initialize(options: Options, env: dict[str, str]) -> Result:
 def build_and_place(
     options: Options, kind: str, source: Path, files: Mapping[str, str], env: Mapping[str, str]
 ) -> str | None:
-    """Steps 5 to 7 in a temporary directory: the composed instance is
-    locked, synced, checked and committed there, then moved into --dir.
-    Returns the commit (None with --no-git)."""
+    """Steps 5 and 6: the composed instance is locked, synced and checked
+    in a temporary directory, then moved into --dir and committed there; a
+    failed commit puts --dir back as it was. Returns the commit (None with
+    --no-git)."""
     temp = Path(tempfile.mkdtemp(prefix="dotsteward-init.", dir=temp_root()))
     try:
         stage = temp / "instance"
@@ -1130,9 +1169,9 @@ def build_and_place(
         for relative, text in files.items():
             (stage / relative).write_text(text, encoding="utf-8")
 
-        step_env = {key: value for key, value in env.items() if key not in STEP_ENV_REMOVED}
+        dir_env = {key: value for key, value in env.items() if key not in STEP_ENV_REMOVED}
         # git never looks above the temporary directory for a repository.
-        step_env["GIT_CEILING_DIRECTORIES"] = str(temp)
+        step_env = {**dir_env, "GIT_CEILING_DIRECTORIES": str(temp)}
         is_repository = (stage / ".git").exists()
         if is_repository:
             # In a repository Nix sees only the files git knows.
@@ -1154,23 +1193,28 @@ def build_and_place(
             options.json,
         )
 
-        commit = None
-        if options.git:
+        def commit_in_place(previous: Path | None) -> str | None:
+            # In --dir itself: git chooses the identity, signing and hooks
+            # by the repository's location, as for the user's own commits.
+            if not options.git:
+                return None
             if not is_repository:
-                git_output(["init", "-q", "-b", BRANCH], stage, step_env)
-            git_output(["add", "-A"], stage, step_env)
+                git_output(["init", "-q", "-b", BRANCH], options.dir, dir_env)
+            pathspec = ["--", "."]
+            if previous is not None:
+                pathspec.append(f":(exclude,literal){previous.name}")
+            git_output(["add", "-A", *pathspec], options.dir, dir_env)
             run_step(
                 "git commit",
                 ["git", "-c", "user.useConfigOnly=true", "commit", "-q", "-m", COMMIT_SUBJECT],
-                stage,
-                step_env,
+                options.dir,
+                dir_env,
                 options.json,
                 own_session=False,
             )
-            commit = git_output(["rev-parse", "HEAD"], stage, step_env)
+            return git_output(["rev-parse", "HEAD"], options.dir, dir_env)
 
-        place(stage, options.dir, kind)
-        return commit
+        return place(stage, options.dir, kind, commit_in_place)
     finally:
         remove_temp_dir(temp)
 
