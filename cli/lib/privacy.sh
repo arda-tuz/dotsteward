@@ -111,14 +111,27 @@ _ds_privacy_trim() {
   printf '%s' "$text"
 }
 
-# _ds_privacy_glob_ere GLOB: prints an anchored ERE for a path glob. "**/"
-# matches any number of leading directories, "/**" everything below, "*" and
-# "?" stay within one path segment.
+# _ds_privacy_glob_ere GLOB: prints an anchored ERE for a glob over a
+# repository-relative path, in the glob mode of the loaded policy
+# (_DS_PRIVACY_GLOB_MODE):
+#   path  (the framework policy) "**/" matches any number of leading
+#         directories, "/**" everything below, "*" and "?" stay within one
+#         path segment;
+#   case  (an instance policy) the semantics of a shell `case` pattern: "*"
+#         matches any characters, "/" included, "?" any one character.
+# Every other character matches itself.
 _ds_privacy_glob_ere() {
   local glob=$1 out="" i c
   for ((i = 0; i < ${#glob}; i++)); do
     c=${glob:i:1}
-    if [[ ${glob:i:3} == "**/" ]]; then
+    if [[ $_DS_PRIVACY_GLOB_MODE == case ]]; then
+      case $c in
+        '*') ((i > 0)) && [[ ${glob:i-1:1} == '*' ]] || out+=".*" ;;
+        '?') out+="." ;;
+        '.' | '^' | '$' | '+' | '(' | ')' | '{' | '}' | '|' | '[' | ']' | "\\") out+="\\$c" ;;
+        *) out+=$c ;;
+      esac
+    elif [[ ${glob:i:3} == "**/" ]]; then
       out+="(.*/)?"
       i=$((i + 2))
     elif [[ ${glob:i:2} == "**" ]]; then
@@ -476,6 +489,7 @@ ds_privacy_load_policy() {
     return 1
   }
   _ds_toml_load "$file" || return 1
+  _DS_PRIVACY_GLOB_MODE=path
 
   # key:type:required, in the order errors are reported.
   local -a specs=(
@@ -562,8 +576,11 @@ ds_privacy_load_policy() {
 # The policy of an instance scan (SPEC 11.2): the generic secret rules only.
 # Home paths, e-mail addresses, private IPv4 addresses, non-ASCII text and
 # the commit rules do not apply (instance content is personal by design);
-# forbidden paths and file rules start empty. Loaded term tables are kept.
+# forbidden paths and file rules start empty and their globs have shell
+# `case` semantics ("*" also matches "/"), the semantics of the owner checks
+# they replace. Loaded term tables are kept.
 ds_privacy_load_instance_policy() {
+  _DS_PRIVACY_GLOB_MODE=case
   # shellcheck disable=SC2034 # read by callers of the library
   DS_PRIVACY_POLICY_FILE=""
   DS_PRIVACY_GENERIC_SECRETS=1
@@ -1318,7 +1335,9 @@ ds_privacy_report() {
   done < <(LC_ALL=C sort -t $'\037' -k1,1n -k2,2n -k3,3 "$_DS_PRIVACY_WORK/findings")
 }
 
-# Term tables and file rules start empty when the library is sourced.
+# Term tables and file rules start empty when the library is sourced; globs
+# have path semantics until a policy is loaded.
+_DS_PRIVACY_GLOB_MODE=path
 _DS_FILE_RULE_MESSAGE=()
 _DS_FILE_RULE_PATTERN=()
 _DS_FILE_RULE_GLOBS=()

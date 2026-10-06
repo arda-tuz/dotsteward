@@ -416,6 +416,7 @@
       "type": "object",
       "properties": {
         "forbidden_paths": {
+          "description": "Globs of repository-relative paths an instance never tracks, with shell case semantics: '*' matches any characters including '/', '?' any one character.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/nonEmptyString"
@@ -428,6 +429,7 @@
             "type": "object",
             "properties": {
               "files": {
+                "description": "Globs of the repository-relative paths the rule applies to, with shell case semantics: '*' matches any characters including '/', '?' any one character.",
                 "type": "array",
                 "items": {
                   "$ref": "#/$defs/nonEmptyString"
