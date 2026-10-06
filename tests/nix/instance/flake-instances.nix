@@ -6,7 +6,10 @@
 # nixpkgs and home-manager, and an instance root that is a store path string
 # like inputs.self of an instance flake.
 #
-#   instance { root ? "example" | "minimal", case ? null, inputs ? { }, ... }
+#   instance { root ? "example" | "minimal" | ROOT, case ? null, inputs ? { },
+#              ... }        ROOT: any other instance root, such as a
+#                           derivation (a fixture copy with generated files)
+#   roots.<name>            the fixture roots as store path strings
 #   minimal, example
 {
   self,
@@ -30,7 +33,8 @@ let
   instance =
     args:
     let
-      root = roots.${args.root or "example"};
+      given = args.root or "example";
+      root = if lib.isString given && roots ? ${given} then roots.${given} else "${given}";
       caseConfig = lib.optionalAttrs ((args.case or null) != null) {
         config = ./fixtures/cases + "/${args.case}.toml";
       };
@@ -48,7 +52,7 @@ let
     );
 in
 {
-  inherit instance;
+  inherit instance roots;
   minimal = instance { root = "minimal"; };
   example = instance { };
 }

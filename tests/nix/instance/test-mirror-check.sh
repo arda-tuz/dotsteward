@@ -16,7 +16,7 @@ assert_inst_fails "($inst).checks.x86_64-linux.dotsteward-manifest.drvPath" \
 
 # Fresh mirrors pass on every system.
 write_mirrors "$inst" "$copy"
-assert_eq '["manifest.aarch64-darwin.json","manifest.x86_64-linux.json","stage0.darwin.env","stage0.linux.env"]' \
+assert_eq '["cli.sh","manifest.aarch64-darwin.json","manifest.x86_64-linux.json","stage0.darwin.env","stage0.linux.env"]' \
   "$(cd "$copy/.dotsteward" && printf '%s\n' * | jq -Rsc 'split("\n") | map(select(. != ""))')" "written mirrors"
 assert_inst_eq '{"linux":"dotsteward-manifest","darwin":"dotsteward-manifest"}' \
   "let i = $inst; in {

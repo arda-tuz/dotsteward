@@ -5,7 +5,12 @@
 # (string roots, the framework's own inputs) and their checks are built:
 # Home Manager activation packages, the package check, instance-static and
 # manifest-consistent, so the outputs are proven buildable, not only
-# evaluable.
+# evaluable. The example fixture with its rendered .dotsteward/ mirrors (what
+# `dotsteward sync` writes) is a complete instance: its dotsteward-manifest
+# and instance-contract checks are built and pass, and the same instance with
+# a shell file ShellCheck reports fails instance-contract on that finding
+# alone. Those roots are derivations, so evaluating their instances imports
+# from a derivation; only this framework check does that.
 {
   self,
   pkgs,
@@ -43,6 +48,30 @@ let
   inherit (fixtures) minimal example;
 
   linux = example.checks.x86_64-linux;
+
+  # The example fixture plus its current mirrors.
+  completeRoot = pkgs.runCommand "dotsteward-example-instance" { } ''
+    cp -R ${fixtures.roots.example} "$out"
+    chmod -R u+w "$out"
+    mkdir -p "$out/.dotsteward"
+    ${lib.concatStrings (
+      lib.mapAttrsToList (name: text: ''
+        cp ${pkgs.writeText name text} "$out/.dotsteward/${name}"
+      '') example.dotstewardMirrors
+    )}
+  '';
+  complete = (fixtures.instance { root = completeRoot; }).checks.x86_64-linux;
+
+  # The complete instance with one ShellCheck finding (SC2086).
+  lintRoot = pkgs.runCommand "dotsteward-example-instance-lint" { } ''
+    cp -R ${completeRoot} "$out"
+    chmod -R u+w "$out"
+    printf '%s\n' '#!/usr/bin/env bash' 'echo $1' >"$out/lint-finding.sh"
+    chmod +x "$out/lint-finding.sh"
+  '';
+  lintFailure =
+    pkgs.testers.testBuildFailure
+      (fixtures.instance { root = lintRoot; }).checks.x86_64-linux.instance-contract;
 in
 cli.mkTestCheck {
   name = "nix-instance";
@@ -73,5 +102,17 @@ cli.mkTestCheck {
       fail "local-maintained-files"
     [[ -e ${linux.instance-static} && -e ${linux.manifest-consistent} ]] || fail "instance checks"
     [[ -e ${minimal.checks.x86_64-linux.instance-static} ]] || fail "minimal instance-static"
+    # The complete instance passes every contract step; the targets file
+    # carries the component targets the buffer's entries refer to.
+    [[ -e ${complete.dotsteward-manifest} && -e ${complete.instance-contract} ]] ||
+      fail "complete instance checks"
+    jq -e '.targets["example-app"].component == "example-app"' \
+      ${complete.instance-contract.targetsFile} >/dev/null ||
+      fail "the contract's targets file lacks the example-app target"
+    # A ShellCheck finding fails the contract, and nothing else does.
+    log=${lintFailure}/testBuildFailure.log
+    grep -q 'SC2086' "$log" || fail "no ShellCheck finding in the lint contract log"
+    grep -qx '.*static checks failed (instance): shell' "$log" ||
+      fail "the lint contract did not fail on the shell check alone"
   '';
 }
