@@ -1,0 +1,15 @@
+# Synthetic instance for the probe registry tests: two profiles, the check
+# profile is the default ("main"); the lock files sit at their default paths.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main", "work"]
