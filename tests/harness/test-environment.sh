@@ -61,3 +61,19 @@ assert_eq "$DS_TEST_ROOT/calls.log" "$DS_CALL_LOG"
 INNER
 assert_exit 0 env DS_EXAMPLE_INPUT=kept DS_CALL_LOG=/nonexistent bash "$DS_REPO_ROOT/tests/run.sh" "$inner"
 assert_contains "$DS_STDOUT" "PASS"
+
+# Host credentials never reach a test: without the SSH agent and the GitHub
+# CLI tokens, a test that forgets the fake SSH transport or the gh stub fails
+# instead of reaching the real remote with the owner's identity.
+inner=$TMPDIR/inner/test-host-credentials.sh
+cat >"$inner" <<'INNER'
+# shellcheck shell=bash
+for name in SSH_AUTH_SOCK SSH_AGENT_PID GH_TOKEN GITHUB_TOKEN \
+  GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_CONFIG_DIR; do
+  [[ -z ${!name+x} ]] || ds_fail "$name leaked into the test"
+done
+INNER
+assert_exit 0 env SSH_AUTH_SOCK=/nonexistent SSH_AGENT_PID=1 GH_TOKEN=x \
+  GITHUB_TOKEN=x GH_ENTERPRISE_TOKEN=x GITHUB_ENTERPRISE_TOKEN=x GH_HOST=x \
+  GH_CONFIG_DIR=/nonexistent bash "$DS_REPO_ROOT/tests/run.sh" "$inner"
+assert_contains "$DS_STDOUT" "PASS"
