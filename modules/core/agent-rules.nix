@@ -24,9 +24,11 @@ let
   # ("${self}"), which Home Manager would link as is, into the whole
   # instance source: every commit of the instance would then change the
   # generation. The name is the one Home Manager gives a path source, so a
-  # path root yields the same store path.
+  # path root yields the same store path. A missing file has no store copy:
+  # the manifest names no source then, and the assertion below fails only
+  # when a target needs the file.
   storePath =
-    if source == null then
+    if source == null || !(builtins.pathExists source) then
       null
     else
       builtins.path {
@@ -53,25 +55,28 @@ in
       internal = true;
       description = ''
         The store file every agent rules target links to (the manifest's
-        agent_rules.source, which E2E compares byte for byte).
+        agent_rules.source, which E2E compares byte for byte); null when
+        there is no source or the source file does not exist.
       '';
     };
   };
 
   config = lib.mkIf (source != null) {
-    home.file = lib.listToAttrs (
-      map (
-        target:
-        lib.nameValuePair target.path {
-          source = storePath;
-          inherit (target) force;
-        }
-      ) targets
+    home.file = lib.mkIf (storePath != null) (
+      lib.listToAttrs (
+        map (
+          target:
+          lib.nameValuePair target.path {
+            source = storePath;
+            inherit (target) force;
+          }
+        ) targets
+      )
     );
 
     assertions = [
       {
-        assertion = targets == [ ] || builtins.pathExists source;
+        assertion = targets == [ ] || storePath != null;
         message = "dotsteward: agent rules source ${toString source} does not exist";
       }
     ];
