@@ -63,9 +63,11 @@ def compare_rows(requests: list[Request], upstream: Upstream) -> list[Row]:
         data: dict[str, Any] = {"files": [], "ahead_by": 0}
     else:
         data = upstream.gh_json(f"repos/{repo}/compare/{revision}...{head}")
-        if not isinstance(data, dict) or not isinstance(data.get("files", []), list):
+        if not isinstance(data, dict) or not isinstance(data.get("files"), list):
             raise UpstreamError(f"the compare of {repo} has no file list")
-    files = [entry["filename"] for entry in data.get("files", []) if isinstance(entry, dict) and "filename" in entry]
+        if not all(isinstance(entry, dict) and isinstance(entry.get("filename"), str) for entry in data["files"]):
+            raise UpstreamError(f"the compare of {repo} lists a file without a name")
+    files = [entry["filename"] for entry in data["files"]]
     truncated = len(files) >= FILES_LIMIT
     rows = []
     for request in requests:
