@@ -13,6 +13,67 @@ assert_eq "KEY=value" "$(<"$DS_SYSTEM_ROOT/etc/default/example-app")"
 assert_file_mode "$DS_SYSTEM_ROOT/etc/default/example-app" 0644
 [[ ! -e /etc/default/example-app ]] || ds_fail "the real system path was written"
 
+# The test user cannot hand a file to root, so install's ownership options
+# are dropped before the command runs; the call log keeps them, and the mode
+# and every other option still apply.
+src=$TMPDIR/default-file
+: >"$DS_CALL_LOG"
+sudo install -o root -g root -m 0644 "$src" /etc/shells
+assert_eq "KEY=value" "$(<"$DS_SYSTEM_ROOT/etc/shells")"
+assert_file_mode "$DS_SYSTEM_ROOT/etc/shells" 0644
+sudo install -D -o root -g root -m 0644 "$src" /etc/default/new-dir/example-app
+assert_eq "KEY=value" "$(<"$DS_SYSTEM_ROOT/etc/default/new-dir/example-app")"
+assert_file_mode "$DS_SYSTEM_ROOT/etc/default/new-dir/example-app" 0644
+assert_calls "sudo install -o root -g root -m 0644 $(printf %q "$src") /etc/shells" \
+  "sudo install -D -o root -g root -m 0644 $(printf %q "$src") /etc/default/new-dir/example-app"
+
+# Every spelling of the ownership options: separate, attached, long, long
+# with "=", inside a cluster with the value next or attached, by full path,
+# and after the operands.
+sudo install -Do root -g root -m 0600 "$src" /etc/default/spelled/one
+assert_file_mode "$DS_SYSTEM_ROOT/etc/default/spelled/one" 0600
+sudo install -Doroot -groot -m0640 "$src" /etc/default/spelled/two
+assert_file_mode "$DS_SYSTEM_ROOT/etc/default/spelled/two" 0640
+sudo install --owner root --group=root --mode=0604 -D "$src" /etc/default/spelled/three
+assert_file_mode "$DS_SYSTEM_ROOT/etc/default/spelled/three" 0604
+sudo install --owner=root --group root -Dm 0644 "$src" /etc/default/spelled/four
+assert_file_mode "$DS_SYSTEM_ROOT/etc/default/spelled/four" 0644
+sudo "$(command -v install)" -vDgroot -o root "$src" /etc/default/spelled/five >/dev/null
+assert_eq "KEY=value" "$(<"$DS_SYSTEM_ROOT/etc/default/spelled/five")"
+sudo install -m 0644 "$src" /etc/default/spelled/six -o root -g root
+assert_file_mode "$DS_SYSTEM_ROOT/etc/default/spelled/six" 0644
+
+# Directories and target directories work the same way.
+sudo install -d -o root -g root -m 0750 /etc/example-app/conf.d
+assert_file_mode "$DS_SYSTEM_ROOT/etc/example-app/conf.d" 0750
+sudo install -o root -g root -m 0644 -t /etc/example-app/conf.d "$src"
+assert_file_mode "$DS_SYSTEM_ROOT/etc/example-app/conf.d/default-file" 0644
+
+# After "--" every word is an operand and is passed on unchanged; a missing
+# option value is left for install to report.
+assert_exit 1 sudo install -m 0644 -- "$src" -o /etc/default/spelled/seven
+assert_exit 1 sudo install -m 0644 "$src" /etc/default/spelled/eight -o
+assert_contains "$DS_STDERR" "option requires an argument"
+
+# chown and chgrp change nothing and succeed when every file exists below
+# the fixture root; a missing file or operand fails like the real tools.
+: >"$DS_CALL_LOG"
+mtime=$(stat -c %Y:%Z "$DS_SYSTEM_ROOT/etc/shells")
+assert_exit 0 sudo chown root:root /etc/shells
+assert_exit 0 sudo chown -R -h --from=0 root /etc/example-app /etc/default/spelled/one
+assert_exit 0 sudo chown --reference=/etc/shells -- /etc/default/new-dir/example-app
+assert_exit 0 sudo /usr/bin/chgrp -R root /etc/example-app
+assert_eq "$mtime" "$(stat -c %Y:%Z "$DS_SYSTEM_ROOT/etc/shells")"
+assert_eq 4 "$(ds_call_count sudo)"
+assert_exit 1 sudo chown root:root /etc/missing-file
+assert_contains "$DS_STDERR" "chown: cannot access '/etc/missing-file': No such file or directory"
+assert_exit 1 sudo chgrp root /etc/shells /etc/missing-file
+assert_contains "$DS_STDERR" "chgrp: cannot access '/etc/missing-file'"
+assert_exit 1 sudo chown --reference=/etc/missing-file /etc/shells
+assert_contains "$DS_STDERR" "/etc/missing-file"
+assert_exit 1 sudo chown root
+assert_contains "$DS_STDERR" "chown: missing operand"
+
 # Options of sudo itself are recorded but not passed on; NAME=value sets the
 # environment of the command; "--" ends the options.
 : >"$DS_CALL_LOG"
