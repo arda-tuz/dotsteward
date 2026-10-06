@@ -518,11 +518,14 @@ let
       // {
         dotsteward-manifest = mirrorCheck system;
         manifest-consistent = consistency system;
+        # The scripts run as `dotsteward static` runs them, with the
+        # environment they are documented to get (DOTSTEWARD_INSTANCE_ROOT,
+        # DOTSTEWARD_SANDBOX=1 and the fail helper).
         instance-static = instanceCheck system "instance-static" { } (
-          lib.concatMapStrings (script: ''
-            echo "[dotsteward] instance static: ${script}"
-            bash ${lib.escapeShellArg "./${script}"}
-          '') staticScripts
+          lib.optionalString (staticScripts != [ ]) ''
+            echo "[dotsteward] instance static: ${lib.concatStringsSep " " staticScripts}"
+            dotsteward static --sandbox --only scripts
+          ''
         );
         instance-contract = contract system;
       };

@@ -1,0 +1,44 @@
+# dotsteward:template
+#
+# The instance configuration (schema 1). This is the template skeleton:
+# `dotsteward init` replaces the placeholder identity and remote, sets the
+# systems, profiles and components you choose and removes the marker line
+# above. The framework documents every key in docs/workstation-toml.md and
+# schema/workstation.schema.json of its repository.
+schema_version = 1
+
+# The check identity: sandbox builds, homeConfigurations.<username> and the
+# gate. Activation always uses the user who runs it ($USER and $HOME).
+[identity]
+username = "user"
+
+[instance]
+name = "workstation"
+# Exactly what `git remote get-url origin` prints in your clone.
+remote = "git@github.com:user/workstation.git"
+# Where the canonical clone lives on every machine.
+checkout = "~/workstation"
+
+[nix]
+# The first system is the primary one; add "aarch64-darwin" for a Mac.
+systems = ["x86_64-linux"]
+allow_unfree = false
+state_version = "26.05"
+
+# Profiles: adopt manages your files on a machine that is already set up;
+# fresh also installs system packages on a new machine (bootstrap.sh).
+[profiles]
+names = ["workstation", "fresh"]
+default = "workstation"
+check = "workstation"
+bootstrap = "fresh"
+
+[profiles.workstation]
+mode = "adopt"
+
+[profiles.fresh]
+mode = "fresh"
+
+# Components: one [components.<name>] table each, with enable = true, for the
+# catalog (shell, herdr, claude-code, codex, opencode-pi, vscode) and for
+# your own components in components/<name>/.

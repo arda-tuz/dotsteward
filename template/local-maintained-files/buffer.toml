@@ -1,0 +1,6 @@
+# Local maintained files: application settings this instance carries across
+# machines, one entry per tracked key or file. `dotsteward settings track`
+# adds an entry, `dotsteward settings flush` writes local changes here and
+# `dotsteward settings apply` (run by rebuild) writes them to the machine.
+# Edit entries through those commands; whole files live in files/.
+schema_version = 1

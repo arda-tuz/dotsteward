@@ -13,7 +13,7 @@ source "$DS_REPO_ROOT/tests/nix/instance/helpers.sh"
 assert_inst_eq '{"name":"instance-static","script":true,"instance":true}' \
   'let c = example.checks.x86_64-linux.instance-static; in {
     inherit (c) name;
-    script = lib.hasInfix "bash ./tests/static.sh" c.buildCommand;
+    script = lib.hasInfix "dotsteward static --sandbox --only scripts" c.buildCommand;
     instance = lib.hasInfix "DOTSTEWARD_INSTANCE=" c.buildCommand;
   }' "instance-static"
 assert_inst_eq 'false' \

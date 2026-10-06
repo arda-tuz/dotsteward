@@ -5,9 +5,8 @@
 # Usage: tests/ci/install-nix.sh [--download-only DIR]
 #
 # The pin (version, installer URL, size and sha256) is the "nix" section of
-# template/versions.lock.json. Until the template exists, the bootstrap pin
-# embedded below is used and the script says so. The installer script is
-# downloaded over HTTPS, its size and sha256 are checked, and only then is it
+# template/versions.lock.json, the pin every new instance starts from. The
+# installer script is downloaded over HTTPS, its size and sha256 are checked, and only then is it
 # run; it verifies the Nix release tarball it fetches against the hash it
 # carries. Flakes and the nix command are enabled. On GitHub Actions the Nix
 # profile is added to GITHUB_PATH and NIX_SSL_CERT_FILE to GITHUB_ENV.
@@ -52,20 +51,12 @@ done
 framework_root=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 lock=$framework_root/template/versions.lock.json
 
-if [[ -f $lock ]]; then
-  command -v jq >/dev/null 2>&1 || die "jq is required to read template/versions.lock.json"
-  pin=$(jq -er '.nix | [.version, .installer_url, (.installer_size | tostring), .installer_sha256] | @tsv' "$lock") ||
-    die "template/versions.lock.json has no complete nix section"
-  IFS=$'\t' read -r version url size sha256 <<<"$pin"
-  log "pin from template/versions.lock.json: Nix $version"
-else
-  # Bootstrap pin, used only while template/versions.lock.json does not exist.
-  version=2.35.2
-  url=https://releases.nixos.org/nix/nix-2.35.2/install
-  size=4499
-  sha256=9adda97297d9e8ab360df95c729eabff4f4f93d6db091953c3a68f29e3fb130c
-  log "template/versions.lock.json does not exist yet; using the bootstrap pin Nix $version"
-fi
+[[ -f $lock ]] || die "template/versions.lock.json is missing"
+command -v jq >/dev/null 2>&1 || die "jq is required to read template/versions.lock.json"
+pin=$(jq -er '.nix | [.version, .installer_url, (.installer_size | tostring), .installer_sha256] | @tsv' "$lock") ||
+  die "template/versions.lock.json has no complete nix section"
+IFS=$'\t' read -r version url size sha256 <<<"$pin"
+log "pin from template/versions.lock.json: Nix $version"
 [[ $version =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || die "invalid pinned Nix version"
 [[ $url == https://* && $url != *[[:space:]]* ]] || die "the pinned installer URL must be https"
 [[ $size =~ ^[1-9][0-9]*$ ]] || die "invalid pinned installer size"

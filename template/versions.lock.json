@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-10-06T00:00:00+00:00",
+  "policy": {
+    "official_sources_only": true,
+    "persistent_agentic_updates": false,
+    "scheduled_repository_updates": false,
+    "native_application_updates": true,
+    "major_version_review_required": true
+  },
+  "nix": {
+    "version": "2.35.2",
+    "installer_url": "https://releases.nixos.org/nix/nix-2.35.2/install",
+    "installer_size": 4499,
+    "installer_sha256": "9adda97297d9e8ab360df95c729eabff4f4f93d6db091953c3a68f29e3fb130c"
+  },
+  "flake_inputs": {
+    "nixpkgs": {
+      "reference": "github:NixOS/nixpkgs/774debe7a0d1b496e35677ad955a1011c6ff74f3",
+      "channel": "nixos-26.05",
+      "revision": "774debe7a0d1b496e35677ad955a1011c6ff74f3"
+    },
+    "home-manager": {
+      "reference": "github:nix-community/home-manager/db7d5e2332710f5abb088f6b5de927d7f9511b35",
+      "channel": "release-26.05",
+      "revision": "db7d5e2332710f5abb088f6b5de927d7f9511b35"
+    }
+  },
+  "nix_packages": {}
+}

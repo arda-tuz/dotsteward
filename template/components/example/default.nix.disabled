@@ -1,0 +1,234 @@
+# An annotated example of a private component: example-term, a synthetic
+# terminal tool released as one archive per platform on GitHub. It sets
+# every field of the component contract, most of them empty, so it doubles
+# as a reference; components/README.md explains how to enable it and
+# docs/writing-components.md and docs/component-contract.md of the framework
+# repository describe each field.
+#
+# The .disabled suffix keeps this file out of the instance: lib.mkInstance
+# imports components/<name>/default.nix for every [components.<name>] table
+# with enable = true, and nothing else.
+#
+# A component is a Home Manager module. Besides the Home Manager arguments it
+# receives profile, username, homeDirectory, packages (the instance package
+# set, including the attributes of components/<name>/package.nix), pins
+# (versions.lock.json), inputs (the flake inputs) and dotsteward (cfg, the
+# resolved workstation.toml; system; lib, the dotsteward library).
+{
+  config,
+  lib,
+  profile,
+  dotsteward,
+  ...
+}:
+let
+  name = "example-term";
+  # What mkInstance resolved from [components.example-term]: enable,
+  # profiles, options and the method.
+  component = config.dotsteward.components.${name};
+  active = component.profiles == null || lib.elem profile component.profiles;
+
+  # The platforms of the instance (from [nix] systems): every system's
+  # manifest declares the pin rules of all of them, as one lock serves
+  # every system.
+  platforms = lib.unique (map dotsteward.lib.platform.platformOf dotsteward.cfg.nix.systems);
+  platform = dotsteward.lib.platform.platformOf dotsteward.system;
+
+  # The official releases: tag v<version>, one archive per platform.
+  repo = "example-org/example-term";
+  assets = {
+    linux = "example-term-x86_64-linux.tar.gz";
+    darwin = "example-term-aarch64-darwin.tar.gz";
+  };
+  # versions.lock.json keeps one release pin per platform: version, url,
+  # size and sha256 (see components/README.md).
+  pinOf = platformName: "agent_tools.${name}.${platformName}";
+in
+{
+  dotsteward.components.${name} = {
+    # --- methods ---------------------------------------------------------------
+
+    # The default method; [components.example-term] method or
+    # method_by_platform choose another supported one.
+    method = lib.mkDefault "official-binary";
+    platforms = [
+      "linux"
+      "darwin"
+    ];
+    supportedMethods = {
+      linux = [
+        "official-binary"
+        "external"
+      ];
+      darwin = [
+        "official-binary"
+        "external"
+      ];
+    };
+
+    # One block per supported method; only the block of the resolved method
+    # is used. Other blocks: nix = { packages = [ packages.example-term ]; }
+    # with the package in components/example-term/package.nix;
+    # deb = { pin; packageNames; apt; } (Linux system packages);
+    # app-archive = { pin; appName; } (macOS application bundles).
+    install = {
+      official-binary = {
+        pin = pinOf platform;
+        asset = assets;
+        member = "example-term";
+        dest = "~/.local/bin/example-term";
+        versionArgv = [ "--version" ];
+        versionRegex = "^example-term ([0-9]+([.][0-9]+)+)";
+        # at-least keeps a newer binary the tool updated itself to.
+        policy = "at-least";
+        verify = "sha256";
+      };
+      external = {
+        command = "example-term";
+        versionArgv = [ "--version" ];
+        minimum = null;
+      };
+    };
+
+    # --- pins ----------------------------------------------------------------------
+
+    pins = {
+      # Checked by `dotsteward pins check` against versions.lock.json.
+      rules = map (platformName: {
+        kind = "download-pin";
+        name = "release-${platformName}";
+        at = pinOf platformName;
+        url_contains = "https://github.com/${repo}/releases/download/v{.version}/${assets.${platformName}}";
+      }) platforms;
+      # Researched by `dotsteward pins latest` (dotsteward-update).
+      latest = map (platformName: {
+        id = pinOf platformName;
+        adapter = "github-release";
+        inherit repo;
+        tag_prefix = "v";
+        at = pinOf platformName;
+        asset = assets.${platformName};
+      }) platforms;
+      # Versions of packages this component installs with Nix, for
+      # lib.pinnedVersions (and nix_packages of versions.lock.json).
+      resolvedVersions = { };
+      # Flake inputs of the instance this component needs.
+      flakeInputs = [ ];
+    };
+
+    # --- settings ------------------------------------------------------------------
+
+    # Files the settings engine (`dotsteward settings`) may write tracked
+    # keys to.
+    settingsTargets.${name} = {
+      path = {
+        linux = "~/.config/example-term/config.toml";
+        darwin = "~/Library/Application Support/example-term/config.toml";
+      };
+      format = "toml";
+      createIfMissing = true;
+      createMode = "0644";
+      backup = true;
+      reload = "example-term-reload";
+    };
+    # Run after the engine changed a target; skipped when the command is
+    # missing.
+    reloadHooks.example-term-reload = {
+      command = [
+        "example-term"
+        "reload-config"
+      ];
+      timeout = 15;
+      requireCommand = "example-term";
+      onSuccess = "log";
+      onFailure = "warn";
+    };
+
+    # --- checks --------------------------------------------------------------------
+
+    # Probes run against a built generation (the gate's cli-probes step), so
+    # they fit commands the nix method installs; this component installs
+    # its command outside Nix and declares none. Example:
+    #   { command = "example-term"; kind = "version"; extract = "field:example-term"; }
+    probes = [ ];
+    checks = {
+      # Commands `dotsteward e2e` requires after activation.
+      commands = [ "example-term" ];
+      # Scripts in this directory, run with the hook environment, for
+      # example { name = "config"; script = ./e2e-config.sh; phase = "main"; }.
+      e2e = [ ];
+      agents = [ ];
+      # Minimum versions of commands the user installs (external method).
+      floors = [ ];
+    };
+
+    # --- hooks ---------------------------------------------------------------------
+
+    # Scripts in this directory, run with the hook environment at each phase:
+    # { name = "..."; script = ./hook.sh; profiles = null; }.
+    hooks = {
+      preActivate = [ ];
+      systemInstall = [ ];
+      postInstall = [ ];
+      forbid = [ ];
+      agentsInstall = [ ];
+      agentsMigrate = [ ];
+      agentsPost = [ ];
+      desktopApply = [ ];
+    };
+
+    # --- bootstrap, rebuild and rollback ---------------------------------------------
+
+    bootstrap = {
+      # Backed up by bootstrap.sh before anything is installed.
+      backupPaths = [
+        "~/.config/example-term/config.toml"
+        "~/.example-term/AGENTS.md"
+      ];
+      # Command output saved with the backups, when the command exists.
+      snapshots = [
+        {
+          name = "example-term-version";
+          argv = [
+            "example-term"
+            "--version"
+          ];
+          requireCommand = "example-term";
+        }
+      ];
+      # apt packages bootstrap.sh installs before Nix (Linux).
+      prerequisites.apt = [ ];
+    };
+    # Existing files rebuild moves aside so Home Manager can link them.
+    rebuild.adoptPaths = [ ];
+    rollback = {
+      # Home Manager links rollback removes.
+      managedLinks = [ "~/.example-term/AGENTS.md" ];
+      # Files restored as regular files from their newest backup.
+      forceLinkedRestore = [ ];
+    };
+
+    # --- preflight, skills, agent rules, gate, docs ---------------------------------
+
+    # Detectors [platform.linux.fast_path] detectors may name.
+    preflight.detectors = { };
+    skillLayout = {
+      legacyRoots = [ ];
+      linkRoots = { };
+      excludedSubtrees = [ ];
+    };
+    # home/AGENTS.md is linked here (relative to the home directory).
+    agentRulesTargets = [ { path = ".example-term/AGENTS.md"; } ];
+    # Extended regular expressions of paths the update scope may change.
+    gate.updatePaths = [ ];
+    # A README.md next to this file: docs = ./README.md;
+    docs = null;
+  };
+
+  # Ordinary Home Manager settings. Files may depend on the profile and on
+  # [components.example-term] options; contract values above never depend on
+  # the profile (scope the component with its profiles field instead).
+  home.file.".example-term/greeting" = lib.mkIf (active && component.options ? greeting) {
+    text = component.options.greeting + "\n";
+  };
+}

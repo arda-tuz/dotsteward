@@ -29,7 +29,7 @@
 #                  committed manifest mirrors) matches the settings buffer
 #   protected      byte-protected files keep their sha256 ([protected])
 #   overlays       declared overlay files exist; agent/overlays holds only
-#                  overlays of framework skills
+#                  overlays of framework skills (and its README.md)
 #   privacy        the privacy scan with the instance policy: generic secret
 #                  rules, [privacy] forbidden_paths and file_rules, and the
 #                  [privacy] denylist outside the sandbox
@@ -518,6 +518,8 @@ check_overlays() {
   for file in "$root"/agent/overlays/*; do
     [[ -e $file || -L $file ]] || continue
     name=${file##*/}
+    # README.md documents the directory (the template ships one).
+    [[ $name != README.md ]] || continue
     if [[ $name != *.md || -z ${framework_skills[${name%.md}]:-} ]]; then
       fail "agent/overlays/$name: ${name%.md} is not a framework skill"
     fi

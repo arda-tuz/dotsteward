@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-10-06T00:00:00Z",
+  "expected_skill_count": 0,
+  "layout": {
+    "canonical_user_directory": "~/.agents/skills"
+  },
+  "skills": []
+}

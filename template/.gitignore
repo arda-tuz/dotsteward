@@ -1,0 +1,10 @@
+# Nix build results
+result
+result-*
+.direnv/
+# Python bytecode
+__pycache__/
+*.pyc
+# Local environment files
+.env
+.env.*
