@@ -1,6 +1,6 @@
 schema_version = 1
 generic_secrets = true                     # private keys, cloud and forge tokens, credential assignments
-home_paths = { enabled = true, allow_users = ["alice", "dotsteward-test", "runner", "user", "example"], allow_paths = ["/homeless-shelter"] }
+home_paths = { enabled = true, allow_users = ["alice", "dotsteward-test", "runner", "user", "example", "other"], allow_paths = ["/homeless-shelter"] }
 emails = { enabled = true, allow_domains = ["example.invalid", "example.com", "example.org", "users.noreply.github.com"], allow_exact = ["git@github.com", "noreply@github.com"] }
 private_ipv4 = true
 non_ascii = { enabled = true, except_files = [] }   # language-neutral: any byte >= 0x80 in text files

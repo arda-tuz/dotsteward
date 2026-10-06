@@ -49,7 +49,7 @@ _DS_PRIVACY_SECRET_RULES=(
   secret-sk-key 'sk-[A-Za-z0-9]{20,}'
   secret-assignment "(password|passwd|api[_-]?key|access[_-]?token)[[:space:]]*[:=][[:space:]]*[^[:space:]\"']+"
 )
-_DS_PRIVACY_HOME_PATTERN='(^|[^A-Za-z0-9._~-])/(home|Users)/[A-Za-z0-9._-]+'
+_DS_PRIVACY_HOME_PATTERN='(^|[^A-Za-z0-9._~})-])/(home|Users)/[A-Za-z0-9._-]+'
 _DS_PRIVACY_EMAIL_PATTERN='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
 _DS_PRIVACY_IPV4_PATTERN='(^|[^0-9.])(10(\.[0-9]{1,3}){3}|172\.(1[6-9]|2[0-9]|3[01])(\.[0-9]{1,3}){2}|192\.168(\.[0-9]{1,3}){2})([^0-9]|$)'
 _DS_PRIVACY_NON_ASCII_PATTERN=$'[\x80-\xff]+'
