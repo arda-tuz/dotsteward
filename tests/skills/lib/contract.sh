@@ -600,9 +600,10 @@ sc_check_precedence() {
 }
 
 # _sc_first_line FILE AFTER ERE: the first line number greater than AFTER
-# whose text matches ERE (case-insensitive), or nothing.
+# whose text matches ERE (case-insensitive), or nothing. The ERE goes through
+# the environment: awk -v would process its backslash escapes.
 _sc_first_line() {
-  awk -v after="$2" -v re="$3" 'NR > after && tolower($0) ~ re { print NR; exit }' "$1"
+  re=$3 awk -v after="$2" 'NR > after && tolower($0) ~ ENVIRON["re"] { print NR; exit }' "$1"
 }
 
 sc_check_classification() {

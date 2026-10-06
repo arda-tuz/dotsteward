@@ -38,9 +38,10 @@ fenced() {
 }
 
 # first_after LINES AFTER ERE: the first line number greater than AFTER of
-# the "LINE<TAB>TEXT" records in LINES whose text matches ERE.
+# the "LINE<TAB>TEXT" records in LINES whose text matches ERE. The ERE goes
+# through the environment: awk -v would process its backslash escapes.
 first_after() {
-  awk -F '\t' -v after="$2" -v re="$3" '$1 > after && substr($0, length($1) + 2) ~ re { print $1; exit }' <<<"$1"
+  re=$3 awk -F '\t' -v after="$2" '$1 > after && substr($0, length($1) + 2) ~ ENVIRON["re"] { print $1; exit }' <<<"$1"
 }
 
 # expect_order ID FILE LINES LABEL ERE [LABEL ERE]...: each ERE matches a
