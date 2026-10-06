@@ -29,11 +29,14 @@ status is the worst one; the exit status is 1 when a check failed, else 0.
 
 ``--redact`` makes the report shareable: home directories (runtime and
 check), the runtime and check usernames, the hostname, the remote and its
-owner and repository become ``<redacted>`` wherever they appear (homes and
-the remote as substrings, the other terms as whole words), and so do the
-settings entry ids and target names, the names, targets and commands of
-instance components, and the instance skill names. Settings values are never
-read.
+owner and repository become ``<redacted>`` in every string value and in the
+profile names that key ``profiles.modes`` (homes and the remote as
+substrings, the other terms as whole words), and so do the settings entry ids
+and target names, the names, targets and commands of instance components, and
+the instance skill names. Field names never change, so the redacted document
+has the shape of the plain one (its redacted values, such as
+``<redacted>/.local/state``, no longer meet the schema's value patterns).
+Settings values are never read.
 
 JSON document (one, on stdout)::
 
@@ -371,12 +374,15 @@ def _replacer(substrings: Sequence[str], words: Sequence[str]) -> Callable[[str]
 
 
 def _map_strings(value: Any, replace: Callable[[str], str]) -> Any:
+    """value with replace applied to every string value. Object keys are
+    field names and stay as they are (a user named root must not rename
+    state.root); the callers redact the few data keys themselves."""
     if isinstance(value, str):
         return replace(value)
     if isinstance(value, list):
         return [_map_strings(item, replace) for item in value]
     if isinstance(value, dict):
-        return {replace(key): _map_strings(item, replace) for key, item in value.items()}
+        return {key: _map_strings(item, replace) for key, item in value.items()}
     return value
 
 
@@ -398,6 +404,9 @@ def redact(report: Mapping[str, Any], env: Mapping[str, str] | None = None) -> d
                 component["commands"] = [REDACTED for _ in component["commands"]]
         skills = document["skills"]
         skills["instance_skill_names"] = [REDACTED for _ in skills["instance_skill_names"]]
+        # The only data keys in the context: profile names.
+        profiles = document["profiles"]
+        profiles["modes"] = {replace(name): mode for name, mode in profiles["modes"].items()}
     result["host"]["hostname"] = REDACTED
     result["checks"] = [
         {
