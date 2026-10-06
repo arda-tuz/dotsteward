@@ -2,8 +2,9 @@
 # Git based rows: channel-head (update when the channel moved, error when
 # the channel is gone, declared rows replacing the built-in one), compares
 # (no compare call when nothing moved, a truncated file list is a review,
-# release-bound skills without a GitHub release and with a moved tag), the
-# skills lock without vendored files, and nix-release when nothing is newer.
+# release-bound skills without a GitHub release and with a moved tag, a
+# changed compare answer is an error row), the skills lock without vendored
+# files, and nix-release when nothing is newer.
 # shellcheck source=tests/engines/pins/latest/helpers.sh
 source "$DS_REPO_ROOT/tests/engines/pins/latest/helpers.sh"
 
@@ -102,6 +103,20 @@ latest_gh_routes
 assert_exit 0 latest --out "$report"
 assert_eq '["review",["SKILL.md"]]' "$(row skills.example-second '[.status, .details.changed_paths]')"
 assert_eq '["review",["skills/example-vendored/SKILL.md"]]' "$(row skills.example-vendored '[.status, .details.changed_paths]')"
+
+# A changed compare answer (no file list, a file entry without a name) is
+# an error row for every request of that compare, never a silent pass.
+for case in "no-files:has no file list" "renamed:lists a file without a name"; do
+  ds_stub_clear_routes gh
+  ds_stub_route gh "api repos/example-org/example-skills/compare/*" --stdout-file "$latest_fixtures/gh/compare-${case%%:*}.json"
+  latest_gh_routes
+  assert_exit 1 latest --out "$report"
+  assert_not_contains "$DS_STDERR" "Traceback"
+  for skill in example-vendored example-second; do
+    assert_eq '"error"' "$(row "skills.$skill" .status)"
+    assert_contains "$(row "skills.$skill" .details.error)" "the compare of example-org/example-skills ${case#*:}"
+  done
+done
 
 # Without a skills lock there are no skill rows.
 rm -f -- "$skills"
