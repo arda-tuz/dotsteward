@@ -95,6 +95,17 @@ printf 'x\n' >"$up_inst/ignored/file"
 assert_exit 0 run_update prepare --official-sources-only
 rm -rf -- "$up_inst/ignored"
 
+# The user's status.showUntrackedFiles = no hides nothing: an untracked file
+# is still refused in the update scope and listed in the maintain scope.
+git config --global status.showUntrackedFiles no
+printf 'new\n' >"$up_inst/new.txt"
+refused_dirty
+reset_logs
+assert_exit 0 run_update prepare --official-sources-only --scope maintain
+assert_json - '.dirty == ["?? new.txt"]' <<<"$(tail -n 1 <<<"$DS_STDOUT")"
+rm -f -- "$up_inst/new.txt"
+git config --global --unset status.showUntrackedFiles
+
 # --- P4: HEAD must equal the freshly fetched origin/main --------------------------
 
 # Ahead: a local commit that is not published (both scopes).

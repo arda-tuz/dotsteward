@@ -44,6 +44,12 @@ refused "update publish needs a committed, clean candidate" --scope maintain
 git -C "$up_inst" add docs/guide.md
 refused "update publish needs a committed, clean candidate" --scope maintain
 git -C "$up_inst" reset -q --hard
+# The user's status.showUntrackedFiles = no hides nothing.
+git config --global status.showUntrackedFiles no
+printf 'new\n' >"$up_inst/new.txt"
+refused "update publish needs a committed, clean candidate" --scope maintain
+rm -f -- "$up_inst/new.txt"
+git config --global --unset status.showUntrackedFiles
 
 # Ignored files are not changes: the guards pass up to the network.
 mkdir -p "$up_inst/ignored"

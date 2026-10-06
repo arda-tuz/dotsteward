@@ -96,6 +96,16 @@ published_with_warning "$canon"
 rm -f -- "$canon/local.txt"
 git -C "$canon" pull -q --ff-only origin main
 
+# Dirty: an untracked file the user's status.showUntrackedFiles = no hides
+# from a plain git status.
+git config --global status.showUntrackedFiles no
+candidate
+printf 'local\n' >"$canon/local.txt"
+published_with_warning "$canon"
+rm -f -- "$canon/local.txt"
+git config --global --unset status.showUntrackedFiles
+git -C "$canon" pull -q --ff-only origin main
+
 # Dirty: a modified file.
 candidate
 printf 'edit\n' >>"$canon/docs/guide.md"
