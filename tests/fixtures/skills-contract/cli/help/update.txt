@@ -1,0 +1,6 @@
+Usage: dotsteward update <step> [OPTION...]
+
+Steps:
+  prepare   record the transaction base (see dotsteward update prepare --help)
+  publish   push the validated tree: --scope S, --expected-base OID
+  status    print the transaction state: --json

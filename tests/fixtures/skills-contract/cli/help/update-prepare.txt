@@ -1,0 +1,1 @@
+Usage: dotsteward update prepare --official-sources-only [--scope update|maintain]

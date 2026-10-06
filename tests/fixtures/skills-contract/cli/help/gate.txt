@@ -1,0 +1,1 @@
+Usage: dotsteward gate --scope update|maintain [--force] [--expected-base OID]

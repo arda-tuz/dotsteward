@@ -1,0 +1,4 @@
+interface:
+  display_name: "Example Skill"
+  short_description: "Synthetic skill for contract tests"
+  default_prompt: "Use $example-skill to run the synthetic contract flow."

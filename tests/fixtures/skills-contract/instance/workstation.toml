@@ -1,0 +1,16 @@
+# Synthetic instance for the skill contract tests: required keys only. The
+# tests copy it into a temporary Git repository whose origin is the remote
+# below and ask `dotsteward context --json` for the conventional commit types.
+schema_version = 1
+
+[identity]
+username = "dotsteward-test"
+
+[instance]
+remote = "git@github.com:example/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]

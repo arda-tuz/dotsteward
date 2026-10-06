@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Stand-in for cli/dotsteward in the skill contract self-tests
+# (tests/skills/selftest). It knows two kinds of calls:
+#
+#   dotsteward [--instance DIR] [WORD...] --help
+#       prints help/<WORD-WORD...>.txt (help/dotsteward.txt without words),
+#       or fails with exit 1 like an unknown command;
+#   dotsteward [--instance DIR] context --json
+#       prints a context document whose commit.conventional_types are the
+#       words of SC_FAKE_CONVENTIONAL_TYPES (default: the eleven types the
+#       publish step accepts); SC_FAKE_CONTEXT_FAIL=1 makes it fail.
+#
+# Every call appends its arguments as one line to SC_FAKE_CLI_LOG when that
+# variable is set. Anything else is an unsupported call (exit 2).
+set -Eeuo pipefail
+
+help_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/help
+
+if [[ -n ${SC_FAKE_CLI_LOG:-} ]]; then
+  printf '%s\n' "$*" >>"$SC_FAKE_CLI_LOG"
+fi
+
+if [[ ${1:-} == --instance ]]; then
+  (($# >= 2)) || {
+    printf '[dotsteward] ERROR: --instance requires a directory\n' >&2
+    exit 1
+  }
+  [[ -d $2 ]] || {
+    printf '[dotsteward] ERROR: --instance: not a directory: %s\n' "$2" >&2
+    exit 1
+  }
+  shift 2
+fi
+
+words=()
+while (($#)) && [[ $1 != -* ]]; do
+  words+=("$1")
+  shift
+done
+
+if [[ $* == --help || $* == -h ]]; then
+  name=dotsteward
+  if ((${#words[@]})); then
+    name=$(
+      IFS=-
+      printf '%s' "${words[*]}"
+    )
+  fi
+  if [[ -f $help_dir/$name.txt ]]; then
+    cat "$help_dir/$name.txt"
+    exit 0
+  fi
+  printf '[dotsteward] ERROR: unknown command: %s\n' "${words[*]}" >&2
+  exit 1
+fi
+
+if [[ ${words[*]} == context && $* == --json ]]; then
+  if [[ ${SC_FAKE_CONTEXT_FAIL:-0} == 1 ]]; then
+    printf '[dotsteward] ERROR: no instance found\n' >&2
+    exit 1
+  fi
+  types=${SC_FAKE_CONVENTIONAL_TYPES-feat fix perf refactor docs chore test build ci style revert}
+  jq -n --arg types "$types" \
+    '{schema_version: 1, commit: {conventional_types: ($types | split(" ") | map(select(. != "")))}}'
+  exit 0
+fi
+
+printf 'fake dotsteward: unsupported call: %s %s\n' "${words[*]}" "$*" >&2
+exit 2

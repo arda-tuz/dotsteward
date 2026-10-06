@@ -1,0 +1,9 @@
+Usage: dotsteward [--instance DIR] <command> [ARG...]
+       dotsteward --help
+
+Commands:
+  context  instance facts for skills
+  e2e      end-to-end checks of the active generation
+  gate     validate the committed tree once
+  rebuild  build and activate the committed tree
+  update   prepare, publish and inspect a transaction
