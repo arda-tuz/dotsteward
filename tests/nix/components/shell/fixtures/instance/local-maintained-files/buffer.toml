@@ -1,0 +1,3 @@
+# Local maintained files: entries written to the repository with
+# `dotsteward settings flush` and applied with `dotsteward settings apply`.
+schema_version = 1
