@@ -181,7 +181,7 @@ let
     };
 
     agent_rules = {
-      source = if ds.agentRules.source == null then null else "${ds.agentRules.source}";
+      source = ds.agentRules.storePath;
       targets = tagged (component: component.agentRulesTargets);
     };
 

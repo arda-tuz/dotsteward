@@ -47,7 +47,11 @@ in
 
     frameworkRoot = lib.mkOption {
       type = lib.types.path;
-      default = ../../skills;
+      # A string, so the links point into the framework source itself
+      # ("${dotsteward}/skills/<name>", SPEC 3.3 and the 9.4 invariant)
+      # instead of a store copy of each skill.
+      default = "${dotsteward.lib.source}/skills";
+      defaultText = lib.literalExpression ''"''${dotsteward}/skills"'';
       internal = true;
       description = "The framework's skills directory.";
     };

@@ -2,12 +2,14 @@
 # `dotsteward settings` with the defaults of this generation baked in.
 #
 # The alias passes --targets-file (the settings targets of the active
-# components, rendered for the platform) and, unless the environment names
-# them (section 7: DOTSTEWARD_INSTANCE and DOTSTEWARD_STATE_ROOT, plus
-# DOTFILES_ROOT and DOTFILES_STATE_ROOT with [compat] legacy_env), --repo
-# (the expanded instance.checkout) and --state-dir (<state.root>/
-# local-maintained-files, expanded by the shell at run time). Arguments given
-# to the alias come last, so an explicit --repo or --state-dir wins.
+# components, rendered for the platform), --repo-default (the expanded
+# instance.checkout) and --state-dir-default (<state.root>/
+# local-maintained-files, expanded by the shell at run time). The engine
+# uses the defaults last (section 7): after the environment
+# (DOTSTEWARD_INSTANCE and DOTSTEWARD_STATE_ROOT, plus DOTFILES_ROOT and
+# DOTFILES_STATE_ROOT with [compat] legacy_env) and instance discovery.
+# Arguments given to the alias come last, so an explicit --repo or
+# --state-dir wins.
 {
   config,
   lib,
@@ -38,22 +40,20 @@ let
     }
   );
 
-  legacy = cfg.compat.legacy_env;
-  unset = names: lib.concatMapStringsSep " && " (name: "-z \${${name}:-}") names;
-
-  repoDefault = lib.optionalString (cfg.instance.checkout != null) ''
-    if [[ ${unset ([ "DOTSTEWARD_INSTANCE" ] ++ lib.optional legacy "DOTFILES_ROOT")} ]]; then
-      args+=(--repo ${helpers.shellWord "instance.checkout" homeDirectory cfg.instance.checkout})
-    fi
-  '';
-
   stateRoot = helpers.shellWord "state.root" homeDirectory cfg.state.root;
 
-  stateDefault = ''
-    if [[ ${unset ([ "DOTSTEWARD_STATE_ROOT" ] ++ lib.optional legacy "DOTFILES_STATE_ROOT")} ]]; then
-      args+=(--state-dir ${stateRoot}/local-maintained-files)
-    fi
-  '';
+  defaults = [
+    "--targets-file"
+    (lib.escapeShellArg "${targetsFile}")
+  ]
+  ++ lib.optionals (cfg.instance.checkout != null) [
+    "--repo-default"
+    (helpers.shellWord "instance.checkout" homeDirectory cfg.instance.checkout)
+  ]
+  ++ [
+    "--state-dir-default"
+    "${stateRoot}/local-maintained-files"
+  ];
 
   alias = pkgs.writeTextFile {
     name = "local-maintained-files";
@@ -62,9 +62,9 @@ let
     text = ''
       #!${pkgs.runtimeShell}
       # local-maintained-files: dotsteward settings with the defaults of this
-      # generation; the environment and explicit arguments take precedence.
-      args=(--targets-file ${lib.escapeShellArg "${targetsFile}"})
-      ${repoDefault}${stateDefault}exec ${lib.getExe' cliPackage "dotsteward"} settings "''${args[@]}" "$@"
+      # generation; explicit arguments, the environment and instance
+      # discovery take precedence.
+      exec ${lib.getExe' cliPackage "dotsteward"} settings ${lib.concatStringsSep " " defaults} "$@"
     '';
     checkPhase = ''
       ${pkgs.stdenv.shellDryRun} "$target"

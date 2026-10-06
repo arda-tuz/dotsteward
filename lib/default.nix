@@ -29,6 +29,11 @@ lib.fix (
     };
   in
   {
+    # The framework source as a string: the store path with its context for
+    # the flake (`self`), the plain absolute path for a checkout (not copied
+    # to the store).
+    source = toString (dotsteward.outPath or dotsteward);
+
     mkInstance = import ./mk-instance.nix args;
     mkNpmBundle = import ./npm-bundle.nix args;
 

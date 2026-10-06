@@ -269,16 +269,31 @@ def nix_system(platform_name: str) -> str:
     return f"{machine}-{platform_name}"
 
 
+def _resolve_repo(args: argparse.Namespace) -> str:
+    """--repo > DOTSTEWARD_INSTANCE > DOTFILES_ROOT with compat.legacy_env >
+    the instance above the working directory > --repo-default (the checkout
+    baked into the local-maintained-files alias). An invalid
+    DOTSTEWARD_INSTANCE stays an error."""
+    if args.repo is not None:
+        return os.path.abspath(args.repo)
+    try:
+        return str(ds_config.discover_instance())
+    except ds_config.DotstewardError:
+        if args.repo_default is None or os.environ.get("DOTSTEWARD_INSTANCE"):
+            raise
+        return os.path.abspath(args.repo_default)
+
+
 def resolve_context(args: argparse.Namespace) -> Context:
-    """The repository (--repo > DOTSTEWARD_INSTANCE > DOTFILES_ROOT with
-    compat.legacy_env > the instance above the working directory), the
-    instance's settings from its workstation.toml (defaults without one), the
-    state directory (--state-dir > DOTSTEWARD_STATE_ROOT > DOTFILES_STATE_ROOT
-    with compat.legacy_env > state.root, plus /local-maintained-files) and the
+    """The repository (see _resolve_repo), the instance's settings from its
+    workstation.toml (defaults without one), the state directory (--state-dir
+    > DOTSTEWARD_STATE_ROOT > DOTFILES_STATE_ROOT with compat.legacy_env >
+    state.root, plus /local-maintained-files; without workstation.toml
+    --state-dir-default comes before the built-in state root) and the
     component targets."""
     try:
         platform_name = ds_config.runtime_platform()
-        repo = os.path.abspath(args.repo) if args.repo is not None else str(ds_config.discover_instance())
+        repo = _resolve_repo(args)
         state_root = None
         if os.path.isfile(os.path.join(repo, CONFIG_FILE)):
             instance = ds_config.load_instance(repo)
@@ -291,15 +306,17 @@ def resolve_context(args: argparse.Namespace) -> Context:
             buffer_dir = DEFAULT_BUFFER_DIR
             published_ref = DEFAULT_PUBLISHED_REF
             if args.state_dir is None:
-                state_root = os.environ.get("DOTSTEWARD_STATE_ROOT") or ds_config.expand_path(
-                    DEFAULT_STATE_ROOT, os.environ
-                )
-                if not os.path.isabs(state_root):
+                state_root = os.environ.get("DOTSTEWARD_STATE_ROOT") or None
+                if state_root is None and args.state_dir_default is None:
+                    state_root = ds_config.expand_path(DEFAULT_STATE_ROOT, os.environ)
+                if state_root is not None and not os.path.isabs(state_root):
                     raise LmfError(f"the state root is not an absolute path: {state_root!r}")
     except ds_config.DotstewardError as error:
         raise LmfError(*_config_messages(error)) from error
     if args.state_dir is not None:
         state_dir = os.path.abspath(args.state_dir)
+    elif state_root is None:
+        state_dir = os.path.abspath(args.state_dir_default)
     else:
         state_dir = os.path.join(state_root, STATE_SUBDIR)
 
@@ -1492,6 +1509,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--home", default=os.path.expanduser("~"), help="home directory of the live files")
     parser.add_argument("--state-dir", help="machine state (default: <state root>/local-maintained-files)")
     parser.add_argument("--targets-file", help="component settings targets and reload hooks (JSON)")
+    # The last-resort defaults baked into the local-maintained-files alias.
+    parser.add_argument("--repo-default", help=argparse.SUPPRESS)
+    parser.add_argument("--state-dir-default", help=argparse.SUPPRESS)
     commands = parser.add_subparsers(dest="command", required=True)
     status = commands.add_parser("status", help="show the state of every entry")
     status.add_argument("--json", action="store_true")
