@@ -78,6 +78,31 @@ for kind in missing empty template; do
   fails_at "git commit" 1 "$kind"
 done
 assert_contains "$DS_STDERR" "pre-commit: refused"
+
+# The commit runs in --dir once every entry is in place; terminated while it
+# runs (its pre-commit hook hangs), init puts the target back as it was.
+printf '#!%s\nprintf "%%s\\n" "$$" >"%s/hook-pid"\nexec sleep 60\n' "$BASH" "$DS_TEST_ROOT" \
+  >"$DS_TEST_ROOT/hooks/pre-commit"
+for kind in missing empty template; do
+  prepare "$kind"
+  before=$(tree_state "$dir")
+  rm -f "$DS_TEST_ROOT/hook-pid"
+  "$DS_CLI" init --dir "$dir" --remote "$init_remote" >"$DS_TEST_ROOT/out" 2>"$DS_TEST_ROOT/err" &
+  pid=$!
+  for _ in $(seq 1 600); do
+    [[ -s $DS_TEST_ROOT/hook-pid ]] && break
+    sleep 0.1
+  done
+  [[ -s $DS_TEST_ROOT/hook-pid ]] || ds_fail "the commit never started ($kind): $(<"$DS_TEST_ROOT/err")"
+  kill -TERM "$pid"
+  status=0
+  wait "$pid" || status=$?
+  kill -KILL "$(<"$DS_TEST_ROOT/hook-pid")" 2>/dev/null || true
+  assert_eq 143 "$status" "exit status after SIGTERM during the commit ($kind)"
+  assert_contains "$(<"$DS_TEST_ROOT/err")" "[dotsteward] ERROR: terminated; nothing was written to --dir"
+  assert_unchanged "$dir" "$before" "terminated during the commit with a $kind target"
+  assert_eq "" "$(init_temp_dirs)" "no temporary directory is left after SIGTERM during the commit ($kind)"
+done
 git config --global --unset core.hooksPath
 
 # --- terminated while a step runs --------------------------------------------------------
