@@ -1,0 +1,4 @@
+interface:
+  display_name: "dotsteward Update"
+  short_description: "Refresh pinned versions and the framework release"
+  default_prompt: "Use $dotsteward-update to refresh every pinned version of my dotsteward instance, the framework release included, to compatible stable releases and publish it."
