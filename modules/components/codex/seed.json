@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "component": "codex",
+  "flake_inputs": {},
+  "versions_lock": {
+    "agent_tools": {
+      "codex": {
+        "linux": {
+          "version": "0.160.1",
+          "url": "https://github.com/openai/codex/releases/download/rust-v0.160.1/codex-x86_64-unknown-linux-musl.tar.gz",
+          "size": 109327135,
+          "sha256": "9226581be592d18f7e7f740a352fdb63aa61e45e39f7eb9b09d3888c84bba33f"
+        },
+        "darwin": {
+          "version": "0.160.1",
+          "url": "https://github.com/openai/codex/releases/download/rust-v0.160.1/codex-aarch64-apple-darwin.tar.gz",
+          "size": 95904314,
+          "sha256": "670af2b049d9c95afb74d7da385f30c5033d13a07175001dd8958c51944984d0"
+        }
+      }
+    }
+  }
+}
