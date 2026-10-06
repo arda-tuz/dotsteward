@@ -22,7 +22,8 @@
 # flake.lock is a new key.
 #
 # $STATE: DOTSTEWARD_STATE_ROOT > DOTFILES_STATE_ROOT when [compat]
-# legacy_env = true > state.root in workstation.toml >
+# legacy_env = true > state.root in workstation.toml (a leading
+# ${NAME:-DEFAULT} and ~ expanded as the CLI does) >
 # ${XDG_STATE_HOME:-~/.local/state}/dotsteward.
 #
 # Runs with /bin/bash 3.2 and BSD tools (stock macOS) as well as GNU ones.
@@ -153,6 +154,23 @@ expand_home() {
   esac
 }
 
+# expand_path VALUE: a leading ${NAME:-DEFAULT} (NAME when set and non-empty,
+# else DEFAULT), then a leading ~, exactly as the CLI expands state.root.
+expand_path() {
+  # Bracket expressions keep the literal $, { and } portable across the GNU
+  # and BSD regex engines.
+  local value=$1 name default rest re='^[$][{]([A-Za-z_][A-Za-z0-9_]*):-([^}]*)[}](.*)$'
+  if [[ $value =~ $re ]]; then
+    name=${BASH_REMATCH[1]}
+    default=${BASH_REMATCH[2]}
+    rest=${BASH_REMATCH[3]}
+    value=${!name:-}
+    [ -n "$value" ] || value=$default
+    value=$value$rest
+  fi
+  expand_home "$value"
+}
+
 # The default state home: XDG_STATE_HOME when absolute, else ~/.local/state.
 xdg_state_home() {
   case ${XDG_STATE_HOME:-} in
@@ -172,13 +190,7 @@ resolve_state_root() {
     return 0
   fi
   if raw=$(toml_value state root) && value=$(toml_string "$raw") && [ -n "$value" ]; then
-    # shellcheck disable=SC2016 # the schema default, spelled out literally
-    case $value in
-      '${XDG_STATE_HOME:-~/.local/state}'*)
-        printf '%s%s\n' "$(xdg_state_home)" "${value#'${XDG_STATE_HOME:-~/.local/state}'}"
-        ;;
-      *) expand_home "$value" ;;
-    esac
+    expand_path "$value"
     return 0
   fi
   printf '%s/dotsteward\n' "$(xdg_state_home)"
