@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-01-01T00:00:00Z",
+  "expected_skill_count": 2,
+  "layout": {
+    "canonical_user_directory": "~/.agents/skills"
+  },
+  "skills": [
+    {
+      "name": "example-skill",
+      "directory": "example-skill",
+      "source": "https://github.com/alice/workstation",
+      "revision": "same-as-instance-checkout",
+      "skill_sha256": "29c1046be413f39b83c25045a81f094bdf2e44ceb82ba558091bde433ae69aa3",
+      "directory_sha256": "1c53e0b2b0dd23047b5a1971ab104e9237c3e0f89df566f822f64dcec9bfc97b"
+    },
+    {
+      "name": "example-vendored",
+      "directory": "example-vendored",
+      "source": "https://github.com/example/skills",
+      "revision": "9371ad2a033c6030fb815373b2c55e572c1cced9",
+      "skill_sha256": "29fe4ce95acd6ca6963b59a9b3ad75b67f021d168313e3865fb765cfd141ed70",
+      "directory_sha256": "43e16710c5c0c3afd208aee2de81b5566fe6f0c4b42e9b41482cc1a164355978"
+    }
+  ],
+  "npm_tools": {
+    "example-cli": "2.0.0"
+  },
+  "npm_overrides": {
+    "example-cli": {
+      "example-dep": "1.0.1"
+    }
+  },
+  "release_tools": {
+    "example-release": {
+      "version": "4.0.0",
+      "source_revision": "3b3d975840fe10121cd977ef882ae0a1a8822439",
+      "url": "https://downloads.example.invalid/example-release/v4.0.0/example-release-linux-x64.tar.gz",
+      "size": 1234,
+      "sha256": "56fe0a44fa41cc0e6b0cbe8ef5937ff704c75f451ca23b7bd99fa22ed4098904"
+    }
+  },
+  "nix_tools": {
+    "example-term": "1.2.0"
+  },
+  "plugins": [
+    {
+      "spec": "other-plugin@example-market",
+      "observed_revision": "f6ac33b78306ade00ffc6bf2d870b91ef186c4ef"
+    },
+    {
+      "spec": "example-plugin@example-market",
+      "observed_revision": "4eaf5ce7be9766b89ceb5576ec1d37ef3855d5c0"
+    }
+  ]
+}

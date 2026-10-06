@@ -1,0 +1,159 @@
+{
+  "pins": {
+    "flake_inputs": [
+      "example-term"
+    ],
+    "latest": [],
+    "resolved_versions": {},
+    "rules": [
+      {
+        "component": "example-term",
+        "from": "flake_inputs.example-term.version",
+        "kind": "derive",
+        "to": "nix_packages.example-term.expected"
+      },
+      {
+        "component": "example-term",
+        "for_each": "skills:nix_tools",
+        "kind": "skills-lock-mirror",
+        "pairs": [
+          {
+            "from": "nix_packages.{key}.resolved",
+            "to": "skills:nix_tools.{key}"
+          }
+        ]
+      },
+      {
+        "component": "example-app",
+        "formats": {
+          "agent_tools.example-app.source_nix_sha256": "sri"
+        },
+        "kind": "derive",
+        "template": "v{agent_tools.example-app.version}",
+        "to": "agent_tools.example-app.official_tag"
+      },
+      {
+        "component": "example-app",
+        "kind": "derive",
+        "template": "https://registry.example.invalid/example-app/-/example-app-{agent_tools.example-app.version}.tgz",
+        "to": "agent_tools.example-app.model_data_url"
+      },
+      {
+        "component": "example-app",
+        "files": [
+          "scripts/*.sh"
+        ],
+        "kind": "no-literal",
+        "values": [
+          "agent_tools.example-release.url",
+          "agent_tools.example-release.sha256"
+        ]
+      },
+      {
+        "at": "agent_tools.example-release",
+        "component": "example-release",
+        "formats": {
+          ".source_revision": "hex40"
+        },
+        "kind": "download-pin",
+        "url_contains": "/v{.minimum_version}/",
+        "version_field": "minimum_version"
+      },
+      {
+        "component": "example-release",
+        "kind": "skills-lock-mirror",
+        "pairs": [
+          {
+            "from": "agent_tools.example-release.minimum_version",
+            "to": "skills:release_tools.example-release.version"
+          },
+          {
+            "from": "agent_tools.example-release.source_revision",
+            "to": "skills:release_tools.example-release.source_revision"
+          },
+          {
+            "from": "agent_tools.example-release.url",
+            "to": "skills:release_tools.example-release.url"
+          },
+          {
+            "from": "agent_tools.example-release.size",
+            "to": "skills:release_tools.example-release.size"
+          },
+          {
+            "from": "agent_tools.example-release.sha256",
+            "to": "skills:release_tools.example-release.sha256"
+          }
+        ]
+      },
+      {
+        "component": "example-desktop",
+        "for_each": "desktop_packages",
+        "kind": "download-pin",
+        "only_with": "url",
+        "version_field": "minimum_version"
+      },
+      {
+        "component": "example-bundle",
+        "dependencies_at": "skills:npm_tools",
+        "dir": "packages/example-bundle",
+        "kind": "npm-bundle",
+        "mirrors": {
+          "example-cli": {
+            "at": "agent_tools.example-cli",
+            "fields": {
+              "node_engine": "engines.node"
+            }
+          }
+        },
+        "nix_hash_at": "agent_tools.npm_bundle_nix_sha256",
+        "overrides_at": "skills:npm_overrides",
+        "security_overrides_at": "agent_tools.npm_security_overrides"
+      },
+      {
+        "component": "example-plugin",
+        "formats": {
+          "agent_tools.example-plugin.observed_revision": "hex40"
+        },
+        "kind": "skills-lock-mirror",
+        "pairs": [
+          {
+            "from": "agent_tools.example-plugin.observed_revision",
+            "to": "skills:plugins[spec={agent_tools.example-plugin.spec}].observed_revision"
+          }
+        ]
+      },
+      {
+        "component": "example-policy",
+        "for_each": "example_policy.exact_versions",
+        "kind": "derive",
+        "template": "{value}",
+        "to": "nix_packages.{key}.expected"
+      },
+      {
+        "component": "example-policy",
+        "file": "home.nix",
+        "for_each": "example_policy.exact_versions",
+        "kind": "text-guard",
+        "template": "pkgs.{key}.version == \"{value}\""
+      },
+      {
+        "actual_from": [
+          "skills:npm_tools.{key}",
+          "nix_packages.{key}.resolved"
+        ],
+        "component": "example-policy",
+        "kind": "minimum-version",
+        "minimums_at": "example_policy.minimum_versions"
+      },
+      {
+        "component": "example-asset",
+        "kind": "asset-digest",
+        "path_at": "assets.example.path",
+        "sha256_at": "assets.example.sha256"
+      }
+    ]
+  },
+  "platform": "linux",
+  "schema_version": 1,
+  "system": "x86_64-linux"
+}

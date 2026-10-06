@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-01-01T00:00:00+00:00",
+  "policy": {
+    "official_sources_only": true,
+    "persistent_agentic_updates": false,
+    "scheduled_repository_updates": false,
+    "native_application_updates": true,
+    "major_version_review_required": true
+  },
+  "nix": {
+    "version": "2.31.2",
+    "installer_url": "https://releases.example.invalid/nix/nix-2.31.2/install",
+    "installer_size": 4499,
+    "installer_sha256": "105a596de51480d4c4aa1ea792a2ef370e86e2f53a9c6b3ead3a70888bbbfe64"
+  },
+  "flake_inputs": {
+    "nixpkgs": {
+      "reference": "github:example/nixpkgs/d93fc7d10ddf5b30a89848233f527f483a0d886f",
+      "revision": "d93fc7d10ddf5b30a89848233f527f483a0d886f",
+      "channel": "example-unstable",
+      "nar_hash": "sha256-tBhSCnyO9egGe7nWHJZS8r467FeJY61hpMzQIhE24w4="
+    },
+    "example-term": {
+      "reference": "github:example/example-term/v1.2.0",
+      "revision": "7031b8e5220789d59e2e49bc6a2eb403208ea447",
+      "version": "1.2.0",
+      "nar_hash": "sha256-1F6an4PiSmLR5OHTFBE+IS8afkxw6fAa+KOrcbvwr1M=",
+      "tag_object": "ea9017f65dab5e97a4f6335bacefb2ddf88434e0"
+    }
+  },
+  "nix_packages": {
+    "example-term": {
+      "expected": "1.2.0",
+      "resolved": "1.2.0",
+      "official_tag": "v1.2.0",
+      "tag_revision": "7031b8e5220789d59e2e49bc6a2eb403208ea447",
+      "source_nix_sha256": "sha256-r5+Wtbv8I7rH+8miMqL/OOPBuSp85y8RdU+xHeegd0M="
+    },
+    "example-shell": {
+      "expected": "locked nixpkgs package",
+      "resolved": "5.9",
+      "notes": "follows nixpkgs"
+    },
+    "example-lint": {
+      "expected": "0.9.0",
+      "resolved": "0.9.0"
+    }
+  },
+  "agent_tools": {
+    "example-app": {
+      "version": "3.1.0",
+      "official_tag": "v3.1.0",
+      "model_data_url": "https://registry.example.invalid/example-app/-/example-app-3.1.0.tgz",
+      "source_nix_sha256": "sha256-YSibNCPAJTYyVxHWzDMeI3vcVmvN/oNBOqpRgxMAFCk="
+    },
+    "npm_bundle_nix_sha256": "sha256-qp+T0AFJN3ttHsjS41y2tn8TdR5S+cvMwBCZcu+kvMA=",
+    "example-cli": {
+      "package": "example-cli",
+      "version": "2.0.0",
+      "integrity": "sha512-arShA8DgFAaipczVE8rMVZeDKcrXaW0lFgmqLyu2uS8ZlOMY21CvTnSAK3VUbY9CVjHkdH/BPzpFLRw+m2Q4nw==",
+      "node_engine": ">=20"
+    },
+    "npm_security_overrides": {
+      "example-dep": {
+        "version": "1.0.1",
+        "integrity": "sha512-Y6s1/niu4+Fo4FKgzBAYsbcy/NVIRW/y2OyQL6A9TO/f1SxRHgBMcbuTWwWqRBPFlkHTQDE2bRNKVqjWxYB5Iw==",
+        "override_scope": "example-cli",
+        "lock_path": "node_modules/example-cli/node_modules/example-dep",
+        "official_tag": "v1.0.1",
+        "reason": "synthetic advisory"
+      }
+    },
+    "example-release": {
+      "minimum_version": "4.0.0",
+      "url": "https://downloads.example.invalid/example-release/v4.0.0/example-release-linux-x64.tar.gz",
+      "size": 1234,
+      "sha256": "56fe0a44fa41cc0e6b0cbe8ef5937ff704c75f451ca23b7bd99fa22ed4098904",
+      "source_revision": "3b3d975840fe10121cd977ef882ae0a1a8822439",
+      "native_auto_updates": false
+    },
+    "example-plugin": {
+      "spec": "example-plugin@example-market",
+      "observed_revision": "4eaf5ce7be9766b89ceb5576ec1d37ef3855d5c0"
+    }
+  },
+  "desktop_packages": {
+    "example-desktop": {
+      "minimum_version": "1.5.0",
+      "url": "https://downloads.example.invalid/example-desktop_1.5.0_amd64.deb",
+      "size": 2048,
+      "sha256": "a495b0b82b8e0ab5e0e6cfd19f670fb1959657a49c7b984d24b7be10e75690b3"
+    },
+    "example-apt-only": {
+      "minimum_version": "2.0",
+      "source": "distribution archive"
+    }
+  },
+  "example_policy": {
+    "exact_versions": {
+      "example-lint": "0.9.0"
+    },
+    "minimum_versions": {
+      "example-cli": "1.5.0",
+      "example-term": "1.0"
+    }
+  },
+  "assets": {
+    "example": {
+      "path": "assets/example.txt",
+      "sha256": "7265c75c95c3ecd05d864d49e2961712abe83326667d69954653b4943495999e"
+    }
+  }
+}

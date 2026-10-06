@@ -1,0 +1,65 @@
+{
+  "nodes": {
+    "dotsteward": {
+      "locked": {
+        "lastModified": 1767225600,
+        "narHash": "sha256-PgTKXg49YHHVFMhfLfpO4uVAyTbRLrmL8V2n6C4rKTA=",
+        "owner": "example",
+        "repo": "dotsteward",
+        "rev": "2e170704dcd8d62afbaaa0c492e016f586251217",
+        "type": "github"
+      },
+      "original": {
+        "owner": "example",
+        "ref": "v0.1.0",
+        "repo": "dotsteward",
+        "type": "github"
+      }
+    },
+    "example-term": {
+      "locked": {
+        "lastModified": 1767225600,
+        "narHash": "sha256-1F6an4PiSmLR5OHTFBE+IS8afkxw6fAa+KOrcbvwr1M=",
+        "owner": "example",
+        "repo": "example-term",
+        "rev": "7031b8e5220789d59e2e49bc6a2eb403208ea447",
+        "type": "github"
+      },
+      "original": {
+        "owner": "example",
+        "ref": "v1.2.0",
+        "repo": "example-term",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1767225600,
+        "narHash": "sha256-tBhSCnyO9egGe7nWHJZS8r467FeJY61hpMzQIhE24w4=",
+        "owner": "example",
+        "repo": "nixpkgs",
+        "rev": "d93fc7d10ddf5b30a89848233f527f483a0d886f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "example",
+        "repo": "nixpkgs",
+        "rev": "d93fc7d10ddf5b30a89848233f527f483a0d886f",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "dotsteward": "dotsteward",
+        "example-follow": [
+          "dotsteward",
+          "nixpkgs"
+        ],
+        "example-term": "example-term",
+        "nixpkgs": "nixpkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

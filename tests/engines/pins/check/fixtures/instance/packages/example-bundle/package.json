@@ -1,0 +1,12 @@
+{
+  "name": "example-bundle",
+  "private": true,
+  "dependencies": {
+    "example-cli": "2.0.0"
+  },
+  "overrides": {
+    "example-cli": {
+      "example-dep": "1.0.1"
+    }
+  }
+}
