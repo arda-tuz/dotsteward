@@ -1,0 +1,4 @@
+interface:
+  display_name: "dotsteward Contribute"
+  short_description: "Fix the dotsteward framework and release it"
+  default_prompt: "Use $dotsteward-contribute to fix this dotsteward framework defect, release it and upgrade my instance."
