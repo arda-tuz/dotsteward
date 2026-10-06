@@ -2,11 +2,12 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # Stage-0 refusals (SPEC 10.2): usage errors, a profile other than the
 # bootstrap profile, an unsafe identity, a missing or foreign stage-0
-# mirror and a missing launcher stop before any write; the adaptive route
-# exits 3 before any write (no state, no backup, no apt, no download); a
-# download that is not the pinned installer (size, SHA-256, not a text
-# file, not HTTPS), a Nix of another version and failing snapshots or
-# prerequisites stop stage-0 before stage 1.
+# mirror, a missing launcher and a relative state root (from the
+# environment, the mirror or the legacy variable) stop before any write;
+# the adaptive route exits 3 before any write (no state, no backup, no
+# apt, no download); a download that is not the pinned installer (size,
+# SHA-256, not a text file, not HTTPS), a Nix of another version and
+# failing snapshots or prerequisites stop stage-0 before stage 1.
 # shellcheck source=tests/cli/bootstrap/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/bootstrap/helpers.sh"
 
@@ -64,6 +65,19 @@ assert_exit 1 run_stage0 -- --profile fresh
 assert_eq "[dotsteward] ERROR: .dotsteward/cli.sh is missing or not executable in $bs_inst" "$DS_STDERR"
 chmod 0755 "$bs_inst/.dotsteward/cli.sh"
 no_writes "mirror and launcher"
+
+# --- the state root: a relative one stops before any write ----------------------
+assert_exit 1 run_stage0 DOTSTEWARD_STATE_ROOT=relative-state -- --profile fresh
+assert_eq "[dotsteward] ERROR: the state root must be an absolute path: relative-state" "$DS_STDERR"
+stage0_env_set linux "DS_STAGE0_STATE_ROOT=relative-mirror-state"
+assert_exit 1 run_stage0 DOTSTEWARD_STATE_ROOT= -- --profile fresh
+assert_eq "[dotsteward] ERROR: the state root must be an absolute path: relative-mirror-state" "$DS_STDERR"
+stage0_env_write linux
+stage0_env_set linux "DS_STAGE0_LEGACY_ENV=true"
+assert_exit 1 run_stage0 DOTSTEWARD_STATE_ROOT= DOTFILES_STATE_ROOT=relative-legacy-state -- --profile fresh
+assert_eq "[dotsteward] ERROR: the state root must be an absolute path: relative-legacy-state" "$DS_STDERR"
+stage0_env_write linux
+no_writes "relative state root"
 
 # --- the adaptive route: exit 3 before any write --------------------------------
 cp "$(ds_fixture common/os-release/debian-12)" "$DOTSTEWARD_OS_RELEASE"
