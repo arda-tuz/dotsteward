@@ -86,6 +86,20 @@ fresh
 rm agent/skills.lock.json
 fails skills "agent/skills.lock.json is missing but agent/skills holds vendored skills"
 
+# Skill entries that are not objects are findings, not unexpected errors,
+# also when no skill directory exists to compare with.
+fresh
+rm -rf agent/skills
+jq -n '{schema_version: "1.0", expected_skill_count: 1, skills: ["x"]}' >agent/skills.lock.json
+fails skills "agent/skills.lock.json: every skill entry must be an object"
+assert_not_contains "$DS_STDERR" "failed unexpectedly"
+fresh
+jq '.skills += [5] | .expected_skill_count = 2' agent/skills.lock.json >lock.tmp && mv lock.tmp agent/skills.lock.json
+printf 'changed\n' >>"$skill/SKILL.md"
+fails skills "agent/skills.lock.json: every skill entry must be an object" \
+  "example-skill: SKILL.md digest does not match agent/skills.lock.json"
+assert_not_contains "$DS_STDERR" "failed unexpectedly"
+
 # No vendored skills and no lock: nothing to check.
 fresh
 rm -rf agent/skills agent/skills.lock.json
@@ -118,6 +132,15 @@ fresh
 jq '.nix_packages.shellcheck = { expected: "locked nixpkgs package", resolved: "0.0.1" }' versions.lock.json >lock.tmp
 mv lock.tmp versions.lock.json
 fails shell "ShellCheck 0.0.1 is pinned in versions.lock.json but"
+# A versions lock the pin cannot be read from fails the check instead of
+# skipping the pin.
+fresh
+jq '.nix_packages = "none"' versions.lock.json >lock.tmp && mv lock.tmp versions.lock.json
+fails shell "versions.lock.json cannot be read as a versions lock, so the pinned ShellCheck version is unknown"
+assert_not_contains "$DS_STDERR" "failed unexpectedly"
+fresh
+printf '{ broken\n' >versions.lock.json
+fails shell "versions.lock.json cannot be read as a versions lock, so the pinned ShellCheck version is unknown"
 fresh
 installed=$(shellcheck --version | awk '$1 == "version:" { print $2; exit }')
 jq --arg v "$installed" '.nix_packages.shellcheck = { expected: "locked nixpkgs package", resolved: $v }' \
@@ -168,6 +191,10 @@ fails versions-lock "versions.lock.json: policy.persistent_agentic_updates must 
 fresh
 jq '.schema_version = "2.0"' versions.lock.json >lock.tmp && mv lock.tmp versions.lock.json
 fails versions-lock 'versions.lock.json: schema_version must be "1.0"'
+fresh
+jq '.policy = "none"' versions.lock.json >lock.tmp && mv lock.tmp versions.lock.json
+fails versions-lock "versions.lock.json: policy must be an object"
+assert_not_contains "$DS_STDERR" "failed unexpectedly"
 fresh
 printf '{ broken\n' >versions.lock.json
 fails versions-lock "versions.lock.json is not valid JSON"
