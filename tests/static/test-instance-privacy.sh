@@ -12,19 +12,19 @@ source "$DS_REPO_ROOT/tests/static/helpers.sh"
 
 inst=$DS_TEST_ROOT/inst
 make_instance "$inst"
-mkdir -p "$inst/profiles/viewer" "$inst/runs/2026" "$inst/docs" "$inst/a/runs"
+mkdir -p "$inst/profiles/example" "$inst/scratch/2026" "$inst/docs" "$inst/a/scratch"
 cat >>"$inst/workstation.toml" <<'TOML'
 
 [privacy]
-forbidden_paths = ["*notes-private*", "*drafts/*", "*scratch.md"]
+forbidden_paths = ["*notes-private*", "*scratch/*", "*draft.md"]
 denylist = "~/private/denylist.txt"
 
 [[privacy.file_rules]]
-files = ["profiles/example/*rc"]
-pattern = '(\[recent items\]|/home/[^/]+/(Documents|Downloads)/)'
-message = "viewer profile contains personal history"
+files = ["profiles/example/*.json"]
+pattern = '"recent[a-z_]*"[[:space:]]*:'
+message = "example profile records recent items"
 TOML
-printf '[General]\nzoom=100\n' >"$inst/profiles/example/example.ini"
+printf '{"zoom": 100}\n' >"$inst/profiles/example/history.json"
 commit_instance "$inst"
 mkdir -p "$HOME/private"
 printf '# private terms\n%s\n' "secretproject" >"$HOME/private/denylist.txt"
@@ -34,28 +34,28 @@ assert_exit 0 static --only privacy
 assert_contains "$DS_STDOUT" "[dotsteward] scan clean:"
 
 # Each instance rule fires; findings are redacted.
-printf '[recent items]\nitem1=/home/%s/notes/a.txt\n' someone >>"$inst/profiles/example/example.ini"
+printf '{"recent": ["a.txt"]}\n{"recent_dirs": ["notes"]}\n' >>"$inst/profiles/example/history.json"
 printf 'notes\n' >"$inst/my-notes-private.md"
-printf 'out\n' >"$inst/runs/2026/out.txt"
+printf 'out\n' >"$inst/scratch/2026/out.txt"
 printf 'notes\n' >"$inst/docs/x-notes-private.md"
-printf 'out\n' >"$inst/a/runs/out.txt"
-printf 'notes\n' >"$inst/docs/scratch.md"
+printf 'out\n' >"$inst/a/scratch/out.txt"
+printf 'notes\n' >"$inst/docs/draft.md"
 printf 'about SecretProject\n' >"$inst/home/notes.txt"
 printf '%s: %s\n' "pass""word" "$(fake_secret '' 12)" >"$inst/home/creds.txt"
 assert_exit 1 static --only privacy
-assert_contains "$DS_STDOUT" "file-rule:1 profiles/example/example.ini:3 (viewer profile contains personal history)"
-assert_contains "$DS_STDOUT" "file-rule:1 profiles/example/example.ini:4 (viewer profile contains personal history)"
+assert_contains "$DS_STDOUT" "file-rule:1 profiles/example/history.json:2 (example profile records recent items)"
+assert_contains "$DS_STDOUT" "file-rule:1 profiles/example/history.json:3 (example profile records recent items)"
 assert_contains "$DS_STDOUT" "forbidden-path my-notes-private.md (path)"
-assert_contains "$DS_STDOUT" "forbidden-path runs/2026/out.txt (path)"
+assert_contains "$DS_STDOUT" "forbidden-path scratch/2026/out.txt (path)"
 assert_contains "$DS_STDOUT" "forbidden-path docs/x-notes-private.md (path)"
-assert_contains "$DS_STDOUT" "forbidden-path a/runs/out.txt (path)"
-assert_contains "$DS_STDOUT" "forbidden-path docs/scratch.md (path)"
+assert_contains "$DS_STDOUT" "forbidden-path a/scratch/out.txt (path)"
+assert_contains "$DS_STDOUT" "forbidden-path docs/draft.md (path)"
 assert_contains "$DS_STDOUT" "denylist:2 home/notes.txt:1"
 assert_contains "$DS_STDOUT" "secret-assignment home/creds.txt:1"
 assert_not_contains "$DS_STDOUT" "home-path"
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: static privacy: the scan found 9 findings"
 assert_not_contains "$DS_STDOUT$DS_STDERR" "SecretProject"
-assert_not_contains "$DS_STDOUT$DS_STDERR" "Documents/a.pdf"
+assert_not_contains "$DS_STDOUT$DS_STDERR" '"recent'
 
 # The sandbox has no denylist (no home directory); the other rules apply.
 assert_exit 1 static --sandbox --only privacy
@@ -63,8 +63,8 @@ assert_not_contains "$DS_STDOUT" "denylist:"
 assert_contains "$DS_STDOUT" "forbidden-path my-notes-private.md (path)"
 
 # A configured denylist that cannot be read is an error outside the sandbox.
-rm "$inst/my-notes-private.md" "$inst/home/notes.txt" "$inst/home/creds.txt" "$inst/profiles/example/example.ini"
-rm -r "$inst/runs" "$inst/docs" "$inst/a"
+rm "$inst/my-notes-private.md" "$inst/home/notes.txt" "$inst/home/creds.txt" "$inst/profiles/example/history.json"
+rm -r "$inst/scratch" "$inst/docs" "$inst/a"
 assert_exit 0 static --only privacy
 mv "$HOME/private/denylist.txt" "$HOME/private/moved.txt"
 assert_exit 1 static --only privacy

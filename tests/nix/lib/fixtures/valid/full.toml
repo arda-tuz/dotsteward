@@ -114,9 +114,9 @@ forbidden_paths = ["*private-notes*"]
 denylist = "~/.config/workstation/denylist.txt"
 
 [[privacy.file_rules]]
-files = ["profiles/example-app/state.ini"]
-pattern = '\[recent items\]'
-message = "example profile contains recent items"
+files = ["profiles/example/history.json"]
+pattern = '"recent":'
+message = "example profile records recent items"
 
 [protected]
 "home/AGENTS.md" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

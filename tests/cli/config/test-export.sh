@@ -59,7 +59,7 @@ assert_eq .codex/skills "$DS_SKILLS_HM_ROOT"
 assert_eq locks/versions.lock.json "$DS_PINS_VERSIONS_LOCK"
 assert_eq arm64 "$DS_PINS_APT_ARCH"
 assert_eq "$HOME/.config/workstation/denylist.txt" "$DS_PRIVACY_DENYLIST"
-assert_eq '[{"files":["profiles/example-app/state.ini"],"message":"example profile contains recent items","pattern":"\\[recent items\\]"}]' \
+assert_eq '[{"files":["profiles/example/history.json"],"message":"example profile records recent items","pattern":"\"recent\":"}]' \
   "$DS_PRIVACY_FILE_RULES_JSON"
 assert_eq agent/AGENTS.md "$DS_AGENT_RULES_SOURCE"
 assert_eq owner "$DS_UPSTREAM_CONTRIBUTE"
