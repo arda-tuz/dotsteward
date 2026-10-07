@@ -615,7 +615,6 @@ users:
 ssh_pwauth: false
 disable_root: true
 ssh_deletekeys: true
-ssh_genkeytypes: []
 ssh_keys:
   ed25519_private: |
 EOF
