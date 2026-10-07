@@ -22,8 +22,10 @@
 #
 # The policy is privacy/policy.toml of the scanned repository root when it
 # exists, otherwise the framework's own; privacy/allowlist.txt next to it
-# lists public strings that are masked before term matching. Exit 0 when
-# clean, 1 on any finding (after collecting all of them) or error.
+# lists public strings that are masked before extra terms are matched. An
+# allowlist entry that contains a denylist term is refused, unless it is a
+# commit e-mail address that commits.email accepts. Exit 0 when clean, 1 on
+# any finding (after collecting all of them) or error.
 set -Eeuo pipefail
 
 # The pre-push hook runs this file directly, without the dispatcher, so the

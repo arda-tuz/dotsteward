@@ -41,9 +41,13 @@ on.
 | `denylist.required_for_range` | Commit range scans in the hook refuse to run without it. |
 
 `privacy/allowlist.txt` lists public strings (the framework's commit
-identity and repository names, and the names of forbidden working
-directories) that are masked before denylist and extra terms are matched;
-the generic rules still see them.
+identity and repository name). Extra terms are matched after they are
+masked; the generic rules still see them. An allowlist entry never hides a
+denylist term: a scan refuses an entry that contains one, naming the
+allowlist and denylist line numbers, unless the entry is a commit e-mail
+address that `commits.email` accepts (every commit carries that address,
+so it is public by policy). Denylist terms are matched after only those
+addresses are masked.
 
 An instance has its own, smaller policy: the `[privacy]` table of
 `workstation.toml` ([workstation-toml.md](workstation-toml.md)) adds

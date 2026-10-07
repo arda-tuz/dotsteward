@@ -1,6 +1,8 @@
-# Public strings masked before denylist and extra-term matching (one per
-# line, case-insensitive). Generic rules still see them.
+# Public strings masked before extra-term matching (one per line,
+# case-insensitive). Generic rules still see them. An entry may not contain
+# a denylist term; only a commit e-mail address that commits.email accepts
+# is exempt (see docs/privacy.md).
 #
-# The framework's public commit identity and repositories.
+# The framework's public commit identity and repository.
 124616428+arda-tuz@users.noreply.github.com
 arda-tuz/dotsteward

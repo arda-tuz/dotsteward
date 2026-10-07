@@ -651,17 +651,84 @@ ds_privacy_add_file_rule() {
 }
 
 # ds_privacy_load_allowlist FILE
-# Public strings masked (case-insensitively) before term matching: one per
-# line, blank lines and # comments ignored. A missing file means none.
+# Public strings: one per line, blank lines and # comments ignored. A missing
+# file means none. Extra terms are matched after every entry is masked
+# (case-insensitively). An entry may not contain a denylist term, so the
+# allowlist never hides one: the report refuses such an entry, unless it is
+# a commit e-mail address that commits.email accepts (every commit carries
+# that address, so it is public by policy); denylist terms are matched after
+# only those addresses are masked.
 ds_privacy_load_allowlist() {
-  local line
+  local line number=0
   _DS_PRIVACY_ALLOW=()
+  _DS_PRIVACY_ALLOW_LINE=()
   [[ -f $1 ]] || return 0
   while IFS= read -r line || [[ -n $line ]]; do
+    number=$((number + 1))
     line=$(_ds_privacy_trim "$line")
     [[ -z $line || $line == '#'* ]] && continue
     _DS_PRIVACY_ALLOW+=("${line,,}")
+    _DS_PRIVACY_ALLOW_LINE+=("$number")
   done <"$1"
+}
+
+# _ds_privacy_check_allowlist: refuses an allowlist entry that contains a
+# denylist term, unless the entry is a commit e-mail address that
+# commits.email accepts; fills _DS_PRIVACY_ALLOW_IDENTITY with those
+# addresses. Errors name both line numbers, never an entry or a term.
+_ds_privacy_check_allowlist() {
+  local i j entry
+  local -a opts
+  _DS_PRIVACY_ALLOW_IDENTITY=()
+  for i in "${!_DS_PRIVACY_ALLOW[@]}"; do
+    entry=${_DS_PRIVACY_ALLOW[i]}
+    if [[ -n ${DS_PRIVACY_COMMIT_EMAIL:-} && $entry =~ $DS_PRIVACY_COMMIT_EMAIL ]]; then
+      _DS_PRIVACY_ALLOW_IDENTITY+=("$entry")
+      continue
+    fi
+    for j in "${!_DS_TERM_RULE[@]}"; do
+      [[ ${_DS_TERM_RULE[j]} == denylist:* ]] || continue
+      case ${_DS_TERM_MODE[j]} in
+        plain) opts=(-i -F) ;;
+        word) opts=(-i -w -F) ;;
+        re) opts=(-i -E) ;;
+      esac
+      if LC_ALL=C grep -q "${opts[@]}" -e "${_DS_TERM_VALUE[j]}" <<<"$entry"; then
+        _ds_privacy_error "allowlist line ${_DS_PRIVACY_ALLOW_LINE[i]} contains a term of denylist line ${_DS_TERM_RULE[j]#denylist:}: the allowlist may not mask a denylist term (remove the entry or narrow the denylist entry)"
+        return 1
+      fi
+    done
+  done
+}
+
+# _ds_privacy_mask DIR ENTRY...: copies of the text units into DIR with
+# every case-insensitive occurrence of an ENTRY (lower case) replaced by
+# spaces, so line numbers and match positions stay.
+_ds_privacy_mask() {
+  local out=$1 list=$_DS_PRIVACY_WORK/mask i
+  shift
+  mkdir -p "$out"
+  printf '%s\n' "$@" >"$list"
+  for ((i = 0; i < ${#_DS_TEXT[@]}; i += _DS_PRIVACY_BATCH)); do
+    (cd "$_DS_PRIVACY_WORK/u" && LC_ALL=C awk -v allow="$list" -v out="$out" '
+      BEGIN { n = 0; while ((getline entry < allow) > 0) if (entry != "") list[++n] = entry; close(allow) }
+      FNR == 1 { if (dest != "") close(dest); dest = out "/" FILENAME }
+      {
+        line = $0; low = tolower(line)
+        for (i = 1; i <= n; i++) {
+          len = length(list[i])
+          while ((p = index(low, list[i])) > 0) {
+            pad = ""; for (j = 0; j < len; j++) pad = pad " "
+            line = substr(line, 1, p - 1) pad substr(line, p + len)
+            low = substr(low, 1, p - 1) pad substr(low, p + len)
+          }
+        }
+        print line > dest
+      }' "${_DS_TEXT[@]:i:_DS_PRIVACY_BATCH}") || {
+      _ds_privacy_error "masking the allowlist failed"
+      return 1
+    }
+  done
 }
 
 # ds_privacy_load_terms KIND FILE
@@ -719,7 +786,7 @@ ds_privacy_begin() {
   local base
   base=$(cd "${TMPDIR:-/tmp}" && pwd -P) || return 1
   _DS_PRIVACY_WORK=$(mktemp -d "$base/dotsteward-scan.XXXXXX") || return 1
-  mkdir "$_DS_PRIVACY_WORK/u" "$_DS_PRIVACY_WORK/m"
+  mkdir "$_DS_PRIVACY_WORK/u"
   : >"$_DS_PRIVACY_WORK/u/paths"
   _DS_SEQ=0
   _DS_PATHS=0
@@ -1089,35 +1156,24 @@ _ds_privacy_generic() {
   done <"$hits"
 }
 
-# _ds_privacy_terms: matches every term against the masked units and paths.
+# _ds_privacy_terms: matches every term against the units and paths:
+# denylist terms after the allowlisted commit e-mail addresses are masked,
+# extra terms after every allowlist entry is masked.
 _ds_privacy_terms() {
-  local dir=$_DS_PRIVACY_WORK/u hits=$_DS_PRIVACY_WORK/hits i name rest line match seq
+  local dir hits=$_DS_PRIVACY_WORK/hits i name rest line match seq
+  local deny_dir=$_DS_PRIVACY_WORK/u extra_dir=$_DS_PRIVACY_WORK/u
   local -a opts
+  if ((${#_DS_PRIVACY_ALLOW_IDENTITY[@]})); then
+    deny_dir=$_DS_PRIVACY_WORK/m-identity
+    _ds_privacy_mask "$deny_dir" "${_DS_PRIVACY_ALLOW_IDENTITY[@]}" || return 1
+  fi
   if ((${#_DS_PRIVACY_ALLOW[@]})); then
-    dir=$_DS_PRIVACY_WORK/m
-    printf '%s\n' "${_DS_PRIVACY_ALLOW[@]}" >"$_DS_PRIVACY_WORK/allow"
-    for ((i = 0; i < ${#_DS_TEXT[@]}; i += _DS_PRIVACY_BATCH)); do
-      (cd "$_DS_PRIVACY_WORK/u" && LC_ALL=C awk -v allow="$_DS_PRIVACY_WORK/allow" -v out="$dir" '
-        BEGIN { n = 0; while ((getline entry < allow) > 0) if (entry != "") list[++n] = entry; close(allow) }
-        FNR == 1 { if (dest != "") close(dest); dest = out "/" FILENAME }
-        {
-          line = $0; low = tolower(line)
-          for (i = 1; i <= n; i++) {
-            len = length(list[i])
-            while ((p = index(low, list[i])) > 0) {
-              pad = ""; for (j = 0; j < len; j++) pad = pad " "
-              line = substr(line, 1, p - 1) pad substr(line, p + len)
-              low = substr(low, 1, p - 1) pad substr(low, p + len)
-            }
-          }
-          print line > dest
-        }' "${_DS_TEXT[@]:i:_DS_PRIVACY_BATCH}") || {
-        _ds_privacy_error "masking the allowlist failed"
-        return 1
-      }
-    done
+    extra_dir=$_DS_PRIVACY_WORK/m-all
+    _ds_privacy_mask "$extra_dir" "${_DS_PRIVACY_ALLOW[@]}" || return 1
   fi
   for i in "${!_DS_TERM_RULE[@]}"; do
+    dir=$extra_dir
+    [[ ${_DS_TERM_RULE[i]} != denylist:* ]] || dir=$deny_dir
     case ${_DS_TERM_MODE[i]} in
       plain) opts=(-o -i -F) ;;
       word) opts=(-o -i -w -F) ;;
@@ -1252,6 +1308,7 @@ ds_privacy_report() {
   local -a names=()
   declare -gA _DS_FOUND=() _DS_EXEMPT_FROM=() _DS_EXEMPT_TO=()
   declare -ga _DS_FORBIDDEN_ERES=() _DS_EXCEPT_ERES=()
+  _ds_privacy_check_allowlist || return 1
   _ds_privacy_compile_globs _DS_FORBIDDEN_ERES "${DS_PRIVACY_FORBIDDEN_PATHS[@]}"
   _ds_privacy_compile_globs _DS_EXCEPT_ERES "${DS_PRIVACY_NON_ASCII_EXCEPT[@]}"
   : >"$_DS_PRIVACY_WORK/findings"
@@ -1345,3 +1402,5 @@ _DS_TERM_RULE=()
 _DS_TERM_MODE=()
 _DS_TERM_VALUE=()
 _DS_PRIVACY_ALLOW=()
+_DS_PRIVACY_ALLOW_LINE=()
+_DS_PRIVACY_ALLOW_IDENTITY=()
