@@ -277,9 +277,14 @@ EOF
           #!\${tools.shell}
           echo "fake-cli \${message} \${beta} instance=\$DOTSTEWARD_INSTANCE args=\$*"
         '';
+        # The trailing builtin keeps the shell as the builder process until
+        # it exits. Without it, bash -c execs the last command, and chmod
+        # closes stdout and stderr before it exits: Nix reads that as the end
+        # of the build, kills the process group, and on a loaded machine the
+        # kill lands first, failing the build with signal 9.
         args = [
           "-c"
-          ''"\$mkdir" -p "\$out/bin" && printf '%s' "\$script" >"\$out/bin/dotsteward" && "\$chmod" 0755 "\$out/bin/dotsteward"''
+          ''"\$mkdir" -p "\$out/bin" && printf '%s' "\$script" >"\$out/bin/dotsteward" && "\$chmod" 0755 "\$out/bin/dotsteward" && exit 0''
         ];
       };
     };
