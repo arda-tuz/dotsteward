@@ -324,3 +324,12 @@ grep -qi 'never invent' <<<"$checks" || ds_fail "the machine checks do not forbi
 grep -qi 'ask' <<<"$(grep -i 'identity' <<<"$checks")" || ds_fail "the machine checks do not ask the user for a missing identity"
 grep -qi 'never invent' <<<"$(grep -i 'identity' <<<"$rules")" || ds_fail "the rules do not forbid an invented git identity"
 
+# A step handed over to the user's terminal says what it will ask: with the
+# vscode component on Linux the package's installer asks whether to add the
+# vendor's apt repository, and only the user answers it.
+for text in "vscode" "vendor's apt repository"; do
+  assert_contains "$rules" "$text" "the terminal rule names the VS Code repository question"
+  assert_contains "$(subsection_of "$skill" "3.6")" "$text" "3.6 names the VS Code repository question"
+  assert_contains "$existing_flow" "$text" "section 4 names the VS Code repository question"
+  assert_contains "$(<"$platform_ref")" "$text" "platform-prereqs.md names the VS Code repository question"
+done
