@@ -15,8 +15,8 @@
 #   contribute_flake_url_for_tag URL TAG [FORK]
 #                            the dotsteward input URL URL moved to the
 #                            release tag TAG (github:owner/repo[/ref] or a
-#                            git+ URL with ?ref=), on the GitHub repository
-#                            FORK (owner/repo) when given
+#                            git+ URL with ?ref=refs/tags/TAG), on the
+#                            GitHub repository FORK (owner/repo) when given
 #
 # The instance commands (gate, rebuild, e2e, update, sync) run with
 # DOTSTEWARD_FRAMEWORK_OVERRIDE removed from their environment, so a
@@ -887,7 +887,7 @@ _contribute_url_query_without_ref() {
 }
 
 contribute_flake_url_for_tag() {
-  local url=$1 tag=$2 fork=${3:-} rest query="" path old_ref="" prefix base host
+  local url=$1 tag=$2 fork=${3:-} rest query="" path base host
   case $url in
     github:*)
       rest=${url#github:}
@@ -904,11 +904,6 @@ contribute_flake_url_for_tag() {
     git+*://*)
       base=${url%%\?*}
       [[ $url != *\?* ]] || query=${url#*\?}
-      if [[ $query =~ (^|&)ref=([^&]*) ]]; then
-        old_ref=${BASH_REMATCH[2]}
-      fi
-      prefix=refs/tags/
-      [[ -z $old_ref || $old_ref == refs/* ]] || prefix=""
       if [[ -n $fork ]]; then
         [[ $base =~ ^(git\+[a-z]+://([^/@]*@)?([^/:]+)(:[0-9]+)?)/(.+)$ ]] || return 1
         host=${BASH_REMATCH[3],,}
@@ -921,7 +916,9 @@ contribute_flake_url_for_tag() {
         fi
       fi
       query=$(_contribute_url_query_without_ref "$query")
-      printf '%s?%sref=%s\n' "$base" "${query:+$query&}" "$prefix$tag"
+      # Always the full tag ref: Nix reads a git+ ref without refs/ as a
+      # branch (refs/heads/<ref>), whatever the url had before.
+      printf '%s?%sref=refs/tags/%s\n' "$base" "${query:+$query&}" "$tag"
       ;;
     *) return 1 ;;
   esac
