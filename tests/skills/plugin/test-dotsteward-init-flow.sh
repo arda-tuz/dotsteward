@@ -58,6 +58,15 @@ fenced() {
   ' "$@"
 }
 
+# subsection_of FILE HEADING: the lines of the level-3 section whose heading
+# starts with HEADING, up to the next heading.
+subsection_of() {
+  awk -v heading="### $2" '
+    /^##+ / { inside = (index($0, heading) == 1) }
+    inside { print }
+  ' "$1"
+}
+
 all_files=("$skill" "$skill_dir"/references/*.md)
 all_fenced=$(fenced "${all_files[@]}")
 
@@ -76,9 +85,9 @@ references=$(find "$skill_dir/references" -mindepth 1 -maxdepth 1 -printf '%f\n'
 assert_eq "catalog.md existing-instance.md new-instance.md platform-prereqs.md " \
   "$references" "reference files"
 
-# The skill runs before any instance exists: no overlay precedence, no
-# classification, no gate of its own; the framework skills of the instance
-# take over afterwards.
+# The skill runs before any instance exists: no overlay precedence and no
+# classification; it runs the instance's gate once before the first push,
+# and the framework skills of the instance take over afterwards.
 for name in dotsteward-maintain dotsteward-update dotsteward-contribute; do
   grep -q "$name" "$skill" || ds_fail "SKILL.md does not name $name for the changes after setup"
 done
@@ -113,6 +122,8 @@ in_order "$skill" \
   "run \"github:arda-tuz/dotsteward/\$tag\" -- init" \
   "gh repo create" \
   "git -C" \
+  ".dotsteward/cli.sh gate --scope maintain" \
+  "push -u origin main" \
   "./bootstrap.sh --profile" \
   "./rebuild.sh --profile" \
   "login-shell set --profile" \
@@ -150,7 +161,14 @@ grep -q 'git remote get-url origin' "$skill" || ds_fail "SKILL.md does not compa
 repo_lines=$(grep 'gh repo create' <<<"$all_fenced") || ds_fail "no fenced gh repo create"
 assert_contains "$repo_lines" "--private" "the repository is private"
 assert_contains "$repo_lines" "--source" "the repository is created from the instance directory"
-assert_contains "$repo_lines" "--push" "the instance is pushed"
+# The gate proves the tree before the first push (the order of the
+# instance's AGENTS.md): the repository is created without --push, and the
+# push follows the gate.
+assert_not_contains "$repo_lines" "--push" "the repository is created before the gate, without the push"
+# shellcheck disable=SC2016 # literal shell text of the skill
+assert_contains "$all_fenced" 'git -C "$dir" push -u origin main' "the instance is pushed after the gate"
+grep -qF 'gate --scope maintain' <<<"$all_fenced" || ds_fail "no fenced gate before the first push"
+assert_contains "$(subsection_of "$skill" "3.5")" "AGENTS.md" "the gate step names the rule of the instance's AGENTS.md"
 assert_contains "$all_fenced" "--json visibility" "the visibility is verified"
 grep -qi 'local' <<<"$new_flow" || ds_fail "the new-instance flow does not offer to keep the repository local"
 # Activation: bootstrap on a fresh machine, rebuild on one that is set up,

@@ -35,6 +35,14 @@ contains_all README.md \
 contains_all AGENTS.md \
   'dotsteward context --json' 'dotsteward-maintain' 'dotsteward-update' 'dotsteward-contribute' \
   '.dotsteward/' 'bootstrap.sh' 'git add -A' 'dotsteward gate'
+# The gate comes before every push, the first push of a new instance
+# included, in the order the dotsteward-init skill follows: gate, then
+# `git push -u origin main` for the first push, `dotsteward update publish`
+# afterwards.
+contains_all AGENTS.md 'first push' 'git push -u origin main' 'dotsteward update publish' 'never force-push'
+first_push=$(tr '\n' ' ' <"$tpl/AGENTS.md" | tr -s ' ')
+[[ $first_push == *"before every push, the first push of a new instance included"* ]] ||
+  ds_fail "AGENTS.md does not put the gate before the first push of a new instance"
 
 # components/README.md: enabling the example and writing a component.
 contains_all components/README.md \

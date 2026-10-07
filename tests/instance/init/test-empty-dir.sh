@@ -54,7 +54,9 @@ assert_contains "$DS_STDOUT" "[dotsteward] Initialized the dotsteward instance i
 assert_contains "$DS_STDOUT" "[dotsteward] Components: none"
 assert_contains "$DS_STDOUT" "[dotsteward] Committed $(git -C "$dir" rev-parse HEAD | cut -c1-12) chore: initialize dotsteward instance"
 assert_contains "$DS_STDOUT" "[dotsteward] Next steps:"
-assert_contains "$DS_STDOUT" "git -C $dir remote add origin $init_remote && git -C $dir push -u origin main"
+assert_contains "$DS_STDOUT" "git -C $dir remote add origin $init_remote"
+assert_contains "$DS_STDOUT" "cd $dir && ./.dotsteward/cli.sh gate --scope maintain"
+assert_contains "$DS_STDOUT" "git -C $dir push -u origin main"
 assert_contains "$DS_STDOUT" "cd $dir && ./bootstrap.sh --profile fresh"
 assert_contains "$DS_STDOUT" "cd $dir && ./rebuild.sh --profile workstation --switch && ./.dotsteward/cli.sh e2e --profile workstation"
 # The output of the steps: the mirrors sync and the pins.

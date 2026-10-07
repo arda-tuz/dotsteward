@@ -27,12 +27,17 @@ assert_jq - '. == {
   commit: $commit,
   next_steps: .next_steps
 }' --arg dir "$dir" --arg url "$template_url" --arg commit "$(git -C "$dir" rev-parse HEAD)" <<<"$document"
-assert_jq - '.next_steps | length == 3 and all(.[]; (keys == ["command", "description"]) and (.command | length > 0))' \
+assert_jq - '.next_steps | length == 5 and all(.[]; (keys == ["command", "description"]) and (.command | length > 0))' \
   <<<"$document"
-assert_jq - '.next_steps[0].command == "git -C \($dir) remote add origin git@github.com:alice/workstation.git && git -C \($dir) push -u origin main"' \
+# The order of the instance's AGENTS.md: the gate proves the tree before the
+# first push.
+assert_jq - '.next_steps[0].command == "git -C \($dir) remote add origin git@github.com:alice/workstation.git"' \
   --arg dir "$dir" <<<"$document"
-assert_jq - '.next_steps[1].command == "cd \($dir) && ./bootstrap.sh --profile new"' --arg dir "$dir" <<<"$document"
-assert_jq - '.next_steps[2].command == "cd \($dir) && ./rebuild.sh --profile dev --switch && ./.dotsteward/cli.sh e2e --profile dev"' \
+assert_jq - '.next_steps[1].command == "cd \($dir) && ./.dotsteward/cli.sh gate --scope maintain"' \
+  --arg dir "$dir" <<<"$document"
+assert_jq - '.next_steps[2].command == "git -C \($dir) push -u origin main"' --arg dir "$dir" <<<"$document"
+assert_jq - '.next_steps[3].command == "cd \($dir) && ./bootstrap.sh --profile new"' --arg dir "$dir" <<<"$document"
+assert_jq - '.next_steps[4].command == "cd \($dir) && ./rebuild.sh --profile dev --switch && ./.dotsteward/cli.sh e2e --profile dev"' \
   --arg dir "$dir" <<<"$document"
 # The progress and the steps' output went to standard error.
 assert_contains "$DS_STDERR" "[dotsteward] Wrote mirror .dotsteward/manifest.x86_64-linux.json"
