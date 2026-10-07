@@ -28,7 +28,6 @@ for expected in \
   'ssh_pwauth: false' \
   'disable_root: true' \
   'ssh_deletekeys: true' \
-  'ssh_genkeytypes: []' \
   '  - path: /etc/dotsteward-vm' \
   '  - path: /etc/sudoers.d/90-dotsteward-vm' \
   '    permissions: "0440"' \
@@ -82,6 +81,11 @@ iso=$(<"$run/seed.iso")
 assert_contains "$iso" 'volid=cidata'
 assert_contains "$iso" '== user-data'
 assert_contains "$iso" '== meta-data'
+# The pre-generated host key replaces key generation: cloud-init generates
+# host keys only when ssh_keys is absent, and its schema rejects an empty
+# ssh_genkeytypes list (the guest would report a degraded boot).
+assert_not_contains "$ud" 'ssh_genkeytypes' "the seed sets ssh_genkeytypes"
+
 assert_call_count 0 genisoimage
 
 # Structure check with a YAML parser when one is available.
@@ -98,6 +102,8 @@ assert user["ssh_authorized_keys"] == [sys.argv[2]], user
 assert data["ssh_pwauth"] is False
 assert data["ssh_keys"]["ed25519_public"] == sys.argv[3]
 assert data["ssh_keys"]["ed25519_private"].endswith("\n")
+assert set(data["ssh_keys"]) == {"ed25519_private", "ed25519_public"}, data["ssh_keys"]
+assert "ssh_genkeytypes" not in data, data["ssh_genkeytypes"]
 files = {entry["path"]: entry for entry in data["write_files"]}
 assert set(files) == {"/etc/dotsteward-vm", "/etc/sudoers.d/90-dotsteward-vm"}, files
 sudoers = files["/etc/sudoers.d/90-dotsteward-vm"]
