@@ -29,7 +29,9 @@
 # publish
 #   In order: the clone guards; a clean tree; the base OID (--expected-base,
 #   else base_oid of candidate.json when it was prepared for this instance,
-#   else `git merge-base HEAD origin/<branch>`); at least one commit after
+#   else `git merge-base HEAD origin/<branch>`; a clone without
+#   origin/<branch>, a new instance before its first push, is refused with
+#   the `git push -u` to run); at least one commit after
 #   the base, which must be an ancestor of HEAD; the HEAD tree is the tree
 #   of a passed validation.json, made for the same scope and without a
 #   framework override; the commit subjects (update scope: the last one is

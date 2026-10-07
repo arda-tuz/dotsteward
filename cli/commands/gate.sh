@@ -33,7 +33,11 @@
 #   --expected-base OID
 #                      the base OID; default: base_oid of candidate.json
 #                      when it was prepared for this instance, else
-#                      `git merge-base HEAD origin/<branch>`
+#                      `git merge-base HEAD origin/<branch>`, else, in a
+#                      clone whose branch was never pushed (no
+#                      origin/<branch>, as right after `dotsteward init`),
+#                      HEAD, so the first tree is validated before the
+#                      first push
 #   --framework-override REF
 #                      evaluate the instance with its dotsteward input
 #                      replaced by the flake reference REF, in memory
@@ -129,6 +133,10 @@ exec 9>>"$lock_file"
 flock -n 9 || die "another gate is running; wait for it to finish"
 
 txn_require_no_untracked
+if [[ -z $expected_base && -z $(txn_recorded_base) ]] && txn_unpublished; then
+  expected_base=$(txn_head_oid)
+  log "origin/$DS_INSTANCE_BRANCH does not exist yet (the instance was never pushed); the base is HEAD $expected_base"
+fi
 base=$(txn_resolve_base "$expected_base")
 if [[ $scope == update ]]; then
   txn_check_allowlist "$base"

@@ -22,15 +22,23 @@
 #   txn_valid_scope SCOPE      update or maintain
 #   txn_require_clone          the instance root is the top of a git work
 #                              tree, on instance.branch, whose origin URL is
-#                              exactly instance.remote
+#                              exactly instance.remote (a missing origin
+#                              names the `git remote add` to run)
 #   txn_require_no_untracked   no untracked, non-ignored file (Nix does not
 #                              see them)
 # Base and candidate:
 #   txn_recorded_base          base_oid of candidate.json when its root is
 #                              this instance
+#   txn_unpublished            true when origin/<branch> does not exist in
+#                              the clone (a new instance before its first
+#                              push)
+#   txn_head_oid               the HEAD commit; a branch without a commit
+#                              names the commit to make
 #   txn_resolve_base [OID]     OID, else the recorded base, else
 #                              `git merge-base HEAD origin/<branch>`; it must
-#                              be a full object id of a commit of the clone
+#                              be a full object id of a commit of the clone.
+#                              Without origin/<branch> it names the first
+#                              push instead
 #   txn_allowlist_load         fills TXN_ALLOWLIST (anchored ERE entries)
 #                              and TXN_ALLOWLIST_LABELS from the framework
 #                              defaults, every committed manifest mirror and
@@ -104,7 +112,9 @@ txn_require_clone() {
     die "maintenance branch must be $DS_INSTANCE_BRANCH, not a detached HEAD"
   fi
   [[ $branch == "$DS_INSTANCE_BRANCH" ]] || die "maintenance branch must be $DS_INSTANCE_BRANCH, not $branch"
-  origin=$(git -C "$root" remote get-url origin 2>/dev/null) || origin="(none)"
+  origin=$(git -C "$root" remote get-url origin 2>/dev/null) || origin=""
+  [[ -n $origin ]] ||
+    die "the clone has no origin remote; add it with: git -C $(printf '%q' "$root") remote add origin $(printf '%q' "$DS_INSTANCE_REMOTE")"
   [[ $origin == "$DS_INSTANCE_REMOTE" ]] ||
     die "unexpected origin URL: $origin (expected $DS_INSTANCE_REMOTE)"
 }
@@ -126,12 +136,28 @@ txn_recorded_base() {
     'select(type == "object" and .root == $root) | .base_oid | strings' "$file" 2>/dev/null || true
 }
 
+txn_unpublished() {
+  ! git -C "$DS_INSTANCE_ROOT" rev-parse --verify --quiet "refs/remotes/origin/$DS_INSTANCE_BRANCH" >/dev/null
+}
+
+txn_head_oid() {
+  local root=$DS_INSTANCE_ROOT quoted
+  printf -v quoted '%q' "$root"
+  git -C "$root" rev-parse --verify --quiet 'HEAD^{commit}' ||
+    die "$DS_INSTANCE_BRANCH has no commit yet; commit the instance first: git -C $quoted add -A && git -C $quoted commit"
+}
+
 txn_resolve_base() {
-  local base=${1:-} root=$DS_INSTANCE_ROOT format length
+  local base=${1:-} root=$DS_INSTANCE_ROOT format length quoted
   if [[ -z $base ]]; then
     base=$(txn_recorded_base)
   fi
   if [[ -z $base ]]; then
+    txn_head_oid >/dev/null
+    if txn_unpublished; then
+      printf -v quoted '%q' "$root"
+      die "origin/$DS_INSTANCE_BRANCH does not exist in this clone; push the first commit of a new instance with: git -C $quoted push -u origin $DS_INSTANCE_BRANCH (after 'dotsteward gate --scope maintain' passed), or run 'git -C $quoted fetch origin' when the remote has $DS_INSTANCE_BRANCH already"
+    fi
     base=$(git -C "$root" merge-base HEAD "refs/remotes/origin/$DS_INSTANCE_BRANCH" 2>/dev/null) || base=""
   fi
   format=$(git -C "$root" rev-parse --show-object-format 2>/dev/null) || format=sha1
