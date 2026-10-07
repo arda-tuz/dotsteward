@@ -10,7 +10,9 @@
 #                                    locks the dotsteward input of
 #                                    DIR/flake.nix: its url (github:O/R/REF
 #                                    or git+ssh://git@github.com/O/R[.git]
-#                                    ?ref=[refs/tags/]REF) is resolved
+#                                    ?ref=refs/tags/REF; like Nix, a git+
+#                                    ref without refs/ names a branch, so
+#                                    ?ref=REF fails) is resolved
 #                                    against the bare repository of O/R in
 #                                    DS_TEST_ROOT/hub/repos, and DIR/flake.lock
 #                                    gets the node with that ref and the
@@ -70,6 +72,7 @@ else
 fi
 bare=$(awk -F'\t' -v slug="$owner/$repo" 'tolower($1) == tolower(slug) { print $2 }' "$hub/repos")
 [[ -n $bare ]] || fail "unknown repository $owner/$repo"
+[[ $type != git || $ref == refs/* ]] || fail "couldn't find remote ref refs/heads/$ref in $owner/$repo"
 rev=$(git -C "$bare" rev-parse --verify --quiet "refs/tags/${ref#refs/tags/}^{commit}") || fail "no tag $ref in $owner/$repo"
 if [[ -f $hub/knobs/lock-rev ]]; then
   rev=$(<"$hub/knobs/lock-rev")
