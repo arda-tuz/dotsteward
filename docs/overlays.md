@@ -64,7 +64,7 @@ local-only request into a repository change.
 - `example-term` releases need the smoke test in
   `components/example-term/e2e-smoke.sh` before a new major version is
   accepted.
-- A machine with enough memory can keep the gate's default parallelism.
+- Keep the gate's default parallelism.
 ```
 
 Overlays are instance files: personal, private and changed through

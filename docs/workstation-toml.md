@@ -112,8 +112,8 @@ memory while building:
   1024 MiB of a job's share of the budget, and at least one.
 
 A 4 GiB machine therefore builds one derivation at a time on one core, an
-8 GiB machine with 8 CPUs one derivation on 5 cores, and a 16 GiB machine
-with 12 CPUs two derivations on 6 cores each. A value set in
+8 GiB machine with 8 CPUs one derivation on 5 cores, and a 32 GiB machine
+with 16 CPUs five derivations on 3 cores each. A value set in
 `workstation.toml` (for example `nix_max_jobs = 2` and `nix_cores = 6`)
 applies on every machine instead, and `DOTSTEWARD_NIX_MAX_JOBS` and
 `DOTSTEWARD_NIX_CORES` override both for one run. `DOTSTEWARD_MEMORY_MIB`
