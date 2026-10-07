@@ -22,6 +22,7 @@ This skill runs before an instance exists on the machine, so there is no instanc
 - **Private by default.** The instance repository is created private. It holds no secrets, tokens, keys or machine state.
 - **Gate before push.** As the instance's `AGENTS.md` says, the tree is pushed only after `dotsteward gate` passed, the first push included (3.5).
 - **Confirm before activation.** `./bootstrap.sh` and `./rebuild.sh --switch` change the home directory (managed files become links, applications are installed). Confirm with the user first and tell them how to undo it.
+- **The user's git identity.** Commits carry the user's own `user.name` and `user.email`, checked in section 2 before anything is committed; ask the user for a missing one and never invent one.
 - **Decisions stay with the user:** the flow, installing Nix, the components and methods, the repository name and owner, keeping the repository local, and fresh versus adopt.
 - Talk with the user in their language; commands, file contents and commit messages stay in English.
 
@@ -40,8 +41,12 @@ sysctl -n hw.memsize         # macOS: memory in bytes
 command -v nix git gh curl xz
 nix --version
 gh auth status
+git config user.name         # the git identity of the commits
+git config user.email
 df -Pk "$HOME" /
 ```
+
+The git identity comes from the user. When `git config user.name` or `git config user.email` prints nothing, ask the user for the name and the email address their commits should carry, and set them only with their answer (`git config --global user.name "NAME"` and `git config --global user.email "EMAIL"`, or a per-directory configuration if they prefer). Never invent an identity, never use a placeholder or the agent's own name, and commit nothing before it is set.
 
 Compare the results with `references/platform-prereqs.md`: the supported platforms, the tools needed before Nix, the memory (at least 4 GiB) and the free space (at least 15 GiB). Report what is missing and what each part of the setup will need. Then explain the sudo needs before doing anything:
 
@@ -94,7 +99,7 @@ Profile names, `--allow-unfree` and the contribute mode keep their defaults unle
 
 ### 3.4 Create the instance
 
-`init` needs a git identity (`git config user.name` and `git config user.email`); ask the user to set one when it is missing. Then, with `dir` the checkout directory and `remote` the URL of 3.3:
+`init` commits with the git identity checked in section 2 and refuses without one. With `dir` the checkout directory and `remote` the URL of 3.3:
 
 ```bash
 nix --extra-experimental-features 'nix-command flakes' run "github:arda-tuz/dotsteward/$tag" -- init \

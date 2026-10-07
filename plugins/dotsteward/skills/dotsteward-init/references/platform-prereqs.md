@@ -43,5 +43,5 @@ Free space: check the file systems of `$HOME` and `/nix` (the root file system o
 ## Accounts
 
 - A GitHub account, logged in with `gh auth login`, to create or clone the private instance repository. SSH or HTTPS both work; `gh config get git_protocol` decides the form of the remote.
-- A git identity (`git config --global user.name` and `user.email`, or a per-directory one): `init` commits the new instance with it.
+- A git identity (`git config --global user.name` and `user.email`, or a per-directory one): `init` commits the new instance with it. Ask the user for it when it is missing; never invent one.
 - User name and home: Linux user names match `^[a-z_][a-z0-9_-]*$`, macOS short names `^[A-Za-z_][A-Za-z0-9_.-]*$`; the home directory must be an absolute, existing path without whitespace, quotes, `$` or backslash. Every command refuses other identities before it writes anything.
