@@ -1,0 +1,50 @@
+name: channels
+
+# Installs the dotsteward-init skill through the three distribution channels
+# (the Claude Code plugin marketplace, the Codex plugin marketplace and a
+# generic skills installer, `gh skill`) on a clean runner, each in its own
+# empty HOME, with tests/channels/local-install.sh: once from the checkout
+# and once from this GitHub repository at the tested commit, the way users
+# install it. Claude Code and Codex are the official release binaries the
+# component seeds pin (tests/channels/install-tools.sh); gh is the runner's.
+# Manual and on release tags.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: channels-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned Claude Code and Codex
+        run: |
+          bash tests/channels/install-tools.sh "$RUNNER_TEMP/bin"
+          printf '%s\n' "$RUNNER_TEMP/bin" >>"$GITHUB_PATH"
+      - name: Install from the checkout
+        run: bash tests/channels/local-install.sh
+      # The marketplaces clone the repository with git (through `gh auth
+      # setup-git` in each temporary HOME) and the skills installer reads it
+      # through the API; the job token can read this repository.
+      - name: Install from GitHub at the tested commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
+        run: bash tests/channels/local-install.sh --repo "$GITHUB_REPOSITORY" --ref "$REF_NAME"
