@@ -42,7 +42,7 @@ assert_eq "preflight --read-only --json --profile fresh" "${calls[0]}"
 assert_contains "${calls[1]}" "curl --proto =https --tlsv1.2 "
 assert_contains "${calls[1]}" " $term_url"
 assert_contains "${calls[2]}" " $app_url"
-assert_eq "sudo apt-get update" "${calls[3]}"
+assert_eq "sudo timeout 600 apt-get update" "${calls[3]}"
 [[ ${calls[4]} == "sudo apt-get install --no-install-recommends alpha $TMPDIR/dotsteward-install."*"/example-term_0.9.0.deb $TMPDIR/dotsteward-install."*"/example-app_1.2.3.deb" ]] ||
   ds_fail "unexpected install call: ${calls[4]}"
 assert_eq 5 "${#calls[@]}" "preflight, two downloads, one update, one install"
@@ -111,7 +111,7 @@ add_component example-app deb '{"pin": null, "packageNames": [], "architecture":
 ds_apt_available gamma 3.0
 : >"$DS_CALL_LOG"
 assert_exit 0 run_install --profile fresh
-assert_eq "sudo apt-get update
+assert_eq "sudo timeout 600 apt-get update
 sudo apt-get install --no-install-recommends gamma" "$(ds_calls_of sudo)"
 assert_eq "0" "$(ds_call_count curl)"
 assert_eq "3.0" "$(ds_dpkg_version gamma)"

@@ -55,7 +55,7 @@ assert_contains "$(ds_calls_of curl)" "--proto =https --tlsv1.2 "
 assert_contains "$(ds_calls_of curl)" "$url"
 mapfile -t calls < <(ds_calls_of sudo)
 assert_eq 2 "${#calls[@]}" "one apt-get update and one apt-get install"
-assert_eq "sudo apt-get update" "${calls[0]}"
+assert_eq "sudo timeout 600 apt-get update" "${calls[0]}"
 [[ ${calls[1]} == "sudo apt-get install --no-install-recommends $TMPDIR/dotsteward-install."*"/vscode_$floor.deb" ]] ||
   ds_fail "unexpected install call: ${calls[1]}"
 assert_eq "0" "$(ds_call_count apt-get '*--allow-downgrades*')"

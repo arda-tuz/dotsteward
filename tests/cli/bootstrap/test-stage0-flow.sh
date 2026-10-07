@@ -93,7 +93,7 @@ for shell in "${shells[@]}"; do
 
   # Prerequisites: the platform base list plus the component list, the
   # missing ones in one transaction, without -y (D6).
-  assert_eq "sudo apt-get update
+  assert_eq "sudo timeout 600 apt-get update
 sudo apt-get install --no-install-recommends curl gnupg xz-utils example-app-deps" "$(ds_calls_of sudo)"
   assert_contains "$DS_STDOUT" "[dotsteward] installing the missing prerequisites: curl gnupg xz-utils example-app-deps"
   [[ $(ds_dpkg_version example-app-deps) == 1.0 ]] || ds_fail "the prerequisites were not installed"
@@ -111,7 +111,7 @@ sudo apt-get install --no-install-recommends curl gnupg xz-utils example-app-dep
   assert_eq "cli.sh bootstrap --profile fresh --stage 1" "$(ds_calls_of cli.sh)"
   order=(
     "$(line_of '^example-app dump')"
-    "$(line_of '^sudo apt-get update')"
+    "$(line_of '^sudo timeout 600 apt-get update')"
     "$(line_of '^curl ')"
     "$(line_of '^nix-installer ')"
     "$(line_of '^cli\.sh ')"
@@ -125,7 +125,7 @@ done
 # Nix installer.
 reset
 assert_exit 0 run_stage0 DOTSTEWARD_ASSUME_YES=1 -- --profile fresh
-assert_eq "sudo apt-get update
+assert_eq "sudo timeout 600 apt-get update
 sudo apt-get install -y --no-install-recommends curl gnupg xz-utils example-app-deps" "$(ds_calls_of sudo)"
 assert_contains "$(<"$DS_CALL_LOG")" "nix-installer --daemon --yes"
 

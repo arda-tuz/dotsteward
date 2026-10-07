@@ -134,9 +134,30 @@ ds_apt_available example-term 0.9.0
 : >"$DS_CALL_LOG"
 apt_update
 apt_install example-term "$DS_TEST_ROOT/example-term.deb"
-assert_eq "sudo apt-get update
+assert_eq "sudo timeout 600 apt-get update
 sudo apt-get install --no-install-recommends example-term $DS_TEST_ROOT/example-term.deb" "$(ds_calls_of sudo)"
 assert_eq 0.9.0 "$(dpkg_version example-term)"
+# A package mirror that stops answering cannot hang the transaction:
+# apt-get update is bounded (600 s, DOTSTEWARD_APT_UPDATE_TIMEOUT) and tried
+# once more after a timeout; two timeouts fail with timeout's status 124.
+ds_stub_route apt-get 'update*' --sleep 10 --times 1
+: >"$DS_CALL_LOG"
+DOTSTEWARD_APT_UPDATE_TIMEOUT=1 assert_exit 0 apt_update
+assert_eq "sudo timeout 1 apt-get update
+sudo timeout 1 apt-get update" "$(ds_calls_of sudo)"
+assert_eq "[dotsteward] WARNING: apt-get update did not finish within 1 s; trying once more" "$DS_STDERR"
+ds_stub_route apt-get 'update*' --sleep 10 --times 2
+: >"$DS_CALL_LOG"
+DOTSTEWARD_APT_UPDATE_TIMEOUT=1 assert_exit 124 apt_update
+assert_eq 2 "$(ds_call_count sudo)"
+assert_contains "$DS_STDERR" "[dotsteward] WARNING: apt-get update did not finish within 1 s twice; a package mirror does not answer"
+ds_stub_clear_routes apt-get
+# Another failure is not retried.
+ds_stub_route apt-get 'update*' --exit 100 --times 1
+: >"$DS_CALL_LOG"
+assert_exit 100 apt_update
+assert_eq 1 "$(ds_call_count sudo)"
+ds_stub_clear_routes apt-get
 : >"$DS_CALL_LOG"
 DOTSTEWARD_ASSUME_YES=1 apt_install --reinstall example-term
 assert_eq "sudo apt-get install -y --reinstall --no-install-recommends example-term" "$(ds_calls_of sudo)"
