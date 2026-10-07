@@ -21,6 +21,12 @@ self-test, which never boots a VM.
   password login disabled, the run's key as the only authorized key) and the
   marker file `/etc/dotsteward-vm`. Nothing from the host user's identity
   goes into the VM.
+- The guest scripts (`tests/vm/guest/*.sh`) install software into the home
+  directory and change the whole machine, so they refuse to run anywhere
+  else, before any command with a side effect: `guest_require_vm` in
+  `guest/common.sh` requires that marker with the text cloud-init wrote,
+  a hypervisor reported by `systemd-detect-virt --vm`, and the user
+  `stranger`. There is no override; run them through `vm.sh scenario`.
 - Networking is QEMU user mode. The only port forward is the guest's SSH,
   bound to `127.0.0.1` on the host. Every SSH call uses the run's key, checks
   the pinned host key strictly and ignores the host's SSH configuration.
