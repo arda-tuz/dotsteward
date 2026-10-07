@@ -1,0 +1,15 @@
+{
+  "name": "dotsteward",
+  "owner": {
+    "name": "dotsteward contributors"
+  },
+  "description": "Set up and maintain a reproducible agent workstation with dotsteward.",
+  "plugins": [
+    {
+      "name": "dotsteward",
+      "source": "./plugins/dotsteward",
+      "version": "0.0.1",
+      "description": "Set up and maintain a reproducible agent workstation with dotsteward."
+    }
+  ]
+}

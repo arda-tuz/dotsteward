@@ -1,0 +1,20 @@
+{
+  "name": "dotsteward",
+  "interface": {
+    "displayName": "dotsteward"
+  },
+  "plugins": [
+    {
+      "name": "dotsteward",
+      "source": {
+        "source": "local",
+        "path": "./plugins/dotsteward"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

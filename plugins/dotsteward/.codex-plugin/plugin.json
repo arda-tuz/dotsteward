@@ -1,0 +1,17 @@
+{
+  "name": "dotsteward",
+  "version": "0.0.1",
+  "description": "Set up and maintain a reproducible agent workstation with dotsteward.",
+  "author": {
+    "name": "dotsteward contributors"
+  },
+  "repository": "https://github.com/arda-tuz/dotsteward",
+  "license": "MIT",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "dotsteward",
+    "shortDescription": "Set up a reproducible agent workstation",
+    "developerName": "dotsteward contributors",
+    "category": "Developer Tools"
+  }
+}
