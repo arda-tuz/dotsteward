@@ -5,9 +5,10 @@
 # assert.sh first) and calls vm_test_init.
 #
 # The tests never boot a virtual machine: tests/vm/fakes holds stand-ins for
-# qemu-system-x86_64, qemu-img, ssh, xorriso and genisoimage that record
-# every call in DS_CALL_LOG (one "NAME ARG..." line, as the harness stubs
-# do) and behave as the files in DS_STUB_STATE/<fake>/ say (vm_fake_set).
+# qemu-system-x86_64, qemu-img, ssh, xorriso and genisoimage, and for the
+# guest's systemd-detect-virt, that record every call in DS_CALL_LOG (one
+# "NAME ARG..." line, as the harness stubs do) and behave as the files in
+# DS_STUB_STATE/<fake>/ say (vm_fake_set).
 # Downloads go through the harness curl stub. ssh-keygen and git are real.
 #
 #   vm_test_init [FAKE...] environment for tests/vm/vm.sh: state root, a
@@ -33,7 +34,7 @@
 # shellcheck disable=SC2034 # read by the test files that source this file
 VM_SH=$DS_REPO_ROOT/tests/vm/vm.sh
 VM_FAKES=$DS_REPO_ROOT/tests/vm/fakes
-VM_FAKE_NAMES="qemu-system-x86_64 qemu-img ssh xorriso genisoimage"
+VM_FAKE_NAMES="qemu-system-x86_64 qemu-img ssh xorriso genisoimage systemd-detect-virt"
 
 # shellcheck disable=SC2120 # the fake names are optional
 vm_test_init() {

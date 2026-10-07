@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Fake systemd-detect-virt for the guest script tests. Records its arguments
+# in DS_CALL_LOG and prints the virtualization the test chose, exiting 1 for
+# "none" as the real tool does on a physical machine.
+# Behaviour files in DS_STUB_STATE/systemd-detect-virt/:
+#   virt     the answer (default "none": a physical host, never a VM)
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../../lib/harness.sh"
+ds_stub_begin --no-routes systemd-detect-virt "$@"
+
+virt=none
+if [[ -f $DS_STUB_STATE/systemd-detect-virt/virt ]]; then
+  virt=$(<"$DS_STUB_STATE/systemd-detect-virt/virt")
+fi
+printf '%s\n' "$virt"
+[[ $virt != none ]]
