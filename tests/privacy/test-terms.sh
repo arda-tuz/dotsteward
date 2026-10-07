@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # Denylist and extra terms: entry kinds (plain, word:, re:), comments,
-# case-insensitivity, entry line numbers in rule ids, allowlist masking,
+# case-insensitivity, entry line numbers in rule ids, the allowlist (it
+# masks extra terms and never a denylist term),
 # paths and commit fields, redaction (never a term in redacted output, and
 # no path that contains one), --require-denylist and entry validation.
 # shellcheck source=tests/privacy/helpers.sh
@@ -54,22 +55,43 @@ assert_contains "$DS_STDOUT" "denylist:5 notes.txt:6: $stem-42"
 assert_exit 0 scan --tree
 rm notes.txt
 
-# --- allowlist masking ----------------------------------------------------------
-# Strings in the scan root's privacy/allowlist.txt are masked before term
-# matching (case-insensitively); generic rules still see the original text.
+# --- allowlist ---------------------------------------------------------------
+# privacy/allowlist.txt of the scan root lists public strings. An entry may
+# not contain a denylist term (plain, word: or re:), so the allowlist can
+# never hide one: the scan is refused before any finding is printed, and the
+# error names both line numbers, never an entry.
 org=$(rand_word 6)
-printf '%s\n' "# public strings" "$org-$plain/widget" "$(address "$org" "$plain.test")" >privacy/allowlist.txt
-{
-  printf 'see %s-%s/widget\n' "$org" "$plain"                    # masked
-  printf 'see %s-%s/WIDGET\n' "${org^^}" "${plain^^}"            # masked
-  printf 'see %s-%s/other\n' "$org" "$plain"                     # finding
-} >public.txt
-printf 'mail %s\n' "$(address "$org" "$plain.test")" >mail.txt
+printf 'see %s-%s/widget\n' "$org" "$plain" >public.txt
+for entry in "$org-$plain/widget:3" "${org^^}-${plain^^}:3" "x-$word-y:4" "$org-$stem-7:5"; do
+  printf '%s\n' "# public strings" "${entry%:*}" >privacy/allowlist.txt
+  assert_exit 1 scan --tree --denylist "$denylist" --redact
+  assert_eq "" "$DS_STDOUT"
+  assert_eq "[dotsteward] ERROR: allowlist line 2 contains a term of denylist line ${entry##*:}: the allowlist may not mask a denylist term (remove the entry or narrow the denylist entry)" "$DS_STDERR"
+done
+# An entry that covers only part of a denylist match never hides it.
+printf '%s\n' "# public strings" "$org-$stem" "$org-$plain" >privacy/allowlist.txt
 assert_exit 1 scan --tree --denylist "$denylist" --redact
+assert_contains "$DS_STDERR" "allowlist line 3 contains a term of denylist line 3"
+printf '%s\n' "# public strings" "$org-$stem" >privacy/allowlist.txt
+printf 'see %s-%s-42\n' "$org" "$stem" >public.txt
+assert_exit 1 scan --tree --denylist "$denylist" --redact
+assert_eq "denylist:5 public.txt:1" "$DS_STDOUT"
+
+# Extra terms (the instance-leak terms of contribute) are matched after the
+# allowlisted strings are masked (case-insensitively); generic rules still
+# see the original text.
+printf '%s\n' "# public strings" "$org-$extra/widget" "$(address "$org" "$extra.test")" >privacy/allowlist.txt
+{
+  printf 'see %s-%s/widget\n' "$org" "$extra"                    # masked
+  printf 'see %s-%s/WIDGET\n' "${org^^}" "${extra^^}"            # masked
+  printf 'see %s-%s/other\n' "$org" "$extra"                     # finding
+} >public.txt
+printf 'mail %s\n' "$(address "$org" "$extra.test")" >mail.txt
+assert_exit 1 scan --tree --denylist "$denylist" --extra-terms "$extra_terms" --redact
 assert_eq "email mail.txt:1
 email privacy/allowlist.txt:3
-denylist:3 public.txt:3" "$DS_STDOUT"
-printf '%s\n' "# public strings" "$org-$plain/widget" >privacy/allowlist.txt
+extra-term:2 public.txt:3" "$DS_STDOUT"
+cp "$DS_REPO_ROOT/privacy/allowlist.txt" privacy/allowlist.txt
 rm public.txt mail.txt
 
 # --- paths: a path that contains a term is a finding and is never printed in
@@ -121,6 +143,22 @@ extra-term:1 commit $first committer-email" "$DS_STDOUT"
 printf '%s\n' "$NOREPLY_EMAIL" >>privacy/allowlist.txt
 assert_exit 0 scan --range "$base..HEAD" --metadata --extra-terms "$DS_TEST_ROOT/identity-terms.txt" --redact
 assert_eq "[dotsteward] scan clean: 1 files, 1 commits" "$DS_STDOUT"
+# The one exception to the denylist rule: an entry that is a commit e-mail
+# address the policy requires (commits.email) may contain a denylist term.
+# Every commit carries that address, so it is public by policy.
+printf '%s\n' "dotsteward-test@" >"$DS_TEST_ROOT/identity-denylist.txt"
+assert_exit 0 scan --range "$base..HEAD" --metadata --denylist "$DS_TEST_ROOT/identity-denylist.txt" --redact
+assert_eq "[dotsteward] scan clean: 1 files, 1 commits" "$DS_STDOUT"
+grep -v -x -F -e "$NOREPLY_EMAIL" privacy/allowlist.txt >"$DS_TEST_ROOT/allowlist.txt"
+cp "$DS_TEST_ROOT/allowlist.txt" privacy/allowlist.txt
+assert_exit 1 scan --range "$base..HEAD" --metadata --denylist "$DS_TEST_ROOT/identity-denylist.txt" --redact
+assert_eq "denylist:1 commit $first author-email
+denylist:1 commit $first committer-email" "$DS_STDOUT"
+# An address of another form gets no exception.
+printf '%s\n' "dotsteward-test@users.noreply.github.com" >>privacy/allowlist.txt
+assert_exit 1 scan --range "$base..HEAD" --metadata --denylist "$DS_TEST_ROOT/identity-denylist.txt" --redact
+assert_contains "$DS_STDERR" "contains a term of denylist line 1"
+cp "$DS_TEST_ROOT/allowlist.txt" privacy/allowlist.txt
 
 # --- --require-denylist --------------------------------------------------------
 # Without --denylist it uses the policy path (~ is the home directory).
