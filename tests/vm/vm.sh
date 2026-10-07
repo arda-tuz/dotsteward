@@ -972,7 +972,10 @@ cmd_push() {
 
   guest_run "$run" 'mkdir -p .dotsteward-vm && cat > .dotsteward-vm/framework.bundle' <"$bundle" ||
     die "uploading the framework bundle to VM $name failed"
-  guest_run "$run" "set -e; rm -rf $guest_checkout.new; git clone -q --no-checkout .dotsteward-vm/framework.bundle $guest_checkout.new; git -C $guest_checkout.new checkout -q --detach $sha; rm -rf $guest_checkout; mv $guest_checkout.new $guest_checkout" </dev/null ||
+  # The checkout is on the branch dotsteward-vm at that commit, not detached:
+  # Nix warns on every evaluation of a git+file:// checkout without a HEAD
+  # branch.
+  guest_run "$run" "set -e; rm -rf $guest_checkout.new; git clone -q --no-checkout --branch dotsteward-vm .dotsteward-vm/framework.bundle $guest_checkout.new; git -C $guest_checkout.new checkout -q -B dotsteward-vm $sha; rm -rf $guest_checkout; mv $guest_checkout.new $guest_checkout" </dev/null ||
     die "checking out $sha in VM $name failed"
   log "pushed $sha to ~/$guest_checkout in VM $name"
 }
