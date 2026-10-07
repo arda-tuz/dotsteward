@@ -14,8 +14,9 @@ this page gives only what is different on a Mac.
 - macOS 14 or later on Apple Silicon (arm64), as an administrator. An older
   macOS or an Intel Mac is off the fast path: the read-only preflight stops
   there (exit 3) before it writes anything.
-- At least 15 GiB free on the file systems of `$HOME` and `/nix` (the Nix
-  installer creates its own APFS volume).
+- At least 4 GiB of memory (8 GiB or more recommended) and at least 15 GiB
+  free on the file systems of `$HOME` and `/nix` (the Nix installer creates
+  its own APFS volume).
 - The Xcode Command Line Tools, which provide `git`. The bootstrap checks for
   them and stops with this hint when they are missing:
 
@@ -56,6 +57,10 @@ darwin install method by default:
 
 `--method-platform COMPONENT=linux:METHOD,darwin:METHOD` chooses per
 platform, for example `external` for an application you install yourself.
+
+Validate and publish it as on Ubuntu (step 4 there): create the private
+repository without pushing, run `./.dotsteward/cli.sh gate --scope maintain`,
+then `git push -u origin main`.
 
 ## Set up the Mac
 

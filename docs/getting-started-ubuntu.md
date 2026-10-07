@@ -14,7 +14,10 @@ same changes and ask before each one that needs `sudo`.
 - Ubuntu 24.04 on x86_64, as a user who may use `sudo`. Another release or
   architecture is off the supported fast path: the bootstrap's read-only
   preflight stops there (exit 3) before it writes anything.
-- At least 15 GiB free on the file systems of `$HOME` and `/nix`.
+- At least 4 GiB of memory (8 GiB or more recommended; the validation gate
+  derives its build parallelism from the memory and CPUs, see
+  [workstation.toml](workstation-toml.md#gate)) and at least 15 GiB free on
+  the file systems of `$HOME` and `/nix`.
 - `git`, `curl` and `xz` (the Nix installer unpacks a `.tar.xz`):
 
   ```bash
@@ -98,12 +101,22 @@ components from the [catalog](catalog.md); `--method COMPONENT=METHOD`
 picks another install method. The result is a `workstation.toml` like the
 [example](workstation-toml.md#example).
 
-### 4. Publish it as a private repository
+### 4. Validate it and publish it as a private repository
+
+Create the private repository without pushing, prove the instance with the
+gate, then push it. The instance's `AGENTS.md` asks for a passed gate before
+every push, the first one included; right after `init` the gate validates
+against the commit `init` made.
 
 ```bash
-gh repo create OWNER/workstation --private --source ~/workstation --remote origin --push
+gh repo create OWNER/workstation --private --source ~/workstation --remote origin
 gh repo view OWNER/workstation --json visibility --jq .visibility
+cd ~/workstation && ./.dotsteward/cli.sh gate --scope maintain
+git -C ~/workstation push -u origin main
 ```
+
+The first gate downloads and builds most of the workstation, which the
+bootstrap below reuses.
 
 ### 5. Set up the machine
 
