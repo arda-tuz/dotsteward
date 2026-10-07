@@ -4,9 +4,9 @@
     dotsteward pins [--instance DIR] sync [--nix] [--skill NAME]...
     dotsteward pins [--instance DIR] latest [--out FILE] [--all] [--jobs N]
 
-check   cross-checks the lock files with every rule (offline, read-only);
-        --nix also compares the resolved versions with the instance's Nix
-        evaluation
+check   cross-checks the lock files with every rule and validates every
+        pins latest declaration (offline, read-only, no query); --nix also
+        compares the resolved versions with the instance's Nix evaluation
 sync    rewrites the derived values of the lock files; --nix also writes
         the evaluated resolved versions; --skill NAME refreshes the digests
         of a vendored skill
@@ -16,7 +16,7 @@ Output lines start with ``[pins]``; problems go to standard error as
 ``[pins] ERROR: ...``. Exit status: 0 success, 1 inconsistencies or a
 refusal (unknown --skill, untracked files before a Nix call, a sync rule
 that cannot run), 2 usage errors and broken inputs (no instance, invalid
-configuration, missing or invalid manifest mirror, invalid rule
+configuration, missing or invalid manifest mirror, invalid rule or latest
 declaration, unreadable lock file, failed Nix evaluation).
 
 The ``latest`` subcommand is implemented by ``dotsteward_pins.latest.runner``,
@@ -87,6 +87,12 @@ def run_check(instance: Instance, nix: bool) -> int:
     if nix:
         instance.refuse_untracked()
     rules = build_rules(instance)
+    # The latest declarations are only parsed here: an invalid one fails the
+    # check (exit 2) instead of the next `pins latest`.
+    from .latest.adapters import declared
+
+    for declaration in instance.declarations("latest"):
+        declared(declaration)
     ctx = Context(instance, instance.load_locks(), nix=nix)
     checker = Checker(instance.root)
     for rule in rules:

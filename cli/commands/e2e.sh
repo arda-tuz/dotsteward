@@ -7,7 +7,8 @@
 #       the manifest sections the checks read (a setup error finding on
 #       the manifest file)
 #    2. core:commands             the union of checks.commands of core and
-#                                 the active components is on PATH
+#                                 the active components is on the user's
+#                                 PATH (user_path)
 #    3. <component>:<hook>        early checks.e2e hooks
 #    4. core:managed-links        every managed link is a symlink that
 #                                 resolves
@@ -451,10 +452,11 @@ fi
 # --- Checks ---------------------------------------------------------------
 
 _e2e_commands() {
-  local command unit_failed=0
+  local command search unit_failed=0
+  search=$(user_path)
   while IFS= read -r command; do
     [[ -n $command ]] || continue
-    if ! command -v -- "$command" >/dev/null 2>&1; then
+    if ! PATH=$search command -v -- "$command" >/dev/null 2>&1; then
       skills_finding missing-command "$command" "required command not found: $command"
       _e2e_fail_or_continue
       unit_failed=1

@@ -21,10 +21,11 @@
 #       declaration order. PROFILE scopes the registry: a probe runs when its
 #       component's profiles and its own profiles are null or list PROFILE
 #       (an empty PROFILE scopes nothing) and its component's platforms are
-#       null or list the manifest's "platform". PATH_PREFIX goes first on
-#       PATH for the probe commands only; the runner's own tools keep the
-#       inherited PATH. Every probe runs with its "env" exported, its argv
-#       word for word and standard input from /dev/null.
+#       null or list the manifest's "platform". The probe commands search
+#       PATH_PREFIX, then the user's PATH (user_path: without the CLI's own
+#       toolchain); the runner's own tools keep the inherited PATH. Every
+#       probe runs with its "env" exported, its argv word for word and
+#       standard input from /dev/null.
 #       By default the first failure ends the process through die. With
 #       DS_PROBES_KEEP_GOING=1 every failure is recorded instead, nothing is
 #       printed, probes of a missing command are skipped, and the function
@@ -367,7 +368,8 @@ run_cli_probes() {
   local manifest=$1 profile=${2:-} prefix=${3:-} document
   local _probes_path=$PATH _probes_command _probes_argv=() _probes_env=()
   local _probes_value _probes_message
-  [[ -z $prefix ]] || _probes_path=$prefix:$PATH
+  _probes_path=$(user_path)
+  [[ -z $prefix ]] || _probes_path=$prefix:$_probes_path
   document=$(_probes_load "$manifest" "$profile") || exit 1
 
   declare -ga DS_PROBES_FAILURE_CODES=() DS_PROBES_FAILURE_COMMANDS=() DS_PROBES_FAILURES=()

@@ -154,7 +154,11 @@ pkgs.stdenvNoCC.mkDerivation {
     patchShebangs --host "$out/share/dotsteward/cli"
     printf '%s' ${lib.escapeShellArg sourceInfo} >"$out/share/dotsteward/source-info"
     printf '%s\n' ${lib.escapeShellArg (builtins.toJSON catalogNames)} >"$out/share/dotsteward/catalog.json"
+    # The toolchain goes first on PATH for the CLI's own code and is named
+    # in DOTSTEWARD_TOOLCHAIN_PATH, so the checks of the user's environment
+    # leave it out (user_path in cli/lib/lib.sh).
     makeWrapper "$out/share/dotsteward/cli/dotsteward" "$out/bin/dotsteward" \
+      --set DOTSTEWARD_TOOLCHAIN_PATH ${lib.escapeShellArg (lib.makeBinPath toolchain)} \
       --prefix PATH : ${lib.escapeShellArg (lib.makeBinPath toolchain)}
     runHook postInstall
   '';

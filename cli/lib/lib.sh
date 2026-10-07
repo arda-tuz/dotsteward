@@ -13,6 +13,7 @@
 # Messages:      log, warn, die                     ([dotsteward] prefix)
 # Requirements:  require_command, require_profile, require_safe_identity,
 #                current_platform
+# User's PATH:   user_path, user_run COMMAND [ARG...]
 # Files:         timestamp_utc, ensure_private_dir DIR, sha256_file FILE,
 #                directory_sha256 DIR, install_asset SRC DEST MODE SHA256,
 #                forbid_paths GLOB DIR...
@@ -25,9 +26,10 @@
 # Login shell:   stable_zsh_path, ensure_stable_login_shell set|migrate [PROFILE]
 #
 # Inputs from the environment: DOTSTEWARD_STATE_ROOT, DOTSTEWARD_INSTANCE,
-# DOTSTEWARD_PLATFORM, GIT_SSH_COMMAND, TMPDIR, XDG_STATE_HOME; and, when
-# cli/lib/config.sh loaded the configuration, DS_PROFILES_NAMES (or
-# DS_CONFIG_JSON), DS_PINS_VERSIONS_LOCK and DS_COMPAT_LEGACY_BACKUP_LAYOUT.
+# DOTSTEWARD_PLATFORM, DOTSTEWARD_TOOLCHAIN_PATH, GIT_SSH_COMMAND, TMPDIR,
+# XDG_STATE_HOME; and, when cli/lib/config.sh loaded the configuration,
+# DS_PROFILES_NAMES (or DS_CONFIG_JSON), DS_PINS_VERSIONS_LOCK and
+# DS_COMPAT_LEGACY_BACKUP_LAYOUT.
 set -Eeuo pipefail
 
 log() {
@@ -45,6 +47,41 @@ die() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+# user_path: PATH without the directories named in DOTSTEWARD_TOOLCHAIN_PATH,
+# the tools the dotsteward package puts first on PATH for its own code; the
+# other entries keep their order. Checks of the user's environment (commands
+# on PATH, version floors, probes, a login shell a hook starts) search this
+# PATH, so a tool the user lacks, or has in another version, is never
+# answered by dotsteward's own copy. Without DOTSTEWARD_TOOLCHAIN_PATH (a
+# source checkout) it is PATH.
+user_path() {
+  if [[ -z ${DOTSTEWARD_TOOLCHAIN_PATH:-} ]]; then
+    printf '%s\n' "$PATH"
+    return 0
+  fi
+  local entry result=''
+  local -A toolchain=()
+  local -a entries=()
+  IFS=: read -ra entries <<<"$DOTSTEWARD_TOOLCHAIN_PATH"
+  for entry in "${entries[@]}"; do
+    [[ -z $entry ]] || toolchain[$entry]=1
+  done
+  IFS=: read -ra entries <<<"$PATH"
+  for entry in "${entries[@]}"; do
+    [[ -n $entry && -n ${toolchain[$entry]:-} ]] && continue
+    result+=${result:+:}$entry
+  done
+  printf '%s\n' "$result"
+}
+
+# user_run COMMAND [ARG...]: runs COMMAND with user_path as PATH, for the
+# command and everything it starts (a login shell and its startup files).
+user_run() {
+  local search
+  search=$(user_path)
+  PATH=$search "$@"
 }
 
 # current_platform: linux or darwin.

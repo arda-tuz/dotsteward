@@ -192,6 +192,17 @@ shell helpers), `DOTSTEWARD_INSTANCE`, `DOTSTEWARD_STATE_ROOT`,
 `dotsteward component run <name> <hook>` runs one hook by hand with the
 same environment.
 
+The packaged CLI puts its own toolchain (bash, coreutils, jq, git, Python
+and a few more) first on `PATH` and names those directories in
+`DOTSTEWARD_TOOLCHAIN_PATH`; hooks inherit both, so the helpers of
+`lib.sh` work the same on every platform. A hook that checks the user's own
+environment, such as a login shell and what its startup files put on
+`PATH`, starts it with `user_run` from `lib.sh` (for example
+`user_run zsh -l -i -c 'whence -p example-app'`): the command then searches
+the user's `PATH` without the toolchain, so a tool the user lacks is never
+answered by the CLI's copy. The commands, version floors and probes of
+`checks` are always looked up that way.
+
 ## Machine safety
 
 | Option | Type | Meaning |

@@ -33,7 +33,9 @@
 #   official-binary-failed  a missing or older binary (check), a failed
 #                           install
 #   hook-failed             a hook exited non-zero or cannot run
-#   missing-command         a checks.commands or floor command is not on PATH
+#   missing-command         a checks.commands or floor command is not on the
+#                           user's PATH (user_path: without the CLI's own
+#                           toolchain)
 #   floor-not-met, floor-invalid
 #   probes: the codes of cli/lib/probes.sh (missing-command,
 #           expected-unreadable, version-mismatch, presence-failed,
@@ -313,12 +315,13 @@ _agents_selected() {
 }
 
 _agents_commands() {
-  local command unit_failed=0
+  local command search unit_failed=0
   local -A seen=()
+  search=$(user_path)
   while IFS= read -r command; do
     [[ -n $command && -z ${seen[$command]:-} ]] || continue
     seen[$command]=1
-    if ! command -v -- "$command" >/dev/null 2>&1; then
+    if ! PATH=$search command -v -- "$command" >/dev/null 2>&1; then
       skills_finding missing-command "$command" "required command not found: $command"
       ((keep_going)) || exit 1
       unit_failed=1
@@ -346,9 +349,11 @@ _agents_floor_minimum() {
 }
 
 _agents_floors() {
-  local floor command component compare minimum output found ok unit_failed=0
+  local floor command component compare minimum output found ok search timeout_command unit_failed=0
   local -a argv=()
   SKILLS_DIE_CODE='floor-invalid'
+  search=$(user_path)
+  timeout_command=$(command -v timeout) || die "required command not found: timeout"
   while IFS= read -r floor; do
     [[ -n $floor ]] || continue
     command=$(jq -r '.command' <<<"$floor")
@@ -357,13 +362,13 @@ _agents_floors() {
     mapfile -t argv < <(jq -r '(.argv // ["--version"])[]' <<<"$floor")
     SKILLS_DIE_PATH=$command
     minimum=$(_agents_floor_minimum "$(jq -r '.minimum' <<<"$floor")" "$component")
-    if ! command -v -- "$command" >/dev/null 2>&1; then
+    if ! PATH=$search command -v -- "$command" >/dev/null 2>&1; then
       skills_finding missing-command "$command" "required command not found: $command"
       ((keep_going)) || exit 1
       unit_failed=1
       continue
     fi
-    output=$(timeout 60 "$command" "${argv[@]}" </dev/null 2>&1) || true
+    output=$(PATH=$search "$timeout_command" 60 "$command" "${argv[@]}" </dev/null 2>&1) || true
     found=$(methods_extract_version "$output") || found=''
     ok=0
     case $compare in
