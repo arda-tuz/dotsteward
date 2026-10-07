@@ -12,8 +12,10 @@
 #   --agent claude  Claude Code through its native installer
 #                   (https://claude.ai/install.sh, which verifies the binary
 #                   it downloads), at ~/.local/bin/claude
-#   --agent codex   Codex CLI from the latest GitHub release
-#                   (codex-x86_64-unknown-linux-musl), at ~/.local/bin/codex
+#   --agent codex   Codex CLI through the standalone installer of its latest
+#                   GitHub release (install.sh, which verifies the package
+#                   it downloads and installs codex with its
+#                   codex-code-mode-host), at ~/.local/bin/codex
 #
 # Use one fresh VM per agent. Runs only inside a VM made by tests/vm/vm.sh
 # (`vm.sh scenario agent-prepare -- --agent claude`); elsewhere it refuses
@@ -70,11 +72,8 @@ case $agent in
     bash "$work/install.sh"
     ;;
   codex)
-    asset=codex-x86_64-unknown-linux-musl
-    download "https://github.com/openai/codex/releases/latest/download/$asset.tar.gz" "$work/codex.tar.gz"
-    tar -xzf "$work/codex.tar.gz" -C "$work"
-    [[ -f $work/$asset && ! -L $work/$asset ]] || guest_die "the Codex release archive has no $asset binary"
-    install -m 0755 -- "$work/$asset" "$bin_dir/codex"
+    download https://github.com/openai/codex/releases/latest/download/install.sh "$work/install.sh"
+    CODEX_NON_INTERACTIVE=1 sh "$work/install.sh"
     ;;
 esac
 [[ -x $bin_dir/$agent ]] || guest_die "$bin_dir/$agent was not installed"
