@@ -184,7 +184,7 @@ assert_eq "3 0 1 http://cache.example.invalid" \
   "$DS_GATE_NIX_MAX_JOBS $DS_GATE_NIX_CORES $DS_GATE_MIN_FREE_GIB $DS_GATE_CACHE_URL"
 DOTFILES_STATE_ROOT=$DS_TEST_ROOT/legacy-state DOTFILES_NIX_MAX_JOBS=7 load_config "$fw" "$minimal"
 assert_eq "$HOME/.local/state/dotsteward" "$DS_STATE_ROOT" "legacy names ignored without compat.legacy_env"
-assert_eq 2 "$DS_GATE_NIX_MAX_JOBS"
+assert_eq 5 "$DS_GATE_NIX_MAX_JOBS"
 DOTFILES_STATE_ROOT=$DS_TEST_ROOT/legacy-state DOTFILES_NIX_MAX_JOBS=7 DOTFILES_NIX_CORES=5 \
   DOTFILES_MIN_FREE_GB=9 DOTFILES_CACHE_URL=https://legacy.example.invalid load_config "$fw" "$instance"
 assert_eq "$DS_TEST_ROOT/legacy-state" "$DS_STATE_ROOT"

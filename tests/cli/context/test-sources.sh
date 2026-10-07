@@ -24,7 +24,7 @@ assert_eq '{"path":"'"$minimal"'","name":"minimal","remote":"git@github.com:alic
 # No current/profile record: the check profile (D15).
 assert_eq '{"names":["main"],"current":"main","default":"main","check":"main","bootstrap":"main","modes":{"main":"fresh"}}' \
   "$(jq -c .profiles <<<"$doc")"
-assert_eq '{"nix_max_jobs":2,"nix_cores":6,"min_free_gib":5,"cache_url":"https://cache.nixos.org"}' \
+assert_eq '{"nix_max_jobs":5,"nix_cores":3,"min_free_gib":5,"cache_url":"https://cache.nixos.org"}' \
   "$(jq -c '.gate | del(.step_keys)' <<<"$doc")"
 assert_eq '{"update_subject":"chore: update pinned tool versions","settings_subject":"chore: sync local maintained settings","upgrade_subject":"chore(dotsteward): upgrade to {version}"}' \
   "$(jq -c '.commit | del(.conventional_types)' <<<"$doc")"

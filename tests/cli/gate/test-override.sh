@@ -18,10 +18,10 @@ lock_before=$(sha256sum <"$gate_inst/flake.lock")
 
 overridden() {
   local expected=$1
-  assert_eq "$(nix_line flake check "$gate_inst" --no-update-lock-file --keep-going -L --max-jobs 2 --cores 6 \
+  assert_eq "$(nix_line flake check "$gate_inst" --no-update-lock-file --keep-going -L --max-jobs 5 --cores 3 \
     --override-input dotsteward "$expected" --no-write-lock-file)" "$(ds_calls_of nix | grep -F ' flake check ')"
   assert_eq "$(nix_line build "$gate_inst#checks.x86_64-linux.home" --no-link --no-update-lock-file \
-    --print-out-paths --max-jobs 2 --cores 6 --override-input dotsteward "$expected" --no-write-lock-file)" \
+    --print-out-paths --max-jobs 5 --cores 3 --override-input dotsteward "$expected" --no-write-lock-file)" \
     "$(ds_calls_of nix | grep -F ' build ')"
   assert_eq 3 "$(grep -cF -- "DOTSTEWARD_FRAMEWORK_OVERRIDE=$(printf '%q' "$expected")" "$DS_CALL_LOG")" \
     "the step commands did not see the override"

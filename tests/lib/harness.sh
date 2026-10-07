@@ -36,7 +36,7 @@
 # (DOTSTEWARD_ETC_SHELLS, DOTSTEWARD_OS_RELEASE, DOTSTEWARD_PASSWD_CMD,
 # DOTSTEWARD_SW_VERS) point at synthetic files inside DS_TEST_ROOT, and the
 # machine facts of the derived gate parallelism (DOTSTEWARD_MEMORY_MIB,
-# DOTSTEWARD_CPU_COUNT) describe a 16 GiB machine with 12 CPUs.
+# DOTSTEWARD_CPU_COUNT) describe a machine with 32768 MiB and 16 CPUs.
 #
 # Tests must not replace the EXIT trap; register cleanup work with ds_defer.
 #
@@ -194,9 +194,9 @@ EOF
   export DOTSTEWARD_OS_RELEASE=$dir/os-release
   export DOTSTEWARD_PASSWD_CMD=$dir/user-db
   export DOTSTEWARD_SW_VERS=$dir/sw_vers
-  # A 16 GiB machine with 12 CPUs, whose derived gate parallelism is two
-  # jobs with six cores.
-  export DOTSTEWARD_MEMORY_MIB=16384 DOTSTEWARD_CPU_COUNT=12
+  # A synthetic machine with 32768 MiB and 16 CPUs, whose derived gate
+  # parallelism is five jobs with three cores each.
+  export DOTSTEWARD_MEMORY_MIB=32768 DOTSTEWARD_CPU_COUNT=16
 }
 
 # fake_secret PREFIX [LENGTH] [CHARSET]

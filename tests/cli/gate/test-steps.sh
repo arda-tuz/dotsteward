@@ -52,10 +52,10 @@ assert_eq $'static\npins check --nix' "$(fake_calls | head -n 2)"
 assert_eq "probes --generation" "$(fake_calls | sed -n 3p | cut -d' ' -f1-2)"
 assert_call_count 1 nix '*--version'
 assert_call_count 1 curl
-assert_eq "$(nix_line flake check "$gate_inst" --no-update-lock-file --keep-going -L --max-jobs 2 --cores 6)" \
+assert_eq "$(nix_line flake check "$gate_inst" --no-update-lock-file --keep-going -L --max-jobs 5 --cores 3)" \
   "$(ds_calls_of nix | grep -F ' flake check ')"
 assert_eq "$(nix_line build "$gate_inst#checks.x86_64-linux.home" --no-link --no-update-lock-file \
-  --print-out-paths --max-jobs 2 --cores 6)" "$(ds_calls_of nix | grep -F ' build ')"
+  --print-out-paths --max-jobs 5 --cores 3)" "$(ds_calls_of nix | grep -F ' build ')"
 generation=$(fake_calls | sed -n 3p | cut -d' ' -f3)
 [[ -d $generation/home-path/bin ]] || ds_fail "probes did not get the built generation: $generation"
 # Every step command sees the instance.

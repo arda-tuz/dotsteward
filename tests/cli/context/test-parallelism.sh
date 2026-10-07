@@ -7,8 +7,8 @@
 # budget; one job per full 6144 MiB of it, at most one per CPU and at least
 # one; the cores of a job are the CPUs divided among the jobs, at most one
 # per full 1024 MiB of the job's share of the budget, and at least one. So a
-# 4 GiB machine builds one derivation on one core, and a 16 GiB machine
-# with 12 CPUs keeps the earlier fixed values, two jobs with six cores.
+# 4 GiB machine builds one derivation on one core, and a 32 GiB machine
+# with 16 CPUs five derivations on three cores each.
 # DOTSTEWARD_MEMORY_MIB and DOTSTEWARD_CPU_COUNT replace the facts of the
 # machine (tests, containers with tighter limits); a configured value wins
 # over the derived one, and DOTSTEWARD_NIX_MAX_JOBS and DOTSTEWARD_NIX_CORES
@@ -38,15 +38,15 @@ assert_eq "1 1" "$(parallelism 3900 4)" "a 4 GiB machine with 4 CPUs"
 assert_eq "1 1" "$(parallelism 1024 64)" "less memory than the reserve"
 assert_eq "1 1" "$(parallelism 65536 1)" "one CPU"
 assert_eq "1 5" "$(parallelism 7900 8)" "an 8 GiB machine with 8 CPUs"
-assert_eq "2 6" "$(parallelism 16384 12)" "a 16 GiB machine with 12 CPUs (MemTotal of 16 GiB)"
-assert_eq "2 6" "$(parallelism 16384 12)" "16 GiB with 12 CPUs"
-assert_eq "4 4" "$(parallelism 32000 16)" "a 32 GiB machine with 16 CPUs"
+assert_eq "2 4" "$(parallelism 14336 8)" "14 GiB with 8 CPUs"
+assert_eq "4 4" "$(parallelism 32000 16)" "a 32 GiB machine with 16 CPUs (memory slightly below 32 GiB)"
+assert_eq "5 3" "$(parallelism 32768 16)" "32 GiB with 16 CPUs"
 assert_eq "8 1" "$(parallelism 65536 8)" "at most one job per CPU"
 
-# The harness pins the machine to 16 GiB and 12 CPUs, so the other tests see
-# the values of that machine.
-assert_eq "16384 12" "$DOTSTEWARD_MEMORY_MIB $DOTSTEWARD_CPU_COUNT"
-assert_eq '{"nix_max_jobs":2,"nix_cores":6}' "$(context_json "$inst" | jq -c '.gate | {nix_max_jobs, nix_cores}')"
+# The harness pins the machine to 32768 MiB and 16 CPUs, so the other tests
+# see the values of that machine.
+assert_eq "32768 16" "$DOTSTEWARD_MEMORY_MIB $DOTSTEWARD_CPU_COUNT"
+assert_eq '{"nix_max_jobs":5,"nix_cores":3}' "$(context_json "$inst" | jq -c '.gate | {nix_max_jobs, nix_cores}')"
 
 # The real machine: positive integers.
 doc=$(env -u DOTSTEWARD_MEMORY_MIB -u DOTSTEWARD_CPU_COUNT "$context_framework/cli/dotsteward" --instance "$inst" context --json)
@@ -58,7 +58,7 @@ printf '%s\n\n[gate]\nnix_max_jobs = 2\nnix_cores = 6\n' "$base_config" >"$inst/
 assert_eq "2 6" "$(parallelism 3900 2)" "configured values on a small machine"
 # One configured key: the other is derived around it.
 printf '%s\n\n[gate]\nnix_max_jobs = 3\n' "$base_config" >"$inst/workstation.toml"
-assert_eq "3 4" "$(parallelism 16384 12)" "configured jobs, derived cores"
+assert_eq "3 5" "$(parallelism 32768 16)" "configured jobs, derived cores"
 printf '%s\n\n[gate]\nnix_cores = 3\n' "$base_config" >"$inst/workstation.toml"
 assert_eq "1 3" "$(parallelism 3900 2)" "configured cores, derived jobs"
 # The environment wins over both.
