@@ -34,13 +34,15 @@ Ask whether the user already has a dotsteward instance repository. With one (a G
 uname -sm
 cat /etc/os-release          # Linux
 sw_vers                      # macOS
+free -m                      # Linux: memory
+sysctl -n hw.memsize         # macOS: memory in bytes
 command -v nix git gh curl xz
 nix --version
 gh auth status
 df -Pk "$HOME" /
 ```
 
-Compare the results with `references/platform-prereqs.md`: the supported platforms, the tools needed before Nix, and the free space. Report what is missing and what each part of the setup will need. Then explain the sudo needs before doing anything:
+Compare the results with `references/platform-prereqs.md`: the supported platforms, the tools needed before Nix, the memory (at least 4 GiB) and the free space (at least 15 GiB). Report what is missing and what each part of the setup will need. Then explain the sudo needs before doing anything:
 
 - the **Nix daemon** install (multi-user Nix: it creates `/nix`, build users and a system service);
 - the **system packages** of a fresh machine (Ubuntu: one APT transaction for the base packages and the packages of the chosen components; macOS: the Xcode Command Line Tools);

@@ -662,6 +662,12 @@ def _build(
         **c["settings"],
         "published_ref": c["settings"].get("published_ref", f"origin/{c['instance']['branch']}"),
     }
+    # Derived from the machine at run time (runtime_values) when unset.
+    resolved["gate"] = {
+        **c["gate"],
+        "nix_max_jobs": c["gate"].get("nix_max_jobs"),
+        "nix_cores": c["gate"].get("nix_cores"),
+    }
     return resolved
 
 
@@ -839,9 +845,64 @@ def _override(env: Mapping[str, str], names: _Override, legacy_env: bool) -> tup
     return None
 
 
+# The Nix parallelism of the gate when workstation.toml sets none: the total
+# memory minus a reserve for the evaluation and the system is the budget;
+# one job per full share of it, at most one per CPU; the cores of a job are
+# the CPUs divided among the jobs, at most one per full core share of the
+# job's budget. Every value is at least 1. docs/workstation-toml.md states
+# the same numbers.
+PARALLELISM_RESERVE_MIB = 2048
+PARALLELISM_JOB_MIB = 6144
+PARALLELISM_CORE_MIB = 1024
+
+
+def derived_max_jobs(memory_mib: int, cpus: int) -> int:
+    budget = max(0, memory_mib - PARALLELISM_RESERVE_MIB)
+    return max(1, min(cpus, budget // PARALLELISM_JOB_MIB))
+
+
+def derived_cores(memory_mib: int, cpus: int, max_jobs: int) -> int:
+    budget = max(0, memory_mib - PARALLELISM_RESERVE_MIB)
+    return max(1, min(cpus // max_jobs, budget // max_jobs // PARALLELISM_CORE_MIB))
+
+
+def _machine_memory_mib() -> int:
+    """The total physical memory of this machine in MiB."""
+    try:
+        pages = os.sysconf("SC_PHYS_PAGES")
+        page_size = os.sysconf("SC_PAGE_SIZE")
+    except (ValueError, OSError) as problem:
+        raise DotstewardError(
+            f"cannot read the memory of this machine ({problem}); set gate.nix_max_jobs and gate.nix_cores"
+        ) from problem
+    return max(1, pages * page_size // (1024 * 1024))
+
+
+def _machine_cpus() -> int:
+    """The CPUs this process may run on."""
+    affinity = getattr(os, "sched_getaffinity", None)
+    if affinity is not None:
+        return max(1, len(affinity(0)))
+    return max(1, os.cpu_count() or 1)
+
+
+def _machine_fact(env: Mapping[str, str], name: str, problems: list[str]) -> int | None:
+    """A machine fact given by the environment (a positive integer), else None."""
+    value = _env_get(env, name)
+    if value is None:
+        return None
+    if re.fullmatch(r"[0-9]+", value, re.ASCII) and int(value) >= 1:
+        return int(value)
+    problems.append(f"{name}: expected an integer >= 1, got {to_json(value)}")
+    return None
+
+
 def runtime_values(instance: Instance, env: Mapping[str, str] | None = None) -> dict[str, Any]:
     """The run-time values of an instance: expanded paths, the environment
-    overrides of SPEC 6.1 and the effective skill overlays. Raises
+    overrides of SPEC 6.1, the gate parallelism derived from the machine
+    (DOTSTEWARD_MEMORY_MIB and DOTSTEWARD_CPU_COUNT replace its facts) where
+    neither the configuration nor the environment sets it, and the
+    effective skill overlays. Raises
     DotstewardError with every problem of the environment."""
     env = os.environ if env is None else env
     config = instance.config
@@ -864,7 +925,7 @@ def runtime_values(instance: Instance, env: Mapping[str, str] | None = None) -> 
         ("nix_cores", _Override("DOTSTEWARD_NIX_CORES", "DOTFILES_NIX_CORES")),
         ("min_free_gib", _Override("DOTSTEWARD_MIN_FREE_GB", "DOTFILES_MIN_FREE_GB")),
     ):
-        gate[key] = config["gate"][key]
+        gate[key] = config["gate"].get(key)
         override = _override(env, names, legacy_env)
         if override is None:
             continue
@@ -874,6 +935,15 @@ def runtime_values(instance: Instance, env: Mapping[str, str] | None = None) -> 
             gate[key] = int(value)
         else:
             problems.append(f"{name}: expected an integer >= {minimum}, got {to_json(value)}")
+    memory_mib = _machine_fact(env, "DOTSTEWARD_MEMORY_MIB", problems)
+    cpus = _machine_fact(env, "DOTSTEWARD_CPU_COUNT", problems)
+    if not problems and (gate["nix_max_jobs"] is None or gate["nix_cores"] is None):
+        memory_mib = _machine_memory_mib() if memory_mib is None else memory_mib
+        cpus = _machine_cpus() if cpus is None else cpus
+        if gate["nix_max_jobs"] is None:
+            gate["nix_max_jobs"] = derived_max_jobs(memory_mib, cpus)
+        if gate["nix_cores"] is None:
+            gate["nix_cores"] = derived_cores(memory_mib, cpus, gate["nix_max_jobs"])
     gate["cache_url"] = config["gate"]["cache_url"]
     override = _override(env, _Override("DOTSTEWARD_CACHE_URL", "DOTFILES_CACHE_URL"), legacy_env)
     if override is not None:

@@ -16,6 +16,8 @@
 #   static       dotsteward static (the instance privacy scan included)
 #   pins         dotsteward pins check --nix
 #   flake-check  nix flake check with gate.nix_max_jobs and gate.nix_cores
+#                (derived from the memory and CPUs of the machine when
+#                workstation.toml sets none; see `dotsteward context --json`)
 #   cli-probes   nix build checks.<primary system>.home, then dotsteward
 #                probes --generation <built path>
 # and records <state>/update/validation.json. Every Nix call keeps the lock

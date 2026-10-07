@@ -49,7 +49,9 @@
 #   DS_PLATFORM_LINUX_ARCHITECTURE, DS_PLATFORM_LINUX_DESKTOP_CONTAINS,
 #   DS_PLATFORM_DARWIN_MIN_VERSION, DS_PLATFORM_DARWIN_ARCHITECTURE
 #   DS_GATE_NIX_MAX_JOBS, DS_GATE_NIX_CORES, DS_GATE_MIN_FREE_GIB,
-#   DS_GATE_CACHE_URL                    after the DOTSTEWARD_NIX_MAX_JOBS,
+#   DS_GATE_CACHE_URL                    the parallelism derived from the
+#                                        machine when unset, after the
+#                                        DOTSTEWARD_NIX_MAX_JOBS,
 #                                        DOTSTEWARD_NIX_CORES,
 #                                        DOTSTEWARD_MIN_FREE_GB and
 #                                        DOTSTEWARD_CACHE_URL overrides (and

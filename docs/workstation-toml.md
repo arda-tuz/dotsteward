@@ -92,13 +92,34 @@ The parameters of the validation gate (`dotsteward gate`).
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `gate.nix_max_jobs` | `2` | `--max-jobs` of `nix flake check` (`DOTSTEWARD_NIX_MAX_JOBS`). |
-| `gate.nix_cores` | `6` | `--cores` of `nix flake check` (`DOTSTEWARD_NIX_CORES`). |
+| `gate.nix_max_jobs` | derived from the machine | `--max-jobs` of the gate's Nix builds (`DOTSTEWARD_NIX_MAX_JOBS`). |
+| `gate.nix_cores` | derived from the machine | `--cores` of the gate's Nix builds (`DOTSTEWARD_NIX_CORES`). |
 | `gate.min_free_gib` | `5` | Free GiB the gate requires in `/nix/store` (`DOTSTEWARD_MIN_FREE_GB`). |
 | `gate.prepare_warn_free_gib` | `15` | Below this many free GiB, `update prepare` warns. |
 | `gate.cache_url` | `"https://cache.nixos.org"` | The binary cache the gate requires to answer (`DOTSTEWARD_CACHE_URL`). |
 | `gate.static` | `[]` | Instance static scripts, run by the gate's static step and by `checks.instance-static`. |
 | `gate.update_allowlist` | `[]` | Extended regular expressions added to the paths an update-scope transaction may change. |
+
+When `gate.nix_max_jobs` or `gate.nix_cores` is not set, the CLI derives it
+from the machine on every run, so that a small machine does not run out of
+memory while building:
+
+- the budget is the total memory minus 2048 MiB for the evaluation and the
+  system;
+- `nix_max_jobs` is one job per full 6144 MiB of the budget, at most one per
+  CPU and at least one;
+- `nix_cores` is the CPUs divided among the jobs, at most one core per full
+  1024 MiB of a job's share of the budget, and at least one.
+
+A 4 GiB machine therefore builds one derivation at a time on one core, an
+8 GiB machine with 8 CPUs one derivation on 5 cores, and a 16 GiB machine
+with 12 CPUs two derivations on 6 cores each. A value set in
+`workstation.toml` (for example `nix_max_jobs = 2` and `nix_cores = 6`)
+applies on every machine instead, and `DOTSTEWARD_NIX_MAX_JOBS` and
+`DOTSTEWARD_NIX_CORES` override both for one run. `DOTSTEWARD_MEMORY_MIB`
+and `DOTSTEWARD_CPU_COUNT` replace the memory (in MiB) and the CPU count the
+derivation reads, for example in a container whose limits are lower than
+the host's. `dotsteward context --json` shows the values in effect.
 
 ## `[commit]`
 

@@ -73,7 +73,7 @@ Some pins carry requirements that another tool dictates (exact linter versions, 
 
 - Binary cache (`gate.cache_url`) unreachable: stop and report; retry later. No mirrors or extra substituters.
 - Disk: the prepare step warns below `prepare_warn_free_gib` GiB free on `/nix/store` (the `[gate]` table of `workstation.toml`); the gate stops below `gate.min_free_gib` of the context. Ask the user before freeing space. Never run `nix-collect-garbage` or delete Home Manager generations on your own: it removes rollback points and forces cold rebuilds.
-- Memory: the gate builds with `gate.nix_max_jobs` jobs and `gate.nix_cores` cores (`DOTSTEWARD_NIX_MAX_JOBS` and `DOTSTEWARD_NIX_CORES` override them for one run). Do not raise them unless the user agrees; a build that runs out of memory costs more than a slow one. The overlay may state the limits of this machine.
+- Memory: the gate builds with `gate.nix_max_jobs` jobs and `gate.nix_cores` cores, derived from the memory and CPUs of the machine unless `workstation.toml` sets them (`dotsteward context --json` shows the values in effect; `DOTSTEWARD_NIX_MAX_JOBS` and `DOTSTEWARD_NIX_CORES` override them for one run). Do not raise them unless the user agrees; a build that runs out of memory costs more than a slow one. The overlay may state the limits of this machine.
 
 ## What the gate covers
 

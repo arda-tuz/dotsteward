@@ -48,6 +48,18 @@ against the same contract. Details: [docs/catalog.md](docs/catalog.md).
 
 See [docs/platforms.md](docs/platforms.md).
 
+## Requirements
+
+- **Memory:** at least 4 GiB, 8 GiB or more recommended. The validation
+  gate derives its Nix build parallelism from the memory and CPUs of the
+  machine, so a 4 GiB machine builds one package at a time instead of
+  running out of memory ([details](docs/workstation-toml.md#gate)).
+- **Disk:** at least 15 GiB free for `/nix` and your home directory; the
+  gate refuses to run below 5 GiB.
+- **Accounts and tools:** a GitHub account for your private instance
+  repository, `git` with your own identity (`user.name` and `user.email`),
+  and `curl`. Nix is installed for you from a pinned, verified installer.
+
 ## Get started
 
 - [Getting started on Ubuntu](docs/getting-started-ubuntu.md)

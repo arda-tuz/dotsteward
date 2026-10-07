@@ -4,9 +4,9 @@
 # are allowed by the rule itself and are not listed here. Shell builtins and
 # keywords are not command names. One or more names per line; # comments.
 
-# Package managers, accounts and macOS system tools.
+# Package managers, accounts, macOS system tools and the memory of the machine.
 sudo apt-get apt-cache dpkg dpkg-query dpkg-deb getent chsh id sw_vers dscl xcode-select
-plutil hdiutil ditto
+plutil hdiutil ditto sysctl free
 
 # Archives, transfer, version control and Nix (nix-instantiate evaluates
 # library tests against an isolated store).

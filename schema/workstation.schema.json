@@ -231,12 +231,12 @@
         "nix_max_jobs": {
           "type": "integer",
           "minimum": 1,
-          "default": 2
+          "description": "--max-jobs of the gate's Nix builds. Default: derived from the machine at run time (see docs/workstation-toml.md)."
         },
         "nix_cores": {
           "type": "integer",
           "minimum": 0,
-          "default": 6
+          "description": "--cores of the gate's Nix builds. Default: derived from the machine at run time (see docs/workstation-toml.md)."
         },
         "min_free_gib": {
           "type": "integer",

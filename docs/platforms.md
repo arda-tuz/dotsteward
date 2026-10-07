@@ -225,7 +225,9 @@ Tests replace the system facts through injection points, so no test reads the
 host's files: `DOTSTEWARD_ETC_SHELLS` (the shells file),
 `DOTSTEWARD_OS_RELEASE` (os-release), `DOTSTEWARD_PASSWD_CMD` (a replacement
 for the user database lookup; it answers before `getent` or `dscl`) and
-`DOTSTEWARD_SW_VERS` (a replacement for `sw_vers`).
+`DOTSTEWARD_SW_VERS` (a replacement for `sw_vers`). `DOTSTEWARD_MEMORY_MIB` and
+`DOTSTEWARD_CPU_COUNT` replace the memory and CPU count behind the gate's
+derived Nix parallelism ([workstation.toml](workstation-toml.md#gate)).
 
 ## What is verified where
 

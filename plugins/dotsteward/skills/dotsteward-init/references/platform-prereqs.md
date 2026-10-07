@@ -34,9 +34,11 @@ Install a missing tool only after the user agrees. A fresh machine bootstrap (`.
 
 Each of these asks for the password itself, and the Nix installer and APT also ask for confirmation, so they need a terminal: when the agent shell has none (`[ -t 0 ]` fails) or `sudo -n true` fails, the user runs the command, and any `sudo apt-get install` above, in their own terminal (see the rules of the skill). Nothing else needs sudo. A fresh machine bootstrap sets the login shell itself. A machine that is already set up and adopted by `./rebuild.sh --switch` needs sudo only for the login shell, which the rebuild does not set: run `./.dotsteward/cli.sh login-shell set --profile <check profile>` after the rebuild.
 
-## Free space
+## Memory and free space
 
-Check the file systems of `$HOME` and `/nix` (the root file system on Ubuntu, a separate volume on macOS) with `df -Pk`. Plan for at least 15 GiB free: the first build fetches nixpkgs and the components, and the maintenance gate of the instance later refuses to run below 5 GiB (its default `gate.min_free_gib`).
+Memory: at least 4 GiB, 8 GiB or more recommended. Read it with `free -m` (Ubuntu) or `sysctl -n hw.memsize` (macOS). The gate derives its Nix parallelism from the memory and CPUs of the machine (`gate.nix_max_jobs` and `gate.nix_cores` in `docs/workstation-toml.md` of the framework), so a 4 GiB machine builds one derivation at a time on one core: slow, but without running out of memory. Below 4 GiB, tell the user that builds may fail and suggest a larger machine.
+
+Free space: check the file systems of `$HOME` and `/nix` (the root file system on Ubuntu, a separate volume on macOS) with `df -Pk`. Plan for at least 15 GiB free: the first build fetches nixpkgs and the components, and the maintenance gate of the instance later refuses to run below 5 GiB (its default `gate.min_free_gib`).
 
 ## Accounts
 

@@ -502,6 +502,11 @@ let
       settings = c.settings // {
         published_ref = c.settings.published_ref or "origin/${c.instance.branch}";
       };
+      # Derived from the machine at run time by the CLI when unset.
+      gate = c.gate // {
+        nix_max_jobs = c.gate.nix_max_jobs or null;
+        nix_cores = c.gate.nix_cores or null;
+      };
     };
 
   resolve =

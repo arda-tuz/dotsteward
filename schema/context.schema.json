@@ -129,7 +129,7 @@
     },
     "gate": {
       "type": "object",
-      "description": "Gate parameters after the DOTSTEWARD_NIX_MAX_JOBS, DOTSTEWARD_NIX_CORES, DOTSTEWARD_MIN_FREE_GB and DOTSTEWARD_CACHE_URL overrides.",
+      "description": "Gate parameters after the DOTSTEWARD_NIX_MAX_JOBS, DOTSTEWARD_NIX_CORES, DOTSTEWARD_MIN_FREE_GB and DOTSTEWARD_CACHE_URL overrides; the Nix parallelism is derived from the machine when neither workstation.toml nor the environment sets it.",
       "properties": {
         "nix_max_jobs": {
           "type": "integer",

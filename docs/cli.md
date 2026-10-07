@@ -41,7 +41,8 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | --- | --- |
 | `DOTSTEWARD_INSTANCE` | The instance directory, like `--instance`. |
 | `DOTSTEWARD_STATE_ROOT` | The root of the machine records, instead of `state.root`. |
-| `DOTSTEWARD_NIX_MAX_JOBS`, `DOTSTEWARD_NIX_CORES` | The Nix parallelism of the gate, instead of `gate.nix_max_jobs` and `gate.nix_cores`. |
+| `DOTSTEWARD_NIX_MAX_JOBS`, `DOTSTEWARD_NIX_CORES` | The Nix parallelism of the gate, instead of `gate.nix_max_jobs` and `gate.nix_cores` or the values derived from the machine. |
+| `DOTSTEWARD_MEMORY_MIB`, `DOTSTEWARD_CPU_COUNT` | The memory (MiB) and CPU count the derived Nix parallelism of the gate reads, instead of the machine's. |
 | `DOTSTEWARD_MIN_FREE_GB` | The free space the gate requires in `/nix/store`, instead of `gate.min_free_gib`. |
 | `DOTSTEWARD_CACHE_URL` | The binary cache the gate probes, instead of `gate.cache_url`. |
 | `DOTSTEWARD_FRAMEWORK_OVERRIDE` | The framework flake reference of `--framework-override`. |
@@ -388,6 +389,8 @@ steps, each with its output in <state>/update/validate.log:
   static       dotsteward static (the instance privacy scan included)
   pins         dotsteward pins check --nix
   flake-check  nix flake check with gate.nix_max_jobs and gate.nix_cores
+               (derived from the memory and CPUs of the machine when
+               workstation.toml sets none; see `dotsteward context --json`)
   cli-probes   nix build checks.<primary system>.home, then dotsteward
                probes --generation <built path>
 and records <state>/update/validation.json. Every Nix call keeps the lock
