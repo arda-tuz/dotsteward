@@ -33,6 +33,18 @@ assert_contains "$checkout" 'git clone'
 assert_contains "$checkout" "$sha"
 assert_contains "$checkout" 'dotsteward-src'
 
+# The guest checkout is on a branch at that commit: with a detached HEAD,
+# every Nix evaluation of git+file://~/dotsteward-src warns "could not read
+# HEAD ref ... using 'master'". Replay the guest command in a stand-in home.
+guest_home=$DS_TEST_ROOT/guest-home
+mkdir -p "$guest_home/.dotsteward-vm"
+cp "$DS_STUB_STATE/ssh/stdin.$upload" "$guest_home/.dotsteward-vm/framework.bundle"
+(cd "$guest_home" && bash -c "$checkout") || ds_fail "the guest checkout command failed: $checkout"
+assert_eq "$sha" "$(git -C "$guest_home/dotsteward-src" rev-parse HEAD)"
+git -C "$guest_home/dotsteward-src" symbolic-ref -q HEAD >/dev/null ||
+  ds_fail "the guest checkout has a detached HEAD"
+assert_eq '' "$(git -C "$guest_home/dotsteward-src" status --porcelain)"
+
 # Uncommitted changes are not shipped, and push says so.
 printf 'local edit\n' >>"$src/README.md"
 assert_exit 0 "$VM_SH" push --source "$src"
