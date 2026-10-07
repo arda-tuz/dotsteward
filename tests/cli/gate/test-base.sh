@@ -52,15 +52,33 @@ assert_exit 1 run_gate --scope maintain --force --expected-base "$tree"
 assert_eq "[dotsteward] ERROR: base OID is not a commit of this clone: $tree" "$DS_STDERR"
 assert_calls
 
-# Without candidate.json and without origin/main there is no base.
+# A clone whose branch was never pushed (no candidate.json and no
+# origin/main: the state right after `dotsteward init` and `git remote add
+# origin`): the base is HEAD, so the first tree is validated before the
+# first push, in both scopes.
 rm -f -- "$gate_candidate"
 git -C "$gate_inst" update-ref -d refs/remotes/origin/main
-assert_exit 1 run_gate --scope maintain --force
-assert_eq "[dotsteward] ERROR: no valid base OID; run 'dotsteward update prepare' first or pass --expected-base" "$DS_STDERR"
-assert_calls
+head=$(head_oid)
+first_push="[dotsteward] origin/main does not exist yet (the instance was never pushed); the base is HEAD $head"
+assert_exit 0 run_gate --scope maintain --force
+assert_eq "" "$DS_STDERR"
+assert_eq "$first_push" "$(grep -F 'origin/main' <<<"$DS_STDOUT")"
+assert_eq "$head" "$(jq -r .base_oid "$gate_validation")"
+assert_exit 0 run_gate --scope update --force
+assert_eq "$head" "$(jq -r .base_oid "$gate_validation")"
+# An explicit base still wins.
+assert_exit 0 run_gate --scope maintain --force --expected-base "$first"
+assert_eq "$first" "$(jq -r .base_oid "$gate_validation")"
+assert_not_contains "$DS_STDOUT" "origin/main does not exist"
 
 # A candidate.json that is not JSON counts as absent.
 printf 'not json\n' >"$gate_candidate"
+assert_exit 0 run_gate --scope maintain --force
+assert_eq "$head" "$(jq -r .base_oid "$gate_validation")"
+
+# A branch without any commit: the instance is committed first.
+git -C "$gate_inst" update-ref -d refs/heads/main
+: >"$DS_CALL_LOG"
 assert_exit 1 run_gate --scope maintain --force
-assert_contains "$DS_STDERR" "no valid base OID"
+assert_eq "[dotsteward] ERROR: main has no commit yet; commit the instance first: git -C $gate_inst add -A && git -C $gate_inst commit" "$DS_STDERR"
 assert_calls

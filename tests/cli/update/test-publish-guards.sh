@@ -71,6 +71,16 @@ write_candidate "$missing"
 refused "base OID is not a commit of this clone: $missing" --scope maintain
 write_candidate "$base"
 
+# A clone whose branch was never pushed (no candidate.json, no origin/main):
+# publish ships changes on top of a published base, so it names the first
+# push instead.
+rm -f -- "$up_candidate"
+git -C "$up_inst" update-ref -d refs/remotes/origin/main
+refused "origin/main does not exist in this clone; push the first commit of a new instance with: git -C $up_inst push -u origin main (after 'dotsteward gate --scope maintain' passed), or run 'git -C $up_inst fetch origin' when the remote has main already" \
+  --scope maintain
+git -C "$up_inst" update-ref refs/remotes/origin/main "$base"
+write_candidate "$base"
+
 # The base is not an ancestor of HEAD.
 git -C "$up_inst" checkout -q -b side "$base~1"
 printf 'side\n' >"$up_inst/side.txt"

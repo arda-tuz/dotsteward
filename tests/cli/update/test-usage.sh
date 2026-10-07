@@ -165,7 +165,7 @@ git -C "$up_inst" checkout -q main
 git -C "$up_inst" remote set-url origin "$UP_REMOTE/"
 guard "unexpected origin URL: $UP_REMOTE/ (expected $UP_REMOTE)"
 git -C "$up_inst" remote remove origin
-guard "unexpected origin URL: (none) (expected $UP_REMOTE)"
+guard "the clone has no origin remote; add it with: git -C $up_inst remote add origin $UP_REMOTE"
 
 # status reads the state only: it needs the instance, not a clean clone on
 # the branch with the right origin.

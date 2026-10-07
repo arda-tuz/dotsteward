@@ -102,5 +102,5 @@ assert_untouched
 
 git -C "$gate_inst" remote remove origin
 assert_exit 1 run_gate
-assert_eq "[dotsteward] ERROR: unexpected origin URL: (none) (expected $GATE_REMOTE)" "$DS_STDERR"
+assert_eq "[dotsteward] ERROR: the clone has no origin remote; add it with: git -C $gate_inst remote add origin $GATE_REMOTE" "$DS_STDERR"
 assert_untouched
