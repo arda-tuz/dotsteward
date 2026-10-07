@@ -64,7 +64,8 @@
 #                           request, wait for its checks (a build-only trial
 #                           also needs clean-install.yml green on the
 #                           commit, dispatched on the branch when missing),
-#                           merge with --squash --match-head-commit and
+#                           merge by fast-forwarding main to the checked
+#                           commit (never a merge made by GitHub) and
 #                           verify the merged tree is the tested tree; fork:
 #                           push, the fork's CI, fast-forward the fork's
 #                           main, an upstream pull request only with

@@ -386,10 +386,11 @@ _contribute_push_branch() {
   log "pushed $CT_BRANCH (${CT_TEST_SHA:0:12}) to $remote"
 }
 
-# _contribute_rebase_onto_merged REMOTE: after a squash merge whose commit
-# is not the tested tree (SPEC 9.4 step 8: rebase, back to step 6). The
+# _contribute_rebase_onto_merged REMOTE: after a pull request merged on
+# GitHub (by hand, as a new squash or merge commit) whose commit is not the
+# tested tree (SPEC 9.4 step 8: rebase, back to step 6). The
 # branch is rebased onto REMOTE/main (fetched): its commits are in the
-# squash commit, so it becomes REMOTE/main; a conflicting rebase is aborted
+# merge commit, so it becomes REMOTE/main; a conflicting rebase is aborted
 # and the branch reset to REMOTE/main, which already holds the change. The
 # merged pull request stays recorded (publish then takes the re-checked
 # commit on REMOTE/main as published), unless the branch keeps commits that
@@ -417,9 +418,9 @@ _contribute_rebase_onto_merged() {
 }
 
 # _contribute_verify_tree COMMIT REMOTE: COMMIT is on REMOTE/main (fetched
-# now) and has the tested tree. A tree mismatch in owner mode (the squash
-# merge landed on a main that moved at the last moment) releases nothing
-# and sends the run back to check on the merged main.
+# now) and has the tested tree. A tree mismatch in owner mode (the pull
+# request was merged on GitHub with other changes) releases nothing and
+# sends the run back to check on the merged main.
 _contribute_verify_tree() {
   local commit=$1 remote=$2 tree
   contribute_fetch_main "$CT_CLONE" "$remote"
@@ -433,8 +434,8 @@ _contribute_verify_tree() {
     _contribute_set '.merged_sha = $commit' --arg commit "$commit"
     [[ $CT_RUN_MODE == owner ]] ||
       _contribute_red "tree mismatch: the published commit ${commit:0:12} has tree ${tree:0:12}, but the tested tree is ${CT_TESTED_TREE:0:12}; nothing is released"
-    printf '[dotsteward] ERROR: tree mismatch: the published commit %s has tree %s, but the tested tree is %s (%s/main moved during the merge); nothing is released\n' \
-      "${commit:0:12}" "${tree:0:12}" "${CT_TESTED_TREE:0:12}" "$remote" >&2
+    printf '[dotsteward] ERROR: tree mismatch: the published commit %s has tree %s, but the tested tree is %s (the pull request was merged on GitHub with other changes); nothing is released\n' \
+      "${commit:0:12}" "${tree:0:12}" "${CT_TESTED_TREE:0:12}" >&2
     _contribute_rebase_onto_merged "$remote"
   fi
   log "verified: ${commit:0:12} on $remote/main has the tested tree ${CT_TESTED_TREE:0:12}"
@@ -630,15 +631,37 @@ _contribute_open_pr() {
 
 # --- publish ------------------------------------------------------------------------
 
+# _contribute_fast_forward_main PR: main of origin fast-forwarded to the
+# tested commit, the merge of PR. The checked commits land unchanged, with
+# the framework identity and UTC dates; a merge made by GitHub would write a
+# new commit authored with the account's display name and local time, which
+# the privacy scans refuse. GitHub records PR as merged once its head is on
+# main. A push that no longer fast-forwards (main moved since the last
+# check) rebases the branch and goes back to check; any other refusal is
+# red with main untouched.
+_contribute_fast_forward_main() {
+  local pr=$1 main
+  main=$(_contribute_remote_ref origin refs/heads/main) || _contribute_red "cannot read main of $CT_PUBLISH_SLUG"
+  if [[ $main == "$CT_TEST_SHA" ]]; then
+    log "main of $CT_PUBLISH_SLUG is already ${CT_TEST_SHA:0:12}"
+    return 0
+  fi
+  log "merging $pr: fast-forwarding main of $CT_PUBLISH_SLUG to ${CT_TEST_SHA:0:12}"
+  if ! git_net 180 -C "$CT_CLONE" push --quiet origin "$CT_TEST_SHA:refs/heads/main" </dev/null; then
+    _contribute_up_to_date origin
+    _contribute_red "pushing ${CT_TEST_SHA:0:12} to main of $CT_PUBLISH_SLUG was refused; main is untouched"
+  fi
+}
+
 # _contribute_publish_owner: the recorded pull request is read first, so a
-# run interrupted after the squash merge (before merged_sha was recorded)
-# resumes at the verification; the branch checks, the push and the pull
-# request only run while it is not merged, since the squash commit on main
-# is not an ancestor of the tested commit. A merged pull request whose
-# tested commit is on origin/main is a run re-checked on the merged main
-# after a tree mismatch: that commit is the published one. VERSION is
-# checked before main is touched, and again right before the merge (a
-# release tagged while CI ran moves the next tag).
+# run interrupted after the merge (before merged_sha was recorded) resumes
+# at the verification; the branch checks, the push and the pull request
+# only run while it is not merged. A merged pull request whose tested
+# commit is on origin/main was merged by this run, or is a run re-checked
+# on the merged main after a tree mismatch: that commit is the published
+# one. A pull request merged on GitHub by hand is verified through its
+# merge commit. VERSION is checked before main is touched, and again right
+# before the merge (a release tagged while CI ran moves the next tag).
 _contribute_publish_owner() {
   local pr state answer merged=""
   pr=$(_contribute_get pr)
@@ -660,14 +683,13 @@ _contribute_publish_owner() {
     [[ $(_contribute_get trial) != build-only ]] || _contribute_clean_install "$CT_PUBLISH_SLUG"
     _contribute_up_to_date origin
     _contribute_require_version "$CT_TEST_SHA"
-    log "merging $pr (squash, head ${CT_TEST_SHA:0:12})"
-    gh pr merge "$pr" --squash --match-head-commit "$CT_TEST_SHA" </dev/null ||
-      _contribute_red "gh pr merge refused $pr; main is untouched"
+    _contribute_fast_forward_main "$pr"
+    merged=$CT_TEST_SHA
   else
     contribute_fetch_main "$CT_CLONE" origin
     if git -C "$CT_CLONE" merge-base --is-ancestor "$CT_TEST_SHA" refs/remotes/origin/main; then
       merged=$CT_TEST_SHA
-      log "$pr is merged and the re-checked ${CT_TEST_SHA:0:12} is on origin/main: it is the published commit"
+      log "$pr is merged and ${CT_TEST_SHA:0:12} is on origin/main: it is the published commit"
     fi
   fi
   if [[ -z $merged ]]; then

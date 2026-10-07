@@ -122,7 +122,7 @@ dotsteward contribute release
 dotsteward contribute upgrade --tag "$(dotsteward contribute status --json | jq -r .tag)"
 ```
 
-- `publish` pushes the branch and, in owner mode, opens the pull request, waits for green CI, squash-merges it and verifies that the merged tree is the tested tree; in fork mode it fast-forwards the fork's `main` after the same checks. `references/publish-and-release.md` describes both modes, the fork's upstream pull request and every refusal.
+- `publish` pushes the branch and, in owner mode, opens the pull request, waits for green CI, merges it by fast-forwarding `main` to the checked commit and verifies that the merged tree is the tested tree; in fork mode it fast-forwards the fork's `main` after the same checks. `references/publish-and-release.md` describes both modes, the fork's upstream pull request and every refusal.
 - Exit 5 means the upstream `main` moved (or the merged tree differs): the branch was rebased (resolve conflicts by hand when told to), and the run is back at the framework gate. Run `dotsteward contribute check`, `trial` and `publish` again.
 - CI red: `main` is untouched. Read the failing job, fix it in the clone with a new commit, and go back to `check`.
 - `release` tags the merged commit with the next patch version and, in owner mode, creates the GitHub release with generated notes. No changelog file is written.

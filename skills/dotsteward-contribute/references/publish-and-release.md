@@ -15,8 +15,8 @@ What `dotsteward contribute publish`, `release` and `upgrade` do in each mode, w
 2. Opens the pull request, or reuses the open one of the branch.
 3. Waits for every CI check of the pull request to finish. Red CI: `main` is untouched; read the failing job (`gh run view --log-failed`), fix the cause in a new commit, then `check`, `trial` and `publish` again.
 4. Requires the branch to be up to date with the upstream `main`. If `main` moved, publish rebases the branch onto it and exits 5: the run is back at `check` (the rebased commit has not been tested). A rebase conflict is left for you to resolve in the clone; then run `check`.
-5. Squash-merges with `--match-head-commit` set to the checked commit, so a pull request head that moved after the gate is never merged.
-6. Verifies that the merged commit on `main` has exactly the tested tree. A mismatch (the merge landed on a `main` that moved at the last moment) releases nothing: the branch is put on the merged `main`, publish exits 5, and the run goes back to `check`, which then checks the merged commit itself.
+5. Merges by pushing the checked commit to the upstream `main`, which fast-forwards the upstream `main` to exactly the commits that passed the gate, with their author, committer and UTC dates; GitHub then records the pull request as merged. Never merge the pull request on GitHub (squash, merge or rebase button): GitHub writes a new commit with the account's display name and local time, which the privacy scans refuse on `main`. If `main` moved at the last moment, the push no longer fast-forwards: publish rebases the branch as in step 4 and exits 5. A push the upstream refuses (for example a protected branch) is red and `main` is untouched.
+6. Verifies that the merged commit on `main` has exactly the tested tree. A pull request merged on GitHub by hand with other changes releases nothing: the branch is put on the merged `main`, publish exits 5, and the run goes back to `check`, which then checks the merged commit itself.
 
 A closed pull request stops the run: reopen it, or end the run with `dotsteward contribute abort`.
 
