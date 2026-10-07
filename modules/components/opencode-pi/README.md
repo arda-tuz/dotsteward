@@ -36,7 +36,7 @@ Run by `dotsteward agents check` (and after `agents install`), in this order:
 1. Commands: `opencode` and `pi` are on `PATH`.
 2. Probes, with `PI_OFFLINE=1`: `pi --version` equals the skills lock mirror `nix_tools.pi`; `pi --help` lists `--offline` and `--no-skills`; `pi auth check --help` lists `--json` and `--no-refresh`.
 3. `opencode-version`: `opencode --version` prints a version.
-4. `opencode-skill-api`: a temporary `opencode serve --pure` on a free loopback port answers `GET /skill`; every expected skill must be listed with a location below `~/.agents/skills` (outside `.system`). The server is stopped before the check ends. The API is used because the output of `opencode debug skill` is truncated at 64 KiB.
+4. `opencode-skill-api`: a temporary `opencode serve --pure` on a free loopback port answers `GET /skill`; every expected skill must be listed with a location that resolves to a `SKILL.md` below `~/.agents/skills` (outside `.system`); OpenCode also reads `~/.claude/skills`, whose links into that root may be the listed location. The server is stopped before the check ends. The API is used because the output of `opencode debug skill` is truncated at 64 KiB.
 5. `pi-rpc`: one offline RPC session (`pi --mode rpc --no-session --no-extensions --no-prompt-templates`, `PI_OFFLINE=1`, a fresh temporary `PI_CODING_AGENT_DIR` removed afterwards) answers `get_commands`; every expected skill must be among the skill commands.
 
 The expected skills are the entries of the instance skills lock and the framework skills of the instance manifest. A skill one agent does not see fails the check with its name.

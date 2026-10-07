@@ -5,8 +5,12 @@ Usage: opencode-skill-api.py HOME
 
 Starts `opencode serve --pure` on a free loopback port, waits up to 20
 seconds for GET /skill, and prints the sorted JSON array of the names of the
-skills OpenCode lists below HOME/.agents/skills (outside any .system
-subtree). The server is always stopped (SIGTERM, then SIGKILL after 5
+skills OpenCode lists from the canonical root HOME/.agents/skills (outside
+any .system subtree). OpenCode also reads other roots such as
+HOME/.claude/skills, whose entries link into the canonical root, and lists a
+name found in several roots once, from whichever root it loaded last; a
+listed location therefore counts when it resolves to a SKILL.md of the
+canonical root. The server is always stopped (SIGTERM, then SIGKILL after 5
 seconds). On failure it prints "OpenCode skill catalog could not be
 verified: <reason>" and the tail of the server output to standard error and
 exits 1. Proxies are bypassed: the server is local.
@@ -15,6 +19,7 @@ exits 1. Proxies are bypassed: the server is local.
 from __future__ import annotations
 
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -59,18 +64,34 @@ def stop(server: subprocess.Popen[str]) -> None:
         server.wait()
 
 
+def canonical_skills(root: str) -> set[str]:
+    """The resolved paths of the SKILL.md files below root, outside .system,
+    through directory links (each resolved directory is visited once)."""
+    found: set[str] = set()
+    seen: set[str] = set()
+    for directory, subdirectories, files in os.walk(root, followlinks=True):
+        real = os.path.realpath(directory)
+        if real in seen:
+            subdirectories[:] = []
+            continue
+        seen.add(real)
+        subdirectories[:] = [name for name in subdirectories if name != ".system"]
+        if "SKILL.md" in files:
+            found.add(os.path.realpath(os.path.join(directory, "SKILL.md")))
+    return found
+
+
 def shared_names(skills: object, home: str) -> list[str]:
     if not isinstance(skills, list):
         raise RuntimeError("GET /skill did not answer a list")
-    root = home.rstrip("/") + "/.agents/skills/"
+    canonical = canonical_skills(os.path.join(home, ".agents", "skills"))
     names = {
         item["name"]
         for item in skills
         if isinstance(item, dict)
         and isinstance(item.get("name"), str)
         and isinstance(item.get("location"), str)
-        and item["location"].startswith(root)
-        and "/.system/" not in item["location"][len(root) - 1 :]
+        and os.path.realpath(item["location"]) in canonical
     }
     return sorted(names)
 
