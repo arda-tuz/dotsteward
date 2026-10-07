@@ -181,6 +181,7 @@ machine_facts() {
   printf '%s on %s, user %s, home %s, login shell %s\n' \
     "$(. /etc/os-release && printf '%s' "$PRETTY_NAME")" "$(uname -m)" "$USER" "$HOME" "$original_shell"
   nix --version
+  df -h / "$RUNNER_TEMP"
 }
 
 init_instance() {

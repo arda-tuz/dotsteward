@@ -38,6 +38,25 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The catalog builds its pinned packages from source (starship, the
+      # herdr toolchains), which needs more than the 14 GB a runner image
+      # leaves free on its only disk. The image's preinstalled SDKs are not
+      # part of the machine under test, so they go first: the runner tool
+      # cache, every tree of 1 GiB or more where the image keeps its SDKs
+      # (a fresh Ubuntu has none that large there) and the Docker images.
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /opt/hostedtoolcache
+          while IFS=$'\t' read -r kib dir; do
+            if ((kib >= 1048576)); then
+              printf 'removing %s (%s KiB)\n' "$dir" "$kib"
+              sudo rm -rf -- "$dir"
+            fi
+          done < <(sudo du -sxk /usr/local/lib/*/ /usr/local/share/*/ /usr/share/*/)
+          sudo docker image prune --all --force >/dev/null
+          sudo apt-get clean
+          df -h /
       # One step: stage 0 adds nothing to GITHUB_PATH, so Nix is on PATH
       # only inside the script that sourced its profile.
       - name: Clean install (Nix, init, bootstrap, e2e, settings round, rollback)
