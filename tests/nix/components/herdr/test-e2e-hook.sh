@@ -59,6 +59,24 @@ printf 'PATH=%q\n' "$DS_TEST_ROOT/empty" >"$HOME/.zshrc"
 run_hook 1
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: herdr is not on PATH in a login zsh"
 
+# A herdr that only the CLI's own toolchain carries (first on PATH, named by
+# DOTSTEWARD_TOOLCHAIN_PATH, as the package wrapper sets both) does not
+# count: the login shell starts from the user's PATH.
+# The user's PATH here holds only what the hook needs, so no herdr of the
+# machine running the tests takes part.
+mkdir -p "$DS_TEST_ROOT/toolchain" "$DS_TEST_ROOT/user-bin"
+ln -s "$DS_REPO_ROOT/tests/lib/stubs/herdr" "$DS_TEST_ROOT/toolchain/herdr"
+for tool in bash env dirname uname tail zsh; do
+  ln -s "$(command -v "$tool")" "$DS_TEST_ROOT/user-bin/$tool"
+done
+rm -f -- "$HOME/.nix-profile/bin/herdr"
+: >"$HOME/.zshrc"
+run_hook 1 PATH="$DS_TEST_ROOT/toolchain:$DS_TEST_ROOT/user-bin" DOTSTEWARD_TOOLCHAIN_PATH="$DS_TEST_ROOT/toolchain"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: herdr is not on PATH in a login zsh"
+ln -s "$DS_REPO_ROOT/tests/lib/stubs/herdr" "$HOME/.nix-profile/bin/herdr"
+run_hook 0 PATH="$DS_TEST_ROOT/toolchain:$DS_TEST_ROOT/user-bin" DOTSTEWARD_TOOLCHAIN_PATH="$DS_TEST_ROOT/toolchain"
+assert_contains "$DS_STDOUT" "[dotsteward] a login zsh finds herdr: $HOME/.nix-profile/bin/herdr"
+
 # Without zsh the hook cannot check anything and fails.
 mkdir -p "$DS_TEST_ROOT/nozsh"
 for tool in bash env dirname uname; do

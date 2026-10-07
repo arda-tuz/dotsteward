@@ -66,3 +66,26 @@ ds_stub_set example-app version "example-app 0.1"
 assert_exit 0 run_agents check --generation "$agents_gen"
 assert_exit 1 run_agents check
 assert_contains "$DS_STDERR" "required command not found: generation-tool"
+
+# The CLI's own toolchain (first on PATH and named by
+# DOTSTEWARD_TOOLCHAIN_PATH in the package) is not the user's environment: a
+# command, a floor command or a probe command found only there counts as
+# missing.
+ds_stub_set example-app version "example-app 1.2.3"
+manifest_edit '.checks.commands -= [{component: "example-term", command: "generation-tool"}]'
+toolchain=$DS_TEST_ROOT/toolchain
+mkdir -p "$toolchain"
+for tool in toolchain-command toolchain-floor toolchain-probe; do
+  printf '#!%s\necho "%s 5.0.0"\n' "$BASH" "$tool" >"$toolchain/$tool"
+  chmod 0755 "$toolchain/$tool"
+done
+manifest_edit '.checks.commands += [{component: "example-term", command: "toolchain-command"}]
+  | .checks.floors += [{component: "example-term", command: "toolchain-floor", argv: ["--version"], minimum: "1.0.0", compare: "semver"}]
+  | .probes += [{component: "example-term", command: "toolchain-probe", kind: "presence", argv: ["--version"], env: {},
+      extract: null, expected: null, needles: [], profiles: null}]'
+# Found where the user's PATH has them: everything passes.
+PATH="$toolchain:$PATH" assert_exit 0 run_agents check
+PATH="$toolchain:$PATH" DOTSTEWARD_TOOLCHAIN_PATH="$toolchain" assert_exit 1 run_agents check --keep-going
+assert_contains "$DS_STDERR" "required command not found: toolchain-command"
+assert_contains "$DS_STDERR" "required command not found: toolchain-floor"
+assert_contains "$DS_STDERR" "required command not found: toolchain-probe"

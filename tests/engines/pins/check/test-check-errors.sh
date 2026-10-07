@@ -3,8 +3,8 @@
 # field aborts only its rule, as one failure line, and every other rule
 # still runs), the manifest mirrors of every configured system (union of
 # their rules, duplicates once), and exit 2 for broken inputs: missing or
-# invalid mirrors, invalid rule declarations, unreadable lock files and an
-# invalid configuration.
+# invalid mirrors, invalid rule and latest declarations, unreadable lock
+# files and an invalid configuration.
 # shellcheck source=tests/engines/pins/check/helpers.sh
 source "$DS_REPO_ROOT/tests/engines/pins/check/helpers.sh"
 
@@ -122,6 +122,15 @@ pins_fresh
 json_edit "$mirror" 'data["pins"]["rules"][1]["pairs"][0]["to"] = "nix_tools.{key}"'
 assert_exit 2 pins check
 assert_contains "$DS_STDERR" "${E}example-term/skills-lock-mirror: invalid declaration: field 'pairs': pair 1: 'to' must be a skills: path"
+
+# The pins latest declarations are validated too (no query runs): a field
+# no adapter knows fails the check, not the next update.
+pins_fresh
+json_edit "$mirror" 'data["pins"]["latest"] = [{"id": "agent_tools.example-app", "adapter": "local-apt", "component": "example-app", "package": "example-app", "current_at": "agent_tools.example-app.version"}]'
+assert_exit 2 pins check
+assert_eq "${E}example-app/agent_tools.example-app: invalid declaration: unknown field 'current_at'" "$DS_STDERR"
+json_edit "$mirror" 'data["pins"]["latest"] = [{"id": "agent_tools.example-app", "adapter": "local-apt", "component": "example-app", "package": "example-app"}]'
+assert_exit 0 pins check
 
 pins_fresh
 printf '{\n' >"$versions"

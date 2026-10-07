@@ -26,5 +26,20 @@ cli.mkTestCheck {
       printf 'packaged version output on %s:\n%s\nexpected:\n%s\n' ${system} "$actual" "$expected" >&2
       exit 1
     fi
+    # The wrapper names the toolchain it puts first on PATH, so the checks of
+    # the user's environment can leave it out (user_path in cli/lib/lib.sh).
+    toolchain=$(sed -n "s/^export DOTSTEWARD_TOOLCHAIN_PATH='\(.*\)'$/\1/p" ${lib.getExe cli})
+    for tool in jq python3 git; do
+      found=0
+      IFS=: read -ra dirs <<<"$toolchain"
+      for dir in "''${dirs[@]}"; do
+        [[ -x $dir/$tool ]] && found=1
+      done
+      if ((!found)); then
+        printf 'the packaged CLI on %s does not name the directory of its %s in DOTSTEWARD_TOOLCHAIN_PATH: %s\n' \
+          ${system} "$tool" "$toolchain" >&2
+        exit 1
+      fi
+    done
   '';
 }

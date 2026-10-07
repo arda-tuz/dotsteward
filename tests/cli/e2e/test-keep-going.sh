@@ -54,3 +54,16 @@ assert_exit 0 run_agents install
 assert_exit 0 run_e2e --json --keep-going
 assert_eq '{"result":"passed","findings":[]}' "$(jq -c . <<<"$DS_STDOUT")"
 assert_eq "" "$(temp_dirs)"
+
+# The CLI's own toolchain (first on PATH and named by
+# DOTSTEWARD_TOOLCHAIN_PATH in the package) is not the user's environment: a
+# command found only there is missing.
+toolchain=$DS_TEST_ROOT/toolchain
+mkdir -p "$toolchain"
+printf '#!%s\nexit 0\n' "$BASH" >"$toolchain/toolchain-command"
+chmod 0755 "$toolchain/toolchain-command"
+manifest_edit '.checks.commands += [{component: "example-app", command: "toolchain-command"}]'
+publish_instance
+PATH="$toolchain:$PATH" assert_exit 0 run_e2e --json --keep-going
+PATH="$toolchain:$PATH" DOTSTEWARD_TOOLCHAIN_PATH="$toolchain" assert_exit 1 run_e2e --json
+assert_eq '[["core:commands","missing-command","toolchain-command"]]' "$(findings)"
