@@ -26,7 +26,6 @@ assert_eq "result*
 __pycache__/
 *.pyc
 .env*
-.work/
 .claude/settings.local.json" "$(grep -v -e '^#' -e '^$' "$root/.gitignore")"
 
 # flake.nix: the two inputs, home-manager following nixpkgs, both pinned to a

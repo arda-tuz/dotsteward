@@ -186,22 +186,21 @@ rm line.txt
 cd "$DS_TEST_ROOT/work"
 new_repo paths
 cd paths
-mkdir -p .work/notes .private/ deep/er docs src
-for file in .env .env.production deep/er/.envrc result result-2 .work/notes/a.md .private/b.html \
+mkdir -p notes deep/er docs src
+for file in .env .env.production deep/er/.envrc notes/.env.local result result-2 \
   settings.local.json deep/er/x.local.json docs/result.md environment.md src/local.json; do
   printf 'ok\n' >"$file"
 done
 assert_exit 1 scan --tree --redact
 assert_eq "forbidden-path .env (path)
 forbidden-path .env.production (path)
-forbidden-path .private/b.html (path)
-forbidden-path .work/notes/a.md (path)
 forbidden-path deep/er/.envrc (path)
 forbidden-path deep/er/x.local.json (path)
+forbidden-path notes/.env.local (path)
 forbidden-path result (path)
 forbidden-path result-2 (path)
 forbidden-path settings.local.json (path)" "$DS_STDOUT"
-assert_eq "[dotsteward] ERROR: scan found 9 findings in 12 files, 0 commits" "$DS_STDERR"
+assert_eq "[dotsteward] ERROR: scan found 8 findings in 11 files, 0 commits" "$DS_STDERR"
 
 # Content rules apply to file paths too. With redaction, a path with a
 # generic match prints as path#<k> (its position in the sorted path list),

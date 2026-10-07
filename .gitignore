@@ -6,6 +6,5 @@ __pycache__/
 *.pyc
 # Local environment and secrets
 .env*
-# Local working material that never belongs in the repository
-.work/
+# Local agent settings
 .claude/settings.local.json

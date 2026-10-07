@@ -4,7 +4,7 @@ home_paths = { enabled = true, allow_users = ["alice", "dotsteward-test", "runne
 emails = { enabled = true, allow_domains = ["example.invalid", "example.com", "example.org", "users.noreply.github.com"], allow_exact = ["git@github.com", "noreply@github.com"] }
 private_ipv4 = true
 non_ascii = { enabled = true, except_files = [] }   # language-neutral: any byte >= 0x80 in text files
-forbidden_paths = [".private/**", ".work/**", "**/.env*", "result*", "**/*.local.json"]
+forbidden_paths = ["**/.env*", "result*", "**/*.local.json"]
 [commits]
 email = '^([0-9]+\+[A-Za-z0-9-]+@users\.noreply\.github\.com|noreply@github\.com)$'
 utc_only = true

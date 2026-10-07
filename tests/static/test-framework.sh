@@ -58,12 +58,12 @@ assert_exit 0 fw_static "$fw" --sandbox --only bans
 # forbidden paths) over the whole tree.
 printf 'token %s\n' "$(fake_secret ghp_ 36)" >"$fw/notes.txt"
 printf 'caf\xc3\xa9\n' >"$fw/word.txt"
-mkdir -p "$fw/.work"
-printf 'scratch\n' >"$fw/.work/plan.txt"
+mkdir -p "$fw/notes"
+printf '{}\n' >"$fw/notes/app.local.json"
 assert_exit 1 fw_static "$fw" --sandbox --only privacy
 assert_contains "$DS_STDOUT" "secret-github-token notes.txt:1"
 assert_contains "$DS_STDOUT" "non-ascii word.txt:1"
-assert_contains "$DS_STDOUT" "forbidden-path .work/plan.txt (path)"
+assert_contains "$DS_STDOUT" "forbidden-path notes/app.local.json (path)"
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: static privacy: the scan found 3 findings"
 # Redacted: the secret itself is never printed.
 assert_not_contains "$DS_STDOUT$DS_STDERR" "ghp_"

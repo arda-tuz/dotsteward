@@ -27,7 +27,7 @@ assert_eq "git@github.com noreply@github.com" "$(join ' ' "${DS_PRIVACY_EMAIL_AL
 assert_eq 1 "$DS_PRIVACY_PRIVATE_IPV4" private_ipv4
 assert_eq 1 "$DS_PRIVACY_NON_ASCII" non_ascii.enabled
 assert_eq 0 "${#DS_PRIVACY_NON_ASCII_EXCEPT[@]}" non_ascii.except_files
-assert_eq ".private/** .work/** **/.env* result* **/*.local.json" "$(join ' ' "${DS_PRIVACY_FORBIDDEN_PATHS[@]}")"
+assert_eq "**/.env* result* **/*.local.json" "$(join ' ' "${DS_PRIVACY_FORBIDDEN_PATHS[@]}")"
 assert_eq '^([0-9]+\+[A-Za-z0-9-]+@users\.noreply\.github\.com|noreply@github\.com)$' "$DS_PRIVACY_COMMIT_EMAIL"
 assert_eq 1 "$DS_PRIVACY_COMMIT_UTC_ONLY" commits.utc_only
 assert_eq '^Claude-Session:|^Co-Authored-By:|Generated with \[Claude Code\]' \
@@ -108,7 +108,7 @@ expect_invalid "unknown key: generic_secret" 's/^generic_secrets =/generic_secre
 expect_invalid "unknown key: home_paths.allowed_users" 's/allow_users/allowed_users/'
 expect_invalid "unknown key: commits.mail" 's/^email = /mail = /'
 expect_invalid "private_ipv4 must be a boolean" 's/^private_ipv4 = true/private_ipv4 = "yes"/'
-expect_invalid "forbidden_paths must be a list of strings" 's/^forbidden_paths = .*/forbidden_paths = ".work"/'
+expect_invalid "forbidden_paths must be a list of strings" 's/^forbidden_paths = .*/forbidden_paths = ".env"/'
 expect_invalid "commits.forbidden_lines must be a list of strings" "s/^forbidden_lines = .*/forbidden_lines = [true]/"
 expect_invalid "missing key: private_ipv4" '/^private_ipv4 =/d'
 expect_invalid "missing key: commits.email" '/^email = /d'

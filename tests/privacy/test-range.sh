@@ -112,25 +112,25 @@ printf 'main\n' >main.txt
   pem_header
   printf '\n'
 } >blob.bin
-mkdir -p .work
-printf 'x\n' >.work/plan.md
+mkdir -p notes
+printf '{}\n' >notes/app.local.json
 commit_all . "docs: main"
 main_commit=$(short_sha . HEAD)
 git merge -q --no-edit side
-git rm -q -r --cached .work
-rm -rf .work
-commit_all . "chore: drop work dir"
+git rm -q -r --cached notes
+rm -rf notes
+commit_all . "chore: drop local settings"
 # Parallel branches have no fixed order in the walk, so compare sorted.
 assert_exit 1 scan --range HEAD --metadata --redact
 assert_eq "email commit $side side.txt:2
-forbidden-path commit $main_commit .work/plan.md (path)
+forbidden-path commit $main_commit notes/app.local.json (path)
 home-path commit $root root.txt:1" "$(LC_ALL=C sort <<<"$DS_STDOUT")"
 assert_eq "[dotsteward] ERROR: scan found 3 findings in 5 files, 5 commits" "$DS_STDERR"
 # Several revisions, including exclusions. A merge contributes only what
 # differs from all of its parents, so content of an excluded branch is not
 # reported again.
 assert_exit 1 scan --range "main ^$side" --redact
-assert_eq "forbidden-path commit $main_commit .work/plan.md (path)" "$DS_STDOUT"
+assert_eq "forbidden-path commit $main_commit notes/app.local.json (path)" "$DS_STDOUT"
 assert_exit 0 scan --range "HEAD..HEAD"
 assert_eq "[dotsteward] scan clean: 0 files, 0 commits" "$DS_STDOUT"
 # Content that a merge adds itself (in no parent) is found at the merge.
