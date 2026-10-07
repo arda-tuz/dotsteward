@@ -67,6 +67,16 @@ for expected in 'remote get-url origin' 'ls-remote origin'; do
   assert_contains "$verify" "$expected" "agent-verify remote"
 done
 
+# Each agent comes from its vendor's standalone installer for Linux, which
+# verifies what it downloads and installs every binary the agent needs: the
+# bare codex binary of a release archive lacks codex-code-mode-host, without
+# which Codex 0.160 and later cannot run a single command.
+for expected in 'https://claude.ai/install.sh' \
+  'https://github.com/openai/codex/releases/latest/download/install.sh' 'CODEX_NON_INTERACTIVE=1'; do
+  assert_contains "$prepare" "$expected" "agent-prepare installer"
+done
+assert_not_contains "$prepare" 'codex-x86_64-unknown-linux-musl' "agent-prepare installer"
+
 # The printed steps name the plugin channel of the agent being prepared
 # (docs/getting-started-ubuntu.md), with the local marketplace in
 # ~/dotsteward-src in place of the GitHub URL.
