@@ -75,6 +75,12 @@ channels and the manual steps.
 | [Exit codes](docs/exit-codes.md) | the exit status of every command |
 | [Catalog](docs/catalog.md) | the components the framework ships |
 | [Platforms](docs/platforms.md) | Linux and macOS differences, install methods, login shell |
+| [Component contract](docs/component-contract.md) | every option a component sets; [writing components](docs/writing-components.md) walks through one |
+| [Settings buffer](docs/settings-buffer.md) | how locally changed application settings reach the repository |
+| [Pins engine](docs/pins-engine.md) and [update policy](docs/update-policy.md) | lock files, rule kinds, latest adapters; how an instance moves to newer releases |
+| [Skills](docs/skills.md) and [overlays](docs/overlays.md) | the agent skills and how an instance adds its own guidance |
+| [Privacy](docs/privacy.md) | the layers and the scanner that keep personal data out of public repositories |
+| [Contributing from your machine](docs/contribute.md) and [testing](docs/testing.md) | the contribution flow and the test suites |
 
 ## Development
 

@@ -12,7 +12,9 @@ will get an acknowledgement, and a fix is released as soon as it is ready.
 
 ## Supported versions
 
-Only the latest release receives security fixes.
+Only the latest release receives security fixes. An instance pins one
+framework release; the `dotsteward-update` skill upgrades it after reading
+the release notes.
 
 ## Scope
 
@@ -21,3 +23,8 @@ ask for administrator rights (installing Nix, system packages, the login
 shell). Reports about these steps, about the privacy scanner missing personal
 data or secrets, and about anything that could leak data from a private
 instance into a public repository are especially welcome.
+
+Personal data or a secret found in the framework repository itself is a
+security problem too: report it the same way, without repeating the data in
+public. [docs/privacy.md](docs/privacy.md) describes the safeguards that
+should have stopped it.
