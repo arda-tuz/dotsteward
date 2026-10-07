@@ -80,7 +80,7 @@ mkdir -p "$fw/tests/isolation"
 cat >"$fw/tests/isolation/test-isolation.sh" <<'EOF'
 assert_eq "" "$(compgen -v XDG_ || true)"
 assert_eq "" "$(compgen -v DOTFILES_ || true)"
-assert_eq "DOTSTEWARD_ETC_SHELLS DOTSTEWARD_OS_RELEASE DOTSTEWARD_PASSWD_CMD DOTSTEWARD_STATE_ROOT DOTSTEWARD_SW_VERS" \
+assert_eq "DOTSTEWARD_CPU_COUNT DOTSTEWARD_ETC_SHELLS DOTSTEWARD_MEMORY_MIB DOTSTEWARD_OS_RELEASE DOTSTEWARD_PASSWD_CMD DOTSTEWARD_STATE_ROOT DOTSTEWARD_SW_VERS" \
   "$(compgen -v DOTSTEWARD_ | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
 assert_eq "GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM" "$(compgen -v GIT_ | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
 printf '%s\n' "$DS_TEST_ROOT" >"$SKELETON_PROBE/root"

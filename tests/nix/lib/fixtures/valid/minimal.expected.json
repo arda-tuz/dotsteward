@@ -44,8 +44,8 @@
     }
   },
   "gate": {
-    "nix_max_jobs": 2,
-    "nix_cores": 6,
+    "nix_max_jobs": null,
+    "nix_cores": null,
     "min_free_gib": 5,
     "prepare_warn_free_gib": 15,
     "cache_url": "https://cache.nixos.org",
