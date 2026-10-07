@@ -18,6 +18,28 @@ tag=$(git ls-remote --tags --refs --sort=-version:refname https://github.com/ard
 
 The same tag is used three times: the Nix installer comes from it, `nix run` runs its CLI, and `init --framework-ref` pins it in the new instance's `flake.nix`. Later framework upgrades are the job of `dotsteward-update`.
 
+## Another framework source
+
+Instead of a GitHub release, the user may name another framework source: a local checkout of the framework (to try a change before it is released), a fork, or a branch. The rule of one source per run stays: the Nix install, `nix run` and the pin of `init` all use it. From a local checkout (`framework` is its absolute path):
+
+```bash
+framework=/path/to/dotsteward
+"$framework/template/bootstrap.sh" --install-nix-only
+nix --extra-experimental-features 'nix-command flakes' run "path:$framework#dotsteward" -- init \
+  --dir "$dir" --remote "$remote" --components shell,claude-code \
+  --framework-url "path:$framework" --non-interactive --json
+```
+
+Run the Nix install line only when Nix is missing (as in the section below). `--framework-url` takes the whole flake reference of the instance's dotsteward input and excludes `--framework-ref`. Its forms:
+
+| Source | `--framework-url` | `nix run` |
+| --- | --- | --- |
+| A local checkout as it is, uncommitted changes included | `path:/abs/dotsteward` | `path:/abs/dotsteward#dotsteward` |
+| A committed branch of a local clone | `git+file:///abs/dotsteward?ref=BRANCH` | the same with `#dotsteward` |
+| A fork or a branch on GitHub | `github:OWNER/dotsteward/BRANCH` or `git+https://github.com/OWNER/dotsteward?ref=BRANCH` | the same with `#dotsteward` |
+
+A `path:` or `git+file:` source exists only on this machine: the instance builds here, but a clone on another machine cannot fetch its framework. Use such a pin to try a change; before the instance is set up anywhere else, move its dotsteward input to a release (`dotsteward-update` upgrades the framework of an installed instance). A GitHub fork or branch works everywhere, but it does not follow the releases either.
+
 ## Installing Nix
 
 Only when `command -v nix` finds nothing, and only after the user agrees. The release's `template/bootstrap.sh --install-nix-only` reads the installer pin (URL, size, SHA-256 and the expected Nix version) from the `versions.lock.json` beside it, downloads the installer over HTTPS, refuses it on any size or digest difference, runs the official multi-user installer (which asks for sudo and for confirmation, and creates the Nix daemon; without a terminal it cannot ask, so the user runs it in their own terminal, see the rules of the skill), and checks `nix --version` against the pin. It does nothing else: no backups, no packages, no instance.

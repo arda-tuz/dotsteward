@@ -18,7 +18,7 @@ This skill runs before an instance exists on the machine, so there is no instanc
 - **Explain sudo before using it.** Name every step that needs administrator rights (section 2) before the first write. Never run `sudo` silently, never answer installers on the user's behalf, and never set `DOTSTEWARD_ASSUME_YES` (it exists for CI runners only).
 - **Sudo steps run in a terminal.** Commands that ask for sudo or an installer confirmation (`bootstrap.sh --install-nix-only`, `./bootstrap.sh --profile ...`, `login-shell set`, any `sudo apt-get` from `references/platform-prereqs.md`) need a terminal: when this shell has none (`[ -t 0 ]` fails) or `sudo -n true` fails, give the user the exact command, `cd` included, to run in their own terminal, wait for them to report the result, then continue with the read-only steps (`nix --version`, `context --json`, `e2e`).
 - **Verified installers only.** Nix comes from the pinned installer of a dotsteward release, which `bootstrap.sh --install-nix-only` checks by size and SHA-256 before running it. Never `curl | sh`, never pipe any download into a shell.
-- **One framework release per run.** The release chosen in section 3.1 serves the Nix install, `init` and the instance's pinned framework.
+- **One framework source per run.** The release chosen in section 3.1, or another framework source the user names (a local checkout, a fork or a branch, `references/new-instance.md`), serves the Nix install, `init` and the instance's pinned framework.
 - **Private by default.** The instance repository is created private. It holds no secrets, tokens, keys or machine state.
 - **Gate before push.** As the instance's `AGENTS.md` says, the tree is pushed only after `dotsteward gate` passed, the first push included (3.5).
 - **Confirm before activation.** `./bootstrap.sh` and `./rebuild.sh --switch` change the home directory (managed files become links, applications are installed). Confirm with the user first and tell them how to undo it.
@@ -102,7 +102,7 @@ nix --extra-experimental-features 'nix-command flakes' run "github:arda-tuz/dots
   --framework-ref "$tag" --non-interactive --json
 ```
 
-Add `--method COMPONENT=METHOD`, `--method-platform COMPONENT=linux:METHOD,darwin:METHOD` and `--systems` as chosen. `init` is all or nothing: exit 1 (a refusal or a failed step) and exit 2 (a usage error) leave the directory as it was; report the message, fix the cause, and run it again. On success the instance is committed on `main` and the JSON document lists the next steps.
+Add `--method COMPONENT=METHOD`, `--method-platform COMPONENT=linux:METHOD,darwin:METHOD` and `--systems` as chosen. These commands use the GitHub release. When the user names another framework source instead, such as a local checkout of the framework (for example to try a framework change), a fork or a branch, run `init` from that source and pin it with `--framework-url` (the whole flake reference of the instance's dotsteward input) in place of `--framework-ref`; "Another framework source" in `references/new-instance.md` shows the commands and the limits of such a pin. `init` is all or nothing: exit 1 (a refusal or a failed step) and exit 2 (a usage error) leave the directory as it was; report the message, fix the cause, and run it again. On success the instance is committed on `main` and the JSON document lists the next steps.
 
 ### 3.5 Create the private repository, validate, push
 
