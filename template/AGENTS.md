@@ -27,7 +27,10 @@ it.
   Manager.
 - Nix sees only tracked files: run `git add -A` before any Nix command.
 - Validate the final tree once with `dotsteward gate` (`./update.sh validate`)
-  before committing and publishing; never push a tree the gate did not prove,
+  before every push, the first push of a new instance included: after
+  `dotsteward init`, run `dotsteward gate --scope maintain`, then
+  `git push -u origin main`; afterwards publish with
+  `dotsteward update publish`. Never push a tree the gate did not prove,
   never force-push.
 - Never commit secrets, tokens, machine state or files from the home
   directory that the instance does not declare.

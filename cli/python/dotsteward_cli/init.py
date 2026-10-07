@@ -38,7 +38,9 @@ committed there; a failed commit puts ``--dir`` back as it was):
    when the directory is a repository already), ``git add -A`` and the
    commit ``chore: initialize dotsteward instance``.
 7. The next steps are printed (``--json``: one JSON document on standard
-   output, and the output of the steps goes to standard error).
+   output, and the output of the steps goes to standard error): the remote,
+   the gate, the first push (the order of the instance's ``AGENTS.md``),
+   then the bootstrap or the rebuild.
 
 ``init`` never prompts and never writes outside ``--dir`` (the temporary
 directory below ``TMPDIR`` is removed on every exit). Exit status 0, 1 for
@@ -1100,9 +1102,20 @@ def next_steps(options: Options, commit: str | None) -> list[dict[str, str]]:
         )
     steps.append(
         {
-            "description": "Publish the repository (private)",
-            "command": f"git -C {directory} remote add origin {shlex.quote(options.remote)} && "
-            f"git -C {directory} push -u origin {BRANCH}",
+            "description": "Add the remote of the private repository (create it on GitHub without pushing)",
+            "command": f"git -C {directory} remote add origin {shlex.quote(options.remote)}",
+        }
+    )
+    steps.append(
+        {
+            "description": "Validate the instance with the gate before the first push (AGENTS.md)",
+            "command": f"cd {directory} && ./.dotsteward/cli.sh gate --scope maintain",
+        }
+    )
+    steps.append(
+        {
+            "description": "Publish the validated instance",
+            "command": f"git -C {directory} push -u origin {BRANCH}",
         }
     )
     steps.append(

@@ -10,7 +10,7 @@ Set up a dotsteward workstation on this machine. A dotsteward instance is the us
 - **New instance**: create the user's private instance repository from the framework template, publish it, and set up this machine from it.
 - **Existing instance**: clone the user's instance repository and install it on this machine, which may use another user name and home directory than the instance's other machines.
 
-This skill runs before an instance exists on the machine, so there is no instance context, overlay or gate yet. Once the instance is active, the framework skills it installs take over: `dotsteward-maintain` for every personal change, `dotsteward-update` for version refreshes, `dotsteward-contribute` for changes to the framework itself.
+This skill runs before an instance exists on the machine, so there is no instance context or overlay yet; it runs the new instance's gate once, before the first push. Once the instance is active, the framework skills it installs take over: `dotsteward-maintain` for every personal change, `dotsteward-update` for version refreshes, `dotsteward-contribute` for changes to the framework itself.
 
 ## Rules
 
@@ -20,6 +20,7 @@ This skill runs before an instance exists on the machine, so there is no instanc
 - **Verified installers only.** Nix comes from the pinned installer of a dotsteward release, which `bootstrap.sh --install-nix-only` checks by size and SHA-256 before running it. Never `curl | sh`, never pipe any download into a shell.
 - **One framework release per run.** The release chosen in section 3.1 serves the Nix install, `init` and the instance's pinned framework.
 - **Private by default.** The instance repository is created private. It holds no secrets, tokens, keys or machine state.
+- **Gate before push.** As the instance's `AGENTS.md` says, the tree is pushed only after `dotsteward gate` passed, the first push included (3.5).
 - **Confirm before activation.** `./bootstrap.sh` and `./rebuild.sh --switch` change the home directory (managed files become links, applications are installed). Confirm with the user first and tell them how to undo it.
 - **Decisions stay with the user:** the flow, installing Nix, the components and methods, the repository name and owner, keeping the repository local, and fresh versus adopt.
 - Talk with the user in their language; commands, file contents and commit messages stay in English.
@@ -103,15 +104,26 @@ nix --extra-experimental-features 'nix-command flakes' run "github:arda-tuz/dots
 
 Add `--method COMPONENT=METHOD`, `--method-platform COMPONENT=linux:METHOD,darwin:METHOD` and `--systems` as chosen. `init` is all or nothing: exit 1 (a refusal or a failed step) and exit 2 (a usage error) leave the directory as it was; report the message, fix the cause, and run it again. On success the instance is committed on `main` and the JSON document lists the next steps.
 
-### 3.5 Create the private repository (or keep it local)
+### 3.5 Create the private repository, validate, push
+
+Create the private repository without pushing, so that the remote exists:
 
 ```bash
-gh repo create "OWNER/NAME" --private --source "$dir" --remote origin --push
+gh repo create "OWNER/NAME" --private --source "$dir" --remote origin
 git -C "$dir" remote get-url origin
 gh repo view "OWNER/NAME" --json visibility --jq .visibility
 ```
 
-The URL must equal `remote` exactly (else `git -C "$dir" remote set-url origin "$remote"`), and the visibility must be `PRIVATE`. When the user keeps the repository local, add only the remote now and push once the repository exists. Until the push, `e2e` stops at `core:repo-remote` and the bootstrap that ends with it exits non-zero after everything else is installed; verify such a machine with `e2e --keep-going` (3.6, `references/new-instance.md`).
+The URL must equal `remote` exactly (else `git -C "$dir" remote set-url origin "$remote"`), and the visibility must be `PRIVATE`. When the user keeps the repository local, add only the remote (`git -C "$dir" remote add origin "$remote"`).
+
+The instance's `AGENTS.md` rule holds from the first push on: the gate proves the tree before every push. Run it once, then push:
+
+```bash
+cd "$dir" && ./.dotsteward/cli.sh gate --scope maintain
+git -C "$dir" push -u origin main
+```
+
+The gate needs no sudo. It runs the static checks, the pins check, `nix flake check` and the probes of the built generation; on a new machine the first run downloads and builds most of the workstation (the later bootstrap reuses it), so start it in the background (Claude Code `run_in_background`; Codex with a timeout of at least 45 minutes) and wait for it once. A failed step prints its log; report it and fix the cause before pushing (`references/new-instance.md`). A repository kept local is pushed once it exists. Until the push, `e2e` stops at `core:repo-remote` and the bootstrap that ends with it exits non-zero after everything else is installed; verify such a machine with `e2e --keep-going` (3.6, `references/new-instance.md`).
 
 ### 3.6 Set up this machine
 
@@ -149,7 +161,7 @@ cd "$dir" && ./.dotsteward/cli.sh e2e --profile "$profile" --keep-going
 
 ### 3.7 Summary
 
-Report the release, the repository and its visibility, the components and methods, the profile that was activated and the end-to-end result. Tell the user how to undo the activation:
+Report the release, the repository and its visibility, the gate result, the components and methods, the profile that was activated and the end-to-end result. Tell the user how to undo the activation:
 
 ```bash
 cd "$dir" && ./rollback.sh --latest --dry-run
