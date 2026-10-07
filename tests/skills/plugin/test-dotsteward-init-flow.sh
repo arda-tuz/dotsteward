@@ -298,3 +298,20 @@ for file in "${all_files[@]}" "$skill_dir/agents/openai.yaml"; do
     fi
   done
 done
+
+# Another framework source (a local checkout, a fork, a branch): 3.4 points
+# at init's --framework-url, and new-instance.md shows the whole run from a
+# local checkout, with the same source for the Nix install, nix run and the
+# pin, and says that such a pin works only where the source exists.
+init_step=$(subsection_of "$skill" "3.4")
+assert_contains "$init_step" "--framework-url" "3.4 names the other framework sources"
+assert_contains "$init_step" "references/new-instance.md" "3.4 points at the details of the other sources"
+source_ref=$(section "$new_ref" "Another framework source")
+[[ -n $source_ref ]] || ds_fail "new-instance.md has no section 'Another framework source'"
+# shellcheck disable=SC2016 # literal shell text of the skill
+for text in '--framework-url "path:$framework"' 'run "path:$framework#dotsteward" -- init' \
+  '"$framework/template/bootstrap.sh" --install-nix-only' 'git+https://' 'this machine' 'dotsteward-update'; do
+  assert_contains "$source_ref" "$text" "new-instance.md, another framework source"
+done
+grep -q 'framework source' <<<"$rules" || ds_fail "the one-release rule does not cover another framework source"
+
