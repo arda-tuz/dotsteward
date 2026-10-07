@@ -12,7 +12,7 @@
 # The leaks:
 #   1. a home path in a file
 #   2. an e-mail address with a non-allowed domain in a file
-#   3. an author date with a non-UTC offset (a fixed non-UTC zone)
+#   3. an author date with a non-UTC offset (-0700)
 #   4. a Claude-Session line in the commit message
 #   5. DENYLIST_TERM in a file (found only with a denylist that holds it)
 #   6. a private-key header in a file
@@ -40,10 +40,8 @@ export GIT_AUTHOR_NAME=dotsteward-test GIT_COMMITTER_NAME=dotsteward-test
 export GIT_AUTHOR_EMAIL=0+dotsteward-test@users.noreply.github.com
 export GIT_COMMITTER_EMAIL=$GIT_AUTHOR_EMAIL
 unset GIT_AUTHOR_DATE GIT_COMMITTER_DATE
-# The non-UTC offset of leak 3, assembled so that this file never holds a
-# timezone literal (denylists may list them).
-offset=-07
-offset+='00'
+# The non-UTC offset of leak 3.
+offset=-0700
 
 git_in() {
   git -C "$dir" -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"

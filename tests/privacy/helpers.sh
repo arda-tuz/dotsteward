@@ -75,10 +75,9 @@ address() {
   printf '%s@%s' "$1" "$2"
 }
 
-# drill_offset: a non-UTC timezone offset (a fixed non-UTC zone). Built at run
-# time because denylists may hold timezone literals.
+# drill_offset: a non-UTC timezone offset for the commit timezone rule.
 drill_offset() {
-  printf '+%s%s' 03 00
+  printf '%s' -0700
 }
 
 # ipv4 A B C D

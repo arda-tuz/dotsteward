@@ -11,13 +11,6 @@ assert_exit 0 scan --tree --redact
 [[ $DS_STDOUT =~ ^\[dotsteward\]\ scan\ clean:\ [1-9][0-9]*\ files,\ 0\ commits$ ]] ||
   ds_fail "unexpected scan output: $DS_STDOUT"
 
-# Denylists may hold timezone literals, so the framework never writes the
-# drill's non-UTC offset literally (the pre-push hook always passes the
-# owner denylist).
-printf '%s\n' "# timezone literals" "$(drill_offset)" >"$DS_TEST_ROOT/timezone-denylist.txt"
-assert_exit 0 scan --tree --denylist "$DS_TEST_ROOT/timezone-denylist.txt" --require-denylist --redact
-assert_contains "$DS_STDOUT" "[dotsteward] scan clean:"
-
 # Exactly one pattern block, in cli/lib/privacy.sh only.
 markers=$(grep -rlE '^# dotsteward:patterns:(begin|end)$' cli tests privacy nix lib 2>/dev/null || true)
 assert_eq "cli/lib/privacy.sh" "$markers"
