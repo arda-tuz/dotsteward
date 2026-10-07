@@ -621,12 +621,27 @@ stage0_prerequisites() {
   done
   ((${#missing[@]})) || return 0
   log "installing the missing prerequisites: ${missing[*]}"
-  sudo apt-get update
+  stage0_apt_update
   if [[ ${DOTSTEWARD_ASSUME_YES:-0} == 1 ]]; then
     sudo apt-get install -y --no-install-recommends "${missing[@]}"
   else
     sudo apt-get install --no-install-recommends "${missing[@]}"
   fi
+}
+
+# stage0_apt_update: sudo apt-get update, bounded by
+# DOTSTEWARD_APT_UPDATE_TIMEOUT seconds (600) and tried once more after a
+# timeout, so a package mirror that stops answering cannot hang stage 0.
+stage0_apt_update() {
+  local limit=${DOTSTEWARD_APT_UPDATE_TIMEOUT:-600} status=0
+  sudo timeout "$limit" apt-get update || status=$?
+  if ((status == 124)); then
+    warn "apt-get update did not finish within $limit s; trying once more"
+    status=0
+    sudo timeout "$limit" apt-get update || status=$?
+    ((status != 124)) || warn "apt-get update did not finish within $limit s twice; a package mirror does not answer"
+  fi
+  return "$status"
 }
 
 # stage0_sha256 FILE: the SHA-256 of FILE (sha256sum, else macOS shasum).

@@ -46,6 +46,7 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | `DOTSTEWARD_MIN_FREE_GB` | The free space the gate requires in `/nix/store`, instead of `gate.min_free_gib`. |
 | `DOTSTEWARD_CACHE_URL` | The binary cache the gate probes, instead of `gate.cache_url`. |
 | `DOTSTEWARD_FRAMEWORK_OVERRIDE` | The framework flake reference of `--framework-override`. |
+| `DOTSTEWARD_APT_UPDATE_TIMEOUT` | Seconds one `apt-get update` may take before it is stopped and tried once more (default 600). |
 | `DOTSTEWARD_ASSUME_YES` | `1` answers installer and package manager confirmations; meant for CI runners only. |
 | `DOTSTEWARD_CLI` | A CLI that `.dotsteward/cli.sh` runs instead of building the pinned one. |
 

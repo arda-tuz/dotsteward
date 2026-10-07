@@ -30,7 +30,10 @@
 #                                         matching the bash ERE REGEX that
 #                                         exists as a regular file
 #   deb_field FILE FIELD                  a control field of a .deb
-#   apt_update                            sudo apt-get update
+#   apt_update                            sudo apt-get update, bounded by
+#                                         DOTSTEWARD_APT_UPDATE_TIMEOUT
+#                                         seconds (600) and tried once more
+#                                         after a timeout (status 124)
 #   apt_install [--reinstall] PACKAGE...  one sudo apt-get install
 #                                         --no-install-recommends
 #                                         transaction (packages or .deb
@@ -174,7 +177,15 @@ deb_field() {
 }
 
 apt_update() {
-  sudo apt-get update
+  local limit=${DOTSTEWARD_APT_UPDATE_TIMEOUT:-600} status=0
+  sudo timeout "$limit" apt-get update || status=$?
+  if ((status == 124)); then
+    warn "apt-get update did not finish within $limit s; trying once more"
+    status=0
+    sudo timeout "$limit" apt-get update || status=$?
+    ((status != 124)) || warn "apt-get update did not finish within $limit s twice; a package mirror does not answer"
+  fi
+  return "$status"
 }
 
 apt_install() {
