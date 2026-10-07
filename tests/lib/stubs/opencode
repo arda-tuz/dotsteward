@@ -7,9 +7,13 @@
 #       including hidden directories and through directory links (each
 #       resolved directory is visited once, so link cycles end), as a JSON
 #       list of {name, description, location} sorted by name; location is
-#       the path through the link, not the resolved target. The state value "serve-mode" selects a
-#       failure path: "exit" (exit 1 at once) or "not-list" (/skill answers a
-#       JSON object); "normal" is the default.
+#       the path through the link, not the resolved target. A name found in
+#       several roots is listed once, from the first root; the state value
+#       "skill-precedence" "last" lists it from the last root instead (real
+#       OpenCode loads the skills concurrently, so either may win). The
+#       state value "serve-mode" selects a failure path: "exit" (exit 1 at
+#       once) or "not-list" (/skill answers a JSON object); "normal" is the
+#       default.
 # --version prints "version" (default "1.0.0"); anything else succeeds
 # silently.
 set -euo pipefail
@@ -39,6 +43,7 @@ while (($#)); do
   esac
 done
 mode=$(ds_stub_value serve-mode normal)
+precedence=$(ds_stub_value skill-precedence first)
 if [[ $mode == exit ]]; then
   printf 'opencode: failed to start the server\n' >&2
   exit 1
@@ -46,7 +51,7 @@ fi
 exec python3 -c '
 import http.server, json, os, sys
 
-host, port, mode = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+host, port, mode, precedence = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
 home = os.environ["HOME"]
 config = os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config")
 roots = [
@@ -88,7 +93,7 @@ def walk(root):
 
 def skills():
     found = {}
-    for root in roots:
+    for root in roots if precedence != "last" else reversed(roots):
         for directory, files in walk(root):
             if "SKILL.md" in files:
                 path = os.path.join(directory, "SKILL.md")
@@ -117,4 +122,4 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 print(f"opencode server listening on http://{host}:{port}", flush=True)
 http.server.ThreadingHTTPServer((host, port), Handler).serve_forever()
-' "$hostname" "$port" "$mode"
+' "$hostname" "$port" "$mode" "$precedence"

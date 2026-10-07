@@ -93,6 +93,23 @@ mv -- "$HOME/.agents/skills/.system/alpha-skill" "$HOME/.agents/skills/alpha-ski
 rmdir -- "$HOME/.agents/skills/.system"
 assert_exit 0 agents check
 
+# OpenCode also reads ~/.claude/skills and lists a name found in both roots
+# once, from whichever root it loaded last. A link root entry that resolves
+# to the canonical skill counts; a separate copy there does not.
+mkdir -p "$HOME/.claude/skills"
+ln -s ../../.agents/skills/alpha-skill "$HOME/.claude/skills/alpha-skill"
+ln -s ../../.agents/skills/beta-skill "$HOME/.claude/skills/beta-skill"
+ds_stub_set opencode skill-precedence last
+assert_exit 0 agents check
+assert_contains "$DS_STDOUT" "opencode-pi: OpenCode sees every expected skill (2)"
+rm -f -- "$HOME/.claude/skills/beta-skill"
+cp -R -- "$HOME/.agents/skills/beta-skill" "$HOME/.claude/skills/beta-skill"
+assert_exit 1 agents check
+assert_contains "$DS_STDERR" "OpenCode does not see the skills: beta-skill"
+rm -rf -- "$HOME/.claude/skills"
+ds_stub_set opencode skill-precedence first
+assert_exit 0 agents check
+
 # The server fails to start, or answers something else than a list.
 ds_stub_set opencode serve-mode exit
 assert_exit 1 agents check
