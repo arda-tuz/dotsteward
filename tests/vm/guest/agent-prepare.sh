@@ -85,17 +85,30 @@ mkdir -p -- "$(dirname -- "$remote_dir")"
 git init -q --bare --initial-branch=main "$remote_dir"
 
 guest_step "next steps for the owner"
+# The plugin channel of each agent (docs/getting-started-ubuntu.md), from
+# the local marketplace in ~/dotsteward-src instead of the GitHub URL.
 case $agent in
-  claude) login='claude, then log in when it asks' ;;
-  codex) login='codex login --device-auth, then codex' ;;
+  claude)
+    login_step='Start the agent and log in:      claude, then log in when it asks'
+    plugin_step='Install the dotsteward plugin from the local marketplace in
+   ~/dotsteward-src, in the Claude Code session:
+     /plugin marketplace add ~/dotsteward-src
+     /plugin install dotsteward@dotsteward
+   (restart claude when it asks, so the plugin skills load)'
+    ;;
+  codex)
+    login_step='Log in:                          codex login --device-auth'
+    plugin_step='Install the dotsteward plugin from the local marketplace in
+   ~/dotsteward-src, then start the agent:
+     codex plugin marketplace add ~/dotsteward-src
+     codex plugin add dotsteward@dotsteward
+     codex'
+    ;;
 esac
 cat <<EOF
 1. Open a login shell in this VM:   tests/vm/vm.sh ssh --name <this VM>
-2. Start the agent and log in:      $login
-3. Install the dotsteward plugin from the local marketplace in
-   ~/dotsteward-src (the channel steps are in the framework docs; for
-   Claude Code: /plugin marketplace add ~/dotsteward-src, then
-   /plugin install dotsteward@dotsteward).
+2. $login_step
+3. $plugin_step
 4. Ask the agent, for example:
      Set up this machine as a new dotsteward workstation with the
      dotsteward-init skill. Use the framework checkout in ~/dotsteward-src
