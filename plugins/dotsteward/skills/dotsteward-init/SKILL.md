@@ -16,7 +16,7 @@ This skill runs before an instance exists on the machine, so there is no instanc
 
 - **Read-only until the user agrees.** Section 2 only reads. Nothing is installed, created or changed before the user has seen what will happen and agreed to it.
 - **Explain sudo before using it.** Name every step that needs administrator rights (section 2) before the first write. Never run `sudo` silently, never answer installers on the user's behalf, and never set `DOTSTEWARD_ASSUME_YES` (it exists for CI runners only).
-- **Sudo steps run in a terminal.** Commands that ask for sudo or an installer confirmation (`bootstrap.sh --install-nix-only`, `./bootstrap.sh --profile ...`, `login-shell set`, any `sudo apt-get` from `references/platform-prereqs.md`) need a terminal: when this shell has none (`[ -t 0 ]` fails) or `sudo -n true` fails, give the user the exact command, `cd` included, to run in their own terminal, wait for them to report the result, then continue with the read-only steps (`nix --version`, `context --json`, `e2e`).
+- **Sudo steps run in a terminal.** Commands that ask for sudo or an installer confirmation (`bootstrap.sh --install-nix-only`, `./bootstrap.sh --profile ...`, `login-shell set`, any `sudo apt-get` from `references/platform-prereqs.md`) need a terminal: when this shell has none (`[ -t 0 ]` fails) or `sudo -n true` fails, give the user the exact command, `cd` included, to run in their own terminal, wait for them to report the result, then continue with the read-only steps (`nix --version`, `context --json`, `e2e`). Tell them what the command will ask: the sudo password, the installer confirmations and, when the instance enables the `vscode` component with the `deb` method on Linux, the question of the VS Code package whether to add the vendor's apt repository (asked during the bootstrap's APT transaction). That answer is theirs: yes lets VS Code update itself through that repository, no leaves its updates to them; dotsteward never answers it and never removes the repository.
 - **Verified installers only.** Nix comes from the pinned installer of a dotsteward release, which `bootstrap.sh --install-nix-only` checks by size and SHA-256 before running it. Never `curl | sh`, never pipe any download into a shell.
 - **One framework source per run.** The release chosen in section 3.1, or another framework source the user names (a local checkout, a fork or a branch, `references/new-instance.md`), serves the Nix install, `init` and the instance's pinned framework.
 - **Private by default.** The instance repository is created private. It holds no secrets, tokens, keys or machine state.
@@ -134,7 +134,7 @@ The gate needs no sudo. It runs the static checks, the pins check, `nix flake ch
 
 Confirm with the user which path applies, then run it from the checkout; the bootstrap and `login-shell set` ask for sudo, so without a terminal or cached sudo credentials give them to the user to run in their own terminal (rules):
 
-- **A fresh machine** (nothing installed yet): `bootstrap.sh` checks the machine (read-only preflight; exit 3 means the machine is off the supported fast path, and nothing was written), backs up every file the instance manages, installs the prerequisites, the pinned Nix and the system packages, activates the generation, sets the login shell and runs the end-to-end checks.
+- **A fresh machine** (nothing installed yet): with the `vscode` component on Linux, tell the user first that the VS Code package asks whether to add the vendor's apt repository (rules). `bootstrap.sh` checks the machine (read-only preflight; exit 3 means the machine is off the supported fast path, and nothing was written), backs up every file the instance manages, installs the prerequisites, the pinned Nix and the system packages, activates the generation, sets the login shell and runs the end-to-end checks.
 
   ```bash
   cd "$dir" && ./bootstrap.sh --profile fresh
@@ -198,7 +198,7 @@ Details: `references/existing-instance.md`.
 
    Show `identity.runtime_matches_check` with the check and runtime user and home. Explain: `[identity]` in `workstation.toml` is only for checks (sandbox builds, `homeConfigurations.<username>`, the gate); activation always uses the user who runs it (`$USER` and `$HOME`). Installing on a machine with another user name or home therefore needs no file edit. If the user wants the check identity to follow this machine, that is a normal personal change: after the setup, ask `dotsteward-maintain` to change `[identity]`.
 
-4. Confirm the activation with the user, then set up the machine, using the profile names of the context document (the bootstrap asks for sudo: in the user's own terminal when the rules say so):
+4. Confirm the activation with the user, then set up the machine, using the profile names of the context document (the bootstrap asks for sudo: in the user's own terminal when the rules say so; with the `vscode` component on Linux it also asks whether to add the vendor's apt repository, which only the user answers):
 
    ```bash
    cd "$HOME/NAME" && ./bootstrap.sh --profile fresh          # a fresh machine
