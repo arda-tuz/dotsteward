@@ -3,12 +3,14 @@
 # Q5, publish when upstream main moves (SPEC 9.4 step 8): before the push,
 # or while CI runs, the branch is rebased onto the new main and the run goes
 # back to check (exit 5, the tested commit and the trial are cleared); a
-# conflicting rebase is aborted and left to the user. A pull request that
-# GitHub refuses to merge is red: main is untouched and the trial switch is
-# recovered. A merge that lands on a main that moved at the last moment
-# (tree mismatch) releases nothing: the branch is rebased onto the merged
-# main and the run goes back to check, whose merged main is then published
-# and released. A closed pull request is refused.
+# conflicting rebase is aborted and left to the user. A push to main that
+# the remote refuses is red: main is untouched and the trial switch is
+# recovered. A push that no longer fast-forwards (main moved at the last
+# moment) rebases the branch and goes back to check the same way. A pull
+# request merged on GitHub by hand with other changes (tree mismatch)
+# releases nothing: the branch is rebased onto the merged main and the run
+# goes back to check, whose merged main is then published and released. A
+# closed pull request is refused.
 # shellcheck source=tests/contribute/remote/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/remote/helpers.sh"
 
@@ -60,27 +62,29 @@ checked_branch() {
 }
 checked_branch
 
-# --- GitHub refuses the merge: red, recovered, main untouched ---------------------------
+# --- main refuses the push: red, recovered, main untouched -----------------------------
 
 before=$(upstream_main)
-hub_knob merge refuse
+refused=$(git -C "$ct_clone" rev-parse HEAD)
+hub_knob push-main refuse
 printf 'switched\n' >"$rt_live"
 state_set '.trial_switched = true'
 reset_calls
 assert_exit 1 run_contribute publish
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: gh pr merge refused https://github.com/$CT_UPSTREAM_SLUG/pull/1; main is untouched"
-assert_eq "$before" "$(upstream_main)" "upstream main after a refused merge"
-assert_eq pinned "$(live)" "live framework after a refused merge"
-assert_eq false "$(field .trial_switched)" "trial_switched after a refused merge"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: pushing ${refused:0:12} to main of $CT_UPSTREAM_SLUG was refused; main is untouched"
+assert_eq "$before" "$(upstream_main)" "upstream main after a refused push"
+assert_eq pinned "$(live)" "live framework after a refused push"
+assert_eq false "$(field .trial_switched)" "trial_switched after a refused push"
+assert_eq publish "$(field .step)" "step after a refused push"
 
 # --- main moved while CI ran: rebased after the checks, before the merge -------------------
 
-hub_knob merge normal
+hub_knob push-main none
 hub_knob ci-moves-main late.txt
 reset_calls
 assert_exit 5 run_contribute publish
-assert_call_count 0 gh 'pr merge*'
 assert_call_count 1 gh 'pr checks * --watch *'
+[[ $(upstream_main) != "$(git -C "$ct_clone" rev-parse HEAD)" ]] || ds_fail "main was fast-forwarded after it moved during CI"
 assert_eq check "$(field .step)" "step after main moved during CI"
 # The remote branch holds the old commit: the rebased one replaces it.
 checked_branch_rebased=$(git -C "$ct_clone" rev-parse HEAD)
@@ -89,62 +93,89 @@ mark_trialled full false
 reset_calls
 assert_exit 0 run_contribute publish
 assert_eq "$checked_branch_rebased" "$(git -C "$ct_upstream_bare" rev-parse refs/heads/fix/add-feature)" "force-pushed branch"
-assert_call_count 1 gh "pr merge * --squash --match-head-commit $checked_branch_rebased"
-assert_eq "$(git -C "$ct_clone" rev-parse 'HEAD^{tree}')" "$(upstream_tree)" "tree after the merge"
+assert_eq "$checked_branch_rebased" "$(upstream_main)" "upstream main after the merge"
+assert_call_count 0 gh 'pr merge*'
 
-# --- a merge onto a main that moved at the last moment: tree mismatch -----------------------
+# --- main moved at the last moment: the push no longer fast-forwards ------------------------
+
+# A commit lands on main between the last check and the push: main stays as
+# it is, the branch is rebased onto it and the run goes back to check (exit
+# 5). The live generation keeps the trial framework until the next trial.
+assert_exit 0 run_contribute release
+checked_run race 0.1.2
+mark_trialled full true
+race=$(git -C "$ct_clone" rev-parse HEAD)
+printf 'switched\n' >"$rt_live"
+hub_knob push-main race
+reset_calls
+assert_exit 5 run_contribute publish
+concurrent=$(upstream_main)
+assert_eq "chore: a concurrent change" "$(git -C "$ct_upstream_bare" log -1 --format=%s "$concurrent")" "the concurrent commit on main"
+assert_contains "$DS_STDOUT" "[dotsteward] origin/main moved to ${concurrent:0:12}; rebasing fix/race onto it"
+assert_contains "$DS_STDOUT" "[dotsteward] the run is back at the framework gate; next: dotsteward contribute check, then trial and publish again"
+assert_eq "$concurrent" "$(git -C "$ct_clone" rev-parse HEAD~2)" "base of the rebased branch"
+[[ $(git -C "$ct_clone" rev-parse HEAD) != "$race" ]] || ds_fail "the branch was not rebased after the refused push"
+state_json | assert_json - '.step == "check" and .test_sha == null and .trial == null and .trial_switched == true
+  and .merged_sha == null'
+assert_eq switched "$(live)" "live framework after the refused push"
+assert_eq "" "$(instance_calls)" "instance commands after the refused push"
+mark_checked
+mark_trialled full false
+assert_exit 0 run_contribute publish
+assert_eq "$(git -C "$ct_clone" rev-parse HEAD)" "$(upstream_main)" "upstream main after the second publish"
+assert_exit 0 run_contribute release
+
+# --- a pull request merged on GitHub by hand, with other changes: tree mismatch ---------------
 
 # The squash commit holds the fix and a concurrent change, so its tree is
 # not the tested one: nothing is released; the branch is rebased onto it
 # (its commits are in the squash, so it becomes upstream main) and the run
-# goes back to check (exit 5) with the merged pull request kept. The live
-# generation keeps the trial framework until the next trial.
-checked_run race
-mark_trialled full true
-race_tree=$(git -C "$ct_clone" rev-parse 'HEAD^{tree}')
-printf 'switched\n' >"$rt_live"
-hub_knob merge race
+# goes back to check (exit 5) with the merged pull request kept.
+checked_run by-hand 0.1.3
+mark_trialled full false
+hand_tree=$(git -C "$ct_clone" rev-parse 'HEAD^{tree}')
+hub_knob checks fail
+assert_exit 1 run_contribute publish
+hand_pr=$(field .pr)
+push_upstream other-by-hand.txt other 'feat: a change merged meanwhile'
+gh pr merge "$hand_pr" --squash --match-head-commit "$(git -C "$ct_clone" rev-parse HEAD)"
+squash=$(upstream_main)
+hub_knob checks pass
 reset_calls
 assert_exit 5 run_contribute publish
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: tree mismatch: the published commit"
-assert_contains "$DS_STDERR" "but the tested tree is ${race_tree:0:12} (origin/main moved during the merge); nothing is released"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: tree mismatch: the published commit ${squash:0:12}"
+assert_contains "$DS_STDERR" "but the tested tree is ${hand_tree:0:12} (the pull request was merged on GitHub with other changes); nothing is released"
 assert_contains "$DS_STDOUT" "[dotsteward] the run is back at the framework gate; next: dotsteward contribute check, then trial and publish again"
-squash=$(upstream_main)
-race_pr=$(field .pr)
 assert_eq "$squash" "$(git -C "$ct_clone" rev-parse HEAD)" "branch after the tree mismatch"
 assert_eq "" "$(git -C "$ct_clone" status --porcelain)" "clone after the tree mismatch"
 state_json | assert_json - ".step == \"check\" and .test_sha == null and .tested_tree == null and .trial == null
-  and .trial_sha == null and .trial_switched == true and .merged_sha == \"$squash\" and .pr != null"
-assert_eq switched "$(live)" "live framework after a tree mismatch"
-assert_eq "" "$(instance_calls)" "instance commands after a tree mismatch"
+  and .trial_sha == null and .merged_sha == \"$squash\" and .pr == \"$hand_pr\""
 assert_exit 1 run_contribute release
 assert_contains "$DS_STDERR" "is not published yet; next: dotsteward contribute check"
 
 # check validates upstream main as it is (the branch has no commits of its
 # own), the trial switches to it, and publish takes it as the published
 # commit: the merged pull request is neither merged nor opened again.
-hub_knob merge normal
 assert_exit 0 run_contribute check
-assert_contains "$DS_STDOUT" "[dotsteward] fix/race has no commits after origin/main: its pull request is merged, so the merged origin/main is checked"
+assert_contains "$DS_STDOUT" "[dotsteward] fix/by-hand has no commits after origin/main: its pull request is merged, so the merged origin/main is checked"
 assert_eq "$squash" "$(field .test_sha)" "checked commit after the tree mismatch"
 assert_exit 0 run_contribute trial
 assert_eq "git+file://$ct_clone?rev=$squash" "$(live)" "live framework after the second trial"
 reset_calls
 assert_exit 0 run_contribute publish
-assert_call_count 0 gh 'pr merge*'
 assert_call_count 0 gh 'pr create*'
+assert_eq "$squash" "$(upstream_main)" "upstream main after publishing the merged main"
 assert_contains "$DS_STDOUT" "[dotsteward] verified: ${squash:0:12} on origin/main has the tested tree"
 state_json | assert_json - ".step == \"release\" and .merged_sha == \"$squash\" and .test_sha == \"$squash\"
-  and .pr == \"$race_pr\""
+  and .pr == \"$hand_pr\""
 assert_exit 0 run_contribute release
-assert_eq "$squash" "$(git -C "$ct_upstream_bare" rev-parse 'refs/tags/v0.1.1^{commit}')" "released commit"
-assert_eq "$(field .tested_tree)" "$(git -C "$ct_upstream_bare" rev-parse 'refs/tags/v0.1.1^{tree}')" "tree of the release"
+assert_eq "$squash" "$(git -C "$ct_upstream_bare" rev-parse 'refs/tags/v0.1.3^{commit}')" "released commit"
+assert_eq "$(field .tested_tree)" "$(git -C "$ct_upstream_bare" rev-parse 'refs/tags/v0.1.3^{tree}')" "tree of the release"
 
 # --- a closed pull request ----------------------------------------------------------------
 
-checked_run closed 0.1.2
+checked_run closed 0.1.4
 mark_trialled full false
-hub_knob merge normal
 hub_knob checks fail
 assert_exit 1 run_contribute publish
 pr=$(field .pr)

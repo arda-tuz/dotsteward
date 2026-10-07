@@ -122,7 +122,9 @@ grep -q 'trial_switched' "$state_ref" || ds_fail "run-state.md does not name tri
 assert_contains "$(fenced "$skill" "$publish_ref")" "dotsteward contribute trial --build-only" "trial has a build-only form"
 grep -q 'clean-install.yml' "$skill" "$publish_ref" ||
   ds_fail "the skill does not say that a build-only trial needs clean-install.yml"
-grep -q 'match-head-commit' "$publish_ref" || ds_fail "publish-and-release.md does not describe the squash merge with match-head-commit"
+grep -qi 'fast-forwards the upstream' "$publish_ref" ||
+  ds_fail "publish-and-release.md does not describe the owner merge as a fast-forward of the upstream main"
+! grep -qi 'squash-merge\|--squash' "$publish_ref" || ds_fail "publish-and-release.md still describes a squash merge"
 grep -qi 'tree' "$publish_ref" || ds_fail "publish-and-release.md does not describe the tree check"
 grep -q 'pr-to-upstream' "$publish_ref" || ds_fail "publish-and-release.md does not describe the fork's upstream pull request"
 

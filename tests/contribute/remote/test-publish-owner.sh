@@ -3,11 +3,11 @@
 # Q5, `dotsteward contribute publish` in owner mode (SPEC 9.4 step 8, D23):
 # needs a trial passed for the checked commit; pushes fix/<slug>, opens the
 # pull request once (reused on a re-run), waits for its checks (red: main
-# untouched, the trial switch recovered), merges with --squash
-# --match-head-commit <checked commit> and verifies the merged commit's
-# tree is the tested tree. A build-only trial also needs clean-install.yml
-# green on the commit (dispatched on the branch when it has no run there).
-# A published run answers "already published".
+# untouched, the trial switch recovered), merges by fast-forwarding main to
+# the checked commit (GitHub then records the pull request as merged) and
+# verifies the merged commit's tree is the tested tree. A build-only trial
+# also needs clean-install.yml green on the commit (dispatched on the branch
+# when it has no run there). A published run answers "already published".
 # shellcheck source=tests/contribute/remote/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/remote/helpers.sh"
 
@@ -46,7 +46,6 @@ assert_contains "$DS_STDERR" "[dotsteward] ERROR: CI is not green on $pr_url; ma
 assert_eq "$main_before" "$(upstream_main)" "upstream main after red CI"
 assert_eq "$sha" "$(git -C "$ct_upstream_bare" rev-parse refs/heads/fix/add-feature)" "pushed branch"
 assert_call_count 1 gh "pr create -R $CT_UPSTREAM_SLUG --base main --head fix/add-feature *"
-assert_call_count 0 gh 'pr merge*'
 assert_eq "$pr_url" "$(field .pr)" "recorded pull request"
 assert_eq pinned "$(live)" "live framework after red CI"
 assert_eq "$(
@@ -76,20 +75,22 @@ assert_exit 0 run_contribute publish
 assert_call_count 0 gh 'pr create*'
 assert_call_count 1 gh "pr list -R $CT_UPSTREAM_SLUG --head fix/add-feature --state open *"
 assert_call_count 1 gh "pr checks $pr_url --watch --fail-fast --interval 1"
-assert_call_count 1 gh "pr merge $pr_url --squash --match-head-commit $sha"
+assert_call_count 0 gh 'pr merge*'
 assert_call_count 0 gh 'workflow run*'
+assert_contains "$DS_STDOUT" "[dotsteward] merging $pr_url: fast-forwarding main of $CT_UPSTREAM_SLUG to ${sha:0:12}"
 assert_contains "$DS_STDOUT" "[dotsteward] reusing $pr_url"
 assert_contains "$DS_STDOUT" "[dotsteward] verified: "
 assert_contains "$DS_STDOUT" "[dotsteward] next: dotsteward contribute release"
 merged=$(upstream_main)
+assert_eq "$sha" "$merged" "upstream main after the merge"
 assert_eq "$tree" "$(upstream_tree)" "tree of upstream main"
-assert_eq "$main_before" "$(git -C "$ct_upstream_bare" rev-parse "$merged^")" "parent of the squash commit"
+assert_eq "$main_before" "$(git -C "$ct_upstream_bare" rev-parse "$merged~2")" "base of the merged commits"
+assert_eq MERGED "$(gh pr view "$pr_url" --json state --jq .state)" "pull request state after the merge"
 state_json | assert_json - ".merged_sha == \"$merged\" and .step == \"release\" and .pr == \"$pr_url\""
 assert_eq "" "$(instance_calls)" "instance commands of a green publish"
 
 # Interrupted after the merge, before the run recorded it: the re-run finds
-# the merged pull request and verifies it, without treating the squash
-# commit as a moved main (no rebase, no second merge).
+# the merged pull request and verifies it (no rebase, no second push).
 state_set '.step = "publish" | .merged_sha = null'
 reset_calls
 assert_exit 0 run_contribute publish
@@ -117,17 +118,17 @@ reset_calls
 assert_exit 1 run_contribute publish
 assert_call_count 1 gh "workflow run clean-install.yml -R $CT_UPSTREAM_SLUG --ref fix/second-feature"
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: clean-install.yml on ${sha2:0:12} concluded with failure"
-assert_call_count 0 gh 'pr merge*'
 merged2_before=$(upstream_main)
+assert_eq "$merged" "$merged2_before" "upstream main after a red clean-install run"
 
 # A failed run is dispatched again; a green one lets the merge through.
 hub_knob clean-install success
 reset_calls
 assert_exit 0 run_contribute publish
 assert_call_count 1 gh "workflow run clean-install.yml -R $CT_UPSTREAM_SLUG --ref fix/second-feature"
-assert_call_count 1 gh "pr merge * --squash --match-head-commit $sha2"
-assert_eq "$(git -C "$ct_clone" rev-parse "$sha2^{tree}")" "$(upstream_tree)" "tree after the build-only publish"
-assert_eq "$merged2_before" "$(git -C "$ct_upstream_bare" rev-parse 'refs/heads/main^')" "parent of the second squash"
+assert_call_count 0 gh 'pr merge*'
+assert_eq "$sha2" "$(upstream_main)" "upstream main after the build-only publish"
+assert_eq "$merged2_before" "$(git -C "$ct_upstream_bare" rev-parse "$sha2~2")" "base of the second merge"
 
 # A green run already on the commit: no dispatch.
 checked_run third-feature
@@ -169,6 +170,5 @@ reset_calls
 assert_exit 1 run_contribute publish
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: VERSION is 0.1.1 at ${sha5:0:12}, but the next release is v0.1.2: set VERSION to 0.1.2 in the fix, then run: dotsteward contribute check; nothing is published"
 assert_call_count 1 gh 'pr checks * --watch *'
-assert_call_count 0 gh 'pr merge*'
 assert_eq "$main4_before" "$(upstream_main)" "upstream main after a release during CI"
 assert_eq publish "$(field .step)" "step after a release during CI"

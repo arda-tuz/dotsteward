@@ -13,8 +13,6 @@
 #                  success, failure or none (default success)
 #   clean-install  conclusion of a dispatched clean-install.yml run
 #                  (default success)
-#   merge          normal, race (a concurrent commit lands on main just
-#                  before the squash) or refuse (default normal)
 #   ci-moves-main  a file name: while `pr checks --watch` runs, a commit
 #                  writing that file lands on main (once)
 #   ci-tags        a tag name: while `pr checks --watch` runs, that tag
@@ -26,8 +24,13 @@
 #   -f head_sha=S ...; api repos/R/actions/runs/ID; workflow run W -R R
 #   --ref B; pr list -R R --head B ...; pr create -R R --base main --head
 #   [OWNER:]B --title T --body B; pr view URL; pr checks URL --json name |
-#   --watch ...; pr merge URL --squash --match-head-commit SHA; release
-#   view TAG -R R; release create TAG -R R ... --verify-tag
+#   --watch ...; pr merge URL --squash --match-head-commit SHA (a merge
+#   made on GitHub by hand: a new squash commit on main); release view TAG
+#   -R R; release create TAG -R R ... --verify-tag
+#
+# An open pull request whose head commit is on its base branch (main was
+# fast-forwarded to it by a push) is recorded as merged with that head as
+# its merge commit, as GitHub does.
 set -euo pipefail
 
 hub=$DS_TEST_ROOT/hub
@@ -145,6 +148,22 @@ synthetic_ci() {
       head_sha: $sha, head_branch: $branch, status: "completed", conclusion: $conclusion,
       created_at: "2026-01-01T00:00:00Z", html_url: "https://github.com/\($repo)/actions/runs/\($id)"}' >"$file"
 }
+
+# sync_prs: every open pull request whose head commit is on its base branch
+# becomes merged, with the head as its merge commit.
+sync_prs() {
+  local file head base_bare
+  for file in "$hub"/prs/*.json; do
+    [[ -f $file && $(jq -r .state "$file") == OPEN ]] || continue
+    head=$(tip_of "$(bare_of "$(jq -r .head_repo "$file")")" "$(jq -r .head_branch "$file")")
+    base_bare=$(bare_of "$(jq -r .repo "$file")")
+    [[ -n $head ]] || continue
+    git -C "$base_bare" merge-base --is-ancestor "$head" "refs/heads/$(jq -r .base "$file")" 2>/dev/null || continue
+    jq --arg head "$head" '.state = "MERGED" | .merge_commit = $head' "$file" >"$file.new"
+    mv "$file.new" "$file"
+  done
+}
+sync_prs
 
 case "${1:-} ${2:-}" in
   "auth status")
@@ -271,7 +290,6 @@ case "${1:-} ${2:-}" in
     file=$(pr_file_of "$3")
     expected=$(option --match-head-commit) || fail "fake gh: pr merge needs --match-head-commit"
     [[ " ${args[*]} " == *" --squash "* ]] || fail "fake gh: pr merge needs --squash"
-    [[ $(knob merge normal) != refuse ]] || fail "GraphQL: Pull request is not mergeable"
     [[ $(jq -r .state "$file") == OPEN ]] || fail "GraphQL: Pull request is not open"
     repo=$(jq -r .repo "$file")
     bare=$(bare_of "$repo")
@@ -280,10 +298,6 @@ case "${1:-} ${2:-}" in
     work=$(mktemp -d "$DS_TEST_ROOT/merge.XXXXXX")
     git clone -q "$bare" "$work"
     git -C "$work" fetch -q "$(bare_of "$(jq -r .head_repo "$file")")" "$head"
-    if [[ $(knob merge normal) == race ]]; then
-      move_main "$repo" concurrent.txt
-      git -C "$work" pull -q --ff-only origin main
-    fi
     git -C "$work" merge -q --squash "$head" >/dev/null
     git -C "$work" commit -q -m "$(jq -r '"\(.title) (#\(.number))"' "$file")"
     git -C "$work" push -q origin HEAD:main

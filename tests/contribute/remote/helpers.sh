@@ -31,6 +31,10 @@
 #                     .dotsteward/cli.sh
 #   a fake GitHub (fake-gh.sh) and a fake Nix (fake-nix.sh) behind the gh
 #   and nix stubs; CI polling at one second
+#   a pre-receive hook on the upstream and the fork that fails a push to
+#   main as the knob push-main says: refuse (a protected branch) or race (a
+#   concurrent commit lands on main first, so the push no longer
+#   fast-forwards; once)
 #
 #   run_contribute ARG...      the dispatcher of rt_fw on the instance
 #   rt_setup MODE [TOML...]    the denylist, workstation.toml in MODE (owner
@@ -181,6 +185,43 @@ mkdir -p "$rt_hub/knobs"
 printf '%s\t%s\n' "$CT_UPSTREAM_SLUG" "$ct_upstream_bare" "$CT_FORK_SLUG" "$ct_fork_bare" >"$rt_hub/repos"
 ds_stub_override gh <"$rt_remote_dir/fake-gh.sh"
 ds_stub_override nix <"$rt_remote_dir/fake-nix.sh"
+
+for rt_bare in "$ct_upstream_bare" "$ct_fork_bare"; do
+  mkdir -p "$rt_bare/hooks"
+  {
+    printf '#!%s\n' "$BASH"
+    printf 'set -euo pipefail\n'
+    printf 'knob=%q\n' "$rt_hub/knobs/push-main"
+    printf 'bare=%q\n' "$rt_bare"
+    cat <<'EOF'
+# The concurrent commit is written outside the push's object quarantine.
+concurrent_commit() (
+  unset GIT_DIR GIT_QUARANTINE_PATH GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+  blob=$(printf 'race\n' | git -C "$bare" hash-object -w --stdin)
+  tree=$({
+    git -C "$bare" ls-tree refs/heads/main
+    printf '100644 blob %s\trace.txt\n' "$blob"
+  } | git -C "$bare" mktree)
+  commit=$(TZ=UTC git -C "$bare" commit-tree "$tree" -p refs/heads/main -m 'chore: a concurrent change')
+  git -C "$bare" update-ref refs/heads/main "$commit"
+)
+while read -r _ _ ref; do
+  [[ $ref == refs/heads/main && -f $knob ]] || continue
+  case $(<"$knob") in
+    refuse)
+      printf 'protected branch: pushes to main are refused\n' >&2
+      exit 1
+      ;;
+    race)
+      rm -f -- "$knob"
+      concurrent_commit
+      ;;
+  esac
+done
+EOF
+  } >"$rt_bare/hooks/pre-receive"
+  chmod 0755 "$rt_bare/hooks/pre-receive"
+done
 
 hub_knob() {
   (($# == 2)) || ds_fail "usage: hub_knob NAME VALUE"
