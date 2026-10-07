@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# summary: run the system-install phase (deb transaction, phase hooks) or check every install method
+# summary: Run the system-install phase (deb transaction, phase hooks) or check every install method
 #
 # Port of the fresh-machine system package installer. In a fresh-mode
 # profile `install` runs the preflight gate, then one deb transaction for

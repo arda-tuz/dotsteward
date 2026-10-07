@@ -79,7 +79,7 @@ if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4))); 
 fi
 
 usage() {
-  sed -n '3,/^set -Eeuo pipefail$/{/^set /d;s/^# \{0,1\}//;p}' "${BASH_SOURCE[0]}"
+  sed -n '4,/^set -Eeuo pipefail$/{/^set /d;s/^# \{0,1\}//;p}' "${BASH_SOURCE[0]}"
 }
 
 INSTANCE_CHECKS=(shell bans launcher bootstrap skills versions-lock allowlist protected overlays privacy scripts)

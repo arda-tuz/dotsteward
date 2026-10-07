@@ -26,7 +26,7 @@ source "$framework_root/cli/lib/config.sh"
 source "$framework_root/cli/lib/probes.sh"
 
 usage() {
-  sed -n '3,/^set -Eeuo pipefail$/{/^set /d;s/^# \{0,1\}//;p}' "${BASH_SOURCE[0]}"
+  sed -n '4,/^set -Eeuo pipefail$/{/^set /d;s/^# \{0,1\}//;p}' "${BASH_SOURCE[0]}"
 }
 
 # need_value FLAG ARGC VALUE: fails unless an option that takes a value got one.

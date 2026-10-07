@@ -48,7 +48,7 @@ source "$framework_root/cli/lib/privacy.sh"
 trap 'status=$?; [[ -n ${DS_PRIVACY_ERRORED:-} ]] || error "scan failed unexpectedly at line $LINENO (exit $status)"' ERR
 
 usage() {
-  sed -n '3,/^set -Eeuo pipefail$/{/^set /d;s/^# \{0,1\}//;p}' "${BASH_SOURCE[0]}"
+  sed -n '4,/^set -Eeuo pipefail$/{/^set /d;s/^# \{0,1\}//;p}' "${BASH_SOURCE[0]}"
 }
 
 modes=0

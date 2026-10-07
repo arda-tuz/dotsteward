@@ -20,7 +20,7 @@ source "$framework_root/cli/lib/lib.sh"
 source "$framework_root/cli/lib/config.sh"
 
 usage() {
-  sed -n '3,/^set -Eeuo pipefail$/{/^set /d;s/^# \{0,1\}//;p}' "${BASH_SOURCE[0]}"
+  sed -n '4,/^set -Eeuo pipefail$/{/^set /d;s/^# \{0,1\}//;p}' "${BASH_SOURCE[0]}"
 }
 
 pins_args=()

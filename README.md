@@ -1,17 +1,31 @@
 # dotsteward
 
-dotsteward is a framework for reproducible agent workstations built on Nix and
-Home Manager. You keep a private instance repository that describes your
-machine in one `workstation.toml`; dotsteward builds it, activates it,
-validates it end to end, keeps its pinned versions current and carries
-locally changed application settings back into the repository.
+dotsteward turns a private Git repository into a reproducible workstation
+for coding agents. You describe your machine in one `workstation.toml`;
+dotsteward builds it with Nix and Home Manager, activates it, validates it
+end to end, keeps every pinned version current and carries the settings you
+change locally back into the repository. Agent skills do the maintenance
+for you.
 
-Status: under development (version `0.0.1`). Interfaces may change without
-notice before version 1.0.0.
+Status: under development. Interfaces may change without notice before
+version 1.0.0.
+
+## How it works
+
+- **Your instance** is a private repository made from the framework's
+  template: `workstation.toml`, lock files, your own components and your
+  settings. It pins one dotsteward release.
+- **The framework** (this repository) provides the Nix library, a catalog
+  of components, the `dotsteward` command line interface and the skills.
+- **Skills** drive it: `dotsteward-init` sets up an instance,
+  `dotsteward-maintain` adds or changes components and writes settings
+  back, `dotsteward-update` refreshes every pin, `dotsteward-contribute`
+  fixes the framework itself and upgrades your instance to the result.
+- **One gate** proves every change before it is published: static checks,
+  a privacy scan, pin consistency, `nix flake check` and probes of the
+  built generation.
 
 ## Catalog
-
-The framework ships these components:
 
 | Component | What it provides |
 | --- | --- |
@@ -22,34 +36,53 @@ The framework ships these components:
 | `opencode-pi` | OpenCode and Pi |
 | `vscode` | VS Code |
 
-Anything else lives in your instance as a private component.
+Anything else lives in your instance as a private component, written
+against the same contract. Details: [docs/catalog.md](docs/catalog.md).
 
 ## Platforms
 
-- Ubuntu 24.04 on x86_64 (primary).
-- macOS on arm64 with standalone Home Manager (evaluated; not yet a
-  supported install target).
+| Platform | Status |
+| --- | --- |
+| Ubuntu 24.04, x86_64 | primary: tested end to end, including a clean-machine install in CI |
+| macOS 14 or later, Apple Silicon | evaluated by every check, with a smoke workflow for a real Mac; not yet claimed as tested |
 
-## Command line
+See [docs/platforms.md](docs/platforms.md).
+
+## Get started
+
+- [Getting started on Ubuntu](docs/getting-started-ubuntu.md)
+- [Getting started on macOS](docs/getting-started-macos.md)
+
+The quickest way is to let your coding agent do it: install the
+`dotsteward-init` skill, for example in Claude Code,
 
 ```sh
-nix run github:arda-tuz/dotsteward -- --help
-nix run github:arda-tuz/dotsteward -- version
+claude plugin marketplace add https://github.com/arda-tuz/dotsteward.git
+claude plugin install dotsteward@dotsteward
 ```
 
-From a checkout:
+and ask it to set up a dotsteward workstation. The guides list the other
+channels and the manual steps.
 
-```sh
-./cli/dotsteward --help
-./cli/dotsteward version
-```
+## Documentation
+
+| Document | Content |
+| --- | --- |
+| [Concepts](docs/concepts.md) | instance, components, profiles, methods, the manifest, pins, the gate, the settings buffer, skills |
+| [Architecture](docs/architecture.md) | how the layers, engines, skills and the privacy model fit together |
+| [workstation.toml](docs/workstation-toml.md) | every configuration key with its default |
+| [Command line](docs/cli.md) | every command and option, generated from the help text |
+| [Exit codes](docs/exit-codes.md) | the exit status of every command |
+| [Catalog](docs/catalog.md) | the components the framework ships |
+| [Platforms](docs/platforms.md) | Linux and macOS differences, install methods, login shell |
 
 ## Development
 
 ```sh
 bash tests/run.sh              # fast test suites (no Nix needed)
-bash tests/run.sh tests/skeleton --only version
+bash tests/run.sh tests/static --only docs
 nix flake check -L             # every check in the Linux build sandbox
+tools/gen-docs.sh              # regenerate docs/cli.md and the catalog index
 git ls-files -z '*.nix' | xargs -0 nix fmt --   # format Nix files
 ```
 
