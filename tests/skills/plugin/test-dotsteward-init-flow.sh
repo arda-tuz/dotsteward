@@ -315,3 +315,12 @@ for text in '--framework-url "path:$framework"' 'run "path:$framework#dotsteward
 done
 grep -q 'framework source' <<<"$rules" || ds_fail "the one-release rule does not cover another framework source"
 
+# The git identity is checked with the machine, before anything is
+# committed, and comes from the user: the agent never invents one.
+for text in "git config user.name" "git config user.email"; do
+  assert_contains "$checks" "$text" "the machine checks read the git identity"
+done
+grep -qi 'never invent' <<<"$checks" || ds_fail "the machine checks do not forbid an invented git identity"
+grep -qi 'ask' <<<"$(grep -i 'identity' <<<"$checks")" || ds_fail "the machine checks do not ask the user for a missing identity"
+grep -qi 'never invent' <<<"$(grep -i 'identity' <<<"$rules")" || ds_fail "the rules do not forbid an invented git identity"
+
