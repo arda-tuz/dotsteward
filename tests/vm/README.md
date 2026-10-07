@@ -52,7 +52,8 @@ bash tests/vm/selftest.sh
 
 It parses and lints every file under `tests/vm`, then runs the test files
 with fakes for QEMU and SSH (`tests/vm/fakes`) and the harness `curl` stub.
-`qemu-img`, `xorriso` and `ssh-keygen` run for real when installed.
+`qemu-img`, `xorriso` and `ssh-keygen` run for real when installed. The lint
+job of the `ci` workflow runs it on every push.
 
 ## Running the VM phase
 

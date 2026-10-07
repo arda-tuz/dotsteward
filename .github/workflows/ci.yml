@@ -39,6 +39,9 @@ jobs:
             xargs -0 nix run --inputs-from . nixpkgs#shellcheck --
       - name: actionlint (pinned by flake.lock)
         run: nix shell --inputs-from . nixpkgs#actionlint nixpkgs#shellcheck --command actionlint
+      # Fakes for QEMU and SSH: it never boots a virtual machine.
+      - name: VM harness self-test
+        run: bash tests/vm/selftest.sh
       - name: Python syntax
         run: |
           dirs=()

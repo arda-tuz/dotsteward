@@ -115,7 +115,7 @@ real person.
 | `tests/host` | an instance built with real Nix in a temporary home, without activation | locally and in CI |
 | `tests/ci` | clean-machine install and the macOS smoke test with real activation | GitHub Actions only |
 | `tests/channels` | installing `dotsteward-init` through every channel | GitHub Actions only |
-| `tests/vm` | the virtual machine harness | its self-test; VMs only on request |
+| `tests/vm` | the virtual machine harness | its self-test locally and in CI (`ci.yml`); VMs only on request |
 
 `tests/lib` holds the harness itself and `tests/fixtures` the shared data.
 
@@ -131,7 +131,7 @@ sandbox.
 
 | Workflow | What it runs |
 | --- | --- |
-| `ci.yml` | shellcheck, actionlint and Python syntax; `nix flake check -L`; the hook tests |
+| `ci.yml` | shellcheck, actionlint, Python syntax and the VM harness self-test (`tests/vm/selftest.sh`, no VM boots); `nix flake check -L`; the hook tests |
 | `privacy.yml` | the privacy scans ([privacy.md](privacy.md#where-scans-run)) |
 | `clean-install.yml` | a fresh Ubuntu runner set up end to end through `bootstrap.sh`, switched, checked, carried to a second home and rolled back |
 | `macos-smoke.yml` | a real Mac: stage 0, a new darwin instance, build, switch and end-to-end checks; manual only |
