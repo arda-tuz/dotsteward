@@ -67,5 +67,15 @@ for expected in 'remote get-url origin' 'ls-remote origin'; do
   assert_contains "$verify" "$expected" "agent-verify remote"
 done
 
+# The printed steps name the plugin channel of the agent being prepared
+# (docs/getting-started-ubuntu.md), with the local marketplace in
+# ~/dotsteward-src in place of the GitHub URL.
+for expected in \
+  '/plugin marketplace add ~/dotsteward-src' '/plugin install dotsteward@dotsteward' \
+  'codex plugin marketplace add ~/dotsteward-src' 'codex plugin add dotsteward@dotsteward'; do
+  assert_contains "$prepare" "$expected" "agent-prepare plugin channel"
+done
+assert_not_contains "$prepare" 'the channel steps are in the framework docs' "agent-prepare plugin channel"
+
 # The shared guest helpers are not a scenario.
 [[ -f $guest/common.sh ]] || ds_fail "missing guest/common.sh"
