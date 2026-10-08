@@ -303,7 +303,7 @@
     "strings": { "type": "array", "items": { "type": "string" } },
     "stringMap": { "type": "object", "additionalProperties": { "type": "string" } },
     "homePath": { "type": "string", "pattern": "^~/." },
-    "hostPath": { "type": "string", "pattern": "^(~|)/." },
+    "hostPath": { "type": "string", "pattern": "^~?/." },
     "hostPaths": { "type": "array", "items": { "$ref": "#/$defs/hostPath" }, "uniqueItems": true },
     "fileMode": { "type": "string", "pattern": "^0[0-7]{3}$" },
     "reload": {
