@@ -3,11 +3,13 @@
 # configuration on both systems, every method), the seed (schema, lock
 # paths, well-formed pins), the declared pins run by `dotsteward pins
 # check` on an instance that merged the seed, the install block driven
-# through the official-binary method of the CLI, and the README
-# verification record.
+# through the official-binary method of the CLI, the plugins option (its
+# validation, review rows and hook, end to end through the CLI against the
+# claude stub) and the README verification record.
 # Fixture instances are evaluated with nix-instantiate against an isolated
 # store, so the sandbox needs Nix and the nixpkgs and home-manager sources;
-# a setup hook exports their paths. shellcheck covers the tests.
+# a setup hook exports their paths. shellcheck covers the plugins hook and
+# the tests.
 {
   self,
   pkgs,
@@ -35,6 +37,6 @@ cli.mkTestCheck {
     testEnv
   ];
   postCheck = ''
-    shellcheck -x tests/nix/components/claude-code/*.sh
+    shellcheck -x modules/components/claude-code/plugins.sh tests/nix/components/claude-code/*.sh
   '';
 }

@@ -72,6 +72,28 @@ remove the reason when the index catches up.
   changes.
 - A major version needs review (`major_version_review_required`).
 
+## Plugins
+
+The plugins option (README.md, "Plugins") relies on:
+
+- `claude plugin list --json`: a list of entries with `id`
+  (`NAME@MARKETPLACE`), `version`, `scope`, `enabled` and `installPath`;
+- `claude plugin marketplace list --json`: a list of entries with `name`,
+  `source` and `repo`;
+- `claude plugin marketplace add OWNER/REPO`,
+  `claude plugin install NAME@MARKETPLACE --scope user` and
+  `claude plugin enable NAME@MARKETPLACE --scope user`;
+- the plugin manifest `.claude-plugin/plugin.json` with `version`.
+
+A change in any of them needs `plugins.sh`, the `claude` test stub and
+`tests/nix/components/claude-code/test-plugins.sh` updated together.
+
+An instance refreshes a tracked plugin when its `git-compare` row is a
+review: read the changed paths of the marketplace, then move
+`observed_marketplace_revision` of the `trackAt` entry to the reported head
+and, for a plugin with `minimumAt`, raise the minimum to the new manifest
+version. Run `dotsteward agents install` so the installed plugin follows.
+
 ## Framework seed
 
 `seed.json` holds the values the release's clean-install CI proved: both

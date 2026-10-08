@@ -57,9 +57,11 @@ market() {
     ds_stub_set claude marketplaces -
 }
 
-# reset_claude: no marketplace added, no plugin installed, no canned lists.
+# reset_claude: no marketplace added, no plugin installed, no canned lists,
+# an empty call log.
 reset_claude() {
   rm -rf -- "$DS_STUB_STATE/claude" "$HOME/.claude/plugins"
+  : >"$DS_CALL_LOG"
 }
 
 agents() {

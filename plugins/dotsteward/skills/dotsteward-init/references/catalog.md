@@ -47,7 +47,7 @@ enable = true
 
 ## claude-code
 
-Claude Code, the coding agent CLI (`claude`), on Linux and darwin, with its agent rules file, skill link root and settings targets.
+Claude Code, the coding agent CLI (`claude`), on Linux and darwin, with its agent rules file, skill link root, settings targets and, optionally, Claude Code plugins.
 
 ```toml
 [components.claude-code]

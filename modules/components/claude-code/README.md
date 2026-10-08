@@ -1,7 +1,8 @@
 # claude-code
 
 Claude Code, the coding agent CLI (`claude`), on Linux and darwin, with its
-agent rules file, skill link root and settings targets.
+agent rules file, skill link root, settings targets and, optionally, Claude
+Code plugins.
 
 Enable it in `workstation.toml`:
 
@@ -138,6 +139,81 @@ and `agent_tools.claude-code.darwin-arm64`, not
 `agent_tools.claude-code.linux-x64`. `seed.json` holds all of them; `dotsteward
 init` merges it into the instance lock.
 
+## Plugins
+
+`options.plugins` lists Claude Code plugins to install, verify and track,
+one `[[components.claude-code.options.plugins]]` table per plugin:
+
+```toml
+[components.claude-code]
+enable = true
+
+[[components.claude-code.options.plugins]]
+spec = "example-plugin@example-market"
+marketplace = "example-org/example-marketplace"
+minimumAt = "agent_tools.example-plugin.minimum_version"
+requiredFiles = [".claude-plugin/plugin.json", "skills/example/SKILL.md"]
+trackAt = "agent_tools.example-plugin"
+watched = ["plugins/example-plugin/.+"]
+```
+
+The inline form `options = { plugins = [ { spec = "..." }, ... ] }` is
+equivalent, but TOML 1.0 requires each inline table on a single line.
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `spec` | yes | `NAME@MARKETPLACE`, as `claude plugin install` takes it |
+| `marketplace` | no | the GitHub repository `OWNER/REPO` of the marketplace; it is added when Claude Code does not list it. Without it, the marketplace must be known to Claude Code already |
+| `minimumAt` | no | a `versions.lock.json` path holding the minimum version: a version string, or an entry with `minimum_version` or `version`. Only for plugins with a dotted manifest version |
+| `requiredFiles` | no | paths relative to the installed plugin directory that must exist |
+| `trackAt` | no | a `versions.lock.json` path of an entry with `source` (`https://github.com/OWNER/REPO` of the marketplace) and `observed_marketplace_revision` (the 40-digit commit the plugin was last reviewed at); needs `watched` |
+| `watched` | with `trackAt` | regular expressions (full match) of the marketplace paths that belong to the plugin |
+
+A non-empty list adds the `plugins` hook (`plugins.sh`, an agentsPost hook:
+agents phase, before validation). `dotsteward agents install`:
+
+- runs `claude plugin marketplace add OWNER/REPO` when a `marketplace` is
+  not listed by `claude plugin marketplace list --json`;
+- runs `claude plugin install SPEC --scope user` for a plugin that
+  `claude plugin list --json` does not list at user scope, and
+  `claude plugin enable SPEC --scope user` for one listed there but
+  disabled.
+
+It never confirms a command a marketplace declares for a plugin (Claude Code
+asks a person for that): such a plugin is installed once by hand with
+`claude plugin install SPEC`, and the hook verifies it from then on. Both
+`agents install` and `agents check` then verify every plugin:
+
+- a marketplace it names is listed with the marketplace name of the spec,
+  from that GitHub repository; a name taken by another source fails and is
+  never replaced;
+- it is listed at user scope and enabled, with an existing install
+  directory (`installPath`);
+- with `minimumAt`: the listed version is a dotted version, the plugin
+  manifest `.claude-plugin/plugin.json` carries the same version, and it
+  is at least the lock minimum; an older plugin fails and is never upgraded
+  silently. Plugins without a manifest version are listed with a
+  marketplace commit as their version and follow their marketplace, which
+  Claude Code updates itself;
+- every required file exists.
+
+`agents check` never installs anything. Plugins at project or local scope,
+and plugins the list does not name, are left alone.
+
+Each plugin with `trackAt` adds a `git-compare` row to `dotsteward pins
+latest`, with every method: the row is a review when the marketplace changed
+a `watched` path since `observed_marketplace_revision`. After reviewing the
+change, move the revision to the commit the row reports (and raise the
+minimum when the plugin version moved); `dotsteward-update` does this with
+the other pins.
+
+Invalid options (an unknown key, a malformed spec or marketplace, a
+duplicate, a lock path that is missing or holds no version, a tracking
+entry without a GitHub source or a 40-digit revision, `trackAt` without
+`watched` or the reverse, a required file outside the plugin directory)
+fail the evaluation with every problem listed. The plugins hook works with
+every method.
+
 ## Verification status
 
 - Self-update switch: Verified on 2026-10-06 from the setup documentation
@@ -167,6 +243,15 @@ init` merges it into the instance lock.
 - darwin build: the release manifest lists `darwin-arm64` with its own size
   and checksum (verified on 2026-10-06 from the 2.1.285 `manifest.json`); a
   darwin run is not verified on this machine.
+- Plugins: verified on 2026-10-08 with Claude Code 2.1.295 on Linux:
+  `claude plugin list --json` prints a list of `id`, `version`, `scope`,
+  `enabled` and `installPath`; marketplace plugins without a manifest
+  version report a 12-digit marketplace commit as `version`;
+  `claude plugin marketplace list --json` prints a list of `name`,
+  `source` (`github`), `repo` and `installLocation`;
+  `claude plugin install` takes `--scope user` and needs `--yes` for a
+  marketplace-declared command when standard input is not a terminal, which
+  the hook never passes.
 - DEB: the stable APT index lists `claude-code` `2.1.285-1` for `amd64` with
   the size and SHA-256 of the seed (verified on 2026-10-06 from
   `dists/stable/main/binary-amd64/Packages`); the DEB install itself is not

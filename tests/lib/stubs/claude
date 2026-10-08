@@ -23,7 +23,8 @@
 #                                plugin.json and one file per relative path in
 #                                the state value "plugin-files"
 #   claude plugin enable NAME@MARKET --scope user
-#                                enables an installed plugin
+#                                enables an installed plugin (succeeds
+#                                without a change when "plugins" is set)
 # --version prints the state value "version" (default "2.0.0 (Claude Code)"),
 # --help the state value "help"; any other call succeeds silently. Routes and
 # overrides apply (see tests/lib/harness.sh).
@@ -124,6 +125,8 @@ fi
 
 if [[ ${1:-} == plugin && ${2:-} == enable ]]; then
   spec=${3:-}
+  # A canned list stays as it is.
+  [[ ! -f $DS_STUB_DIR/plugins ]] || exit 0
   if [[ ! -f $installed ]] || ! jq -e --arg id "$spec" 'any(.[]; .id == $id)' "$installed" >/dev/null; then
     printf 'Error: plugin "%s" is not installed\n' "$spec" >&2
     exit 1

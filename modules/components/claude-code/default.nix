@@ -22,17 +22,46 @@
 # methods only. Settings targets, backups, the agent rules link and the
 # skill link root do not depend on the method. Nothing joins home.packages:
 # every method installs outside Home Manager.
+#
+# options (the [components.claude-code] options table of workstation.toml):
+#   [[components.claude-code.options.plugins]]   # one table per plugin
+#   spec = "NAME@MARKETPLACE"
+#   marketplace = "OWNER/REPO"                   # optional
+#   minimumAt = "<versions.lock.json path>"      # optional
+#   requiredFiles = ["<relative path>", ...]     # optional
+#   trackAt = "<versions.lock.json path>"        # optional, with watched
+#   watched = ["<path pattern>", ...]
+# A non-empty list adds the agentsPost hook plugins.sh, which adds missing
+# marketplaces and installs or enables missing plugins at user scope (agents
+# install) and verifies every listed one (both modes). Each trackAt entry
+# (source and observed_marketplace_revision) adds a git-compare review row
+# of the marketplace for its watched paths, with every method. Invalid
+# options fail the evaluation with every problem listed.
 {
   config,
   lib,
+  pins,
   dotsteward,
   ...
 }:
 let
+  inherit (builtins)
+    attrNames
+    elem
+    filter
+    genList
+    isAttrs
+    isList
+    isString
+    length
+    match
+    toJSON
+    ;
   inherit (dotsteward) cfg system;
   inherit (dotsteward.lib.platform) platformOf;
 
   name = "claude-code";
+  component = config.dotsteward.components.${name};
   defaultMethod = "official-binary";
   platform = platformOf system;
 
@@ -41,7 +70,7 @@ let
   methodOn =
     platformName:
     if platformName == platform then
-      config.dotsteward.components.${name}.method
+      component.method
     else
       let
         configured =
@@ -110,10 +139,182 @@ let
     ];
   };
 
+  # --- options ------------------------------------------------------------------
+
+  componentOptions = component.options;
+  plugins = componentOptions.plugins or [ ];
+  pluginList = if isList plugins then plugins else [ ];
+
+  knownOptions = [ "plugins" ];
+  knownPluginKeys = [
+    "spec"
+    "marketplace"
+    "minimumAt"
+    "requiredFiles"
+    "trackAt"
+    "watched"
+  ];
+
+  specPattern = "[A-Za-z0-9._-]+@[A-Za-z0-9._-]+";
+  repoPattern = "[A-Za-z0-9._-]+/[A-Za-z0-9._-]+";
+  githubUrlPattern = "https://github[.]com/${repoPattern}";
+  lockPathPattern = "[A-Za-z0-9_][A-Za-z0-9_+-]*([.][A-Za-z0-9_][A-Za-z0-9_+-]*)*";
+  isLockPath = value: isString value && match lockPathPattern value != null;
+  # A path inside the plugin directory: relative, no empty, . or .. segment.
+  isPluginPath =
+    value:
+    let
+      segments = lib.splitString "/" value;
+    in
+    isString value
+    && match "[A-Za-z0-9._/+-]+" value != null
+    && !lib.any (
+      segment:
+      elem segment [
+        ""
+        "."
+        ".."
+      ]
+    ) segments;
+  isPatternList =
+    value: isList value && value != [ ] && lib.all (item: isString item && item != "") value;
+
+  # The lock value at a dotted path, or null when the path is missing.
+  lockAt =
+    path:
+    let
+      segments = lib.splitString "." path;
+    in
+    if lib.hasAttrByPath segments pins then { value = lib.getAttrFromPath segments pins; } else null;
+
+  # A minimum version: a non-empty string, or an entry with minimum_version
+  # or version (as the install methods read pins).
+  isVersionValue =
+    value:
+    let
+      nonEmpty = field: isString (value.${field} or null) && value.${field} != "";
+    in
+    (isString value && value != "")
+    || (isAttrs value && (nonEmpty "minimum_version" || nonEmpty "version"));
+
+  pluginProblems =
+    index: plugin:
+    let
+      at = "options.plugins[${toString index}]";
+      spec = plugin.spec or null;
+      validSpec = isString spec && match specPattern spec != null;
+      earlier = lib.take index pluginList;
+      duplicate = validSpec && lib.any (other: isAttrs other && (other.spec or null) == spec) earlier;
+      marketplaceProblems = lib.optional (
+        plugin ? marketplace
+        && !(isString plugin.marketplace && match repoPattern plugin.marketplace != null)
+      ) "${at}.marketplace must be a GitHub repository OWNER/REPO, got ${toJSON plugin.marketplace}";
+      minimumProblems = lib.optionals (plugin ? minimumAt) (
+        let
+          path = plugin.minimumAt;
+          found = lockAt path;
+        in
+        if !isLockPath path then
+          [ "${at}.minimumAt must be a versions.lock.json path, got ${toJSON path}" ]
+        else if found == null then
+          [ "${at}.minimumAt: versions.lock.json lacks ${path}" ]
+        else
+          lib.optional (!isVersionValue found.value)
+            "${at}.minimumAt: versions.lock.json ${path} is not a version (a string, or an entry with minimum_version or version)"
+      );
+      fileProblems = lib.optionals (plugin ? requiredFiles) (
+        let
+          files = plugin.requiredFiles;
+        in
+        if !isList files then
+          [ "${at}.requiredFiles must be a list of relative paths" ]
+        else
+          lib.concatLists (
+            lib.imap0 (
+              position: file:
+              lib.optional (!isPluginPath file)
+                "${at}.requiredFiles[${toString position}] must be a relative path inside the plugin, got ${toJSON file}"
+            ) files
+          )
+      );
+      trackProblems = lib.optionals (plugin ? trackAt) (
+        let
+          path = plugin.trackAt;
+          found = lockAt path;
+          entry = found.value;
+          source = entry.source or null;
+          revision = entry.observed_marketplace_revision or null;
+        in
+        if !isLockPath path then
+          [ "${at}.trackAt must be a versions.lock.json path, got ${toJSON path}" ]
+        else if found == null then
+          [ "${at}.trackAt: versions.lock.json lacks ${path}" ]
+        else if !isAttrs entry then
+          [
+            "${at}.trackAt: versions.lock.json ${path} must be an entry with source and observed_marketplace_revision"
+          ]
+        else
+          lib.optional (!(isString source && match githubUrlPattern source != null))
+            "${at}.trackAt: versions.lock.json ${path}.source must be a GitHub repository URL https://github.com/OWNER/REPO"
+          ++
+            lib.optional (!(isString revision && match "[0-9a-f]{40}" revision != null))
+              "${at}.trackAt: versions.lock.json ${path}.observed_marketplace_revision must be a 40-digit commit"
+      );
+      watchedProblems =
+        if plugin ? watched then
+          lib.optional (!isPatternList plugin.watched) "${at}.watched must be a list of path patterns"
+          ++ lib.optional (!(plugin ? trackAt)) "${at}.watched needs trackAt"
+        else
+          lib.optional (plugin ? trackAt) "${at}.trackAt needs watched, a non-empty list of path patterns";
+    in
+    if !isAttrs plugin then
+      [ "${at} must be a table" ]
+    else
+      lib.optional (!validSpec) "${at}.spec must look like NAME@MARKETPLACE, got ${toJSON spec}"
+      ++ lib.optional duplicate "${at}.spec ${spec} is listed twice"
+      ++ minimumProblems
+      ++ marketplaceProblems
+      ++ fileProblems
+      ++ map (key: "${at} has unknown key ${key} (known: ${lib.concatStringsSep ", " knownPluginKeys})") (
+        filter (key: !elem key knownPluginKeys) (attrNames plugin)
+      )
+      ++ trackProblems
+      ++ watchedProblems;
+
+  optionProblems =
+    map (key: "unknown option ${key} (known: ${lib.concatStringsSep ", " knownOptions})") (
+      filter (key: !elem key knownOptions) (attrNames componentOptions)
+    )
+    ++ (
+      if !isList plugins then
+        [ "options.plugins must be a list of tables" ]
+      else
+        lib.concatLists (genList (index: pluginProblems index (lib.elemAt plugins index)) (length plugins))
+    );
+
+  # A review row per tracked plugin: the marketplace changed a watched path
+  # since the observed revision. Only valid entries; invalid ones fail the
+  # evaluation through the assertions.
+  trackedPlugins = filter (
+    plugin:
+    isAttrs plugin
+    && plugin ? trackAt
+    && isLockPath plugin.trackAt
+    && isPatternList (plugin.watched or null)
+  ) pluginList;
+  pluginLatest = map (plugin: {
+    id = plugin.trackAt;
+    adapter = "git-compare";
+    at = plugin.trackAt;
+    repo_at = ".source";
+    revision_at = ".observed_marketplace_revision";
+    inherit (plugin) watched;
+  }) trackedPlugins;
+
   # The same on every system of the instance.
   instancePins = {
     rules = officialBinaryPins.rules ++ lib.optionals debOnLinux debPins.rules;
-    latest = officialBinaryPins.latest ++ lib.optionals debOnLinux debPins.latest;
+    latest = officialBinaryPins.latest ++ lib.optionals debOnLinux debPins.latest ++ pluginLatest;
   };
 in
 {
@@ -193,6 +394,20 @@ in
 
     agentRulesTargets = [ { path = ".claude/CLAUDE.md"; } ];
 
+    # The hook is read in place from the framework source, so the manifest
+    # mirror names it <dotsteward>/modules/components/claude-code/plugins.sh.
+    hooks.agentsPost = lib.optional (pluginList != [ ]) {
+      name = "plugins";
+      script = toString ./plugins.sh;
+    };
+
     docs = ./README.md;
   };
+
+  assertions = lib.optionals component.enable (
+    map (message: {
+      assertion = false;
+      message = "dotsteward: component ${name}: ${message}";
+    }) optionProblems
+  );
 }

@@ -90,7 +90,9 @@ cc_lock_set "$tracked" agent_tools.example-plugin \
 json_check "$(manifest "$tracked")" '[.pins.latest[] | select(.component == "claude-code") | [.id, .adapter]]' \
   '[["agent_tools.claude-code.linux-x64","official-manifest"],["agent_tools.example-plugin","git-compare"]]'
 
-# `dotsteward pins check` accepts the declarations.
+# `dotsteward pins check` accepts the declarations (with the flake.nix and
+# flake.lock of the inputs the minimal lock records).
+cp -- "$nix_instance_fixtures/example/flake.nix" "$nix_instance_fixtures/example/flake.lock" "$tracked/"
 cc_mirror "$tracked"
 assert_exit 0 cc_cli "$tracked" pins check
 

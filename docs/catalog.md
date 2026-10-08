@@ -10,7 +10,7 @@ written against the same contract (see [concepts.md](concepts.md)).
 
 | Component | What it provides |
 | --- | --- |
-| [`claude-code`](components/claude-code.md) | Claude Code, the coding agent CLI (`claude`), on Linux and darwin, with its agent rules file, skill link root and settings targets. |
+| [`claude-code`](components/claude-code.md) | Claude Code, the coding agent CLI (`claude`), on Linux and darwin, with its agent rules file, skill link root, settings targets and, optionally, Claude Code plugins. |
 | [`codex`](components/codex.md) | The Codex CLI (`codex`), its agent rules link, its configuration file as a settings target, its legacy skill root and, optionally, Codex plugins. |
 | [`herdr`](components/herdr.md) | The herdr terminal workspace manager, installed by Home Manager from the upstream herdr flake. |
 | [`opencode-pi`](components/opencode-pi.md) | The OpenCode and Pi coding agents: both discover the shared skills in `~/.agents/skills`, and Pi reads the instance's agent rules. |
