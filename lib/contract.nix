@@ -98,7 +98,7 @@ let
   };
 
   # "~/..." or absolute paths.
-  hostPath = types.strMatching "(~|)/.+" // {
+  hostPath = types.strMatching "~?/.+" // {
     description = "home path (~/...) or absolute path";
   };
 
