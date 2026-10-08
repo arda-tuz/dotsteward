@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2016 # Nix expressions in single quotes
-# checks.<system>.manifest-consistent (D20): the manifest of every profile
+# checks.<system>.manifest-consistent: the manifest of every profile
 # equals the manifest of the check profile; a contract option that depends
 # on the profile fails the evaluation with the differing keys.
 # shellcheck source=tests/nix/instance/helpers.sh

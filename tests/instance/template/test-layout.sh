@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The files of template/ (SPEC 10.1): exactly the listed paths, no symbolic
+# The files of template/: exactly the listed paths, no symbolic
 # links, executable exactly where the file is a script, text that ends with
 # a newline and has no carriage returns.
 # shellcheck source=tests/instance/template/helpers.sh

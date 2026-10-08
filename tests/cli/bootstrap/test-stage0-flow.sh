@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # literal ~ and $ text is single-quoted on purpose
-# Stage-0 (the instance bootstrap.sh, SPEC 10.2) on a fresh Linux machine,
-# in today's order: profile, identity, preflight (its JSON on standard
+# Stage-0 (the instance bootstrap.sh) on a fresh Linux machine, in this
+# order: profile, identity, preflight (its JSON on standard
 # output), backups of every declared path into
 # <state>/backups/<UTC>/files/<absolute path>, snapshots whose required
 # command exists, the missing prerequisites (platform base list plus the
@@ -92,7 +92,7 @@ for shell in "${shells[@]}"; do
   assert_eq "example-app dump all\\ state" "$(ds_calls_of example-app)"
 
   # Prerequisites: the platform base list plus the component list, the
-  # missing ones in one transaction, without -y (D6).
+  # missing ones in one transaction, without -y (interactive).
   assert_eq "sudo timeout 600 apt-get update
 sudo apt-get install --no-install-recommends curl gnupg xz-utils example-app-deps" "$(ds_calls_of sudo)"
   assert_contains "$DS_STDOUT" "[dotsteward] installing the missing prerequisites: curl gnupg xz-utils example-app-deps"

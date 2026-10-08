@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables come from the harness; errexit stops a failed cd
-# The framework never blocks VS Code's own update channel (SPEC 3.5, policy
+# The framework never blocks VS Code's own update channel (policy
 # native_application_updates): the code package's installer offers to add
 # the vendor's apt repository, which keeps VS Code current after the
 # pinned DEB, and nothing in the framework's production sources (everything

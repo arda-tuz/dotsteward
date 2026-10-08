@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The VERSION contract (SPEC D19, 11.8): the single VERSION file feeds
+# The VERSION contract: the single VERSION file feeds
 # `dotsteward version`, the two plugin manifests and the two marketplace
 # files. Every manifest exists and parses, every `version` key in it equals
 # VERSION, each plugin manifest carries one, the Claude marketplace entry

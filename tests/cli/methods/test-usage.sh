@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# `dotsteward install` flags and refusals (SPEC 6.2): --profile is
+# `dotsteward install` flags and refusals: --profile is
 # required and must be a profile of the instance; unknown options, a missing
 # manifest mirror, a manifest of another system or schema and an unknown
 # lock path are refused with exit 1 before any system call.

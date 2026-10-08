@@ -4,7 +4,7 @@
 # cli/lib/config.sh: config_load turns the resolved configuration into DS_*
 # shell variables (scalars, indexed and associative arrays), expands ~/ and
 # ${VAR:-default} paths with the runtime environment, applies the
-# environment overrides of SPEC 6.1 and exports the instance and state root.
+# DOTSTEWARD_* environment overrides and exports the instance and state root.
 # shellcheck source=tests/cli/config/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/config/helpers.sh"
 
@@ -175,7 +175,7 @@ assert_eq "$DS_TEST_ROOT/xdg-data/dotsteward/framework" "$DS_UPSTREAM_LOCAL_CLON
 XDG_STATE_HOME='' load_config "$fw" "$minimal"
 assert_eq "$HOME/.local/state/dotsteward" "$DS_STATE_ROOT"
 
-# Environment overrides (SPEC 6.1): DOTSTEWARD_* always, DOTFILES_* only as
+# Environment overrides: DOTSTEWARD_* always, DOTFILES_* only as
 # fallbacks when compat.legacy_env is true; empty values count as unset.
 DOTSTEWARD_STATE_ROOT=$DS_TEST_ROOT/env-state DOTSTEWARD_NIX_MAX_JOBS=3 DOTSTEWARD_NIX_CORES=0 \
   DOTSTEWARD_MIN_FREE_GB=1 DOTSTEWARD_CACHE_URL=http://cache.example.invalid load_config "$fw" "$minimal"

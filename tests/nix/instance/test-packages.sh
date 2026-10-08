@@ -23,7 +23,7 @@ assert_inst_eq '{"app":"example-app","term":true,"version":true}' \
     version = lib.hasInfix "example-app 1.2.3" p.example-app.text;
   }' "fixpoint"
 
-# The CLI is built with the instance nixpkgs (F8); the alias is the check
+# The CLI is built with the instance nixpkgs; the alias is the check
 # configuration's local-maintained-files.
 assert_inst_eq '{"cli":true,"alias":true,"name":"local-maintained-files"}' \
   'let

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# P3, P4 and P6, update prepare ([gate] I3, I4, I14, I19, I25): the update
+# update prepare: the update
 # scope needs an entirely clean clone, the maintain scope lists the changes;
 # HEAD must equal the freshly fetched origin/<branch> in both scopes; the
 # base is recorded atomically in a private candidate.json (schema 1.1) and
@@ -57,7 +57,7 @@ chmod 0755 "$up_state"
 assert_exit 0 run_update prepare --official-sources-only
 assert_file_mode "$up_state" 700
 
-# --- P3: a dirty clone ----------------------------------------------------------
+# --- A dirty clone ------------------------------------------------------------
 
 refused_dirty() {
   reset_logs
@@ -106,7 +106,7 @@ assert_json - '.dirty == ["?? new.txt"]' <<<"$(tail -n 1 <<<"$DS_STDOUT")"
 rm -f -- "$up_inst/new.txt"
 git config --global --unset status.showUntrackedFiles
 
-# --- P4: HEAD must equal the freshly fetched origin/main --------------------------
+# --- HEAD must equal the freshly fetched origin/main ----------------------------
 
 # Ahead: a local commit that is not published (both scopes).
 change_and_commit "docs: local change"

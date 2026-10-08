@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Launcher step 1 (spec 6.3): DOTSTEWARD_CLI set means exec it, before any
+# The launcher's first step: DOTSTEWARD_CLI set means exec it, before any
 # key, cache, state or Nix work, with the instance root exported.
 # shellcheck source=tests/cli/launcher/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/launcher/helpers.sh"
@@ -21,14 +21,14 @@ assert_calls "$(_ds_call_line dotsteward gate --scope maintain "a b")"
 
 # A bare command name is looked up on PATH.
 mkdir -p "$DS_TEST_ROOT/dev-bin"
-ln -s "$fake" "$DS_TEST_ROOT/dev-bin/dotsteward-dev"
+ln -s "$fake" "$DS_TEST_ROOT/dev-bin/dotsteward-local"
 : >"$DS_CALL_LOG"
-PATH=$DS_TEST_ROOT/dev-bin:$PATH DOTSTEWARD_CLI=dotsteward-dev assert_exit 0 \
+PATH=$DS_TEST_ROOT/dev-bin:$PATH DOTSTEWARD_CLI=dotsteward-local assert_exit 0 \
   "$inst/.dotsteward/cli.sh" version
 assert_eq "fake-cli instance=$inst" "$DS_STDOUT"
 assert_calls "dotsteward version"
-DOTSTEWARD_CLI=dotsteward-dev assert_exit 1 "$inst/.dotsteward/cli.sh" version
-assert_eq "[dotsteward] ERROR: DOTSTEWARD_CLI is not an executable file: dotsteward-dev" "$DS_STDERR"
+DOTSTEWARD_CLI=dotsteward-local assert_exit 1 "$inst/.dotsteward/cli.sh" version
+assert_eq "[dotsteward] ERROR: DOTSTEWARD_CLI is not an executable file: dotsteward-local" "$DS_STDERR"
 
 # The override needs neither Nix nor flake.lock, and its status propagates.
 rm -- "$inst/flake.lock"

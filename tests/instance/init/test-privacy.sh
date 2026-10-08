@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and literal texts are single-quoted on purpose
-# I6 (SPEC 10.3, 11): what init writes is privacy clean. An instance with
+# What init writes is privacy clean. An instance with
 # every catalog component on both systems passes the privacy scan of its
 # tree and the instance static privacy check, holds no trace of the
 # temporary directory it was composed in, and its commit carries only the

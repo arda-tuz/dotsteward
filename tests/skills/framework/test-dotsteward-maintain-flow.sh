@@ -1,10 +1,10 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2153 # DS_REPO_ROOT comes from tests/lib/harness.sh
-# The flow of skills/dotsteward-maintain (SPEC 9.2): the frontmatter text,
+# The flow of skills/dotsteward-maintain: the frontmatter text,
 # the reference set, the start sequence, the single maintain-scope gate after
 # staging, the fixed commit, activate, verify and publish order, the version
 # and skill steps of the implementation, the settings buffer workflow, and no
-# command or path of the single-user scripts the CLI replaced.
+# legacy script path or engine command (the CLI commands do that work).
 
 skill_dir=$DS_REPO_ROOT/skills/dotsteward-maintain
 skill=$skill_dir/SKILL.md
@@ -33,7 +33,7 @@ fenced() {
   awk '/^[ \t]*(```|~~~)/ { open = !open; next } open { print }' "$1"
 }
 
-# Frontmatter: the description of SPEC 9.2, word for word.
+# Frontmatter: the skill description, word for word.
 expected_description="Add, remove, replace, reconfigure, migrate or selectively update components (applications, CLIs, agent skills, application settings, portable state) in the user's dotsteward instance repository so they reproduce on a fresh machine, optionally activate them on this machine, write locally changed application settings to the repository, or track and untrack such a setting. Do not use for changes meant only for this machine; use dotsteward-update for full version refreshes and dotsteward-contribute for changes to the framework itself."
 description=$(awk 'NR == 1 { next } /^---[ \t]*$/ { exit } /^description:/ { sub(/^description:[ \t]*/, ""); print }' "$skill")
 assert_eq "$expected_description" "$description" "frontmatter description"
@@ -104,11 +104,13 @@ for word in track track-file untrack validate; do
     ds_fail "local-maintained-files.md does not describe dotsteward settings $word"
 done
 
-# No command or path of the single-user scripts the CLI replaced.
+# No legacy script path (scripts/<name>.sh or scripts/<name>.py) and no
+# direct engine command: `dotsteward settings` runs the engine.
 for file in "$skill" "$skill_dir"/references/*.md "$skill_dir/agents/openai.yaml"; do
-  # shellcheck disable=SC2088 # literal text, not a path
-  for stale in '~/.dotfiles' '.local/state/dotfiles' 'update.sh --' 'scripts/pins.py' 'scripts/validate.sh' \
-    'scripts/preflight.sh' 'local-maintained-files status' 'local-maintained-files flush'; do
+  if grep -qE -- '(^|[^A-Za-z0-9_.-])scripts/[A-Za-z0-9_.-]+\.(sh|py)\b' "$file"; then
+    ds_fail "${file#"$DS_REPO_ROOT"/} names a legacy script path"
+  fi
+  for stale in 'local-maintained-files status' 'local-maintained-files flush'; do
     if grep -qF -- "$stale" "$file"; then
       ds_fail "${file#"$DS_REPO_ROOT"/} still names [$stale]"
     fi

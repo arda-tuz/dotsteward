@@ -27,7 +27,7 @@ assert_inst_fails "(instance { root = /. + \"$copy\"; }).checks.x86_64-linux.ins
 # instance-contract runs every step, in order; settings validate sees the
 # component targets through --targets-file (the evaluated manifest's
 # settings targets and reload hooks), not only the buffer's own targets.
-# Its privacy scan is the instance scan inside static (SPEC 11.2, D4): no
+# Its privacy scan is the instance scan inside static: no
 # separate `scan`, which would apply the framework policy (home paths,
 # e-mail addresses, non-ASCII text) to personal instance content.
 assert_inst_eq '{"static":true,"pins":true,"settings":true,"scan":true,"order":true,"targets":true,"shellcheck":true}' \

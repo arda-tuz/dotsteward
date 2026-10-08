@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Dirty trees and untracked files (spec 6.3, launcher L-1 to L-4), with the
+# Dirty trees and untracked files of the launcher, with the
 # real Nix against an isolated store: the launcher works on a dirty tree and
 # ignores untracked files (git+file sees tracked files including uncommitted
 # modifications), a modified-but-uncommitted flake.lock is a new key, and
@@ -27,7 +27,7 @@ assert_call_count 1 nix-store
 roots=$(for link in "$launcher_nix_state"/gcroots/auto/*; do readlink "$link"; done)
 assert_eq "$state/cli/$key" "$roots" "the cache entry is an indirect GC root"
 
-# L-1: a modified tracked file keeps the key; the cached CLI runs, no build.
+# A modified tracked file keeps the key; the cached CLI runs, no build.
 printf '{ enable = true; }\n' >"$inst/components/alpha/default.nix"
 [[ -n $(git -C "$inst" status --porcelain --untracked-files=no) ]] || ds_fail "tree is not dirty"
 : >"$DS_CALL_LOG"
@@ -36,7 +36,7 @@ assert_eq "fake-cli v1 beta hidden instance=$inst args=version" "$DS_STDOUT"
 assert_call_count 0 nix
 assert_call_count 0 nix-store
 
-# L-2: an untracked component directory changes nothing either, and the
+# An untracked component directory changes nothing either, and the
 # launcher does not refuse it (refusing is the job of the commands that
 # evaluate the instance).
 mkdir -p "$inst/components/beta"
@@ -47,7 +47,7 @@ assert_eq "fake-cli v1 beta hidden instance=$inst args=version" "$DS_STDOUT"
 assert_eq "" "$DS_STDERR"
 assert_call_count 0 nix
 
-# L-3: a modified, uncommitted flake.lock is a new key and a new build of
+# A modified, uncommitted flake.lock is a new key and a new build of
 # the dirty tree: Nix sees the uncommitted change of the tracked
 # message.txt and still does not see the untracked components/beta.
 printf 'v2' >"$inst/message.txt"
@@ -66,7 +66,7 @@ assert_exit 0 "$inst/.dotsteward/cli.sh" version
 assert_eq "fake-cli v1 beta hidden instance=$inst args=version" "$DS_STDOUT"
 assert_call_count 0 nix
 
-# L-4: no Nix on PATH (the daemon profile adds none) and no cache entry for
+# No Nix on PATH (the daemon profile adds none) and no cache entry for
 # the current lock: the bootstrap hint, exit 1, nothing cached.
 no_nix=$(launcher_no_nix_path)
 launcher_write_lock "$inst" 4

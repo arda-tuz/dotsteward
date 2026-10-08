@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and literal texts are single-quoted on purpose
-# I1 (SPEC 10.3): init of a missing and of an empty directory. The result is
+# Init of a missing and of an empty directory. The result is
 # the template with the files init writes (workstation.toml, the locks,
 # flake.nix), the flake.lock of `nix flake lock` and the .dotsteward/ mirrors
 # of `dotsteward sync --nix`, committed once on main with the user's own git

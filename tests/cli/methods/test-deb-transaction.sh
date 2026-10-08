@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# D3-D5, the deb transaction in fresh mode (SPEC 3.4, D6): every DEB below
+# The deb transaction in fresh mode: every DEB below
 # its floor and every missing apt package is collected in [components]
 # order, all DEBs are downloaded and verified before the first sudo call,
 # then exactly one `apt-get update` and one `apt-get install
@@ -26,7 +26,7 @@ add_hook post_install example-app post-install <<EOF
 printf '%s\n' "\$DOTSTEWARD_COMPONENT" >>'$DS_TEST_ROOT/post-install-runs'
 EOF
 
-# D4: two DEBs below their floors (one installed too old, one missing) and
+# Two DEBs below their floors (one installed too old, one missing) and
 # a missing apt package; beta is already installed.
 ds_dpkg_installed example-app 1.1.0
 ds_dpkg_installed beta 2.0
@@ -55,7 +55,7 @@ assert_contains "$DS_STDOUT" "[dotsteward] system install verified for profile f
 assert_eq "example-app" "$(<"$DS_TEST_ROOT/post-install-runs")"
 assert_eq "" "$(temp_dirs)"
 
-# D3: everything current: no download, no apt-get, the hook still runs.
+# Everything current: no download, no apt-get, the hook still runs.
 : >"$DS_CALL_LOG"
 assert_exit 0 run_install --profile fresh
 assert_eq "0" "$(ds_call_count curl)"
@@ -71,7 +71,7 @@ assert_json - '.mode == "fresh" and .result == "passed" and ([.components[].stat
   and .hooks == [{"component": "example-app", "name": "post-install", "list": "post_install", "status": "passed", "exit_code": 0}]' <<<"$DS_STDOUT"
 assert_contains "$DS_STDERR" "[dotsteward] system install verified for profile fresh"
 
-# D5: a newer installed version than the floor is kept: no download, no
+# A newer installed version than the floor is kept: no download, no
 # downgrade. Pre-release ordering follows dpkg.
 ds_dpkg_installed example-app 1.3.0
 ds_dpkg_installed example-term 0.9.0~rc1

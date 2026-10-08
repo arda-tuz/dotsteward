@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# rollback --latest, generation branch (SPEC 6.2, A-14): with a recorded
+# rollback --latest, generation branch: with a recorded
 # previous Home Manager generation, rollback activates it instead of
 # removing links. The manifest is the current generation's (the active Home
 # Manager profile), else the instance's mirror. Without a record, or with a

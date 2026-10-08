@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# D6-D9, deb refusals: a non-HTTPS URL, a failed download, a size or digest
+# Deb refusals: a non-HTTPS URL, a failed download, a size or digest
 # mismatch, a wrong Package or Architecture field each stop the phase with
 # their own message before any sudo call, and the temporary directory is
 # removed. Package aliases are accepted. A floor that still fails after the
@@ -35,7 +35,7 @@ expect_refusal() {
   assert_eq "" "$(ds_dpkg_version example-app)$(ds_dpkg_version example-term)"
 }
 
-# D6: the second download fails after the first one succeeded.
+# The second download fails after the first one succeeded.
 lock_set desktop_packages.example-app.url '"http://downloads.example.invalid/example-app_1.2.3_amd64.deb"'
 expect_refusal "example-app (deb): refusing a non-HTTPS download URL: http://downloads.example.invalid/example-app_1.2.3_amd64.deb"
 assert_eq "1" "$(ds_call_count curl)"
@@ -62,7 +62,7 @@ assert_contains "$DS_STDERR" "SHA-256 mismatch: "
 assert_eq "0" "$(ds_call_count sudo)"
 assert_eq "" "$(temp_dirs)"
 
-# D7: the Package field must be one of packageNames, the Architecture field
+# The Package field must be one of packageNames, the Architecture field
 # must match when declared.
 pin_download desktop_packages.example-app "$term_deb" "$app_url" 1.2.3
 expect_refusal "example-app (deb): unexpected package example-term in $app_url (expected example-app)"
@@ -113,7 +113,7 @@ assert_eq "" "$(ds_dpkg_version example-app)$(ds_dpkg_version example-term)"
 assert_eq "" "$(temp_dirs)"
 ds_stub_clear_routes apt-get
 
-# D8: the lock's floor is above what the transaction installed.
+# The lock's floor is above what the transaction installed.
 pin_download desktop_packages.example-app "$old_deb" "$app_url" 1.2.3
 : >"$DS_CALL_LOG"
 assert_exit 1 run_install --profile fresh
@@ -131,6 +131,6 @@ assert_eq "1.1.0" "$(ds_dpkg_version example-app)"
 assert_contains "$DS_STDOUT" "[dotsteward] example-app (deb): installed: example-app 1.1.0 (not verified)"
 [[ -e $DS_TEST_ROOT/hook-ran ]] || ds_fail "the post-install hook did not run"
 
-# D9: the temporary directory is removed on success too.
+# The temporary directory is removed on success too.
 assert_eq "" "$(temp_dirs)"
 

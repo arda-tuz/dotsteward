@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and ct_* variables come from the harness and the helpers
-# The remote steps' arguments (SPEC 9.4): help, unknown options and
+# The remote steps' arguments: help, unknown options and
 # arguments, missing values and runs. No refusal runs an instance command,
 # gh or Nix, or writes a state file.
 # shellcheck source=tests/contribute/remote/helpers.sh

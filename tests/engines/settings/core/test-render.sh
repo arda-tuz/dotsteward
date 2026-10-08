@@ -2,8 +2,8 @@
 # shellcheck disable=SC2154 # DS_* and settings_* variables come from the harness and helpers.sh
 # Canonical buffer rendering: the header and targets are kept byte for byte,
 # entries are written in the fixed field order with one blank line between
-# them and table values last, exactly like the original engine (golden
-# files rendered by it). A canonical buffer is a fixed point of track and
+# them and table values last, byte for byte like the golden files. A
+# canonical buffer is a fixed point of track and
 # untrack, and commands that change nothing never rewrite it.
 # shellcheck source=tests/engines/settings/core/helpers.sh
 source "$DS_REPO_ROOT/tests/engines/settings/core/helpers.sh"
@@ -14,7 +14,7 @@ round_trip() {
   lmf "$machine" untrack render-probe >/dev/null
 }
 
-# The fixture buffer (the original engine's layout) is a fixed point.
+# The fixture buffer (in the canonical layout) is a fixed point.
 settings_machines
 buffer=$settings_work/A/repo/local-maintained-files/buffer.toml
 round_trip A alpha
@@ -30,7 +30,7 @@ done
 assert_eq "$stamp" "$(stat -c '%i %Y' "$buffer")" "a command without changes rewrote the buffer"
 
 # A hand-written buffer is rendered canonically on the next save; the
-# result equals the original engine's rendering and is itself a fixed point.
+# result equals the golden rendering and is itself a fixed point.
 mkdir -p "$DS_TEST_ROOT/messy"
 cp "$settings_fixtures/render/messy.toml" "$DS_TEST_ROOT/messy/buffer.toml"
 cp -R "$settings_fixtures/render/files" "$DS_TEST_ROOT/messy/files"

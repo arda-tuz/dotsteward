@@ -3,7 +3,7 @@
 # The denylist requirement and the commit rules. A framework repository
 # (privacy/policy.toml at its root) cannot push without a usable denylist;
 # any other repository falls back to the generic rules without one and uses
-# the denylist when it exists. The framework commit rules (SPEC 0.2) refuse
+# the denylist when it exists. The framework commit rules refuse
 # trailers, foreign e-mail addresses and non-UTC dates.
 # shellcheck source=tests/hooks/helpers.sh
 source "$DS_REPO_ROOT/tests/hooks/helpers.sh"

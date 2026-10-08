@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# tools/gen-stage0.sh and template/bootstrap.sh (SPEC 10.2): the template
+# tools/gen-stage0.sh and template/bootstrap.sh: the template
 # is the generated concatenation of the stage-0 body of
 # cli/commands/preflight.sh (between its markers) and cli/lib/stage0.sh,
 # committed executable; --check fails when it is stale; the result is pre-Nix

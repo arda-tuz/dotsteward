@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# `dotsteward contribute status` (SPEC 6.2, 9.4): the state of the current
+# `dotsteward contribute status`: the state of the current
 # run (or of --id ID) as human lines or, with --json, the state document
 # itself; it reads only.
 # shellcheck source=tests/contribute/local/helpers.sh

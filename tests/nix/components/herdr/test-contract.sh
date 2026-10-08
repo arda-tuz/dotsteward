@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and herdr_* variables come from the harness and helpers.sh
-# The herdr component's contract values (SPEC 3.5), as lib.mkInstance
+# The herdr component's contract values, as lib.mkInstance
 # evaluates them on both systems: method nix with the package of the
 # instance input herdr, the settings target and its reload hook (identical
 # on Linux and darwin), the backup path, the presence probe, the E2E command,

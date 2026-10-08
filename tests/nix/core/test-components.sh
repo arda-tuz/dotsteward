@@ -39,7 +39,7 @@ assert_eq '["example-app"]' \
   "supported platform"
 
 # Managed links: core first, then the enabled components in [components]
-# order; the same list in every profile (D20).
+# order; the same list in every profile.
 expected='["~/.config/nix/nix.conf","~/.example-term/RULES.md","~/.example-app/AGENTS.md"]'
 assert_core_eq "$expected" '(homeOf { config = "workstation"; modules = componentModules; }).dotsteward.managedLinks'
 assert_core_eq "$expected" '(homeOf { config = "workstation"; profile = "fresh"; modules = componentModules; }).dotsteward.managedLinks'

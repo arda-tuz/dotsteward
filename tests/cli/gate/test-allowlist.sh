@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# G4, the update allowlist ([gate] I6, SPEC 4.1 gate.update_allowlist): in
+# The update allowlist (gate.update_allowlist): in
 # the update scope every path changed between the base and the working tree
 # (staged, unstaged or committed, deletions included, renames split into
 # their two paths) must match one anchored extended regular expression of

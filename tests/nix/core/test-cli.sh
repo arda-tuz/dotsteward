@@ -13,7 +13,7 @@ assert_core_eq '["dotsteward","local-maintained-files"]' \
 assert_core_eq '"dotsteward"' 'lib.getName (homeOf { }).dotsteward.cli.package'
 assert_core_eq 'true' '(homeOf { }).dotsteward.cli.alias'
 
-# The CLI comes from packages.dotsteward (the instance package set, F8).
+# The CLI comes from packages.dotsteward (the instance package set).
 assert_core_eq '"example-cli"' \
   'lib.getName (homeOf { packages = { dotsteward = (pkgsFor "x86_64-linux").writeShellScriptBin "example-cli" ""; }; }).dotsteward.cli.package'
 

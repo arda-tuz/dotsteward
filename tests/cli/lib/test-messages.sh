@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # literal $ in test values and bash -c scripts
-# log, warn and die (SPEC 6.1 output convention), strict mode in the caller,
-# require_command, timestamp_utc and ensure_private_dir.
+# log, warn and die (the [dotsteward] output convention), strict mode in the
+# caller, require_command, timestamp_utc and ensure_private_dir.
 # shellcheck source=tests/cli/lib/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/lib/helpers.sh"
 

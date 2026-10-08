@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
-# E2E hook contract (SPEC 8.3, 8.4; R6): early hooks run after the commands
+# E2E hook contract: early hooks run after the commands
 # and before the managed links, main hooks after the settings checks, late
 # hooks after the repository checks; within a phase in [components] order,
 # then declaration order; only for components active in the profile and

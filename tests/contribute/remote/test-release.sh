@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and ct_* variables come from the harness and the helpers
-# Q5, `dotsteward contribute release` in owner mode (SPEC 9.4 step 9, D11):
+# `dotsteward contribute release` in owner mode:
 # the next patch tag after the newest stable v* tag of the upstream (v0.0.1
 # without any), only when VERSION of the merged commit equals it (publish
 # checks it before the merge, release again as the last safety net); an

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2016 # jq programs and Nix expressions in single quotes
-# The claude-code seed (SPEC 5.6): it validates against
+# The claude-code seed: it validates against
 # schema/seed.schema.json, holds every lock path the component reads with
 # any of its methods (the release pin of each platform and the DEB pin), and
 # its values are well-formed official download pins: HTTPS URLs of the

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# G11, the cli-probes step ([gate] I13, SPEC 6.2): it builds
+# The cli-probes step: it builds
 # checks.<primary system>.home of the instance (the check profile; the
 # primary system is the first of nix.systems) without writing the lock and
 # runs `dotsteward probes --generation <built path>`. A failed build, a

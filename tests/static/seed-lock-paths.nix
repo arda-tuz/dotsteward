@@ -1,5 +1,5 @@
-# Lock paths of the catalog components and the seeds that provide them
-# (SPEC 5.6): every versions.lock.json path a catalog component reads exists
+# Lock paths of the catalog components and the seeds that provide them:
+# every versions.lock.json path a catalog component reads exists
 # in the versions_lock of its modules/components/<name>/seed.json or in
 # template/versions.lock.json, when the framework ships one. Evaluated by
 # tests/static/test-seeds.sh:

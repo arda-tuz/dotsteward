@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# G1, arguments and the repository guards (SPEC 6.2, [gate] I2, I6): --help
+# Arguments and the repository guards: --help
 # prints the usage and exits 0 before any state write; option errors, an
 # unsupported scope, a missing instance, a directory that is not a git clone,
 # another branch and another origin URL are refused with exit 1 before the

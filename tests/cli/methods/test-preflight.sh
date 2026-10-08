@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# D2, fresh mode: `install` runs `dotsteward preflight --read-only --json
+# Fresh mode: `install` runs `dotsteward preflight --read-only --json
 # --profile P` first; the adaptive route (exit 3) and any other failure stop
 # the phase with the preflight's status, before any package query,
 # download, sudo call, hook or write. --check-only never runs the preflight.

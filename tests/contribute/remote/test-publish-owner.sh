@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and ct_* variables come from the harness and the helpers
-# Q5, `dotsteward contribute publish` in owner mode (SPEC 9.4 step 8, D23):
+# `dotsteward contribute publish` in owner mode:
 # needs a trial passed for the checked commit; pushes fix/<slug>, opens the
 # pull request once (reused on a re-run), waits for its checks (red: main
 # untouched, the trial switch recovered), merges by fast-forwarding main to

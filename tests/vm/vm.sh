@@ -3,7 +3,7 @@
 # this machine, as an unprivileged user, for the clean-install scenario and
 # the agentic end-to-end test of dotsteward-init. See tests/vm/README.md.
 #
-# The VM phase starts only after the owner has approved it. Until then the
+# The VM phase starts only after the operator has approved it. Until then the
 # commands that download, boot, connect to or remove a VM refuse to run, and
 # tests/vm/selftest.sh checks the harness with fakes, never booting a VM.
 set -Eeuo pipefail
@@ -78,7 +78,7 @@ Run options:
   --allow-tcg          boot without KVM (slow software emulation)
 
 Environment:
-  DOTSTEWARD_VM_PHASE=approved   set only after the owner approved the VM
+  DOTSTEWARD_VM_PHASE=approved   set only after the operator approved the VM
                                  phase
   DOTSTEWARD_VM_ROOT             images and runs (default
                                  ${XDG_CACHE_HOME:-~/.cache}/dotsteward-vm)
@@ -258,7 +258,7 @@ parse_options() {
 
 require_approval() {
   [[ ${DOTSTEWARD_VM_PHASE:-} == approved ]] ||
-    die "the VM phase has not been approved: '$command' runs only with DOTSTEWARD_VM_PHASE=approved, set after the owner started the VM phase"
+    die "the VM phase has not been approved: '$command' runs only with DOTSTEWARD_VM_PHASE=approved, set after the operator started the VM phase"
 }
 
 require_not_root() {

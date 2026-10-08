@@ -1,12 +1,12 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The canonical layout with a legacy skill root (SPEC 8.1; understanding
-# report I-L1, I-L2, test 2): skills already under ~/.codex/skills are never
-# moved; ~/.agents/skills, once a link to the legacy root, is migrated to a
-# physical directory by install only (check fails with the rebuild hint),
-# and each skill gets the canonical entry ../../.codex/skills/<found dir>.
-# A canonical root link to anything else, a broken one or a legacy root
-# that is not a real directory is fatal in both modes, and nothing changes.
+# The canonical layout with a legacy skill root: skills already under
+# ~/.codex/skills are never moved; ~/.agents/skills, once a link to the legacy
+# root, is migrated to a physical directory by install only (check fails with
+# the rebuild hint), and each skill gets the canonical entry
+# ../../.codex/skills/<found dir>. A canonical root link to anything else, a
+# broken one or a legacy root that is not a real directory is fatal in both
+# modes, and nothing changes.
 # shellcheck source=tests/agents/helpers.sh
 source "$DS_REPO_ROOT/tests/agents/helpers.sh"
 

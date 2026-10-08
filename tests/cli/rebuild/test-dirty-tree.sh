@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# rebuild refuses an instance Nix would not see as committed (SPEC 6.2, 6.3,
-# I-2) before any write and before any Nix call: a modified tracked file,
+# rebuild refuses an instance Nix would not see as committed
+# before any write and before any Nix call: a modified tracked file,
 # an untracked file (Nix does not see it), a missing flake.lock, a checkout
 # that is not a git repository root and a path that cannot be written into
 # the host flake. Nothing appears under the state root.

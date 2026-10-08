@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# rollback --latest, ABSENT branch (SPEC 6.2, A-14): when no Home Manager
+# rollback --latest, ABSENT branch: when no Home Manager
 # existed before the first install, rollback sets the platform default login
 # shell, removes the shells-file line this system added, removes the managed
 # links of the current generation's manifest (only links into the Nix

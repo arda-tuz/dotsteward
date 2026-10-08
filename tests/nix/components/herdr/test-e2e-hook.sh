@@ -4,7 +4,7 @@
 # The E2E hook of herdr: an interactive login zsh, the shell a terminal
 # opens, finds herdr on PATH. The hook is declared only when the shell
 # component (zsh) is enabled, for the profiles of that component; it runs
-# with the hook environment (SPEC 8.4) and fails with a message when the
+# with the hook environment and fails with a message when the
 # login shell does not see herdr.
 # shellcheck source=tests/nix/components/herdr/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/components/herdr/helpers.sh"

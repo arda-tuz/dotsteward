@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2153 # DS_REPO_ROOT comes from tests/lib/harness.sh
 # references/catalog.md of plugins/dotsteward/skills/dotsteward-init is
-# generated from the catalog READMEs by tools/gen-init-catalog.sh (SPEC
-# 9.7): the committed file is current, lists every catalog component in the
+# generated from the catalog READMEs by tools/gen-init-catalog.sh: the
+# committed file is current, lists every catalog component in the
 # canonical order with its summary, its enable block and its methods table,
 # and the generator's --check catches a README change, rewrites the file
 # without --check, and refuses a README it cannot read.

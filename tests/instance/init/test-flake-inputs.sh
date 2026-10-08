@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and literal texts are single-quoted on purpose
-# I5 (SPEC 5.6, 10.3): init writes the chosen components' flake inputs
+# Init writes the chosen components' flake inputs
 # between the "# dotsteward:inputs:begin" and "# dotsteward:inputs:end" lines
 # of flake.nix (url, flake = false and follows, one line each, in catalog
 # order, an input shared by two seeds once), replacing what was there, and

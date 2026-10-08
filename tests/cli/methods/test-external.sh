@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and shell snippets are single-quoted on purpose
-# The external method (SPEC 3.4): dotsteward installs nothing; the check is
+# The external method: dotsteward installs nothing; the check is
 # an optional `command -v` and an optional floor read from a lock path (a
 # version string, or an entry with minimum_version or version), compared as
 # dotted versions with the output of versionArgv (default --version). The

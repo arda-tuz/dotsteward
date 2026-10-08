@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and ct_* variables come from the harness and the helpers
-# Q5, `dotsteward contribute abort` (SPEC 9.4, recovery after a trial
-# switch): ends the run (step done, outcome aborted); after a trial switch
+# `dotsteward contribute abort` (recovery after a trial switch): ends the
+# run (step done, outcome aborted); after a trial switch
 # it first runs rebuild --switch and e2e without an override, so the live
 # generation returns to the pinned framework. A recovery that fails keeps
 # the run open; abort repeated resumes it (only the e2e once the rebuild

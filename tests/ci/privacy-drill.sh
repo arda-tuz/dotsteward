@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# P1 exit drill on GitHub Actions: six deliberate leaks must turn the privacy
+# Privacy drill on GitHub Actions: six deliberate leaks must turn the privacy
 # workflow red, each one reported, none of them printed.
 #
 # Usage: tests/ci/privacy-drill.sh [--base-ref REF]

@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # methods shell snippets are single-quoted on purpose
-# The app-archive method with a disk image (SPEC 3.4: "verified zip or
-# dmg"): the format is recognised by content (the UDIF trailer), not by the
+# The app-archive method with a disk image (a verified zip or dmg is
+# accepted): the format is recognised by content (the UDIF trailer), not by the
 # URL; the image is attached read-only without Finder and without opening
 # it, at a mount point inside the temporary directory, the bundle copied out
 # with ditto, and the image always detached again: after a successful copy,

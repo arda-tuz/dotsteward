@@ -1,9 +1,9 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # sed scripts remove Markdown code spans with literal backticks
-# The contributor and reference documentation (SPEC 2.1, 3.4, 5.4, 7, 9.4,
-# 11.1, 12.1). tests/static/test-docs.sh lints every page; this file checks
-# that each page keeps up with the tree it describes:
+# The contributor and reference documentation. tests/static/test-docs.sh lints
+# every page; this file checks that each page keeps up with the tree it
+# describes:
 #
 # - CONTRIBUTING.md, SECURITY.md and the reference pages exist, and the two
 #   root files link the pages a contributor and a reporter need;

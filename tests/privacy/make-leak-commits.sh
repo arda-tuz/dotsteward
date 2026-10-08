@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Creates the six deliberate privacy leaks of the P1 exit drill as six
+# Creates the six deliberate privacy leaks of the privacy drill as six
 # commits, one leak each, and prints their full SHAs, oldest first.
 #
 # Usage: tests/privacy/make-leak-commits.sh DIR DENYLIST_TERM

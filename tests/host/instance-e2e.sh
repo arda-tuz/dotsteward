@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Instance E2E with real Nix (SPEC 12.3): a new instance from the framework
+# Instance E2E with real Nix: a new instance from the framework
 # template, built and given a settings round trip, all inside a temporary
 # HOME and never activated. It runs on a developer machine with Nix and on
 # CI.

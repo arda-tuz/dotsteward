@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Stage-0 refusals (SPEC 10.2): usage errors, a profile other than the
+# Stage-0 refusals: usage errors, a profile other than the
 # bootstrap profile, an unsafe identity, a missing or foreign stage-0
 # mirror, a missing launcher and a relative state root (from the
 # environment, the mirror or the legacy variable) stop before any write;

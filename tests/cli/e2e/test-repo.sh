@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
-# Repository checks of `dotsteward e2e` (SPEC 8.3 step 9; R2) against a bare
+# Repository checks of `dotsteward e2e` against a bare
 # remote reached through the instance's own SSH URL: the checkout is a clean
 # git work tree (core:repo-clean), origin equals instance.remote
 # (core:repo-origin), the remote branch is read with git_net (time-limited,

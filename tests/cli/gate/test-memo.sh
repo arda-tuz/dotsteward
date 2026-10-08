@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# G6, the memo (SPEC 6.2, [gate] I9): a passed record answers the gate when
+# The memo: a passed record answers the gate when
 # the tree, `nix --version`, the gate version (the framework VERSION), the
 # framework override and the denylist digest are all equal; scope and root
 # are not part of the key. A memo answer runs no step, keeps the log and

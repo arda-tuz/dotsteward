@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# rebuild --build-only (SPEC 6.2, F5, I-3, I-5, I-8): the generated host
+# rebuild --build-only: the generated host
 # flake keeps the host-override contract (input [compat] host_input of type
 # path:, homeConfigurations.current = <input>.lib.mkHome (import
 # ./profile.nix)), the files are private, inventory.json records the build,
@@ -25,8 +25,8 @@ assert_eq "workstation" "$(<"$rb_current/profile")"
 assert_contains "$DS_STDOUT" "[dotsteward] building the Home Manager activation package"
 assert_contains "$DS_STDOUT" "[dotsteward] build finished; the user state was not changed"
 
-# Host overrides: byte-exact files (the owner's host_input reproduces the
-# historical host flake), private modes.
+# Host overrides: byte-exact files (an instance's host_input reproduces
+# the same host flake), private modes.
 assert_eq "{
   username = \"$USER\";
   homeDirectory = \"$HOME\";

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # methods shell snippets are single-quoted on purpose
-# The app-archive method's fresh-mode install from a zip (SPEC 3.4), through
+# The app-archive method's fresh-mode install from a zip, through
 # platform_app_archive_install and `dotsteward install --profile fresh`: the
 # pinned archive is downloaded over HTTPS and verified by size and SHA-256,
 # extracted with ditto into a temporary directory, its bundle checked

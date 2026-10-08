@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
-# Settings integration (SPEC 7, 8.3 step 6; R4). Without a settings buffer
+# Settings integration. Without a settings buffer
 # there is nothing to check. With one, core:settings-files asserts that
 # every whole-file entry path (absent = true entries excepted) and every
 # existing target path with an entry is a regular non-symlink file, buffer

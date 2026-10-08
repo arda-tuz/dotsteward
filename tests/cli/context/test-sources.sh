@@ -2,9 +2,9 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # dotsteward context --json when sources are missing or vary: the minimal
 # instance (no mirror, buffer, skills lock, flake.lock or state records),
-# runtime_matches_check both ways and per platform (SPEC 4.4), the
-# profiles.current fallback (D15), state.root and gate overrides from the
-# environment, and the flake.lock variants of the framework upstream (D17).
+# runtime_matches_check both ways and per platform, the profiles.current
+# fallback to the check profile, state.root and gate overrides from the
+# environment, and the flake.lock variants of the framework upstream.
 # shellcheck source=tests/cli/context/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/context/helpers.sh"
 
@@ -21,7 +21,7 @@ validate_schema "$DS_TEST_ROOT/minimal.json"
 
 assert_eq '{"path":"'"$minimal"'","name":"minimal","remote":"git@github.com:alice/workstation.git","branch":"main","checkout":"'"$HOME"'/minimal","upstream_contribute":"fork"}' \
   "$(jq -c .instance <<<"$doc")"
-# No current/profile record: the check profile (D15).
+# No current/profile record: the check profile.
 assert_eq '{"names":["main"],"current":"main","default":"main","check":"main","bootstrap":"main","modes":{"main":"fresh"}}' \
   "$(jq -c .profiles <<<"$doc")"
 assert_eq '{"nix_max_jobs":5,"nix_cores":3,"min_free_gib":5,"cache_url":"https://cache.nixos.org"}' \
@@ -98,13 +98,13 @@ assert_eq workstation "$(current)"
 assert_eq "$HOME/.local/state/workstation" \
   "$(env -u DOTSTEWARD_STATE_ROOT "$context_framework/cli/dotsteward" --instance "$inst" context --json | jq -r .state.root)"
 
-# Gate values after the environment overrides (SPEC 6.1).
+# Gate values after the environment overrides.
 assert_eq '[3,5,7,"https://mirror.example.invalid"]' \
   "$(DOTSTEWARD_NIX_MAX_JOBS=3 DOTSTEWARD_NIX_CORES=5 DOTSTEWARD_MIN_FREE_GB=7 \
     DOTSTEWARD_CACHE_URL=https://mirror.example.invalid ds_cli --instance "$inst" context --json |
     jq -c '[.gate.nix_max_jobs, .gate.nix_cores, .gate.min_free_gib, .gate.cache_url]')"
 
-# --- Framework upstream (flake.lock, D17) ----------------------------------------
+# --- Framework upstream (flake.lock) ------------------------------------------
 
 upstream() {
   ds_cli --instance "$inst" context --json | jq -c '[.framework.upstream, .framework.track]'

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # methods shell snippets are single-quoted on purpose
-# The app-archive method's --check-only semantics (SPEC 3.4): the version is
+# The app-archive method's --check-only semantics: the version is
 # the CFBundleShortVersionString of <dest>/<appName>/Contents/Info.plist
 # and must be at least the pin's minimum_version (a newer, self-updated
 # bundle satisfies it); not-managed in adopt mode; configuration errors die

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Launcher cache (spec 6.3 steps 2 and 3): key = sha256(flake.lock bytes),
+# Launcher cache: key = sha256(flake.lock bytes),
 # a miss builds "git+file://<root>#dotsteward" once and registers
 # $STATE/cli/<key> as a GC root with nix-store --add-root, a hit execs the
 # cached CLI without Nix, at most 5 keys are kept (oldest symlink removed),

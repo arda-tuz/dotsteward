@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and literal texts are single-quoted on purpose
-# SPEC 10.3 step 6: the commit carries the user's own git identity, the one
+# The commit of init carries the user's own git identity, the one
 # a plain `git commit` in --dir would use. Git chooses it by the location of
 # the repository (an includeIf "gitdir:..." rule, for example a work
 # identity for every repository below ~/work/), so init commits in --dir

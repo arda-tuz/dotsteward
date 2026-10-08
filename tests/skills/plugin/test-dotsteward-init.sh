@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2153 # DS_REPO_ROOT comes from tests/lib/harness.sh
 # Skill contract C1-C6 for the plugin skill
-# plugins/dotsteward/skills/dotsteward-init (SPEC 9.1, 9.7) and C10: the
+# plugins/dotsteward/skills/dotsteward-init and C10: the
 # plugin holds exactly this skill, and the plugin manifests and marketplace
 # entries that exist carry VERSION. The overlay precedence sentence and the
 # classification step (C7) belong to the three framework skills only: this

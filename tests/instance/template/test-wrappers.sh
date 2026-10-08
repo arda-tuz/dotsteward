@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
-# The template wrappers (SPEC 6.4): rebuild.sh and rollback.sh pass every
+# The template wrappers: rebuild.sh and rollback.sh pass every
 # argument to `dotsteward rebuild` and `dotsteward rollback`; update.sh maps
 # its subcommands prepare, validate, publish and status to `dotsteward
 # update prepare`, `dotsteward gate`, `dotsteward update publish` and

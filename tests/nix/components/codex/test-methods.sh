@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The codex install methods end to end (SPEC 3.4, 8.1): an instance that
+# The codex install methods end to end: an instance that
 # enables codex is evaluated by lib.mkInstance, its manifest mirror is
 # written, and the framework CLI installs and checks the component.
 # official-binary: `agents install` downloads the pinned release archive of

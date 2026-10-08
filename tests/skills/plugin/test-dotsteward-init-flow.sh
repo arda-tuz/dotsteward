@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2153 # DS_REPO_ROOT comes from tests/lib/harness.sh
-# The flows of plugins/dotsteward/skills/dotsteward-init (SPEC 9.7, 4.4):
+# The flows of plugins/dotsteward/skills/dotsteward-init:
 # the frontmatter text, the reference set, the new-instance flow (read-only
 # machine checks, sudo explained first, Nix only from the pinned release's
 # verified installer and only after the user agrees, components and methods
@@ -9,8 +9,8 @@
 # the identity facts of `dotsteward context --json`, no edit needed,
 # bootstrap or rebuild, e2e), the login shell of an adopted machine set
 # before e2e, the supported platforms, every flag the commands outside the
-# dotsteward CLI pass, and no command or path of the single-user scripts the
-# CLI replaced.
+# dotsteward CLI pass, and no legacy script path (the CLI commands do that
+# work).
 
 skill_dir=$DS_REPO_ROOT/plugins/dotsteward/skills/dotsteward-init
 skill=$skill_dir/SKILL.md
@@ -70,7 +70,7 @@ subsection_of() {
 all_files=("$skill" "$skill_dir"/references/*.md)
 all_fenced=$(fenced "${all_files[@]}")
 
-# Frontmatter: the description of SPEC 9.7, word for word.
+# Frontmatter: the skill description, word for word.
 expected_description="Set up a dotsteward workstation: create a new private instance repository from the template, or install an existing instance on this machine."
 description=$(awk 'NR == 1 { next } /^---[ \t]*$/ { exit } /^description:/ { sub(/^description:[ \t]*/, ""); print }' "$skill")
 # The text holds ": ", which ends a plain YAML scalar, so the skill loaders
@@ -108,7 +108,7 @@ for need in "Nix daemon" "system packages" "login shell"; do
   grep -qi "$need" <<<"$checks" || ds_fail "the sudo explanation does not name [$need]"
 done
 
-# The new-instance flow, in the order of SPEC 9.7.
+# The new-instance flow, in order.
 in_order "$skill" \
   "## 2." \
   "command -v nix git gh" \
@@ -177,7 +177,7 @@ grep -qi 'fresh machine' <<<"$new_flow" || ds_fail "the new-instance flow does n
 grep -qi 'confirm' "$skill" || ds_fail "SKILL.md does not confirm the activation with the user"
 assert_contains "$all_fenced" "./rollback.sh --latest --dry-run" "the summary names the rollback"
 
-# The existing-instance flow (SPEC 4.4).
+# The existing-instance flow.
 in_order "$skill" \
   "## 4." \
   "gh repo clone" \
@@ -287,12 +287,14 @@ check_flags "login-shell" "$login_shell_help" "$(sed -n 's/.*cli\.sh login-shell
 check_flags "e2e" "$e2e_help" "$(sed -n 's/.*cli\.sh e2e //p' <<<"$all_fenced" | sed 's/[;&|].*//')"
 check_flags "bootstrap.sh" "$bootstrap_help" "$(sed -n 's/.*bootstrap\.sh"\{0,1\} //p' <<<"$all_fenced" | sed 's/[;&|].*//')"
 
-# No command or path of the single-user scripts the CLI replaced, and no
-# CI-only switch (e2e --skip-repo-checks is for CI fixtures).
+# No legacy script path (scripts/<name>.sh or scripts/<name>.py: the CLI
+# commands do that work), and no CI-only switch (e2e --skip-repo-checks is
+# for CI fixtures).
 for file in "${all_files[@]}" "$skill_dir/agents/openai.yaml"; do
-  # shellcheck disable=SC2088 # literal text, not a path
-  for stale in '~/.dotfiles' '.local/state/dotfiles' 'update.sh --' 'scripts/pins.py' \
-    'scripts/validate.sh' 'scripts/preflight.sh' 'DOTSTEWARD_ASSUME_YES=1' '--skip-repo-checks'; do
+  if grep -qE -- '(^|[^A-Za-z0-9_.-])scripts/[A-Za-z0-9_.-]+\.(sh|py)\b' "$file"; then
+    ds_fail "${file#"$DS_REPO_ROOT"/} names a legacy script path"
+  fi
+  for stale in 'DOTSTEWARD_ASSUME_YES=1' '--skip-repo-checks'; do
     if grep -qF -- "$stale" "$file"; then
       ds_fail "${file#"$DS_REPO_ROOT"/} names [$stale]"
     fi

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and literal texts are single-quoted on purpose
-# init --json (SPEC 6.1, 10.3 step 7): standard output is exactly one JSON
+# init --json: standard output is exactly one JSON
 # document (the directory, remote, components, systems, profiles, framework
 # URL, commit and next steps); the output of the steps goes to standard
 # error. A refusal prints nothing on standard output.

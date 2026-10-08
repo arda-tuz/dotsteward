@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The four runner phases (SPEC 8.2): every probe command is required first,
+# The four runner phases: every probe command is required first,
 # then all version probes, all presence probes and all feature probes; within
 # a phase the order is the manifest's component order ([components] order),
 # then declaration order. The first failure stops the run.

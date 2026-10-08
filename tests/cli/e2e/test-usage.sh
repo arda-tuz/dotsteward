@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
-# Flag matrix of `dotsteward e2e` (SPEC 6.2, 8.3; R1): a required --profile
+# Flag matrix of `dotsteward e2e`: a required --profile
 # of the instance, --expected-remote-base OID (40 lowercase hex digits, not
 # with --skip-repo-checks), --framework-override REF (or
 # DOTSTEWARD_FRAMEWORK_OVERRIDE), --generation PATH (a directory),

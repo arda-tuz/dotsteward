@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and vscode_* variables come from the harness and helpers.sh
 # shellcheck disable=SC2088 # settings paths are compared as text, never expanded
-# The vscode component's contract values (SPEC 3.5), as lib.mkInstance
+# The vscode component's contract values, as lib.mkInstance
 # evaluates them on both systems with the default methods: deb on Linux
 # (the official DEB of package code, pinned at desktop_packages.vscode),
 # app-archive on darwin (the official arm64 archive, pinned at
@@ -104,7 +104,7 @@ for system in x86_64-linux aarch64-darwin; do
   json_check "$manifest" '.pins.flake_inputs' '[]'
 
   # Nothing else: VS Code is a system-level application whose files the
-  # application owns; the owner's probe registry, E2E commands and stage-0
+  # application owns; the instance's probe registry, E2E commands and stage-0
   # backup paths stay what they are.
   json_check "$manifest" '[.probes[] | select(.component == "vscode")]' '[]'
   json_check "$manifest" '[.checks[][] | select(.component == "vscode")]' '[]'

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # Nix expressions and jq programs in single quotes
-# The codex catalog component (SPEC 3.4, 3.5): its contract values as
+# The codex catalog component: its contract values as
 # lib.mkInstance evaluates them for an instance that enables it, on both
 # systems: default and supported methods, the official-binary and external
 # install blocks, agent rules, rollback, settings target, backups, skill
@@ -47,7 +47,7 @@ done
 # The official-binary block: the release asset of each platform, its archive
 # member, the user-level destination, the version the binary prints, the
 # at-least policy (a newer binary is kept) and sha256 verification from the
-# lock (the sigstore decision of SPEC 14, recorded in README.md).
+# lock (the sigstore decision recorded in README.md).
 json_check "$(codex_entry "$linux")" '.install' "$(jq -cS . <<'EOF'
 {
   "pin": "agent_tools.codex.linux",

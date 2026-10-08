@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and ct_* variables come from the harness and the helpers
-# Q5, fork mode (SPEC 9.4 steps 8 to 10): publish pushes fix/<slug> to the
+# Fork mode (publish, release and upgrade): publish pushes fix/<slug> to the
 # fork, waits for the fork's CI runs of the commit (skipped with a warning
 # when GitHub Actions are disabled there; a build-only trial then is
 # refused), fast-forwards the fork's main to the tested commit and opens an
@@ -76,7 +76,7 @@ assert_eq "$(rt_bootstrap 0.1.1)" "$(cat "$ct_inst/bootstrap.sh")" "bootstrap.sh
 assert_eq report "$(field .step)" "step after the upgrade"
 
 # The instance follows the upstream again for the next runs (its flake.lock
-# names the framework upstream, D17).
+# names the framework upstream).
 cp "$ct_fixtures/instance/flake.lock" "$ct_inst/flake.lock"
 write_flake github
 

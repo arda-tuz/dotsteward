@@ -1,10 +1,9 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Where an installed skill is found (SPEC 8.1; understanding report I-L3,
-# I-L4, tests 3 and 4): roots in order canonical (~/.agents/skills), then
-# the legacy roots; inside a root the lock's directory before its
-# legacy_directory. The canonical entry is named after the directory that
-# was found, the link-root link after the lock name: a skill found as
+# Where an installed skill is found: roots in order canonical
+# (~/.agents/skills), then the legacy roots; inside a root the lock's directory
+# before its legacy_directory. The canonical entry is named after the directory
+# that was found, the link-root link after the lock name: a skill found as
 # ~/.codex/skills/alpha-skill gets ~/.agents/skills/alpha-skill ->
 # ../../.codex/skills/alpha-skill and ~/.claude/skills/alpha ->
 # ../../.agents/skills/alpha-skill.

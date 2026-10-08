@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2153 # DS_REPO_ROOT comes from tests/lib/harness.sh
-# The update flow of skills/dotsteward-update (SPEC 9.3), beyond the generic
+# The update flow of skills/dotsteward-update, beyond the generic
 # contract C1-C8 of test-dotsteward-update.sh:
 #   U1  references/ holds exactly classification.md, framework-upgrade.md,
 #       sources-and-hashes.md and update-contract.md

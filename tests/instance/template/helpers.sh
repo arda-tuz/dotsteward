@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # Helpers for the template tests (tests/instance/template): the files of the
-# framework template/ (SPEC 10.1) and the template as an instance.
+# framework template/ and the template as an instance.
 #
 # Nix expressions are evaluated with tests/nix/instance/prelude.nix in scope
 # against an isolated store (tests/nix/instance/helpers.sh), so the tests run

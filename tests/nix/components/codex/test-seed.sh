@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # Nix expressions and jq programs in single quotes
-# The codex seed (SPEC 5.6, 14): schema version 1, no flake input, one
+# The codex seed: schema version 1, no flake input, one
 # release pin per platform under agent_tools.codex.<platform> whose URL is
 # the official release asset the module installs on that platform, and every
 # lock path the component reads is in it.

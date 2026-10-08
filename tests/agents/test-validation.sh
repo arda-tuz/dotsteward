@@ -1,12 +1,11 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The validation phase (SPEC 8.1 step 7, 8.2): in both modes, the
-# checks.commands of the active components must be on PATH, the
+# The validation phase (the last step of `dotsteward agents`): in both modes,
+# the checks.commands of the active components must be on PATH, the
 # checks.floors must hold (minimum: a version, or a lock path of
-# versions.lock.json; compare: dpkg through dpkg --compare-versions, semver
-# by dotted parts), then the probe registry runs for the profile. With
-# --generation PATH the generation's home-path/bin goes first on PATH for
-# the whole phase.
+# versions.lock.json; compare: dpkg through dpkg --compare-versions, semver by
+# dotted parts), then the probe registry runs for the profile. With --generation
+# PATH the generation's home-path/bin goes first on PATH for the whole phase.
 # shellcheck source=tests/agents/helpers.sh
 source "$DS_REPO_ROOT/tests/agents/helpers.sh"
 

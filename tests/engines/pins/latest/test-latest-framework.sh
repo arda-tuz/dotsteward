@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # The built-in framework row: the tag of the instance's dotsteward input
 # (flake.lock original.ref) against the newest release of its upstream
-# (D17: a github owner/repo or a git URL), review when newer, manual for an
+# (a github owner/repo or a git URL), review when newer, manual for an
 # input that is not a release tag or is a local path, error rows for a
 # missing input or lock file and unknown input types.
 # shellcheck source=tests/engines/pins/latest/helpers.sh

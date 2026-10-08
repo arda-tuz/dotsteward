@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# U3, the remote side of update publish ([gate] I17, I19): after a fresh
+# The remote side of update publish: after a fresh
 # fetch origin/<branch> must still be the base; the push is never forced
 # and its refusal by the remote is reported; the remote branch must then be
 # HEAD. A remote that already holds HEAD (a publish run again) is reported

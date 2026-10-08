@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Q2, `dotsteward contribute start --slug S` (SPEC 9.4 step 3): branch
+# `dotsteward contribute start --slug S`: branch
 # fix/<slug> from a freshly fetched upstream main (owner: origin/main; fork:
 # upstream/main, not the fork's main), and the run's state file
 # <state>/contribute/<id>.json (mode 0600 in a 0700 directory) with every

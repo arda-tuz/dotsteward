@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# `dotsteward contribute setup` (SPEC 9.4 step 2): owner mode clones the
+# `dotsteward contribute setup`: owner mode clones the
 # upstream, fork mode clones the fork and adds an `upstream` remote; a fork
 # is created with `gh repo fork --clone=false` only with --create-fork; a
 # second run fetches instead of cloning; the clone gets the contributor's

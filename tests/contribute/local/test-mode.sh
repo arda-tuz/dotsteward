@@ -1,11 +1,11 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Q1, the mode matrix (SPEC 9.4 step 0): owner only when upstream.contribute
+# The contribute mode matrix: owner only when upstream.contribute
 # is owner, `gh auth status` succeeds, the upstream grants push and the
 # local clone's origin is the upstream (or there is no clone yet); every
 # other combination is fork mode, reported with its reason on stderr and in
 # the JSON document, never an error. The upstream comes from the dotsteward
-# node of the instance flake.lock (D17). Mode never writes anything.
+# node of the instance flake.lock. Mode never writes anything.
 # shellcheck source=tests/contribute/local/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/local/helpers.sh"
 

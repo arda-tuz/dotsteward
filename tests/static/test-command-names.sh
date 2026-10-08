@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # fixture text with a literal $ is written on purpose
-# Command-name rule (SPEC 8.4): framework code, tests, stubs and docs name
+# Command-name rule: framework code, tests, stubs and docs name
 # only catalog commands, the platform tools of tests/static/allowed-commands.txt
 # and the synthetic fixture names. Command words come from stub file names,
 # require_command and `command -v` arguments, and fenced shell blocks in

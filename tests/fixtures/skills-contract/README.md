@@ -1,6 +1,6 @@
 # Skill contract fixtures
 
-Synthetic data for `tests/skills` (SPEC 9.1, 9.5, 12.4, checks C1-C10).
+Synthetic data for `tests/skills` (skill contract checks C1-C10).
 
 - `classification.md`: the canonical `references/classification.md`. Every framework skill
   (`dotsteward-maintain`, `dotsteward-update`, `dotsteward-contribute`) ships these exact bytes

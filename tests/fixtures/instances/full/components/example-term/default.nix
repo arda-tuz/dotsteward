@@ -50,7 +50,7 @@ in
     };
   };
 
-  # Home files may depend on the profile and on the options (D20): the
+  # Home files may depend on the profile and on the options: the
   # greeting is written only in the profiles the component is active in.
   home.file.".example-term/greeting" = lib.mkIf active {
     text = component.options.greeting + "\n";

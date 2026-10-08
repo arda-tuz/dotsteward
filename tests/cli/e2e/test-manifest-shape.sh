@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
 # shellcheck disable=SC2016 # jq programs are single-quoted on purpose
-# A manifest section the E2E checks read with the wrong shape (SPEC 8.3) is
+# A manifest section the E2E checks read with the wrong shape is
 # a refusal, never "nothing to check": the run and --list exit 1 before any
 # check runs, with one setup finding (code error) whose path is the manifest
 # file. The same missing command in a well-formed entry fails with

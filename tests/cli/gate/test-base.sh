@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Base resolution ([gate] I4): --expected-base, else the base_oid of
+# Base resolution: --expected-base, else the base_oid of
 # candidate.json when its root is this instance, else
 # `git merge-base HEAD origin/<branch>`; the result must be a full object id.
 # The base is recorded in validation.json.

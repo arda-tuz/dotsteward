@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and literal texts are single-quoted on purpose
-# I2 (SPEC 10.3): a directory that `nix flake init -t` filled (its
+# A directory that `nix flake init -t` filled (its
 # workstation.toml holds the "# dotsteward:template" line) is filled in
 # place: the directory itself stays, the result equals init of an empty
 # directory with the same options, and the user's own files and edits stay.

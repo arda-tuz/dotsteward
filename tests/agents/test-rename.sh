@@ -1,11 +1,10 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# A renamed home-managed skill (SPEC 8.1 B1; understanding report I-I2,
-# test 11): after activation drops the old ~/.codex/skills/<old> link and
-# adds the new one, install creates the new canonical entry and link-root
-# link first and the sweep then removes ~/.agents/skills/<old> (now
-# dangling) and ~/.claude/skills/<old> (dangling once the first is gone).
-# check passes afterwards.
+# A renamed home-managed skill: after activation drops the old
+# ~/.codex/skills/<old> link and adds the new one, install creates the new
+# canonical entry and link-root link first and the sweep then removes
+# ~/.agents/skills/<old> (now dangling) and ~/.claude/skills/<old> (dangling
+# once the first is gone). check passes afterwards.
 # shellcheck source=tests/agents/helpers.sh
 source "$DS_REPO_ROOT/tests/agents/helpers.sh"
 

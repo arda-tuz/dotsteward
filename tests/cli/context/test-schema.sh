@@ -1,10 +1,9 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# schema/context.schema.json: a valid JSON Schema (draft 2020-12) that
-# requires every field of SPEC 6.5, closes every object (a new field is a
-# schema change), and rejects documents that break it. The outputs of the
-# rich and the minimal instance are validated in test-context.sh and
-# test-sources.sh.
+# schema/context.schema.json: a valid JSON Schema (draft 2020-12) that requires
+# every field of the context document, closes every object (a new field is a
+# schema change), and rejects documents that break it. The outputs of the rich
+# and the minimal instance are validated in test-context.sh and test-sources.sh.
 # shellcheck source=tests/cli/context/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/context/helpers.sh"
 
@@ -14,7 +13,7 @@ jq -e . "$schema" >/dev/null || ds_fail "schema is not valid JSON"
 assert_eq '"https://json-schema.org/draft/2020-12/schema"' "$(jq -c '."$schema"' "$schema")" "schema dialect"
 assert_eq '"https://github.com/arda-tuz/dotsteward/schema/context.schema.json"' "$(jq -c '."$id"' "$schema")"
 
-# Every field of SPEC 6.5 is required.
+# Every field of the context document is required.
 required() {
   jq -c "$1.required | sort" "$schema"
 }
@@ -38,8 +37,8 @@ nodes='def nodes: .. | objects | select(has("type") or has("properties"));'
 open=$(jq -c "$nodes"' [nodes | select(.type? == "object" and (has("additionalProperties") | not))] | length' "$schema")
 assert_eq 0 "$open" "object schemas without additionalProperties"
 
-# The step keys and the conventional types are fixed lists (D4, one source
-# for the gate regex and the skills).
+# The step keys and the conventional types are fixed lists (one source for
+# the gate regex and the skills).
 assert_eq '["preflight","static","pins","flake-check","cli-probes"]' "$(jq -c '.properties.gate.properties.step_keys.const' "$schema")"
 assert_eq '["feat","fix","perf","refactor","docs","chore","test","build","ci","style","revert"]' \
   "$(jq -c '.properties.commit.properties.conventional_types.const' "$schema")"

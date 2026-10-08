@@ -1,8 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Nothing is ever overwritten or repaired (SPEC 8.1; understanding report
-# I-L5, I-S1, I-S2, tests 8 and 9): an excluded subtree (.system) in the
-# canonical root, a real directory where a canonical entry or a link-root
+# Nothing is ever overwritten or repaired: an excluded subtree (.system) in
+# the canonical root, a real directory where a canonical entry or a link-root
 # link belongs, a link-root link to another skill and a broken canonical
 # entry are each fatal in both modes, name the path, and leave the home
 # byte-identical.

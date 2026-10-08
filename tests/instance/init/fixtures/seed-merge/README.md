@@ -1,5 +1,5 @@
-Synthetic seeds for the seed merge golden of tests/instance/init/test-seeds.sh
-(SPEC 5.6). They replace the shell and codex seeds in a copy of the framework:
+Synthetic seeds for the seed merge golden of tests/instance/init/test-seeds.sh.
+They replace the shell and codex seeds in a copy of the framework:
 
 - `shell.json` and `codex.json` share `agent_tools.shared` with equal leaves
   (a list among them), which merges; `codex.json` adds keys to sections the

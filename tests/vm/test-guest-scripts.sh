@@ -8,7 +8,7 @@
 # override; the "inside a VM" runs below use a copy of the scripts whose
 # marker path points into the test root, with the harness id stub and the
 # systemd-detect-virt fake. --help works everywhere. Only the unattended
-# clean install assumes "yes" for the package manager (SPEC D6); the agent
+# clean install assumes "yes" for the package manager; the agent
 # scenarios keep the real prompts.
 
 if [[ -e /etc/dotsteward-vm ]]; then
@@ -213,9 +213,9 @@ assert_contains "$(text_of clean-install)" 'export DOTSTEWARD_ASSUME_YES=1'
 assert_not_contains "$(text_of agent-prepare)" 'DOTSTEWARD_ASSUME_YES'
 assert_not_contains "$(text_of agent-verify)" 'DOTSTEWARD_ASSUME_YES'
 
-# The clean install follows SPEC 12.5: the verified Nix install of stage-0,
-# init of a template instance from the pushed checkout, the bootstrap
-# profile, e2e, and a rollback.
+# The clean install follows the clean-install workflow: the verified Nix install
+# of stage-0, init of a template instance from the pushed checkout, the
+# bootstrap profile, e2e, and a rollback.
 clean=$(text_of clean-install)
 for expected in '--install-nix-only' ' init ' '--framework-url' './bootstrap.sh --profile' ' e2e' \
   './rollback.sh --latest --apply'; do

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh and config_load
-# Instance discovery (SPEC 6.1): --instance > DOTSTEWARD_INSTANCE >
+# Instance discovery: --instance > DOTSTEWARD_INSTANCE >
 # (DOTFILES_ROOT when its workstation.toml sets compat.legacy_env) > the
 # nearest workstation.toml above the working directory. Exercised through
 # config_load, the Python reader's discover command and, end to end, the

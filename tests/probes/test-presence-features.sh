@@ -3,7 +3,7 @@
 # shellcheck disable=SC2016 # literal $ in the override scripts
 # Presence probes fail on a non-zero exit; feature probes must exit 0 and
 # their combined standard output and error must contain every needle as a
-# fixed string (SPEC 8.2). Every probe runs with its own environment, its
+# fixed string. Every probe runs with its own environment, its
 # argv kept word for word, and an empty standard input.
 # shellcheck source=tests/probes/helpers.sh
 source "$DS_REPO_ROOT/tests/probes/helpers.sh"

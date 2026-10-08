@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and ct_* variables come from the harness and the helpers
-# Q5, a red framework gate after a trial switch (SPEC 9.4, recovery after a
-# trial switch): publish sends a trialled run back to check when upstream
+# A red framework gate after a trial switch (recovery after a trial
+# switch): publish sends a trialled run back to check when upstream
 # main moved (exit 5), with the live generation still on the trial
 # framework. A privacy hard stop (exit 4) or a failed nix flake check
 # (exit 1) of that check ends the run's way to publish, so check runs the

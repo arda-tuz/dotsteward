@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# G7 and G8, the five steps ([gate] I10, I12, SPEC D4): a passing gate runs
+# The five steps: a passing gate runs
 # preflight, static, pins, flake-check and cli-probes in this order, quietly
 # (each step's output goes to the private validate.log under a
 # "== <step>: <command>" header), prints one "ok" line per step, writes the

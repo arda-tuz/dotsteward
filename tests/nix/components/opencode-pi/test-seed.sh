@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016,SC2088 # jq programs and literal ~/ paths in single quotes
-# The opencode-pi seed and documents (SPEC 3.5, 5.6, 14): schema version 1,
+# The opencode-pi seed and documents: schema version 1,
 # no flake input; the Pi source pins (tag, revision, SRI hashes, model data
 # URL of the same version) and nix_packages.pi; one OpenCode release pin per
 # platform at the same version whose URL is the official release asset the
@@ -79,7 +79,7 @@ assert_op_eq "\"$version\"" '(piFor "x86_64-linux").version' "Pi version from th
 
 readme=$op_dir/README.md
 [[ -f $readme && -f $op_dir/maintenance.md ]] || ds_fail "README.md and maintenance.md are required"
-# The verification record of SPEC 14: the OpenCode configuration path on
+# The verification record of the README: the OpenCode configuration path on
 # both platforms and the Pi darwin build, each verified or not verified.
 grep -qE 'OpenCode configuration path.*(verified on [0-9]{4}-[0-9]{2}-[0-9]{2} from|not verified)' "$readme" ||
   ds_fail "README.md lacks the verification record of the OpenCode configuration path"

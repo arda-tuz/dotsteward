@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Home-managed instance skills (lock deployment "home-manager"; SPEC 8.1;
-# understanding report I-L6, test 7): Home Manager links
+# Home-managed instance skills (lock deployment "home-manager"): Home
+# Manager links
 # ~/<hm_root>/<directory> before the installer runs; the installer never
 # installs or refreshes them, it requires the link and the lock digest and
 # then lays out the canonical entry and the link-root link like any skill.

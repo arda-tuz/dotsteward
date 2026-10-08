@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
 # shellcheck disable=SC2016 # literal $HOME in the manifest on purpose
-# `dotsteward e2e --list` (SPEC 8.3): the check ids of a profile in run
+# `dotsteward e2e --list`: the check ids of a profile in run
 # order, without running anything: no hook, no remote, no file read in HOME.
 # Ids are <component>:<check-name> for component checks and hooks and
 # core:<check-name> for the runner's own checks; checks with nothing to

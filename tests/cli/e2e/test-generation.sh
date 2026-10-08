@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
-# --generation PATH (SPEC 6.2, 8.3; pre-switch runs): the manifest comes
+# --generation PATH (pre-switch runs): the manifest comes
 # from the built generation instead of the mirror (or the active
 # generation), its home-path/bin is first on PATH for every check, and the
 # agents check verifies against it too.

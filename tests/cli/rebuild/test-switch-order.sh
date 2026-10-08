@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# rebuild --switch ordering (SPEC 6.2, I-6, I-7): host lock, build, records,
+# rebuild --switch ordering: host lock, build, records,
 # preActivate hooks (scoped to the profile), previous-generation capture
 # (once; ABSENT when no Home Manager profile exists), activate, settings
 # apply with the generation's local-maintained-files, agents install (its
@@ -112,7 +112,7 @@ assert_exit 0 run_rebuild --profile workstation --switch
 assert_eq 1 "$(ds_call_count hook 'pre-activate *')"
 manifest_edit '.hooks.pre_activate |= map(select(.name != "stdin"))'
 
-# A failed activation keeps the capture (I-7) and stops before settings.
+# A failed activation keeps the capture and stops before settings.
 ds_stub_route activate '*' --exit 5
 : >"$DS_CALL_LOG"
 assert_exit 5 run_rebuild --profile workstation --switch

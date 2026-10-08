@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# P1 and P2, arguments and repository guards (SPEC 6.2, [gate] I2): --help
+# Arguments and repository guards: --help
 # prints the usage and exits 0 before any state write; a missing or unknown
 # subcommand, option errors, an unsupported scope and a prepare without
 # --official-sources-only are refused with exit 1; prepare and publish run

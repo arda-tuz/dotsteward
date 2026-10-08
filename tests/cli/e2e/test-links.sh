@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
-# Managed links and agent-rule bytes (SPEC 8.3 step 4; R3): every managed
+# Managed links and agent-rule bytes: every managed
 # link of the manifest is a symlink that resolves (core:managed-links), and
 # every agent-rules target of a component active in the profile has the
 # bytes of agent_rules.source (<component>:agent-rules); targets of

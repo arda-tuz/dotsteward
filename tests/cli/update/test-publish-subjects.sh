@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# U2, the commit subject policy of update publish ([gate] I16): in the update
+# The commit subject policy of update publish: in the update
 # scope the last subject must be exactly commit.update_subject (earlier
 # commits are not checked); in the maintain scope every subject after the
 # base must be a conventional commit (feat, fix, perf, refactor, docs, chore,

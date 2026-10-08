@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# dotsteward doctor --redact (SPEC 6.2, 6.5): the shareable report. Home
+# dotsteward doctor --redact: the shareable report. Home
 # directories, usernames, the hostname, the remote (and its owner and
 # repository), settings entry ids and target names, instance component names
 # and their surfaces, and instance skill names become <redacted>, in the

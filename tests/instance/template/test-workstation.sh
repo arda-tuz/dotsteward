@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# template/workstation.toml (SPEC 10.1, 4.1, 10.3): the schema 1 skeleton
+# template/workstation.toml: the schema 1 skeleton
 # that `dotsteward init` fills. It carries the marker comment
 # `# dotsteward:template` (init fills a directory with the marker in place),
 # is valid for both configuration readers with the placeholder identity, and

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
-# dotsteward.files (SPEC 3.3; R7): the verifier (core:files) and the
+# dotsteward.files: the verifier (core:files) and the
 # installer agree for a user that is not the instance's check identity. The
 # installer is the dotstewardFiles activation entry, which runs
 # `install -D -m MODE SOURCE TARGET` with the target expanded against the

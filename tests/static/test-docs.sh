@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # Markdown with literal backticks is written on purpose
-# The user documentation (SPEC 2.1, 6.2, 11.7).
+# The user documentation.
 #
 # Lint of README.md and docs/**/*.md: the user documents exist; every file
 # is printable ASCII without tabs or trailing whitespace and ends with one

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and ct_* variables come from the harness and the helpers
-# Q5, a whole owner-mode run (SPEC 9.4 steps 3 to 11) through the real
-# local steps: start, the reproduction, check (privacy scans and the Nix
+# A whole owner-mode run, from start to report, through the real local
+# steps: start, the reproduction, check (privacy scans and the Nix
 # check), trial, publish, release, upgrade and report. The released tag's
 # tree is the tested tree (the invariant behind the framework skill links),
 # the instance pins the tag, and the report names the pull request, the

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
-# Framework skills sync check (SPEC 8.3 step 11, 9.4): every
+# Framework skills sync check: every
 # ~/<hm_root>/dotsteward-* entry, and every framework skill of the manifest,
 # is a link that resolves to the generation's framework source
 # (<generation>/home-files/<hm_root>/<name>), with the SKILL.md and

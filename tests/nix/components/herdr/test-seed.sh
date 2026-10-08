@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* and herdr_* variables come from the harness and helpers.sh; errexit stops a failed cd
-# The herdr seed (SPEC 5.6): schema version 1, valid against
+# The herdr seed: schema version 1, valid against
 # schema/seed.schema.json, one flake input whose URL, lock reference and
 # version agree with each other the way the pins engine checks them
 # (flake-inputs and the component's derive rule), and every lock path the

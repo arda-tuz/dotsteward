@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Adoption before activation (SPEC 3.4 rebuild.adoptPaths, I-12): a regular
+# Adoption before activation (rebuild.adoptPaths): a regular
 # file at an adopt path is backed up into <state>/backups/<UTC>-adopt and
 # removed so Home Manager can link it; an absent path and a link into the
 # Nix store are left alone; a link outside the store and a directory are

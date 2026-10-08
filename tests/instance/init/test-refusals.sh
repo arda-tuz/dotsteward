@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and literal texts are single-quoted on purpose
-# I3 (SPEC 10.3): what init refuses before any write and any Nix call. A
+# What init refuses before any write and any Nix call. A
 # directory that is neither missing, empty nor a template is refused with
 # exit 1 (so are a file, a missing parent, an unsafe identity and a missing
 # git identity); usage errors exit 2. Every refusal leaves the target as it

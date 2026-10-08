@@ -1,11 +1,11 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# U1, the local refusals of update publish, in order ([gate] I15, SPEC 6.2,
-# D9): a clean tree, a base (resolved like the gate's), at least one commit
-# after the base, the base an ancestor of HEAD, the HEAD tree equal to the
-# tree of a passed validation.json, the validated scope equal to the publish
-# scope and a validation made without a framework override. Every refusal
-# happens before any network call, so nothing is fetched or pushed.
+# The local refusals of update publish, in order: a clean tree, a base (resolved
+# like the gate's), at least one commit after the base, the base an ancestor of
+# HEAD, the HEAD tree equal to the tree of a passed validation.json, the
+# validated scope equal to the publish scope and a validation made without a
+# framework override. Every refusal happens before any network call, so nothing
+# is fetched or pushed.
 # shellcheck source=tests/cli/update/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/update/helpers.sh"
 
@@ -123,7 +123,7 @@ write_validation '.scope = null'
 refused "the validation was made for the (none) scope, not maintain; run 'dotsteward gate --scope maintain --force' first" \
   --scope maintain
 
-# The validation used a framework override (D9).
+# The validation used a framework override.
 write_validation '.framework_override = "path:/tmp/dotsteward-candidate"'
 refused "the validation used the framework override path:/tmp/dotsteward-candidate; run 'dotsteward gate --scope maintain' without an override first" \
   --scope maintain

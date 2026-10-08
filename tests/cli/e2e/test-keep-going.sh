@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
-# Fail-fast, --keep-going and --json (SPEC 8.3, D13): by default the first
+# Fail-fast, --keep-going and --json: by default the first
 # finding ends the run with exit 1; --keep-going records every failure and
 # runs every check (a missing git work tree skips only the other repository
 # checks); --json prints one document { "result", "findings": [ { "step",

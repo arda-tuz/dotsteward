@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The template lock files (SPEC 10.1, 5.1, 5.2): versions.lock.json holds the
+# The template lock files: versions.lock.json holds the
 # framework sections only (policy, the Nix installer pin, nixpkgs and
 # home-manager at the framework's revisions, and of the packages only core's
 # tomlkit, which lib.pinnedVersions of every instance holds), the base that

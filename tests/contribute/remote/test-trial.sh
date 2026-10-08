@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and ct_* variables come from the harness and the helpers
-# Q4, `dotsteward contribute trial` (SPEC 9.4 step 7, D9): the instance's
+# `dotsteward contribute trial`: the instance's
 # gate (maintain scope), rebuild --switch and e2e, each with
 # --framework-override git+file://<clone>?rev=<checked commit> on the
 # current profile (else profiles.check); trial_switched is set before the

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Scenario clean-install: a stranger's fresh Ubuntu 24.04 becomes a
-# dotsteward workstation through the CLI alone, unattended, the way SPEC
-# 12.5 runs it on CI, but on a real (virtual) machine with a real login
-# shell: the verified Nix install of stage-0, `init` of a template instance
-# from the pushed framework checkout, the bootstrap profile (system install,
-# rebuild --switch, login shell, e2e), e2e again, and a rollback.
+# Scenario clean-install: a new user's fresh Ubuntu 24.04 becomes a dotsteward
+# workstation through the CLI alone, unattended, the way the clean-install
+# workflow runs it on CI, but on a real (virtual) machine with a real login
+# shell: the verified Nix install of stage-0, `init` of a template instance from
+# the pushed framework checkout, the bootstrap profile (system install, rebuild
+# --switch, login shell, e2e), e2e again, and a rollback.
 #
 # Usage: bash tests/vm/guest/clean-install.sh [--components LIST] [--dir DIR]
 #                                             [--no-rollback]
@@ -52,7 +52,7 @@ done
 [[ $components =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || guest_die "invalid --components: $components"
 [[ ! -e $instance_dir ]] || guest_die "the instance directory already exists: $instance_dir (use a fresh VM)"
 
-# The VM harness answers the package manager's prompts (SPEC D6).
+# The VM harness answers the package manager's prompts.
 export DOTSTEWARD_ASSUME_YES=1
 remote_dir=$HOME/remotes/workstation.git
 framework_url=git+file://$guest_src

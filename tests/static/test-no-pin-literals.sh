@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
-# Framework code reads pins only through declared lock paths (SPEC 5.4): no
+# Framework code reads pins only through declared lock paths: no
 # URL or hash literal of a fixture lock (tests/**/fixtures/**/*.lock.json or
 # *-lock.json; other fixture JSON, such as JSONC samples, is not a lock) or
 # of a component seed (modules/components/*/seed.json) appears in the

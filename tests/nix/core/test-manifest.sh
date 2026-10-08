@@ -2,7 +2,7 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # Nix expressions and expected shell text in single quotes
 # modules/core manifest: the contract values of the enabled components and
-# core, identical in every profile (D20), shipped in the generation as
+# core, identical in every profile, shipped in the generation as
 # share/dotsteward/manifest.json.
 # shellcheck source=tests/nix/core/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/core/helpers.sh"
@@ -35,7 +35,7 @@ done
 assert_eq "$(core_json '(homeOf { config = "workstation"; modules = componentModules; }).home.file.".example-term/RULES.md".source')" \
   "$(jq .agent_rules.source <<<"$actual")" "agent rules source: the file the targets link to"
 
-# D20: the manifest does not depend on the profile.
+# The manifest does not depend on the profile.
 assert_eq "$actual" "$(manifest 'profile = "fresh";')" "same manifest in every profile"
 
 # The platform selects per-platform settings paths.

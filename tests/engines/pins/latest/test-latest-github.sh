@@ -101,7 +101,7 @@ assert_contains "$(row flake_inputs.example-git .details.error)" "not a GitHub r
 assert_contains "$DS_STDOUT" $'\nerror    flake_inputs.example-git'
 assert_eq '"update"' "$(row flake_inputs.example-term .status)"
 
-# Per-platform assets (SPEC 5.5): both systems' mirrors carry the same
+# Per-platform assets: both systems' mirrors carry the same
 # declaration with one asset template per system (or per platform); each
 # declaration is one row whose details.assets hold every platform's asset,
 # all from the same release answer.

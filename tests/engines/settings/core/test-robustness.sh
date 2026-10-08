@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and settings_* variables come from the harness and helpers.sh
-# The robustness fixes of the port, each a crash or a misleading message of
-# the original engine: a target that is not UTF-8 (or not readable) is an
+# Robustness against bad input, each a clear result instead of a crash or a
+# misleading message: a target that is not UTF-8 (or not readable) is an
 # error row, a corrupt base.json exits 2 with a message, the first-contact
 # warning names a backup only when one was taken, and untrack works on an
 # invalid buffer, touching only the named entry.

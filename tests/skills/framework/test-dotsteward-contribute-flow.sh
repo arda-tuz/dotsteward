@@ -1,12 +1,12 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2153 # DS_REPO_ROOT comes from tests/lib/harness.sh
-# The flow of skills/dotsteward-contribute (SPEC 9.4): the frontmatter text,
+# The flow of skills/dotsteward-contribute: the frontmatter text,
 # the reference set, the step order from the instance facts to the report,
 # the reproduction proven failing before the fix, the framework commit
 # identity, the VERSION bump of the fix, the stop rules (privacy hard stop,
 # back to check, recovery through abort), the build-only trial, resuming a
 # run from its state file, the hand-over of the personal part, and no
-# command or path of the single-user scripts the CLI replaced.
+# legacy script path (the CLI commands do that work).
 
 skill_dir=$DS_REPO_ROOT/skills/dotsteward-contribute
 skill=$skill_dir/SKILL.md
@@ -35,7 +35,7 @@ fenced() {
   awk 'FNR == 1 { open = 0 } /^[ \t]*(```|~~~)/ { open = !open; next } open { print }' "$@"
 }
 
-# Frontmatter: the description of SPEC 9.4, word for word.
+# Frontmatter: the skill description, word for word.
 expected_description="Change the dotsteward framework itself (a skill flow, the CLI, an engine, the gate, a catalog component, the template or framework docs) from the user's machine: reproduce, fix generically, test on this machine, then publish to the user's fork, or in owner mode to the upstream repository with a patch release, and upgrade the user's instance to it. Personal changes belong to dotsteward-maintain."
 description=$(awk 'NR == 1 { next } /^---[ \t]*$/ { exit } /^description:/ { sub(/^description:[ \t]*/, ""); print }' "$skill")
 # The text holds ": ", which ends a plain YAML scalar, so the skill loaders
@@ -51,8 +51,8 @@ references=$(find "$skill_dir/references" -mindepth 1 -maxdepth 1 -printf '%f\n'
 assert_eq "classification.md framework-change.md publish-and-release.md run-state.md " \
   "$references" "reference files"
 
-# The flow: instance facts, overlay, classification, then the steps of SPEC
-# 9.4 in their order, the reproduction committed before the fix.
+# The flow: instance facts, overlay, classification, then the contribute
+# steps in their order, the reproduction committed before the fix.
 in_order "$skill" \
   "dotsteward context --json" \
   "overlay" \
@@ -123,7 +123,7 @@ assert_contains "$(fenced "$skill" "$publish_ref")" "dotsteward contribute trial
 grep -q 'clean-install.yml' "$skill" "$publish_ref" ||
   ds_fail "the skill does not say that a build-only trial needs clean-install.yml"
 grep -qi 'fast-forwards the upstream' "$publish_ref" ||
-  ds_fail "publish-and-release.md does not describe the owner merge as a fast-forward of the upstream main"
+  ds_fail "publish-and-release.md does not describe the owner-mode merge as a fast-forward of the upstream main"
 ! grep -qi 'squash-merge\|--squash' "$publish_ref" || ds_fail "publish-and-release.md still describes a squash merge"
 grep -qi 'tree' "$publish_ref" || ds_fail "publish-and-release.md does not describe the tree check"
 grep -q 'pr-to-upstream' "$publish_ref" || ds_fail "publish-and-release.md does not describe the fork's upstream pull request"
@@ -138,17 +138,13 @@ grep -q 'contribute/<id>.json' "$state_ref" || ds_fail "run-state.md does not na
 # Report: the language comes from the overlay.
 grep -qi 'language the overlay' "$skill" || ds_fail "SKILL.md does not take the report language from the overlay"
 
-# No command or path of the single-user scripts the CLI replaced, and no
-# fenced command of the instance flow that the contribute steps run
-# themselves.
+# No legacy script path (scripts/<name>.sh or scripts/<name>.py: the CLI
+# commands do that work), and no fenced command of the instance flow that
+# the contribute steps run themselves.
 for file in "$skill" "$skill_dir"/references/*.md "$skill_dir/agents/openai.yaml"; do
-  # shellcheck disable=SC2088 # literal text, not a path
-  for stale in '~/.dotfiles' '.local/state/dotfiles' 'update.sh --' 'scripts/pins.py' \
-    'scripts/validate.sh' 'scripts/preflight.sh'; do
-    if grep -qF -- "$stale" "$file"; then
-      ds_fail "${file#"$DS_REPO_ROOT"/} still names [$stale]"
-    fi
-  done
+  if grep -qE -- '(^|[^A-Za-z0-9_.-])scripts/[A-Za-z0-9_.-]+\.(sh|py)\b' "$file"; then
+    ds_fail "${file#"$DS_REPO_ROOT"/} names a legacy script path"
+  fi
 done
 assert_not_contains "$(fenced "$skill" "$skill_dir"/references/*.md)" "--framework-override" \
   "the trial passes the framework override itself; no fenced command passes it by hand"

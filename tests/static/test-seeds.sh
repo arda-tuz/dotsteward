@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
-# Component seeds (SPEC 5.6): every modules/components/<c>/seed.json
+# Component seeds: every modules/components/<c>/seed.json
 # validates against schema/seed.schema.json, names its own component, and
 # declares the same flake inputs in flake_inputs and versions_lock; and every
 # lock path a catalog component reads exists in its seed or in the template

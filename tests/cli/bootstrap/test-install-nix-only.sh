@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# bootstrap.sh --install-nix-only (SPEC 10.2, 9.7): only the verified Nix
+# bootstrap.sh --install-nix-only: only the verified Nix
 # install and the exact version check, for dotsteward-init before an
 # instance exists (the framework's template/bootstrap.sh next to its
 # template/versions.lock.json). The pin comes from the stage-0 mirror when

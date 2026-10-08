@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# G3, untracked files (SPEC 6.3, [gate] I7): Nix does not see untracked
+# Untracked files: Nix does not see untracked
 # files, so the gate refuses them, listing every one, before any Nix or step
 # command and without touching the record; ignored files are allowed.
 # shellcheck source=tests/cli/gate/helpers.sh

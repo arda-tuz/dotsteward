@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Skill contract checks C1-C10 (SPEC 9.1, 9.5, 12.4). Not a test file: the
+# Skill contract checks C1-C10. Not a test file: the
 # tests in tests/skills source it after tests/lib/harness.sh and
 # tests/lib/assert.sh.
 #

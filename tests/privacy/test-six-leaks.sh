@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
-# P1 exit drill, scanner side: six commits with one deliberate leak each,
+# The privacy drill, scanner side: six commits with one deliberate leak each,
 # pushed to a bare remote, are scanned with exactly the arguments the
 # pre-push hook uses (range, --metadata, --denylist, --require-denylist,
 # --redact). Six redacted findings, none of the leaked strings in the

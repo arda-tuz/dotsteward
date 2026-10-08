@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Arguments of `dotsteward agents` (SPEC 6.2, 8.1): install or check, a
+# Arguments of `dotsteward agents`: install or check, a
 # required --profile of the instance, --generation PATH (a directory),
 # --keep-going and --json. Usage errors exit 1 before anything is written;
 # --help names every flag and exits 0. An empty instance (no components, no

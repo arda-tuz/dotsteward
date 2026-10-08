@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and literal texts are single-quoted on purpose
-# I4 (SPEC 5.6): init merges the chosen components' seeds into the template
+# Init merges the chosen components' seeds into the template
 # locks: versions_lock into versions.lock.json and skills_lock into
 # agent/skills.lock.json, deep (objects merge, equal leaves are accepted, a
 # leaf two sources set differently is refused), in catalog order, written as

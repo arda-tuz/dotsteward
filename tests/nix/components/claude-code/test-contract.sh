@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2016 # Nix expressions in single quotes
-# The claude-code catalog component (SPEC 3.5) with its default method:
+# The claude-code catalog component with its default method:
 # official-binary on both platforms, the per-platform release pin, the
 # settings targets, backup paths, managed link, skill link root and agent
 # rules target, as an instance that enables it sees them in the manifest
@@ -110,7 +110,7 @@ assert_cc_eq 'true' 'let h = homeOf (cc { }) "x86_64-linux" "baseline"; in h.hom
 
 # Nothing the spec does not list: no probes, E2E commands, floors, hooks,
 # snapshots, prerequisites, adopt paths, detectors, flake inputs or
-# resolved versions (the owner's adopt-mode profile checks no Claude Code).
+# resolved versions (an instance's adopt-mode profile checks no Claude Code).
 assert_cc_eq '{
   "probes": [], "commands": [], "e2e": [], "agents": [], "floors": [],
   "hooks": [], "snapshots": [], "apt": [], "adopt": [], "restore": [],
@@ -135,7 +135,7 @@ assert_cc_eq 'true' 'let c = ccComponent (cc { }) "x86_64-linux"; in c.docs != n
 [[ -f $cc_component_dir/README.md && -f $cc_component_dir/maintenance.md ]] ||
   ds_fail "README.md and maintenance.md are required in modules/components/claude-code"
 
-# The manifest does not depend on the profile (D20).
+# The manifest does not depend on the profile.
 assert_cc_eq 'true' 'let i = cc { }; in
   (homeOf i "x86_64-linux" "workstation").dotsteward.manifest == (homeOf i "x86_64-linux" "baseline").dotsteward.manifest' \
   "profile-independent manifest"

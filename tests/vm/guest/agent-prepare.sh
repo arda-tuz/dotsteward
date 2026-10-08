@@ -5,7 +5,7 @@
 # vendor's documented method for Linux, into the user's home, an empty bare
 # repository at ~/remotes/workstation.git stands in for the instance's
 # hosted remote (plain `dotsteward e2e` needs a pushed origin), and the
-# owner's next steps are printed (log in, install the dotsteward plugin from
+# operator's next steps are printed (log in, install the dotsteward plugin from
 # the local marketplace in ~/dotsteward-src, ask for a workstation).
 #
 # Usage: bash tests/vm/guest/agent-prepare.sh --agent claude|codex
@@ -83,7 +83,7 @@ guest_step "local remote $remote_dir"
 mkdir -p -- "$(dirname -- "$remote_dir")"
 git init -q --bare --initial-branch=main "$remote_dir"
 
-guest_step "next steps for the owner"
+guest_step "next steps for the operator"
 # The plugin channel of each agent (docs/getting-started-ubuntu.md), from
 # the local marketplace in ~/dotsteward-src instead of the GitHub URL.
 case $agent in

@@ -1,5 +1,5 @@
 # The full Linux fixture instance (nix/checks/template-full.nix): the
-# instance `dotsteward init` writes for a stranger (SPEC 4.2) with every
+# instance `dotsteward init` writes for a new user with every
 # catalog component, on x86_64-linux only, plus two synthetic private
 # components:
 #   example-app    method nix (its default): a packaged, checked command

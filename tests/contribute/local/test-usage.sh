@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The contribute dispatcher (SPEC 6.2, 9.4): help, the step list, unknown
+# The contribute dispatcher: help, the step list, unknown
 # steps and options, and the remote steps when cli/lib/contribute-remote.sh
 # is not installed. No refusal runs gh or Nix, touches the network or writes
 # a state file.

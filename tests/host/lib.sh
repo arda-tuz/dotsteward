@@ -2,7 +2,7 @@
 # Helpers of the host tests (tests/host): scripts that use the real Nix of
 # the machine, in the temporary root of tests/lib/harness.sh (temporary HOME,
 # TMPDIR, git identity and DOTSTEWARD_STATE_ROOT, synthetic USER). They build
-# into the Nix store and never activate a generation (SPEC 12.5). A host test
+# into the Nix store and never activate a generation. A host test
 # sources this file and calls host_e2e_init first:
 #
 #   host_e2e_init FILE [ARG...]   --help prints FILE's header; otherwise runs

@@ -1,4 +1,4 @@
-# Platform tools the framework may name (SPEC 8.4, command-name rule (b)).
+# Platform tools the framework may name (the command-name rule).
 # Catalog commands (claude codex herdr zsh starship opencode pi code) and the
 # synthetic fixture names (example-app example-term alpha beta gamma delta)
 # are allowed by the rule itself and are not listed here. Shell builtins and

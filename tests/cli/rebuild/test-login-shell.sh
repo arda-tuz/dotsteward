@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and manifest values are single-quoted on purpose
-# login-shell set|migrate|check (SPEC 6.2, A-12): the login shell is the
+# login-shell set|migrate|check: the login shell is the
 # manifest's login_shell ($HOME expanded), from --generation, else the
 # active generation, else the instance's mirror. set adds it to the shells
 # file (recorded in <state>/current/etc-shells-added-path) and sets it;

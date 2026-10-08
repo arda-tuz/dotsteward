@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2016,SC2154 # Nix expressions in single quotes; DS_* variables come from the harness
-# The set_default_editor option of vscode (SPEC 3.5): true sets exactly
+# The set_default_editor option of vscode: true sets exactly
 # EDITOR = "code", VISUAL = "code" and GIT_EDITOR = "code --wait" in every
 # profile where the component is active; absent or false sets none of them;
 # anything else, and an unknown option, fails an assertion. With the

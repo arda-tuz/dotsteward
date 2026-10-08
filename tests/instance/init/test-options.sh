@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and literal texts are single-quoted on purpose
-# The workstation.toml init writes (SPEC 10.3 step 3, 4.2): identity,
+# The workstation.toml init writes: identity,
 # instance, systems, the two profiles (the first adopts and is default and
 # check, the second is fresh and bootstraps), the components in catalog
 # order with their methods, the contribution mode and unfree packages. It is
@@ -62,7 +62,7 @@ assert_jq - '. == {
   },
   upstream: { contribute: "owner" }
 }' --arg home "$HOME" <<<"$(toml_json "$file")"
-# The tables as SPEC 4.2 writes them, after the template's comment on
+# The tables as init writes them, after the template's comment on
 # components.
 grep -qxF 'method_by_platform = { linux = "deb", darwin = "app-archive" }' "$file" ||
   ds_fail "method_by_platform is not an inline table: $(<"$file")"

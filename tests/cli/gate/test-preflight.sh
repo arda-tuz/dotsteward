@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# G9, the preflight step ([gate] I11): an unreachable binary cache and too
+# The preflight step: an unreachable binary cache and too
 # little free space for /nix/store are fatal in the gate. The cache outage
 # rule is part of the message: no mirrors, no extra substituters. Both
 # thresholds come from the configuration and its environment overrides.

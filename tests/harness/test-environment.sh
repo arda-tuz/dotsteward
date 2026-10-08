@@ -64,7 +64,7 @@ assert_contains "$DS_STDOUT" "PASS"
 
 # Host credentials never reach a test: without the SSH agent and the GitHub
 # CLI tokens, a test that forgets the fake SSH transport or the gh stub fails
-# instead of reaching the real remote with the owner's identity.
+# instead of reaching the real remote with the user's identity.
 inner=$TMPDIR/inner/test-host-credentials.sh
 cat >"$inner" <<'INNER'
 # shellcheck shell=bash

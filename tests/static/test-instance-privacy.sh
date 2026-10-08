@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # fixture text with a literal $ is written on purpose
-# Instance privacy policy (SPEC 11.2): `static` scans an instance with the
+# Instance privacy policy: `static` scans an instance with the
 # generic secret rules, [privacy] forbidden_paths, file_rules and the
 # optional denylist (outside the sandbox only); the framework-only rules
 # (non-ASCII text, home paths, e-mail addresses, private IPv4 addresses and

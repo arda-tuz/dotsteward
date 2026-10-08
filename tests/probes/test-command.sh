@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # literal $ in the wrapper scripts
-# `dotsteward probes` (SPEC 6.2): --generation PATH (the generation's
+# `dotsteward probes`: --generation PATH (the generation's
 # manifest and home-path/bin) or --manifest F --path-prefix DIR; the prefix
 # comes first on PATH for the probe commands only. Flag refusals and
 # manifest validation.

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # The instance skills lock and the vendored sources are verified before a
-# skill touches the home (SPEC 5.2, 8.1; understanding report test 13): the
+# skill touches the home: the
 # lock must be a regular file with schema_version "1.0" and
 # expected_skill_count equal to its entries, each entry needs name,
 # directory and skill_sha256 and a known deployment (copy, home-manager or

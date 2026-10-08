@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs are single-quoted on purpose
-# The dangling-link sweep (SPEC 8.1; understanding report I-S3, test 10):
+# The dangling-link sweep:
 # directly in the canonical root and in every link root, a dangling link
 # whose literal target is inside a managed root (relative ../../<root>/...
 # or $HOME/<root>/... for the canonical and legacy roots) is removed and

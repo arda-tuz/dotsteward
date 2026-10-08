@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The context and doctor command lines (SPEC 6.1, 6.2): discovery through
+# The context and doctor command lines: discovery through
 # the dispatcher, --help, usage errors (exit 1), refusals for a missing or
 # invalid instance and an unreadable settings buffer (exit 1, ERROR lines on
 # stderr, nothing on stdout), and the human output of context.

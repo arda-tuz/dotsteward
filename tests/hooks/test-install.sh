@@ -3,8 +3,8 @@
 # The hook file itself: present, executable (also in the index, so a fresh
 # clone gets a runnable hook), a bash script, and a no-op when git reports no
 # ref updates. Installation in the dev checkout is `git config
-# core.hooksPath .githooks` (checked by the task's acceptance commands; the
-# six-leak drill pushes through a relative hooksPath).
+# core.hooksPath .githooks` (the six-leak drill pushes through a relative
+# hooksPath).
 # shellcheck source=tests/hooks/helpers.sh
 source "$DS_REPO_ROOT/tests/hooks/helpers.sh"
 

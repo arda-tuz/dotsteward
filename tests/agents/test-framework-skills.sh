@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs are single-quoted on purpose
-# Framework skills (SPEC D7, 8.1): the manifest's skills.framework entries,
+# Framework skills: the manifest's skills.framework entries,
 # with digests from skills.framework_manifest, are verified before the
 # instance lock entries: ~/<hm_root>/<name> must be a Home Manager link that
 # resolves to the generation's framework source (the generation's

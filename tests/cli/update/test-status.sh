@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# update status (SPEC 6.2): the paths and contents of candidate.json and
+# update status: the paths and contents of candidate.json and
 # validation.json, so skills never hard-code the state paths. --json prints
 # one document {schema_version: 1, instance, paths: {state_dir, candidate,
 # validation, log}, candidate, validation} whose records are the files'

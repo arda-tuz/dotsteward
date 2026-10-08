@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Preflight detectors and the desktop part of the Linux fast path (SPEC 4.1
-# platform.linux.fast_path): every component detector is run and emitted as
+# Preflight detectors and the desktop part of the Linux fast path
+# (platform.linux.fast_path): every component detector is run and emitted as
 # a platform.<name> boolean (true when its command succeeds and prints the
 # match line as a whole line; a missing command is false); the desktop
 # matches when no desktop rule is configured, when XDG_CURRENT_DESKTOP

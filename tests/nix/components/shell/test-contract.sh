@@ -115,7 +115,7 @@ assert_eq 'true' \
   "$(shell_eval "$shell_fixture" '(homeOf i "aarch64-darwin" "workstation").home.file ? ".zshrc"')" "darwin .zshrc"
 
 # Profile scoping: with profiles = ["workstation"] the fresh profile gets no
-# .zshrc, no zsh and no starship, and the manifest stays identical (D20).
+# .zshrc, no zsh and no starship, and the manifest stays identical.
 scoped=$(instance_copy "$shell_fixture")
 sed -i 's/^\[components.shell\]$/&\nprofiles = ["workstation"]/' "$scoped/workstation.toml"
 assert_eq '{"freshFile":false,"freshPackages":[],"freshStarship":false,"manifest":true,"workstationFile":true}' \

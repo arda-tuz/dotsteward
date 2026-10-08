@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Clean-install test on a fresh GitHub-hosted ubuntu-24.04 runner (SPEC
-# 12.5): a new instance with every catalog component, installed the way a
+# Clean-install test on a fresh GitHub-hosted ubuntu-24.04 runner: a new
+# instance with every catalog component, installed the way a
 # new machine is (the fresh profile through stage 0), activated in the
 # runner's own home, checked end to end, carried to a second home through
 # the settings buffer and rolled back.

@@ -1,10 +1,10 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # literal $(...) text is single-quoted on purpose
-# dotsteward preflight (SPEC 6.2, port of scripts/preflight.sh): read-only
-# facts about this machine against the instance's fast path, printed as
-# today's JSON document (keys, order and two-space layout of the jq program
-# it replaces) without jq; exit 0 on the fast route, 3 on the adaptive route.
+# dotsteward preflight: read-only facts about this machine against the
+# instance's fast path, printed as a JSON document (fixed keys, order and
+# two-space layout) without jq; exit 0 on the fast route, 3 on the adaptive
+# route.
 # shellcheck source=tests/cli/bootstrap/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/bootstrap/helpers.sh"
 

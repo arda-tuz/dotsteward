@@ -1,11 +1,11 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs are single-quoted on purpose
-# dotsteward bootstrap --profile P --stage 1 (SPEC 6.2, port of
-# bootstrap.sh:91-99): what stage-0 execs once Nix is there. In order: the
+# dotsteward bootstrap --profile P --stage 1: what stage-0 execs once Nix
+# is there. In order: the
 # system-install phase (`dotsteward install`), `rebuild --switch`,
 # `login-shell set`, the desktopApply hooks of the switched generation
-# (fresh mode only; adopt mode skips them with one line, D14), `e2e`, then
+# (fresh mode only; adopt mode skips them with one line), `e2e`, then
 # the final message. The first failing step stops it with its exit status.
 # The profile must be profiles.bootstrap; without --stage 1 the command
 # refuses and points at ./bootstrap.sh (stage-0 is the instance script).

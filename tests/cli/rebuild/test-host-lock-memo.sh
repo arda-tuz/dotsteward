@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The host lock memo (SPEC 6.2, F5, I-4): the host input lock is created
+# The host lock memo: the host input lock is created
 # when missing, kept byte-identical while (canonical_revision,
 # canonical_repo) of inventory.json match the instance, and refreshed with
 # `nix flake update <host_input>` when the revision or the checkout path

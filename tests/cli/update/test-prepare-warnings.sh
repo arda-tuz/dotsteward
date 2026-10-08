@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# P5, the advisory checks of update prepare ([gate] I5): an unreachable
+# The advisory checks of update prepare: an unreachable
 # binary cache, less free space for /nix/store than
 # gate.prepare_warn_free_gib, a GitHub CLI that is not logged in and a
 # missing GitHub CLI are warnings in the JSON line (in this order), never

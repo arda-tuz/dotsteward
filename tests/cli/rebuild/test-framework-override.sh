@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# rebuild --framework-override REF (SPEC 6.2, D9): the build overrides the
+# rebuild --framework-override REF: the build overrides the
 # framework input of the instance in memory (--override-input
 # <host_input>/dotsteward REF), together with the instance input itself
 # (path:<checkout>), so a stale host lock never builds an old instance tree;

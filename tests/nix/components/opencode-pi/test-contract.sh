@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2016 # Nix expressions in single quotes
-# The contract values of the opencode-pi catalog component (SPEC 3.5): the
+# The contract values of the opencode-pi catalog component: the
 # OpenCode official binary (at-least policy, one release pin per platform),
 # the external alternative, the Pi probes, the agents checks, the Pi agent
 # rules target, the OpenCode settings target, the pin rules and the latest
@@ -169,7 +169,7 @@ assert_eq "$(jq -S -n --argjson a "$pi_rules" --argjson b "$linux_rules" '$a + $
   "$(rules_of "$both" '{ method_by_platform.darwin = "external"; }')" "darwin external"
 assert_eq "$(jq -S . <<<"$pi_rules")" "$(rules_of "$both" '{ method = "external"; }')" "external everywhere"
 
-# The contract does not depend on the profile (D20); the app-archive block
+# The contract does not depend on the profile; the app-archive block
 # is unset (no default for its required fields) and never read.
 assert_op_eq 'true' 'let
     defined = c: removeAttrs c [ "install" ] // { install = removeAttrs c.install [ "app-archive" ]; };

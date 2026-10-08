@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2016,SC2154,SC2164 # Nix expressions in single quotes; DS_* and vscode_* variables come from the harness and helpers.sh; errexit stops a failed cd
-# The vscode seed (SPEC 5.6): schema version 1, valid against
+# The vscode seed: schema version 1, valid against
 # schema/seed.schema.json, no flake input, and the two pins of one VS Code
 # release: desktop_packages.vscode (the Linux DEB) and
 # desktop_packages.vscode-darwin-arm64 (the darwin archive), each a

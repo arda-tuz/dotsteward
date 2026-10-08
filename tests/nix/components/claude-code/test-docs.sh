@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2016,SC2088 # literal '~/' paths and shell snippets in single quotes
-# The claude-code documentation (SPEC 3.5 and 14): README.md records the
+# The claude-code documentation: README.md records the
 # verification of the self-update switch ("verified on <date> from
 # <source>" or "not verified") with the decision that follows from it, and
 # documents every method, platform and settings target; maintenance.md says
@@ -16,7 +16,7 @@ maintenance=$cc_component_dir/maintenance.md
 readme_text=$(<"$readme")
 maintenance_text=$(<"$maintenance")
 
-# The verification record of SPEC 14.
+# The verification record of the component README.
 grep -qiE 'verified|not verified' "$readme" || ds_fail "README.md lacks the verification status"
 grep -qE 'Verified on [0-9]{4}-[0-9]{2}-[0-9]{2} from ' "$readme" ||
   ds_fail "README.md lacks \"Verified on <date> from <source>\""

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# [skills] installer (SPEC D2, 4.1): an argv template replaces the native
+# [skills] installer: an argv template replaces the native
 # copy for copy-deployed skills that are missing; {source} (the vendored
 # directory), {name} (the lock name) and {home} are substituted in every
 # argument; it runs with an empty standard input, and the skill must be

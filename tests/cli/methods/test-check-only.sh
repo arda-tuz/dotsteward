@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# D12, `install --check-only` in fresh mode (SPEC 3.4): deb floors with
+# `install --check-only` in fresh mode: deb floors with
 # dpkg ordering, apt packages present, external commands and floors; nix
 # components are left to the probes. Read-only: no preflight, no sudo, no
 # download, no write. The first failure stops with its message and exit 1;

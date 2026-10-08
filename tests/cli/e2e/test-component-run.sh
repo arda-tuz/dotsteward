@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
 # `dotsteward component run NAME HOOK [--profile P] [--generation PATH]
-# [-- ARG...]` (SPEC 6.2, 8.4): runs one hook of a component, found by name
+# [-- ARG...]`: runs one hook of a component, found by name
 # in every hook list of the manifest (hooks.* and checks.e2e/agents), with
 # the hook environment (DOTSTEWARD_CHECK_ONLY=0) and the given arguments;
 # the profile is --profile, else the current profile recorded in

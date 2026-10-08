@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# U5, the canonical checkout after a successful update publish ([gate] I18):
+# The canonical checkout after a successful update publish:
 # the canonical checkout is canonical_repo of
 # <state root>/host-overrides/inventory.json (written by rebuild) when it is
 # set, else instance.checkout (default ~/<instance.name>). A clean clone of

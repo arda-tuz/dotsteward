@@ -72,7 +72,7 @@ assert_contains "$fixup" "$(op_raw '"${(pkgsFor "x86_64-linux").fd}/bin"')"
 assert_not_contains "$fixup" 'PI_'
 assert_not_contains "$fixup" '--set'
 
-# darwin: the derivation evaluates (SPEC 14: Pi darwin build).
+# darwin: the derivation evaluates (the Pi darwin build).
 drv_suffix='"-pi-coding-agent-${seedLock.agent_tools.pi.version}.drv"'
 assert_op_eq 'true' "let p = piFor \"aarch64-darwin\"; in p.meta.available && lib.hasSuffix $drv_suffix p.drvPath" \
   "Pi derivation on darwin"

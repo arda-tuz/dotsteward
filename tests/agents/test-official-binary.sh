@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Phase 1 of the agents installer (SPEC 8.1, 3.4): every active component
+# Phase 1 of `dotsteward agents`: every active component
 # whose method is official-binary is installed at the user level in both
 # profile modes (the methods engine: verified download, backup of the old
 # binary in <state>/backups/<UTC>/files/<abs>, at-least keeps a newer

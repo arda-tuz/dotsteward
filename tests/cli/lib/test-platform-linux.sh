@@ -129,7 +129,7 @@ assert_eq arm64 "$(deb_field "$DS_TEST_ROOT/example-term.deb" Architecture)"
 assert_exit 2 deb_field "$DS_TEST_ROOT/os-release" Package
 
 # APT: update, then one install transaction; -y only with
-# DOTSTEWARD_ASSUME_YES=1 (D6).
+# DOTSTEWARD_ASSUME_YES=1.
 ds_apt_available example-term 0.9.0
 : >"$DS_CALL_LOG"
 apt_update

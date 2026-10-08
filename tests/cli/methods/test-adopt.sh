@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# D1, adopt mode (SPEC D14): `install` skips the system-install phase with
+# Adopt mode: `install` skips the system-install phase with
 # one log line naming the system-level components, before the preflight and
 # before any command requirement: no stub is called, no hook runs, nothing
 # is written. `--check-only` reports system-level methods as not-managed

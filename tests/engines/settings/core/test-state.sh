@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and settings_* variables come from the harness and helpers.sh
-# Machine state: base.json written in the original engine's exact format
+# Machine state: base.json written in the exact format of the fixture
 # and an existing one used unmodified, the backup layout (one UTC root per
 # run, absolute-path mirror, 0700 directories, 0600 files, pre-change
 # content, nothing for backup = false targets), the journal (apply and
@@ -14,16 +14,16 @@ b_home=$settings_work/B/home
 b_state=$settings_work/B/state
 
 # A fresh apply with a published buffer writes base.json byte for byte like
-# the original engine did for the same buffer.
+# the fixture base.json for the same buffer.
 assert_exit 0 lmf A apply
 cmp -s "$a_state/base.json" "$settings_fixtures/legacy-state/base.json" ||
-  ds_fail "base.json differs from the original engine's: $(diff "$settings_fixtures/legacy-state/base.json" "$a_state/base.json")"
+  ds_fail "base.json differs from the fixture: $(diff "$settings_fixtures/legacy-state/base.json" "$a_state/base.json")"
 assert_file_mode "$a_state" 0700
 assert_file_mode "$a_state/base.json" 0600
 assert_file_mode "$a_state/journal.jsonl" 0600
 [[ ! -e $a_state/backups ]] || ds_fail "a fresh apply into an empty home took backups"
 
-# An existing base.json from the original engine is used as is: every entry
+# An existing base.json in the fixture format is used as is: every entry
 # is in sync and no command rewrites it.
 legacy=$settings_work/legacy-state
 mkdir -p "$legacy"

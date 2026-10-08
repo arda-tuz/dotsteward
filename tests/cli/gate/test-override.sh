@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The framework override (SPEC D9, 6.2): --framework-override REF, or
+# The framework override: --framework-override REF, or
 # DOTSTEWARD_FRAMEWORK_OVERRIDE (the flag wins), replaces the instance's
 # dotsteward input in memory: both Nix builds of the gate get
 # `--override-input dotsteward REF --no-write-lock-file`, the step commands

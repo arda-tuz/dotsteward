@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and shell snippets are single-quoted on purpose
-# The official-binary method (SPEC 3.4, port of the user-level release
-# install of the agents installer): methods_official_binary_install checks
+# The official-binary method (a user-level release install):
+# methods_official_binary_install checks
 # the command found with dest's directory first on PATH against the pin's
 # version by policy (at-least keeps a newer self-updated binary, exact
 # replaces any other version), downloads the pinned URL with

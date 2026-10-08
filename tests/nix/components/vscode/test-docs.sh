@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and vscode_* variables come from the harness and helpers.sh
 # shellcheck disable=SC2016,SC2088 # needles are literal Markdown text
-# The vscode documentation (SPEC 3.5, 14): README.md says what is installed
+# The vscode documentation: README.md says what is installed
 # on each platform and by which methods, names the settings target and its
 # paths, the set_default_editor option, the lock paths, and the verification
 # status of the darwin archive facts (the download URL and the

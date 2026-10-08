@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Phase hooks of `install` (SPEC 3.4, 8.4, D10): after the deb transaction
+# Phase hooks of `install`: after the deb transaction
 # the systemInstall, postInstall and forbid hooks run in that order; within
 # a list early before main before late, then in [components] order, then in
 # declaration order. Only hooks of components active in the profile and

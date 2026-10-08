@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# dotsteward context --json (SPEC 6.5) on a rich instance: every section of
+# dotsteward context --json on a rich instance: every section of
 # the document, with its values taken from workstation.toml, the runtime
 # environment, the state records, the settings buffer, the skills lock, the
 # .dotsteward manifest mirror of the running system and flake.lock.
@@ -25,7 +25,7 @@ expect() {
   assert_eq "$(jq -cS . <<<"$2")" "$(section "$1")" "$1"
 }
 
-# One JSON document, keys in the order of SPEC 6.5.
+# One JSON document, keys in a fixed order.
 assert_eq 1 "$(jq -s length "$DS_TEST_ROOT/context.json")"
 assert_eq '["schema_version","instance","identity","state","profiles","gate","commit","protected","overlays","components","settings","skills","framework","platform"]' \
   "$(jq -c keys_unsorted <<<"$doc")"
@@ -35,8 +35,7 @@ expect instance "$(jq -n --arg path "$inst" --arg checkout "$HOME/src/workstatio
   path: $path, name: "workstation", remote: "git@github.com:alice/workstation.git",
   branch: "trunk", checkout: $checkout, upstream_contribute: "owner"}')"
 
-# The check identity is [identity]; the runtime identity is USER and HOME
-# (SPEC 4.4).
+# The check identity is [identity]; the runtime identity is USER and HOME.
 expect identity "$(jq -n --arg home "$HOME" '{
   check_username: "alice", check_home: "/home/alice",
   runtime_user: "dotsteward-test", runtime_home: $home, runtime_matches_check: false}')"
@@ -88,7 +87,7 @@ expect skills '{"hm_root":".codex/skills","instance_skill_names":["example-local
 
 # framework: the running framework's version, rev and narHash (as
 # `dotsteward version` reports them), and the upstream and the tracked ref
-# of the dotsteward input in flake.lock (D17).
+# of the dotsteward input in flake.lock.
 version=$(<"$context_framework/VERSION")
 rev=$(ds_cli version | sed -n 's/^rev: //p')
 nar=$(ds_cli version | sed -n 's/^narHash: //p')

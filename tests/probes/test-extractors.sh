@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Version extractors (SPEC 8.2): first-line, field:<label>, prefix:<text>,
+# Version extractors: first-line, field:<label>, prefix:<text>,
 # printf-vd and regex:<re>. A version probe compares the extracted standard
 # output with the expected value as strings; the probe's exit status and
 # standard error are ignored. When nothing can be extracted the message says

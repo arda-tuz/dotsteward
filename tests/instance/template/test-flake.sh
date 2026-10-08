@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# template/flake.nix (SPEC 10.1, 3.9): nixpkgs and home-manager at the
+# template/flake.nix: nixpkgs and home-manager at the
 # revisions of the framework flake.lock, the dotsteward input at
 # github:arda-tuz/dotsteward/v<VERSION> following both, the empty marker
 # block `dotsteward init` fills, and outputs from lib.mkInstance.
@@ -37,7 +37,7 @@ expected=$(jq -n --arg nixpkgs "$nixpkgs_ref" --arg hm "$home_manager_ref" \
   }')
 assert_eq "$(jq -S . <<<"$expected")" "$(jq -S . <<<"$inputs")" "template flake inputs"
 
-# The description and the outputs line of SPEC 10.1.
+# The description and the outputs line of the template flake.
 assert_eq '"dotsteward instance"' "$(inst_json "(import (repoRoot + \"/template/flake.nix\")).description")" \
   "description"
 grep -qxF '  outputs = inputs: inputs.dotsteward.lib.mkInstance { inherit inputs; };' "$flake" ||

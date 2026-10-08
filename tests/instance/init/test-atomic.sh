@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and literal texts are single-quoted on purpose
-# All or nothing (SPEC 10.3): when a step fails (nix flake lock, the mirrors
+# All or nothing: when a step fails (nix flake lock, the mirrors
 # of dotsteward sync, its pins sync, dotsteward pins check, the git commit)
 # or init is terminated while a step runs, the target is as it was: a
 # missing directory stays missing, an empty one stays empty (with its

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and ct_* variables come from the harness and the helpers
-# Q5, `dotsteward contribute upgrade --tag TAG` (SPEC 9.4 step 10, 10.2):
+# `dotsteward contribute upgrade --tag TAG`:
 # in the instance, `update prepare --scope maintain`, the dotsteward input
 # of flake.nix moved to the tag (github:owner/repo/TAG, a git+ URL with
 # ?ref=refs/tags/TAG, or a one-line block keeping its other parameters),

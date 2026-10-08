@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# U4 and U6, a successful update publish ([gate] I1, I4, I17): HEAD is
+# A successful update publish: HEAD is
 # pushed to instance.branch of instance.remote without force, the remote
 # branch is verified, and nothing is built, activated or written to the
 # state. The base comes from --expected-base, else candidate.json of this

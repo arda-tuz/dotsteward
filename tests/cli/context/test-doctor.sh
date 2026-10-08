@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# dotsteward doctor (SPEC 6.2, 6.5): the health checks built on the context
+# dotsteward doctor: the health checks built on the context
 # (configuration, runtime identity, Nix, launcher cache, mirrors, generation
 # manifest, gate memo age), their statuses, the overall status and exit
 # code (1 only when a check fails), the JSON document and the human report.
@@ -54,7 +54,7 @@ assert_eq "$hostname" "$(jq -r .host.hostname <<<"$DS_STDOUT")"
 assert_eq ok "$(status config)"
 assert_contains "$(message config)" "$inst/workstation.toml"
 # The runtime identity is safe; it differs from the check identity, which
-# is not a problem (SPEC 4.4).
+# is not a problem.
 assert_eq ok "$(status identity)"
 assert_contains "$(message identity)" "check identity"
 assert_eq ok "$(status nix)"

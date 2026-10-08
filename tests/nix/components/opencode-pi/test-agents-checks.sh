@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The agents checks of opencode-pi end to end (SPEC 3.5, 8.1, 8.2, 8.4): an
+# The agents checks of opencode-pi end to end: an
 # instance enables the component, lib.mkInstance puts its probes and
 # checks.agents hooks into the manifest, and `dotsteward agents
 # install|check` runs them against the opencode and pi stubs:

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # bash -c scripts take their arguments as $1, $2
-# The generic instance documents of template/ (SPEC 10.1): README.md,
+# The generic instance documents of template/: README.md,
 # AGENTS.md, components/README.md, agent/overlays/README.md and
 # tests/README.md describe what each part of an instance is for, name the
 # commands and files they document correctly, and pass the framework's

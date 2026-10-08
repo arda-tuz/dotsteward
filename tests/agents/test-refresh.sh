@@ -1,12 +1,11 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Refresh of a drifted copy-deployed skill (SPEC 8.1; understanding report
-# I-S4, I-S5, tests 5 and 6): check fails with the rebuild hint; install
-# backs the whole directory up to <state>/backups/<UTC>-skills/files/<abs
-# real path> (backup root 0700), stages the vendored copy in
-# <state>/staging, keeps the directory mode, replaces the content and
-# re-verifies the digest. Unlocked skills are never touched; a drifted
-# skill outside the managed roots only gets a warning.
+# Refresh of a drifted copy-deployed skill: check fails with the rebuild hint;
+# install backs the whole directory up to
+# <state>/backups/<UTC>-skills/files/<abs real path> (backup root 0700), stages
+# the vendored copy in <state>/staging, keeps the directory mode, replaces the
+# content and re-verifies the digest. Unlocked skills are never touched; a
+# drifted skill outside the managed roots only gets a warning.
 # shellcheck source=tests/agents/helpers.sh
 source "$DS_REPO_ROOT/tests/agents/helpers.sh"
 

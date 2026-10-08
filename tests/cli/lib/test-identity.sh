@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # literal $ in test values and bash -c scripts
-# current_platform, require_safe_identity (SPEC 4.4: Linux and macOS user
-# name rules, a safe absolute existing home) and require_profile (the
+# current_platform, require_safe_identity (Linux and macOS user name
+# rules, a safe absolute existing home) and require_profile (the
 # profile names of the loaded configuration).
 # shellcheck source=tests/cli/lib/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/lib/helpers.sh"

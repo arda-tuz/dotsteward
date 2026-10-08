@@ -1,5 +1,5 @@
 # The full darwin fixture instance (nix/checks/darwin-eval.nix): the
-# instance `dotsteward init` writes for a stranger on a Mac (SPEC 4.2) with
+# instance `dotsteward init` writes for a new user on a Mac with
 # every catalog component, on aarch64-darwin only, plus two synthetic private
 # components:
 #   example-app    method nix (its default and its only darwin method)

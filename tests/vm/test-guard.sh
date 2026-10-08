@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The VM harness touches nothing before the owner has started the VM phase:
+# The VM harness touches nothing before the operator has started the VM phase:
 # every command that downloads, boots, connects to or removes a VM refuses
 # without DOTSTEWARD_VM_PHASE=approved, before any file or tool call. The
 # read-only commands work without it. Root and malformed names are refused.

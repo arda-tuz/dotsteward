@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Q3, `dotsteward contribute check` (SPEC 9.4 steps 4 and 6, 11.3):
+# `dotsteward contribute check`:
 #   --expect-fail PATH  the reproduction test must fail before the fix
 #   (full gate)         a clean clone on the run's branch with commits after
 #                       upstream main; the generic tree scan, the commit

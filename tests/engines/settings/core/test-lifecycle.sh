@@ -1,10 +1,9 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and settings_* variables come from the harness and helpers.sh
-# The three-way buffer lifecycle on two machines sharing one bare remote
-# (the S1-S8b scenarios of the original engine): fresh apply, idempotency,
-# local changes and flush, first contact on a second machine, remote
-# changes, conflicts with both resolutions, deletions, typed equality and
-# whole tables.
+# The three-way buffer lifecycle on two machines sharing one bare remote: fresh
+# apply, idempotency, local changes and flush, first contact on a second
+# machine, remote changes, conflicts with both resolutions, deletions, typed
+# equality and whole tables.
 # shellcheck source=tests/engines/settings/core/helpers.sh
 source "$DS_REPO_ROOT/tests/engines/settings/core/helpers.sh"
 
@@ -26,7 +25,7 @@ assert_file_mode "$a_script" 0755
 assert_file_mode "$a_beta" 0600
 assert_file_mode "$a_alpha" 0644
 cmp -s "$a_script" "$settings_fixtures/buffer/files/alpha-status.sh" || ds_fail "the whole-file entry differs from files/"
-# The rendering of created files equals the original engine's output.
+# The rendering of created files equals the golden files.
 cmp -s "$a_alpha" "$settings_fixtures/golden/alpha-settings.json" || ds_fail "alpha settings differ from the golden file"
 cmp -s "$a_beta" "$settings_fixtures/golden/beta-config.toml" || ds_fail "beta config differs from the golden file"
 assert_eq "$(buffer_get A beta-threads)" "$(toml_get "$a_beta" agents.max_threads)"

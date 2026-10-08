@@ -1,14 +1,13 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Copy deployment on a fresh home (SPEC 8.1, D2; understanding report 6.2
-# test 1): the native copy installs each locked skill as a physical
-# directory <canonical>/<directory> (modes = source modes & 0777;
-# metadata.json, .git, __pycache__ and __pypackages__ left out; file
-# symlinks dereferenced), the Claude link ~/.claude/skills/<name> ->
-# ../../.agents/skills/<directory> follows, check passes and a second
-# install changes nothing and prints only the final line. A copy whose
-# digest cannot equal the lock (the source holds a symlinked file) is
-# reported right after the install.
+# Copy deployment on a fresh home: the native copy installs each locked skill as
+# a physical directory <canonical>/<directory> (modes = source modes & 0777;
+# metadata.json, .git, __pycache__ and __pypackages__ left out; file symlinks
+# dereferenced), the Claude link ~/.claude/skills/<name> ->
+# ../../.agents/skills/<directory> follows, check passes and a second install
+# changes nothing and prints only the final line. A copy whose digest cannot
+# equal the lock (the source holds a symlinked file) is reported right after the
+# install.
 # shellcheck source=tests/agents/helpers.sh
 source "$DS_REPO_ROOT/tests/agents/helpers.sh"
 

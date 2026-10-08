@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and literal texts are single-quoted on purpose
-# I7 (SPEC 10.3): init never writes outside --dir. Whether it succeeds, is
+# Init never writes outside --dir. Whether it succeeds, is
 # refused or fails in a step, everything outside the target is afterwards as
 # it was before: HOME, TMPDIR (the temporary directory init composed the
 # instance in is gone), the state root, the working directory, the parent of

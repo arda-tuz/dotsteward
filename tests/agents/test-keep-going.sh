@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs are single-quoted on purpose
-# --keep-going and --json (SPEC 8.1, 6.1): --json prints one document on
+# --keep-going and --json: --json prints one document on
 # standard output, { "result": "passed|failed", "findings": [ { "step",
 # "path", "code", "message" } ] }, and everything else on standard error.
 # The default stays fail-fast (one finding, exit 1); --keep-going records

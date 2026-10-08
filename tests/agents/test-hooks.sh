@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Component hooks of the agents phase (SPEC 8.1, 8.4, D10): agentsInstall
+# Component hooks of the agents phase: agentsInstall
 # before the layout, agentsMigrate after the dangling sweep, agentsPost
 # before the validation, checks.agents last in the validation; within a list
 # in [components] order, then in declaration order; only components active

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # The whole maintenance transaction, as the update and maintain skills run
-# it ([gate] I1): update prepare records the base, the gate proves the
+# it: update prepare records the base, the gate proves the
 # candidate tree, the change is committed, update status reports both
 # records, update publish ships the commit and fast-forwards the canonical
 # checkout. The gate runs for real against the nix and curl stubs; its

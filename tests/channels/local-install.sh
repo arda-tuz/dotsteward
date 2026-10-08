@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Installs the dotsteward-init skill through the three distribution channels
-# of SPEC 11.8, each in its own clean temporary HOME, and checks what landed:
+# Installs the dotsteward-init skill through the three distribution
+# channels, each in its own clean temporary HOME, and checks what landed:
 #
 #   claude-code  the Claude Code plugin marketplace (.claude-plugin/
 #                marketplace.json): `claude plugin marketplace add`, then
@@ -225,8 +225,8 @@ same_skill_md() {
 }
 
 # only_skill DIR: the skills directory of an installed plugin holds the
-# dotsteward-init skill and nothing else (SPEC 11.8: the only
-# channel-distributed skill).
+# dotsteward-init skill and nothing else (the only channel-distributed
+# skill).
 only_skill() {
   local entries
   entries=$(cd "$1" 2>/dev/null && find . -mindepth 1 -maxdepth 1 -printf '%f\n' | sort | paste -sd' ')

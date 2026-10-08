@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# G5, the candidate tree ([gate] I8): the gate validates the tree that
+# The candidate tree: the gate validates the tree that
 # `git add -A && git write-tree` would write (staged and unstaged changes,
 # ignored files left out), computed in a throw-away index: the real index,
 # HEAD and the working tree are untouched and no temporary directory is left.

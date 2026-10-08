@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # Helpers for the init tests (tests/instance/init): `dotsteward init`
-# (SPEC 10.3, 5.6) end to end, with the nix stub answering through
+# end to end, with the nix stub answering through
 # fake-nix.sh (an offline `nix flake lock` and evaluations of the staged
 # instance by lib.mkInstance of the framework under test), so the tests run
 # the same on a developer machine and inside checks.init.

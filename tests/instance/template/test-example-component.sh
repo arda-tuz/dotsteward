@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # Nix expressions in single quotes
-# components/example/default.nix.disabled (SPEC 10.1, 3.4): the annotated
+# components/example/default.nix.disabled: the annotated
 # example of the full component contract for the synthetic example-term. Its
 # suffix keeps it out of every instance; enabled the way components/README.md
 # describes (copied to components/example-term/default.nix, a

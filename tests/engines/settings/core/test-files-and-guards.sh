@@ -2,7 +2,7 @@
 # shellcheck disable=SC2154 # DS_* and settings_* variables come from the harness and helpers.sh
 # Whole-file entries, format preservation, a create-false backup-false
 # target holding account data, the secret and home-path guards, symlinked
-# targets, and track/untrack (the S9-S14 scenarios of the original engine).
+# targets, and track/untrack.
 # shellcheck source=tests/engines/settings/core/helpers.sh
 source "$DS_REPO_ROOT/tests/engines/settings/core/helpers.sh"
 

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and ct_* variables come from the harness and the helpers
-# Q5, publish when upstream main moves (SPEC 9.4 step 8): before the push,
+# Publish when upstream main moves: before the push,
 # or while CI runs, the branch is rebased onto the new main and the run goes
 # back to check (exit 5, the tested commit and the trial are cleared); a
 # conflicting rebase is aborted and left to the user. A push to main that

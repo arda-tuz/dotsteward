@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
 # shellcheck disable=SC2016 # literal $HOME in the manifest on purpose
-# Login shell (SPEC 8.3 step 8; R5) through the platform layer (the shells
+# Login shell through the platform layer (the shells
 # file DOTSTEWARD_ETC_SHELLS and the user database DOTSTEWARD_PASSWD_CMD):
 # the manifest's login_shell, with $HOME expanded, is executable, listed in
 # the shells file and the user's login shell. A null login_shell is not

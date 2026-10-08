@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# Expected values (SPEC 8.2): versions:<path> reads the instance's versions
+# Expected values: versions:<path> reads the instance's versions
 # lock (pins.versions_lock), skills:<path> its skills lock mirror
 # (skills.lock); the path is dotted, its segments are literal keys (dashes
 # included). A missing, empty or non-scalar value is an error naming the lock

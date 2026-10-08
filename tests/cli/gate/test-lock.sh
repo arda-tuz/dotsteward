@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# G2, the gate lock ([gate] I6): while another process holds
+# The gate lock: while another process holds
 # <state>/update/validate.lock the gate refuses at once (no waiting) with
 # exit 1, before the untracked check and before any Nix or step command;
 # once the lock is free the same gate runs.

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The launcher's own state root resolution (spec 6.3): DOTSTEWARD_STATE_ROOT
+# The launcher's own state root resolution: DOTSTEWARD_STATE_ROOT
 # > DOTFILES_STATE_ROOT when [compat] legacy_env = true > state.root from
 # workstation.toml > the schema default
 # ${XDG_STATE_HOME:-~/.local/state}/dotsteward. state.root and the default

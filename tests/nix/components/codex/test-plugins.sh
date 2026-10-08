@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The codex plugins option end to end (SPEC 3.5, 8.1, 8.4): an instance
+# The codex plugins option end to end: an instance
 # lists Codex plugins in [components.codex] options; lib.mkInstance adds the
 # component's agentsPost hook, and `dotsteward agents install|check` runs it
 # against the codex stub. install adds a missing plugin with `codex plugin

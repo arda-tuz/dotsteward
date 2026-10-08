@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
-# P1 exit drill through `git push` (SPEC 12.6): a copy of the framework's
+# The privacy drill through `git push`: a copy of the framework's
 # hook, CLI and privacy policy is committed to a repository that installs the
 # hook the way the dev checkout does (core.hooksPath=.githooks, relative).
 # A clean push passes; six commits with one deliberate leak each are refused
