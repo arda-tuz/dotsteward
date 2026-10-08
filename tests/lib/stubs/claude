@@ -1,5 +1,29 @@
 #!/usr/bin/env bash
-# claude stub: the Claude Code CLI.
+# shellcheck disable=SC2016 # jq programs in single quotes: $id and the others are jq variables
+# claude stub: the Claude Code CLI and its plugin mechanism.
+#   claude plugin marketplace list --json
+#                                [{name, source, repo, installLocation}]: the
+#                                state value "marketplaces" when set (a canned
+#                                list), else the marketplaces added so far
+#   claude plugin marketplace add OWNER/REPO
+#                                adds a github marketplace named after the
+#                                state value "marketplace-name" (default: the
+#                                repository name)
+#   claude plugin list --json    [{id, version, scope, enabled, installPath}]:
+#                                the state value "plugins" when set (a canned
+#                                list), else the plugins installed so far
+#   claude plugin install NAME@MARKET --scope user
+#                                fails unless MARKET is an added marketplace
+#                                or listed in the state value
+#                                "builtin-marketplaces" (space separated);
+#                                installs NAME at the state value
+#                                "plugin-version" (default 1.0.0): writes
+#                                ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/
+#                                cache/MARKET/NAME/VERSION/.claude-plugin/
+#                                plugin.json and one file per relative path in
+#                                the state value "plugin-files"
+#   claude plugin enable NAME@MARKET --scope user
+#                                enables an installed plugin
 # --version prints the state value "version" (default "2.0.0 (Claude Code)"),
 # --help the state value "help"; any other call succeeds silently. Routes and
 # overrides apply (see tests/lib/harness.sh).
@@ -7,5 +31,107 @@ set -euo pipefail
 # shellcheck source=tests/lib/harness.sh
 source "$(dirname "$(readlink -f "$0")")/../harness.sh"
 ds_stub_begin claude "$@"
+
+config_dir=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
+markets=$DS_STUB_DIR/marketplaces.json
+installed=$DS_STUB_DIR/installed.json
+
+# update FILE JQ_PROGRAM ARG...: rewrites the JSON list FILE (created empty).
+update() {
+  local file=$1
+  shift
+  mkdir -p "$DS_STUB_DIR"
+  [[ -f $file ]] || printf '[]\n' >"$file"
+  jq "$@" "$file" >"$file.tmp"
+  mv -- "$file.tmp" "$file"
+}
+
+# known_markets: the names of the added and the builtin marketplaces.
+known_markets() {
+  if [[ -f $DS_STUB_DIR/marketplaces ]]; then
+    jq -r '.[].name' "$DS_STUB_DIR/marketplaces"
+  elif [[ -f $markets ]]; then
+    jq -r '.[].name' "$markets"
+  fi
+  local builtin
+  for builtin in $(ds_stub_value builtin-marketplaces); do
+    printf '%s\n' "$builtin"
+  done
+}
+
+if [[ ${1:-} == plugin && ${2:-} == marketplace && ${3:-} == list ]]; then
+  if [[ -f $DS_STUB_DIR/marketplaces ]]; then
+    cat -- "$DS_STUB_DIR/marketplaces"
+  elif [[ -f $markets ]]; then
+    cat -- "$markets"
+  else
+    printf '[]\n'
+  fi
+  exit 0
+fi
+
+if [[ ${1:-} == plugin && ${2:-} == marketplace && ${3:-} == add ]]; then
+  repo=${4:-}
+  if [[ ! $repo =~ ^[A-Za-z0-9._-]+/([A-Za-z0-9._-]+)$ ]]; then
+    printf 'Error: invalid marketplace source %s\n' "${repo:-''}" >&2
+    exit 1
+  fi
+  market=$(ds_stub_value marketplace-name "${BASH_REMATCH[1]}")
+  update "$markets" --arg name "$market" --arg repo "$repo" --arg location "$config_dir/plugins/marketplaces/$market" \
+    '[.[] | select(.name != $name)] + [{name: $name, source: "github", repo: $repo, installLocation: $location}]'
+  printf 'Successfully added marketplace: %s\n' "$market"
+  exit 0
+fi
+
+if [[ ${1:-} == plugin && ${2:-} == list ]]; then
+  if [[ -f $DS_STUB_DIR/plugins ]]; then
+    cat -- "$DS_STUB_DIR/plugins"
+  elif [[ -f $installed ]]; then
+    cat -- "$installed"
+  else
+    printf '[]\n'
+  fi
+  exit 0
+fi
+
+if [[ ${1:-} == plugin && ${2:-} == install ]]; then
+  spec=${3:-}
+  if [[ ! $spec =~ ^([A-Za-z0-9._-]+)@([A-Za-z0-9._-]+)$ ]]; then
+    printf 'Error: invalid plugin %s (expected plugin@marketplace)\n' "${spec:-''}" >&2
+    exit 1
+  fi
+  name=${BASH_REMATCH[1]}
+  market=${BASH_REMATCH[2]}
+  if ! known_markets | grep -qxF -- "$market"; then
+    printf 'Error: marketplace "%s" not found\n' "$market" >&2
+    exit 1
+  fi
+  version=$(ds_stub_value plugin-version 1.0.0)
+  dir=$config_dir/plugins/cache/$market/$name/$version
+  mkdir -p "$dir/.claude-plugin"
+  jq -n --arg name "$name" --arg version "$version" \
+    '{name: $name, version: $version, description: "Synthetic plugin for dotsteward tests."}' \
+    >"$dir/.claude-plugin/plugin.json"
+  for file in $(ds_stub_value plugin-files); do
+    mkdir -p "$(dirname -- "$dir/$file")"
+    printf 'synthetic plugin file\n' >"$dir/$file"
+  done
+  update "$installed" --arg id "$spec" --arg version "$version" --arg dir "$dir" \
+    '[.[] | select(.id != $id)] + [{id: $id, version: $version, scope: "user", enabled: true, installPath: $dir}]'
+  printf 'Successfully installed plugin: %s (scope: user)\n' "$spec"
+  exit 0
+fi
+
+if [[ ${1:-} == plugin && ${2:-} == enable ]]; then
+  spec=${3:-}
+  if [[ ! -f $installed ]] || ! jq -e --arg id "$spec" 'any(.[]; .id == $id)' "$installed" >/dev/null; then
+    printf 'Error: plugin "%s" is not installed\n' "$spec" >&2
+    exit 1
+  fi
+  update "$installed" --arg id "$spec" 'map(if .id == $id then .enabled = true else . end)'
+  printf 'Successfully enabled plugin: %s (scope: user)\n' "$spec"
+  exit 0
+fi
+
 ds_stub_app claude "2.0.0 (Claude Code)" \
   "Usage: claude [options] [command] [prompt]" "$@"
