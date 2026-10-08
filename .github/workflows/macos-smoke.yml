@@ -5,7 +5,9 @@ name: macos-smoke
 # aarch64-darwin instance from `dotsteward init` with the darwin methods,
 # rebuild --build-only and --switch in the runner's home, the login shell
 # and the E2E checks. Manual only: macOS minutes are expensive, so it runs
-# when a release needs a real Mac.
+# when a release needs a real Mac:
+#
+#   gh workflow run macos-smoke.yml --ref <tag or branch>
 
 on:
   workflow_dispatch:
