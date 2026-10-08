@@ -1,4 +1,4 @@
-# The vscode catalog component (SPEC 3.5): VS Code from the vendor's
+# The vscode catalog component: VS Code from the vendor's
 # official builds, its user settings file as a JSONC settings target, and
 # optionally the editor variables.
 #

@@ -1,4 +1,4 @@
-"""Latest adapters (SPEC 5.5) and the declaration machinery they share.
+"""Latest adapters and the declaration machinery they share.
 
 A declaration is a JSON object with ``id``, ``adapter`` and ``component``.
 Components declare them in ``dotsteward.components.<name>.pins.latest``;

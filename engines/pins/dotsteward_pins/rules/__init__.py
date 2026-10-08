@@ -1,4 +1,4 @@
-"""Rule kinds of the pins engine (SPEC 5.4) and the shared rule machinery.
+"""Rule kinds of the pins engine and the shared rule machinery.
 
 A rule is a declaration (a JSON object) with ``kind`` and ``component``.
 Components declare them in ``dotsteward.components.<name>.pins.rules``; the

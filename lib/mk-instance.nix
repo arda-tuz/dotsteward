@@ -1,4 +1,4 @@
-# lib.mkInstance (3.2): the flake outputs of an instance.
+# lib.mkInstance: the flake outputs of an instance.
 #
 #   mkInstance {
 #     inputs,                     # instance flake inputs: self, nixpkgs,
@@ -15,20 +15,21 @@
 #   lib.mkHome { username, homeDirectory, profile ? profiles.default,
 #                system ? nix.systems[0] }
 #                                 Home Manager configuration (the generated
-#                                 host flake calls it, F5)
+#                                 host flake calls it)
 #   lib.pinnedVersions, lib.pinnedVersionsFor.<system>
 #   homeConfigurations.<identity.username>
 #                                 the check profile on the primary system
 #   packages.<system>             component packages (lib/packages.nix),
 #                                 dotsteward (the CLI built with the instance
-#                                 nixpkgs, F8), local-maintained-files (the
+#                                 nixpkgs), local-maintained-files (the
 #                                 check configuration's alias), extraPackages
 #   checks.<system>               home-<profile> per profile; home (the check
 #                                 profile); [compat] check_aliases; component
 #                                 packages with check = true;
 #                                 dotsteward-manifest (every .dotsteward/
 #                                 mirror is current); manifest-consistent
-#                                 (D20); instance-static ([gate] static
+#                                 (the manifest does not depend on the
+#                                 profile); instance-static ([gate] static
 #                                 scripts); instance-contract (framework
 #                                 checks over the instance: static
 #                                 --sandbox, the offline pins check,
@@ -37,7 +38,7 @@
 #                                 and the generic privacy scan); both run
 #                                 with ShellCheck of the instance nixpkgs;
 #                                 extraChecks
-#   dotstewardManifest.<system>   the evaluated manifest (3.7)
+#   dotstewardManifest.<system>   the evaluated manifest
 #   dotstewardMirrors             exact contents of the .dotsteward/ mirror
 #                                 files, written by `dotsteward sync`
 #   apps.<system>.default         the instance CLI
@@ -110,7 +111,7 @@ let
   # Framework commands run by checks.<system>.instance-contract, in order.
   # settings validate reads the component targets from TARGETS_FILE, the
   # evaluated values, not from a committed mirror. The privacy scan is the
-  # instance scan of static (generic secret rules and [privacy], SPEC 11.2);
+  # instance scan of static (generic secret rules and [privacy]);
   # `scan` would apply the framework policy (home paths, e-mail addresses,
   # non-ASCII text) to personal instance content.
   contractSteps = targetsFile: [
@@ -441,7 +442,7 @@ let
       cfg.gate.static;
 
   # The component settings targets and reload hooks of every enabled
-  # component (the manifest is the same in every profile, D20), in the
+  # component (the manifest is the same in every profile), in the
   # format of the generation's targets file.
   targetsFileFor =
     system:

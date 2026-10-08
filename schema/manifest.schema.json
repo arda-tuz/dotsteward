@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/arda-tuz/dotsteward/schema/manifest.schema.json",
   "title": "dotsteward manifest",
-  "description": "Contract values of an instance for one system (schema_version 1): share/dotsteward/manifest.json in a generation, and .dotsteward/manifest.<system>.json in the instance (the mirror: framework rev and narHash left out, store paths replaced by <instance>/<path>, <dotsteward>/<path> or <store>/<name>). Entries contributed by a component carry its name in component (core for the framework's own). The manifest never depends on the profile (D20): profile scoping is the profiles and modes fields.",
+  "description": "Contract values of an instance for one system (schema_version 1): share/dotsteward/manifest.json in a generation, and .dotsteward/manifest.<system>.json in the instance (the mirror: framework rev and narHash left out, store paths replaced by <instance>/<path>, <dotsteward>/<path> or <store>/<name>). Entries contributed by a component carry its name in component (core for the framework's own). The manifest never depends on the profile: profile scoping is the profiles and modes fields.",
   "type": "object",
   "properties": {
     "schema_version": { "const": 1 },

@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # summary: Run the system-install phase (deb transaction, phase hooks) or check every install method
 #
-# Port of the fresh-machine system package installer. In a fresh-mode
-# profile `install` runs the preflight gate, then one deb transaction for
-# the active deb components, then their systemInstall, postInstall and
-# forbid hooks. In an adopt-mode profile it skips the phase with one log
-# line before any other step (D14). --check-only checks every active
-# component by its method instead (system-level methods are not-managed in
-# adopt mode) and runs only the forbid hooks.
+# The system-install phase of a fresh machine. In a fresh-mode profile `install`
+# runs the preflight gate, then one deb transaction for the active deb
+# components, then their systemInstall, postInstall and forbid hooks. In an
+# adopt-mode profile it skips the phase with one log line before any other step.
+# --check-only checks every active component by its method instead (system-level
+# methods are not-managed in adopt mode) and runs only the forbid hooks.
 #
 # A real manifest carries every hook script as a Nix store path (the
 # mirror shows it as <store>/NAME). Without --generation, when a hook to

@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# The probe registry runner (SPEC 8.2): the generic port of run_cli_probes.
+# The probe registry runner: runs the version, presence and feature probes
+# of the components of a manifest.
 # Source after lib.sh (and config.sh when the instance configuration names
 # the lock files); sourcing defines functions only.
 #

@@ -14,7 +14,7 @@
 # - The login shell (core: dotsteward.loginShell.path) is the zsh of the
 #   Nix profile; stage-0 backs up the shells file before adding it.
 #
-# The contract values never depend on the profile (D20); with profiles set,
+# The contract values never depend on the profile; with profiles set,
 # only the packages, ~/.zshrc and programs.starship are left out of the
 # other profiles.
 {

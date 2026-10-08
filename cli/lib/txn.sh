@@ -1,8 +1,7 @@
 # shellcheck shell=bash
 # Maintenance transaction helpers shared by `dotsteward gate` and
-# `dotsteward update prepare|publish|status` (SPEC 6.2; the transaction of
-# update.sh: prepare records a base, the gate proves a tree, publish ships a
-# commit whose tree is the proven tree).
+# `dotsteward update prepare|publish|status` (prepare records a base, the
+# gate proves a tree, publish ships a commit whose tree is the proven tree).
 #
 # Source after lib.sh and config.sh, then call config_load; every function
 # works on the loaded instance (DS_INSTANCE_ROOT, DS_INSTANCE_BRANCH,

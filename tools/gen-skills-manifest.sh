@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Regenerates skills/manifest.json, the digests of the framework skills that
-# instances verify their deployed copies against (SPEC D7, 8.1, 8.3).
+# instances verify their deployed copies against.
 #
 # Usage: tools/gen-skills-manifest.sh [--check] [--root DIR]
 #

@@ -45,7 +45,7 @@ from ..upstream import Upstream, UpstreamError, github_repo, github_url, tag_ver
 from . import Adapter, FieldSpec, PlanContext, PlanError, Request, repository, text
 
 
-# Keys of a per-platform asset object: the Nix systems (SPEC 4.1) and the
+# Keys of a per-platform asset object: the Nix systems and the
 # platforms, each system mapped to its platform.
 SYSTEM_PLATFORMS = {"x86_64-linux": "linux", "aarch64-darwin": "darwin"}
 PLATFORMS = ("linux", "darwin")

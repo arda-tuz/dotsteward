@@ -211,7 +211,7 @@ leaves them at their defaults.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `compat.legacy_env` | `false` | Also read the legacy `DOTFILES_*` environment names. |
+| `compat.legacy_env` | `false` | Also read the `DOTFILES_*` environment names of an older setup, as fallbacks for the `DOTSTEWARD_*` names. |
 | `compat.legacy_backup_layout` | `false` | Also find backups in the legacy `files/home/<path>` layout. |
 | `compat.repo_owned_revision` | none | A legacy sentinel the pins engine accepts as a revision. |
 | `compat.host_input` | `"instance"` | The input name of the instance in the host flake that `rebuild` writes. |

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The opencode-version agents check of the opencode-pi component (SPEC 3.5,
-# 8.1): `opencode --version` must print a version (X.Y.Z). It holds for
+# The opencode-version agents check of the opencode-pi component:
+# `opencode --version` must print a version (X.Y.Z). It holds for
 # every OpenCode method; the official-binary method additionally compares
 # the version with the release pin before this check runs.
 set -Eeuo pipefail

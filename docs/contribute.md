@@ -15,7 +15,7 @@ and [skills.md](skills.md#classification) how a request is classified.
 | fork (default) | always available | your fork of the framework; an upstream pull request only when you ask (`upstream.pr_to_upstream`) |
 | owner | `upstream.contribute = "owner"` in `workstation.toml`, a `gh` login with push permission on the upstream, and a local clone whose `origin` is the upstream | the upstream `main`, followed by a patch release |
 
-When the owner conditions do not hold, the mode falls back to fork with a
+When the conditions of owner mode do not hold, the mode falls back to fork with a
 warning, never an error. `dotsteward contribute mode --json` shows the mode
 and why. The `[upstream]` table of [workstation-toml.md](workstation-toml.md)
 names the fork and the local clone.

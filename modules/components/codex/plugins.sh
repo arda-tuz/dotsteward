@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# The plugins hook of the codex catalog component (agentsPost; SPEC 3.5,
-# 8.1, 8.4). It runs with the hook environment of `dotsteward agents
-# install|check` and reads the plugin list from [components.codex] options
-# of the instance's workstation.toml:
+# The plugins hook of the codex catalog component (agentsPost). It runs with the
+# hook environment of `dotsteward agents install|check` and reads the plugin
+# list from [components.codex] options of the instance's workstation.toml:
 #
 #   [[components.codex.options.plugins]]          # one table per plugin
 #   spec = "NAME@MARKETPLACE"

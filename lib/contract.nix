@@ -25,7 +25,7 @@ let
     "external"
   ];
 
-  # System-level methods: skipped in adopt mode (D14).
+  # System-level methods: skipped in adopt mode.
   systemMethods = [
     "deb"
     "app-archive"
@@ -253,7 +253,7 @@ let
   componentModule = {
     options = {
       enable = optionDefault types.bool false "Set by mkInstance from [components.<name>].enable.";
-      profiles = nullable (types.listOf types.str) "Profiles where the component is active; null: every profile (D20).";
+      profiles = nullable (types.listOf types.str) "Profiles where the component is active; null: every profile.";
       platforms = optionDefault (types.listOf platform) platforms "Supported platforms.";
       method = option method "Resolved method: method_by_platform, then method, then the component default.";
       supportedMethods = submoduleOption {

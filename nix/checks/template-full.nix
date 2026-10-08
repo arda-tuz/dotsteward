@@ -1,7 +1,7 @@
 # The full Linux fixture instance (tests/fixtures/instances/full): all six
 # catalog components (shell, herdr, claude-code, codex, opencode-pi, vscode)
 # and the two synthetic private components example-app and example-term,
-# built on x86_64-linux and probed (SPEC 12.3, the P3 exit criterion).
+# built on x86_64-linux and probed.
 #
 # The instance is what `dotsteward init` makes of the framework template:
 # the files of template/ (the launcher, and bootstrap.sh once the template

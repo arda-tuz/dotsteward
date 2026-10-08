@@ -2,7 +2,7 @@
 newest release of its upstream.
 
 The row ``framework`` reads the ``dotsteward`` input of the instance's
-``flake.lock`` (D17): ``original.ref`` is the current tag; ``original`` is
+``flake.lock``: ``original.ref`` is the current tag; ``original`` is
 a ``github`` owner/repo (newest release from ``gh``, with the stable-tag
 fallback) or a ``git`` URL (newest stable tag from ``git ls-remote``).
 Status ``review`` when a newer release exists, else ``current``; ``manual``

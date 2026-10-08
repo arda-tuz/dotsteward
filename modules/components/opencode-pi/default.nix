@@ -1,4 +1,4 @@
-# The opencode-pi catalog component (SPEC 3.5): the OpenCode and Pi coding
+# The opencode-pi catalog component: the OpenCode and Pi coding
 # agents, their discovery of the shared skills and the Pi agent rules link.
 #
 # OpenCode, on Linux and darwin alike:

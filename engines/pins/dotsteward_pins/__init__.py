@@ -1,4 +1,4 @@
-"""The dotsteward pins engine (SPEC 5): consistency checks and derived
+"""The dotsteward pins engine: consistency checks and derived
 mirror synchronization of an instance's lock files (``versions.lock.json``
 and the skills lock), driven by declarative rules, plus the upstream
 research report (``latest``).

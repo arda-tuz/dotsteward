@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # dotsteward bash library: the generic helpers shared by the framework
-# commands and by component hooks (SPEC 8.4). Hooks source it through
+# commands and by component hooks. Hooks source it through
 # DOTSTEWARD_LIB:
 #
 #   source "$DOTSTEWARD_LIB/lib.sh"
@@ -121,7 +121,7 @@ require_profile() {
 }
 
 # require_safe_identity: USER and HOME are safe to interpolate into the
-# generated host flake (SPEC 4.4).
+# generated host flake.
 require_safe_identity() {
   local user=${USER:-} home=${HOME:-} platform
   platform=$(current_platform) || exit 1

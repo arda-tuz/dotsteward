@@ -80,7 +80,7 @@ gh auth login
 | Choice | Flag | Default |
 | --- | --- | --- |
 | Checkout directory | `--dir DIR` (missing or empty) | none: ask; `~/<name>` is the convention |
-| Remote, exactly as `git remote get-url origin` prints it | `--remote URL` | none: from the owner, the name and `gh config get git_protocol` |
+| Remote, exactly as `git remote get-url origin` prints it | `--remote URL` | none: from the repository's owner and name and `gh config get git_protocol` |
 | Repository name | `--name N` | the name of the directory |
 | Canonical checkout on every machine | `--checkout PATH` | the directory, as `~/...` below the home directory |
 | Components | `--components a,b,c` (catalog names) | none |

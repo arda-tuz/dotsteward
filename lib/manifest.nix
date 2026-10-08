@@ -1,4 +1,4 @@
-# Mirror rendering (3.7, D8): the files an instance commits under
+# Mirror rendering: the files an instance commits under
 # .dotsteward/ for consumers that run before anything is built, and their
 # staleness check.
 #
@@ -152,7 +152,7 @@ let
 
   union = lib.foldl' (acc: item: if lib.elem item acc then acc else acc ++ [ item ]) [ ];
 
-  # Paths of the settings buffer that stage-0 backs up (section 7).
+  # Paths of the settings buffer that stage-0 backs up.
   bufferBackupPaths =
     {
       cfg,

@@ -40,7 +40,7 @@
     },
     "identity": {
       "type": "object",
-      "description": "The check identity ([identity], used for sandbox checks and homeConfigurations.<username>) and the runtime identity (USER and HOME, used by rebuild). They may differ: installing an instance for another user needs no file edit (SPEC 4.4).",
+      "description": "The check identity ([identity], used for sandbox checks and homeConfigurations.<username>) and the runtime identity (USER and HOME, used by rebuild). They may differ: installing an instance for another user needs no file edit.",
       "properties": {
         "check_username": {
           "type": "string"
@@ -105,7 +105,7 @@
         },
         "current": {
           "type": "string",
-          "description": "The profile recorded in <state root>/current/profile by the last rebuild when it is one of names, else check (D15)."
+          "description": "The profile recorded in <state root>/current/profile by the last rebuild when it is one of names, else check."
         },
         "default": {
           "type": "string"
@@ -148,7 +148,7 @@
         },
         "step_keys": {
           "const": ["preflight", "static", "pins", "flake-check", "cli-probes"],
-          "description": "The gate steps in order, the keys of validation.json step_seconds (D4)."
+          "description": "The gate steps in order, the keys of validation.json step_seconds."
         }
       },
       "required": ["nix_max_jobs", "nix_cores", "min_free_gib", "cache_url", "step_keys"],
@@ -279,7 +279,7 @@
     },
     "framework": {
       "type": "object",
-      "description": "The running framework (version, rev, narHash as `dotsteward version` reports them; rev and narHash are null when unknown) and the dotsteward input of the instance flake.lock (D17).",
+      "description": "The running framework (version, rev, narHash as `dotsteward version` reports them; rev and narHash are null when unknown) and the dotsteward input of the instance flake.lock.",
       "properties": {
         "version": {
           "type": "string",

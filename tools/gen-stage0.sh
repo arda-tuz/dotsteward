@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Regenerates template/bootstrap.sh, the instance stage-0 bootstrap (SPEC
-# 10.2), from the stage-0 body of cli/commands/preflight.sh and
-# cli/lib/stage0.sh.
+# Regenerates template/bootstrap.sh, the instance stage-0 bootstrap, from
+# the stage-0 body of cli/commands/preflight.sh and cli/lib/stage0.sh.
 #
 # Usage: tools/gen-stage0.sh [--check] [--root DIR]
 #

@@ -1,9 +1,8 @@
 # Settings engine (tests/engines/settings/core): `dotsteward settings`, the
-# local-maintained-files engine ported from the original single-file
-# engine. The tests run the CLI against synthetic buffers, temporary homes
-# and bare git remotes with the toolchain python (tomlkit) on PATH. Then
-# shellcheck over the command and the tests, and a byte-compile and lint of
-# the engine's Python sources.
+# local-maintained-files engine. The tests run the CLI against synthetic
+# buffers, temporary homes and bare git remotes with the toolchain python
+# (tomlkit) on PATH. Then shellcheck over the command and the tests, and a
+# byte-compile and lint of the engine's Python sources.
 {
   pkgs,
   dsLib,

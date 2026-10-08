@@ -1,6 +1,6 @@
 """Lock files: serializer, atomic writes, lock paths and templates.
 
-Serializer (SPEC 5.2): ``json.dumps(data, indent=2, ensure_ascii=False)``
+Serializer: ``json.dumps(data, indent=2, ensure_ascii=False)``
 plus a final newline, keys in insertion order, values updated in place.
 ``generated_at`` is written as ``YYYY-MM-DDTHH:MM:SS+00:00`` in the versions
 lock and ``YYYY-MM-DDTHH:MM:SSZ`` in the skills lock. Writes are atomic: a

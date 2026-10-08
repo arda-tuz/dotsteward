@@ -19,7 +19,7 @@
 #                                         (a passwd line), else the UserShell
 #                                         attribute of dscl
 #   platform_set_login_shell PATH [USER]  sets UserShell with dscl (sudo)
-#   platform_app_archive_check NAME       the app-archive method (SPEC 3.4)
+#   platform_app_archive_check NAME       the app-archive method
 #   platform_app_archive_install NAME     for cli/lib/methods.sh, which must
 #                                         be loaded; see below
 # darwin only:

@@ -1,11 +1,11 @@
-"""The facts of an instance on this machine: ``dotsteward context`` (SPEC 6.5).
+"""The facts of an instance on this machine: ``dotsteward context``.
 
 The document (``schema/context.schema.json``, ``schema_version`` 1) joins:
 
 - the resolved ``workstation.toml`` with the run-time layer of
   ``config.py`` (expanded paths, environment overrides, effective overlays);
 - the runtime identity (``USER`` and ``HOME``) next to the check identity
-  ``[identity]`` (SPEC 4.4);
+  ``[identity]``;
 - the state records: ``<state root>/current/profile`` and the gate record
   paths below ``<state root>/update``;
 - the ``.dotsteward/manifest.<system>.json`` mirror of the running system
@@ -14,8 +14,7 @@ The document (``schema/context.schema.json``, ``schema_version`` 1) joins:
   entry ids only: settings values are never read into the document);
 - the skills lock (``skills.lock``, skill names only);
 - the running framework (``VERSION`` and ``source-info``, as
-  ``dotsteward version``) and the ``dotsteward`` input of ``flake.lock``
-  (D17).
+  ``dotsteward version``) and the ``dotsteward`` input of ``flake.lock``.
 
 A missing mirror, buffer, skills lock, ``flake.lock`` or state record is not
 an error: the facts it would add are empty or null. A buffer, skills lock,
@@ -28,7 +27,7 @@ Command line (used by ``cli/commands/context.sh``)::
     python3 -m dotsteward_cli.context [--json]
 
 The instance comes from ``DOTSTEWARD_INSTANCE`` (the dispatcher's
-``--instance``) or discovery (SPEC 6.1). ``--json`` prints the document as
+``--instance``) or discovery. ``--json`` prints the document as
 one JSON document on standard output; without it every fact is one
 ``[dotsteward] key: value`` line. Exit status 0, or 1 for a usage error, an
 invalid configuration or environment, or an unreadable source; messages go
@@ -55,7 +54,7 @@ from dotsteward_cli import config
 
 SCHEMA_VERSION = 1
 
-# The gate steps in order: the keys of validation.json step_seconds (D4).
+# The gate steps in order: the keys of validation.json step_seconds.
 GATE_STEP_KEYS = ("preflight", "static", "pins", "flake-check", "cli-probes")
 
 # The commit types of the maintain scope, the one source for the gate's
@@ -200,8 +199,8 @@ def _git_rev(root: Path) -> str | None:
 
 
 def framework_input(instance: config.Instance) -> tuple[str | None, str | None]:
-    """(upstream, track) of the dotsteward input of the instance flake.lock
-    (D17): the flake reference of its original source without ref and rev,
+    """(upstream, track) of the dotsteward input of the instance flake.lock:
+    the flake reference of its original source without ref and rev,
     and the original ref. (None, None) without flake.lock, without the input
     or for an input that follows another one."""
     path = instance.root / FLAKE_LOCK
@@ -298,7 +297,7 @@ def read_skills_lock(instance: config.Instance) -> list[str]:
 
 def current_profile(state_root: str, profiles: Mapping[str, Any]) -> str:
     """The profile of the last rebuild (<state root>/current/profile) when it
-    names a profile of the instance, else the check profile (D15)."""
+    names a profile of the instance, else the check profile."""
     path = Path(state_root) / CURRENT_PROFILE
     try:
         text = _read_text(path)
@@ -319,7 +318,7 @@ def _strip_slash(path: str | None) -> str | None:
 
 
 def build_context(instance: config.Instance, env: Mapping[str, str] | None = None) -> dict[str, Any]:
-    """The context document of instance (SPEC 6.5). Raises DotstewardError
+    """The context document of instance. Raises DotstewardError
     for an invalid environment or an unreadable source."""
     try:
         return _build_context(instance, os.environ if env is None else env)
@@ -506,7 +505,7 @@ def human_lines(document: Mapping[str, Any]) -> list[str]:
 USAGE = """\
 Usage: dotsteward context [--json]
 
-Prints the facts of the instance on this machine (SPEC 6.5): the instance,
+Prints the facts of the instance on this machine: the instance,
 the check and runtime identity, the state record paths, profiles, gate
 parameters, commit rules, protected paths, skill overlays, components with
 their methods, settings targets and commands, the settings buffer's target

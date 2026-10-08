@@ -1,4 +1,4 @@
-# Evaluation guards (3.8): each failure case of the fixture instances,
+# Evaluation guards: each failure case of the fixture instances,
 # evaluated inside this flake, must fail (builtins.tryEval); the messages
 # are checked by tests/nix/instance/assertions with nix-instantiate. A case
 # that evaluates successfully fails this check at evaluation time, naming

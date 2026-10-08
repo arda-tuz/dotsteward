@@ -321,8 +321,8 @@ preflight_run() {
   fi
 }
 
-# dotsteward stage-0: the pre-Nix part of the instance bootstrap (SPEC
-# 10.2, port of bootstrap.sh:1-89). Not sourced by the CLI:
+# dotsteward stage-0: the pre-Nix part of the instance bootstrap (backups,
+# prerequisites and the verified Nix install). Not sourced by the CLI:
 # tools/gen-stage0.sh concatenates the stage-0 body of
 # cli/commands/preflight.sh and this file into template/bootstrap.sh, which
 # ends with `stage0_main "$@"`. Instances keep that file byte-identical to
@@ -356,7 +356,7 @@ preflight_run() {
 #                                      version check (dotsteward-init, before
 #                                      an instance exists)
 #
-# DOTSTEWARD_ASSUME_YES=1 (CI and VM harnesses only, D6) answers apt with -y
+# DOTSTEWARD_ASSUME_YES=1 (CI and VM harnesses only) answers apt with -y
 # and the Nix installer with --yes. The state root is DOTSTEWARD_STATE_ROOT,
 # else DOTFILES_STATE_ROOT when the mirror's legacy environment is on, else
 # the mirror's state root with a leading ${NAME:-DEFAULT} and ~ expanded,

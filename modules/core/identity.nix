@@ -31,7 +31,7 @@ in
       default = if known then cfg.profiles.${profile}.mode else null;
       defaultText = lib.literalMD "`[profiles.<profile>] mode` of workstation.toml";
       readOnly = true;
-      description = "Mode of the profile: fresh or adopt (D14); null for an unknown profile.";
+      description = "Mode of the profile: fresh or adopt; null for an unknown profile.";
     };
   };
 

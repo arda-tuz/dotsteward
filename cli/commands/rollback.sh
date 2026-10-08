@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # summary: Undo the instance's Home Manager setup (login shell, managed links, force-linked files)
 #
-# Port of rollback.sh (SPEC 6.2). The plan comes from the current
-# generation's manifest (the active Home Manager generation, else the
+# Undoes the instance's Home Manager setup. The plan comes from the
+# current generation's manifest (the active Home Manager generation, else the
 # instance's mirror) and the records of rebuild in <state>/current:
 #   1. login shell      when the instance manages one: the platform default
 #                       (Linux /bin/bash, macOS /bin/zsh)

@@ -1,5 +1,5 @@
 # Skills deployed by Home Manager under the instance skill root: the
-# framework skills (D7) and instance-owned home-managed skills.
+# framework skills and instance-owned home-managed skills.
 {
   config,
   lib,
@@ -48,8 +48,8 @@ in
     frameworkRoot = lib.mkOption {
       type = lib.types.path;
       # A string, so the links point into the framework source itself
-      # ("${dotsteward}/skills/<name>", SPEC 3.3 and the 9.4 invariant)
-      # instead of a store copy of each skill.
+      # ("${dotsteward}/skills/<name>") instead of a store copy of each
+      # skill.
       default = "${dotsteward.lib.source}/skills";
       defaultText = lib.literalExpression ''"''${dotsteward}/skills"'';
       internal = true;

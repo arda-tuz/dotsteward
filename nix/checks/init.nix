@@ -1,4 +1,4 @@
-# `dotsteward init` (SPEC 10.3, 5.6; tests I1-I7): tests/instance/init in
+# `dotsteward init`: tests/instance/init in
 # the build sandbox. The Nix steps of init run against the nix stub, whose
 # override (tests/instance/init/fake-nix.sh) locks the composed instance
 # offline and evaluates it with lib.mkInstance of the framework under test

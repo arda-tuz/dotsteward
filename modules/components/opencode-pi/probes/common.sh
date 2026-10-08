@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Shared setup of the opencode-pi agents checks (not a hook; sourced by
 # opencode-skill-api.sh and pi-rpc.sh). The hooks run with the hook
-# environment of `dotsteward agents install|check` (SPEC 8.4).
+# environment of `dotsteward agents install|check`.
 #
 #   opencode_pi_expected_skills
 #       prints the sorted JSON array of the skill names every agent must

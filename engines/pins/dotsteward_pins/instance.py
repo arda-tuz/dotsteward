@@ -1,7 +1,7 @@
 """The instance the engine works on: discovery, configuration, lock files,
 manifest mirrors and the two external programs it may call (git, nix).
 
-Discovery (SPEC 6.1): ``--instance`` > ``DOTSTEWARD_INSTANCE`` >
+Discovery: ``--instance`` > ``DOTSTEWARD_INSTANCE`` >
 (``DOTFILES_ROOT`` with ``[compat] legacy_env``) > the nearest
 ``workstation.toml`` above the working directory, through the shared
 configuration reader ``dotsteward_cli.config``.
@@ -157,7 +157,7 @@ class Instance:
 
     def refuse_untracked(self) -> None:
         """Nix evaluates the git-visible tree: untracked, not ignored files
-        would silently be missing, so they are refused (SPEC 6.3).
+        would silently be missing, so they are refused.
 
         Untracked generated mirrors are not refused: they are outputs of the
         evaluation that ``dotsteward sync`` may have just written, the

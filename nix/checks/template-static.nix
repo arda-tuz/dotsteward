@@ -1,4 +1,4 @@
-# The template static contract (SPEC 10.1): tests/instance/template in the
+# The template static contract: tests/instance/template in the
 # build sandbox (the files of template/, its flake inputs at the framework
 # flake.lock revisions and the dotsteward tag at VERSION, the lock files, the
 # workstation.toml skeleton, the wrappers, the generated stage-0

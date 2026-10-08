@@ -54,7 +54,7 @@ Only the release pins of the platforms in `nix.systems` whose OpenCode method is
 
 ## Verification
 
-Catalog facts of this component (SPEC 14):
+Catalog facts of this component:
 
 - OpenCode configuration path: verified on 2026-10-06 from the OpenCode documentation (https://opencode.ai/docs/config/, section "Global"): the global configuration is `~/.config/opencode/opencode.json`, the same path on Linux and macOS, in JSON or JSONC.
 - OpenCode release assets: verified on 2026-10-06 from the GitHub release `v1.18.34` of `anomalyco/opencode`: `opencode-linux-x64.tar.gz` and `opencode-darwin-arm64.zip` each hold the single member `opencode`; sizes and SHA-256 digests in `seed.json` match the downloaded assets.

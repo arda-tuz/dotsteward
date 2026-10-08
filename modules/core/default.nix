@@ -1,6 +1,6 @@
-# The always-on Home Manager modules of dotsteward (homeModules.core, 3.3).
+# The always-on Home Manager modules of dotsteward (homeModules.core).
 #
-# mkInstance evaluates them with these special arguments (3.2 step 5):
+# mkInstance evaluates them with these special arguments:
 #   profile, username, homeDirectory   what mkHome was called with
 #   packages                           the instance package set (the CLI is
 #                                      packages.dotsteward)
@@ -11,7 +11,7 @@
 #                                      instance source, the system and the
 #                                      dotsteward library
 #
-# Contract options (dotsteward.*) never depend on the profile (D20); only
+# Contract options (dotsteward.*) never depend on the profile; only
 # home.packages and home.file content does, through each component's
 # profiles field.
 {

@@ -1,4 +1,4 @@
-# The package fixpoint of an instance (3.2 step 4).
+# The package fixpoint of an instance.
 #
 #   fixpoint { ctx, catalog, instance, base, extraPackages }
 #     -> { packages, checks }

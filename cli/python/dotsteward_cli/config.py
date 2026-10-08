@@ -1,4 +1,4 @@
-"""workstation.toml reader and DS_* exporter (SPEC 4.1, 4.4, 6.1).
+"""workstation.toml reader and DS_* exporter.
 
 Two layers:
 
@@ -737,7 +737,7 @@ def discover_instance(
     env: Mapping[str, str] | None = None,
     cwd: str | os.PathLike[str] | None = None,
 ) -> Path:
-    """The instance root (physical path), SPEC 6.1: ``--instance`` >
+    """The instance root (physical path): ``--instance`` >
     DOTSTEWARD_INSTANCE > (DOTFILES_ROOT when its configuration sets
     compat.legacy_env) > the nearest workstation.toml above the working
     directory."""
@@ -899,7 +899,7 @@ def _machine_fact(env: Mapping[str, str], name: str, problems: list[str]) -> int
 
 def runtime_values(instance: Instance, env: Mapping[str, str] | None = None) -> dict[str, Any]:
     """The run-time values of an instance: expanded paths, the environment
-    overrides of SPEC 6.1, the gate parallelism derived from the machine
+    overrides (``DOTSTEWARD_*``), the gate parallelism derived from the machine
     (DOTSTEWARD_MEMORY_MIB and DOTSTEWARD_CPU_COUNT replace its facts) where
     neither the configuration nor the environment sets it, and the
     effective skill overlays. Raises

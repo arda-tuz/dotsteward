@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# dotsteward install methods engine (SPEC 3.4): the method semantics of the
+# dotsteward install methods engine: the method semantics of the
 # component contract, implemented once for the install command, the agents
 # installer and anything else that installs or checks a component.
 #
@@ -26,7 +26,7 @@
 #   methods_component NAME           the manifest entry of NAME (JSON)
 #   methods_component_method NAME    its resolved method
 #   methods_is_system_level METHOD   deb and app-archive: skipped in adopt
-#                                    mode (D14)
+#                                    mode
 #   methods_validate NAME            the method is known and available on
 #                                    this platform
 # Lock and versions
@@ -53,7 +53,7 @@
 #   app-archive dispatches to platform_app_archive_install NAME and
 #   platform_app_archive_check NAME of the platform layer, which set the same
 #   variables; without them the method is not available.
-# Hooks (SPEC 8.4)
+# Hooks
 #   methods_hooks LIST PROFILE       the hooks of LIST (system_install,
 #                                    post_install, forbid, ...) to run in
 #                                    PROFILE, one JSON object per line: early

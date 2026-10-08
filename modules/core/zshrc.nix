@@ -1,4 +1,4 @@
-# .zshrc blocks (3.6): ordered text blocks rendered byte-exactly into
+# .zshrc blocks: ordered text blocks rendered byte-exactly into
 # dotsteward.shell.zshrc.text. Core only renders; the shell component links
 # the text as ~/.zshrc, and components and instance modules add blocks.
 #

@@ -7,7 +7,7 @@
 # The union of
 #   - pins.resolvedVersions of every enabled component (components is the
 #     Home Manager value of dotsteward.components), in [components] order;
-#   - core: tomlkit, the Python library of the CLI engines (F8);
+#   - core: tomlkit, the Python library of the CLI engines;
 #   - [pins] nixpkgs_versions: lock key -> nixpkgs attribute path, for
 #     plain nixpkgs packages.
 # A key declared twice is an error naming both sources. Versions are

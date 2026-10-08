@@ -1,5 +1,4 @@
-"""Health checks of an instance on this machine: ``dotsteward doctor``
-(SPEC 6.2, 6.5).
+"""Health checks of an instance on this machine: ``dotsteward doctor``.
 
 doctor builds the context (``context.py``) and adds read-only checks, in
 this order:
@@ -8,12 +7,12 @@ this order:
   sources can be read (otherwise the checks below that need the context are
   skipped and the context is null);
 - ``identity``: USER and HOME are safe for the generated host flake (the
-  rules of ``require_safe_identity``, SPEC 4.4), and whether they match the
+  rules of ``require_safe_identity``), and whether they match the
   check identity (informational: a different user needs no file edit);
 - ``nix``: a ``nix`` command on PATH, else in the Nix daemon profile or
   ~/.nix-profile, and its version;
 - ``launcher-cache``: ``<state root>/cli/<sha256 of flake.lock>/bin/dotsteward``
-  exists, so ``.dotsteward/cli.sh`` runs without building (SPEC 6.3);
+  exists, so ``.dotsteward/cli.sh`` runs without building;
 - ``mirrors``: for every system of nix.systems, ``.dotsteward/manifest.<system>.json``
   and ``.dotsteward/stage0.<platform>.env`` exist, and the manifest holds the
   current configuration and framework version. This is a quick consistency
@@ -82,7 +81,7 @@ CHECK_IDS = ("config", "identity", "nix", "launcher-cache", "mirrors", "generati
 STATUS_ORDER = ("ok", "skip", "warn", "fail")
 
 # Where a Nix installation puts nix when it is not on PATH (the launcher
-# looks in the same places, SPEC 6.3).
+# looks in the same places).
 NIX_FALLBACKS = ("/nix/var/nix/profiles/default/bin/nix", "~/.nix-profile/bin/nix")
 NIX_VERSION_TIMEOUT = 20
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The pi-rpc agents check of the opencode-pi component (SPEC 3.5, 8.1): Pi
+# The pi-rpc agents check of the opencode-pi component: Pi
 # discovers every expected skill (probes/common.sh). One offline, isolated
 # RPC session answers get_commands: PI_OFFLINE=1, no session, extensions or
 # prompt templates, and a fresh temporary PI_CODING_AGENT_DIR, so neither

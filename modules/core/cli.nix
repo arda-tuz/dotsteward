@@ -5,7 +5,7 @@
 # components, rendered for the platform), --repo-default (the expanded
 # instance.checkout) and --state-dir-default (<state.root>/
 # local-maintained-files, expanded by the shell at run time). The engine
-# uses the defaults last (section 7): after the environment
+# uses the defaults last: after the environment
 # (DOTSTEWARD_INSTANCE and DOTSTEWARD_STATE_ROOT, plus DOTFILES_ROOT and
 # DOTFILES_STATE_ROOT with [compat] legacy_env) and instance discovery.
 # Arguments given to the alias come last, so an explicit --repo or

@@ -1,9 +1,9 @@
 # shellcheck shell=bash
-# The remote steps of `dotsteward contribute` (SPEC 9.4 steps 7 to 11 and
-# the recovery after a trial switch): trial, publish, release, upgrade,
-# abort and report. Sourced by cli/commands/contribute.sh after
-# cli/lib/contribute-local.sh, whose helpers and CT_* facts it uses;
-# framework_root is the framework source of the running CLI.
+# The remote steps of `dotsteward contribute` and the recovery after a trial
+# switch: trial, publish, release, upgrade, abort and report. Sourced by
+# cli/commands/contribute.sh after cli/lib/contribute-local.sh, whose helpers
+# and CT_* facts it uses; framework_root is the framework source of the running
+# CLI.
 #
 #   contribute_cmd_trial, contribute_cmd_publish, contribute_cmd_release,
 #   contribute_cmd_upgrade, contribute_cmd_abort, contribute_cmd_report
@@ -21,7 +21,7 @@
 # The instance commands (gate, rebuild, e2e, update, sync) run with
 # DOTSTEWARD_FRAMEWORK_OVERRIDE removed from their environment, so a
 # framework override is exactly the --framework-override flag the trial
-# passes (D9) and never leaks into the recovery or the upgrade. They run
+# passes and never leaks into the recovery or the upgrade. They run
 # through the running CLI, except in the upgrade once flake.lock pins the
 # release: from there on they run through the instance launcher
 # (.dotsteward/cli.sh), so the release's CLI validates, rebuilds and
@@ -53,7 +53,7 @@
 # The exit status of a run sent back to `check`: the branch was rebased onto
 # the moved upstream main (or must be), so the tested commit is gone.
 CONTRIBUTE_RESTART=5
-# The workflow that exercises a change with a real activation (SPEC 11.6).
+# The workflow that exercises a change with a real activation.
 CONTRIBUTE_CLEAN_INSTALL=clean-install.yml
 
 export GH_PROMPT_DISABLED=1
@@ -386,16 +386,15 @@ _contribute_push_branch() {
   log "pushed $CT_BRANCH (${CT_TEST_SHA:0:12}) to $remote"
 }
 
-# _contribute_rebase_onto_merged REMOTE: after a pull request merged on
-# GitHub (by hand, as a new squash or merge commit) whose commit is not the
-# tested tree (SPEC 9.4 step 8: rebase, back to step 6). The
-# branch is rebased onto REMOTE/main (fetched): its commits are in the
-# merge commit, so it becomes REMOTE/main; a conflicting rebase is aborted
-# and the branch reset to REMOTE/main, which already holds the change. The
-# merged pull request stays recorded (publish then takes the re-checked
-# commit on REMOTE/main as published), unless the branch keeps commits that
-# REMOTE/main lacks: those need a new pull request. No recovery: the run
-# continues at check; exits with CONTRIBUTE_RESTART.
+# _contribute_rebase_onto_merged REMOTE: after a pull request merged on GitHub
+# (by hand, as a new squash or merge commit) whose commit is not the tested
+# tree: the run goes back to check. The branch is rebased onto REMOTE/main
+# (fetched): its commits are in the merge commit, so it becomes REMOTE/main; a
+# conflicting rebase is aborted and the branch reset to REMOTE/main, which
+# already holds the change. The merged pull request stays recorded (publish then
+# takes the re-checked commit on REMOTE/main as published), unless the branch
+# keeps commits that REMOTE/main lacks: those need a new pull request. No
+# recovery: the run continues at check; exits with CONTRIBUTE_RESTART.
 _contribute_rebase_onto_merged() {
   local remote=$1 main
   main=$(git -C "$CT_CLONE" rev-parse "refs/remotes/$remote/main^{commit}")

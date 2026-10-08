@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# The instance configuration for bash (SPEC 4.1, 6.1).
+# The instance configuration for bash.
 #
 # Source after lib.sh. config_load runs the Python reader
 # (cli/python/dotsteward_cli/config.py) and evaluates its DS_* declarations;

@@ -38,7 +38,7 @@
 #                                         --no-install-recommends
 #                                         transaction (packages or .deb
 #                                         paths); -y only with
-#                                         DOTSTEWARD_ASSUME_YES=1 (D6)
+#                                         DOTSTEWARD_ASSUME_YES=1
 
 if ! declare -F die >/dev/null; then
   # shellcheck source=cli/lib/lib.sh

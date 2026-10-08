@@ -1,6 +1,7 @@
 # shellcheck shell=bash
-# The skill layout engine of `dotsteward agents` (SPEC 8.1, D2, D7): the
-# generic port of the skill part of the agents installer. Source after
+# The skill layout engine of `dotsteward agents`: the canonical skill root,
+# the legacy roots, the framework and instance skills and the sweep of
+# dangling links. Source after
 # lib.sh, config.sh and methods.sh, once config_load and
 # methods_manifest_load have run; sourcing defines functions only.
 #
@@ -415,7 +416,7 @@ _skills_staging_dir() {
   mktemp -d "$staging_root/skill.XXXXXX"
 }
 
-# _skills_copy_tree SOURCE DESTINATION: the native copy (D2): metadata.json
+# _skills_copy_tree SOURCE DESTINATION: the native copy: metadata.json
 # files and .git, __pycache__ and __pypackages__ directories are left out,
 # symlinks are followed, each mode is the source mode & 0777. DESTINATION
 # exists and is empty.

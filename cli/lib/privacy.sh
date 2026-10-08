@@ -573,12 +573,12 @@ ds_privacy_load_policy() {
 }
 
 # ds_privacy_load_instance_policy
-# The policy of an instance scan (SPEC 11.2): the generic secret rules only.
+# The policy of an instance scan: the generic secret rules only.
 # Home paths, e-mail addresses, private IPv4 addresses, non-ASCII text and
 # the commit rules do not apply (instance content is personal by design);
 # forbidden paths and file rules start empty and their globs have shell
-# `case` semantics ("*" also matches "/"), the semantics of the owner checks
-# they replace. Loaded term tables are kept.
+# `case` semantics ("*" also matches "/", so a glob without a slash matches
+# at any depth). Loaded term tables are kept.
 ds_privacy_load_instance_policy() {
   _DS_PRIVACY_GLOB_MODE=case
   # shellcheck disable=SC2034 # read by callers of the library

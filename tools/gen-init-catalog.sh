@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Regenerates references/catalog.md of the dotsteward-init plugin skill, the
-# catalog table the skill offers when it creates a new instance (SPEC 9.7),
+# catalog table the skill offers when it creates a new instance,
 # from the README of each catalog component.
 #
 # Usage: tools/gen-init-catalog.sh [--check] [--root DIR]

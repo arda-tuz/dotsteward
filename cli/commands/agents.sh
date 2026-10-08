@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # summary: Install or check the agent tools, the skill layout and the agents checks of a profile
 #
-# Port of the agents installer (SPEC 8.1). Phases, in this order:
+# Installs or checks the agent tools and the skill layout of a profile.
+# Phases, in this order:
 #   1. official-binary   every active official-binary component: installed
 #                        at the user level (install) or checked by its pin
 #                        policy (check); then the agentsInstall hooks

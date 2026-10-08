@@ -158,7 +158,7 @@ Print the facts of the instance on this machine (--json for skills).
 ```text
 Usage: dotsteward context [--json]
 
-Prints the facts of the instance on this machine (SPEC 6.5): the instance,
+Prints the facts of the instance on this machine: the instance,
 the check and runtime identity, the state record paths, profiles, gate
 parameters, commit rules, protected paths, skill overlays, components with
 their methods, settings targets and commands, the settings buffer's target
@@ -182,7 +182,7 @@ Change the dotsteward framework itself: mode, setup, start, check, trial, publis
 Usage: dotsteward [--instance DIR] contribute <step> [OPTION...]
        dotsteward contribute --help
 
-Runs one step of a framework contribution from this machine (SPEC 9.4):
+Runs one step of a framework contribution from this machine:
 reproduce, fix generically, test here, then publish to the upstream
 (owner mode) or to the user's fork (fork mode) and upgrade the instance.
 The framework upstream is the dotsteward input of the instance flake.lock;
@@ -232,7 +232,7 @@ Steps:
                           allowlist of upstream main. A branch without
                           commits after upstream main is refused, except
                           after a tree mismatch
-  trial [--build-only]    the trial on this machine (SPEC 9.4 step 7): gate,
+  trial [--build-only]    the trial on this machine: gate,
                           rebuild --switch and e2e of the instance with
                           --framework-override git+file://<clone>?rev=<the
                           checked commit>; --build-only: gate and rebuild
@@ -622,7 +622,7 @@ Run the version, presence and feature probes of a generation's manifest.
 ```text
 Usage: dotsteward probes (--generation PATH | --manifest FILE --path-prefix DIR)
 
-Runs the probe registry (SPEC 8.2) of the instance's check profile
+Runs the probe registry of the instance's check profile
 (profiles.check, the profile of checks.<system>.home that the gate builds):
   --generation PATH   a built generation: its manifest
                       PATH/home-path/share/dotsteward/manifest.json, its

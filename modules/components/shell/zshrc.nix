@@ -1,4 +1,4 @@
-# The default ~/.zshrc blocks of the shell component (3.6) and the options
+# The default ~/.zshrc blocks of the shell component and the options
 # that shape them ([components.shell].options of workstation.toml):
 #
 #   autosuggestions      bool, default true: source zsh-autosuggestions

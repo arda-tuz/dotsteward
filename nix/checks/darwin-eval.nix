@@ -1,4 +1,4 @@
-# darwin evaluation (SPEC 12.3): the full darwin fixture instance
+# darwin evaluation: the full darwin fixture instance
 # (tests/fixtures/instances/full-darwin) evaluated for aarch64-darwin on
 # x86_64-linux, never built; then the darwin platform layer
 # (tests/cli/darwin).

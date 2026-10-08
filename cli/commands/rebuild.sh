@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # summary: Build the instance's Home Manager generation for this machine and optionally switch to it
 #
-# Port of rebuild.sh (SPEC 6.2, F5). Order:
+# Builds the Home Manager generation of a profile and, with --switch,
+# activates it. Order:
 #   1. guards: flags, profile, identity, a host-flake-safe checkout that is
 #      the root of a clean git repository (untracked files refused: Nix does
 #      not see them), the instance flake.lock; nothing is written before
 #   2. host overrides in <state>/host-overrides: profile.nix (the runtime
-#      $USER and $HOME, SPEC 4.4), flake.nix (input [compat] host_input of
+#      $USER and $HOME), flake.nix (input [compat] host_input of
 #      type path: and homeConfigurations.current = <input>.lib.mkHome
 #      (import ./profile.nix)) and the host input lock, created when missing
 #      and refreshed only when (canonical_revision, canonical_repo) of

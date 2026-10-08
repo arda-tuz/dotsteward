@@ -1,4 +1,4 @@
-# The codex catalog component (SPEC 3.5): the Codex CLI, its agent rules
+# The codex catalog component: the Codex CLI, its agent rules
 # link, its configuration file as a settings target and its legacy skill
 # root; optionally Codex plugins (options.plugins).
 #

@@ -1,5 +1,4 @@
-"""A new dotsteward instance from the framework template: ``dotsteward init``
-(SPEC 10.3, 5.6).
+"""A new dotsteward instance from the framework template: ``dotsteward init``.
 
 Command line (used by ``cli/commands/init.sh``)::
 
@@ -660,7 +659,7 @@ def read_json(path: Path, label: str) -> dict[str, Any]:
 
 
 def dump_lock(document: Mapping[str, Any]) -> str:
-    """The pins engine's lock serialization (SPEC 5.2)."""
+    """The pins engine's lock serialization."""
     return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
 
 
@@ -972,7 +971,7 @@ def git_output(argv: Sequence[str], cwd: Path, env: Mapping[str, str]) -> str:
 
 
 def make_writable(root: Path) -> None:
-    """Adds the owner's write bit everywhere below root (a template copied
+    """Adds the user write bit (u+w) everywhere below root (a template copied
     from the Nix store is read-only)."""
     for directory, dirnames, filenames in os.walk(root):
         for name in [*dirnames, *filenames, ""]:

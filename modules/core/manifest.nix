@@ -1,6 +1,6 @@
-# The manifest (3.7, schema_version 1): the contract values of core and the
-# enabled components, as JSON-ready data. It never depends on the profile
-# (D20): components are listed when enabled, with their profiles and the mode
+# The manifest (schema_version 1): the contract values of core and the
+# enabled components, as JSON-ready data. It never depends on the profile:
+# components are listed when enabled, with their profiles and the mode
 # of each profile they are active in, and consumers scope by those. The
 # generation ships it as share/dotsteward/manifest.json (package
 # dotsteward-manifest); mkInstance adds instance-level values (pinned
@@ -225,7 +225,7 @@ in
       default = lib.recursiveUpdate manifest ds.manifestExtra;
       defaultText = lib.literalMD "the contract values of core and the enabled components";
       readOnly = true;
-      description = "The manifest (3.7): contract values for the CLI, never dependent on the profile.";
+      description = "The manifest: contract values for the CLI, never dependent on the profile.";
     };
 
     manifestExtra = lib.mkOption {

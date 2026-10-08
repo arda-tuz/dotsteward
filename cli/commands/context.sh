@@ -7,7 +7,7 @@
 # gate parameters, commit rules, protected paths, skill overlays, components
 # with their methods, settings targets and commands, the settings buffer's
 # target names and entry ids (never values), instance skills, the framework
-# and its upstream, and the platform (SPEC 6.5, schema/context.schema.json).
+# and its upstream, and the platform (schema/context.schema.json).
 # The engine is cli/python/dotsteward_cli/context.py, run with the python3
 # first on PATH (the package puts its own python there). Exit 0, or 1.
 set -Eeuo pipefail

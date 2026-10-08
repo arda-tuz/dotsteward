@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # summary: Run a component hook with the hook environment
 #
-# `dotsteward component run NAME HOOK [-- ARG...]` (SPEC 6.2, 8.4) runs one
+# `dotsteward component run NAME HOOK [-- ARG...]` runs one
 # hook of component NAME, the way the framework runs it in a phase, with
 # the given arguments: an instance wrapper script stays a one-liner
 # (`dotsteward component run <name> <hook> -- "$@"`). The hook is found by

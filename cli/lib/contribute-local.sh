@@ -1,9 +1,9 @@
 # shellcheck shell=bash
-# The local steps of `dotsteward contribute` (SPEC 9.4 steps 0, 2, 3, 4 and
-# 6): mode, setup, start and check. Sourced by cli/commands/contribute.sh,
-# which provides lib.sh, config.sh, the run state helpers and the constants
-# CONTRIBUTE_PRIVACY_STOP and CONTRIBUTE_DENYLIST_SHOWN; framework_root is
-# the framework source of the running CLI.
+# The local steps of `dotsteward contribute`: mode, setup, start and check.
+# Sourced by cli/commands/contribute.sh, which provides lib.sh, config.sh, the
+# run state helpers and the constants CONTRIBUTE_PRIVACY_STOP and
+# CONTRIBUTE_DENYLIST_SHOWN; framework_root is the framework source of the
+# running CLI.
 #
 #   contribute_cmd_mode, contribute_cmd_setup, contribute_cmd_start,
 #   contribute_cmd_check     the steps (arguments as in the command usage)
@@ -125,7 +125,7 @@ _contribute_load_context() {
 }
 
 # _contribute_load_upstream: CT_UPSTREAM, CT_UPSTREAM_SLUG, CT_UPSTREAM_NAME
-# and CT_UPSTREAM_URL from the dotsteward input of flake.lock (D17).
+# and CT_UPSTREAM_URL from the dotsteward input of flake.lock.
 _contribute_load_upstream() {
   local ref rest query host
   ref=$(jq -r '.framework.upstream // empty' <<<"$CT_CONTEXT")
@@ -651,7 +651,7 @@ _contribute_scan() {
 # _contribute_check_red ID: a red framework gate (a privacy stop or a failed
 # nix flake check) of run ID: after a trial switch, publish sent the run back
 # here with the live generation on the trial framework, so the recovery of
-# the remote steps switches it back (SPEC 9.4) when that library is loaded.
+# the remote steps switches it back when that library is loaded.
 _contribute_check_red() {
   if declare -F contribute_recover_run >/dev/null; then
     contribute_recover_run "$1"

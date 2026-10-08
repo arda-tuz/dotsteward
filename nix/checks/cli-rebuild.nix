@@ -3,7 +3,7 @@
 # fake Nix (host override contract and lock memo, framework override,
 # records, dirty-tree refusals, switch ordering with hooks, adoption,
 # rollback ABSENT and generation branches, the login shell matrix). Nothing
-# is activated for real (SPEC 12.5); shellcheck covers the commands and the
+# is activated for real; shellcheck covers the commands and the
 # tests.
 {
   pkgs,

@@ -303,7 +303,7 @@
             "$ref": "#/$defs/componentName"
           },
           "uniqueItems": true,
-          "description": "Hook and check order (D10). Listed components come first, then the remaining catalog components in catalog order, then the instance components sorted."
+          "description": "Hook and check order. Listed components come first, then the remaining catalog components in catalog order, then the instance components sorted."
         }
       },
       "additionalProperties": {
@@ -521,7 +521,7 @@
         "legacy_env": {
           "type": "boolean",
           "default": false,
-          "description": "Also read the legacy DOTFILES_* environment names."
+          "description": "Also read the DOTFILES_* environment names of an older setup, as fallbacks for the DOTSTEWARD_* names."
         },
         "legacy_backup_layout": {
           "type": "boolean",
@@ -597,7 +597,7 @@
             "adopt"
           ],
           "default": "fresh",
-          "description": "fresh installs system-level parts; adopt skips them (D14)."
+          "description": "fresh installs system-level parts; adopt skips them."
         }
       },
       "additionalProperties": false

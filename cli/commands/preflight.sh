@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # summary: Read-only check of this machine against the instance fast path (exit 3: adaptive route)
 #
-# Port of scripts/preflight.sh (SPEC 6.2, 10.2). Reads the stage-0 mirror
+# Read-only machine check before a bootstrap. Reads the stage-0 mirror
 # .dotsteward/stage0.<platform>.env of the instance (profiles, the fast path,
 # the preflight detectors of the enabled components, the remote) and prints
 # facts about this machine:

@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # summary: Set, migrate or check the stable login shell of the instance
 #
-# Port of ensure_stable_login_shell (SPEC 6.2). The login shell is the
-# manifest's login_shell ($HOME or ${HOME} expanded at run time; null: the
-# instance does not manage it, and every mode succeeds without a change).
-# The manifest is the one of --generation, else of the active Home Manager
-# generation, else the instance's mirror. A versioned /nix/store path as
-# the login shell could be removed by Nix garbage collection, so the
-# instance's stable path is used:
+# Keeps the user's login shell stable. The login shell is the manifest's
+# login_shell ($HOME or ${HOME} expanded at run time; null: the instance does
+# not manage it, and every mode succeeds without a change). The manifest is the
+# one of --generation, else of the active Home Manager generation, else the
+# instance's mirror. A versioned /nix/store path as the login shell could be
+# removed by Nix garbage collection, so the instance's stable path is used:
 #   set      lists the shell in the shells file (the added line is recorded
 #            in <state>/current/etc-shells-added-path) and sets it as the
 #            login shell; sudo may ask for a password (bootstrap)

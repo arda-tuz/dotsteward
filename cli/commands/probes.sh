@@ -3,7 +3,7 @@
 #
 # Usage: dotsteward probes (--generation PATH | --manifest FILE --path-prefix DIR)
 #
-# Runs the probe registry (SPEC 8.2) of the instance's check profile
+# Runs the probe registry of the instance's check profile
 # (profiles.check, the profile of checks.<system>.home that the gate builds):
 #   --generation PATH   a built generation: its manifest
 #                       PATH/home-path/share/dotsteward/manifest.json, its

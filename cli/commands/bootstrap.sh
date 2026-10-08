@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # summary: Bootstrap stage 1 (run by ./bootstrap.sh once Nix is installed)
 #
-# Port of bootstrap.sh:91-99 (SPEC 6.2, 10.2). Stage 0 is the instance's
+# The second stage of the instance bootstrap. Stage 0 is the instance's
 # ./bootstrap.sh (the framework's template/bootstrap.sh): preflight,
 # backups, prerequisites and the verified Nix install, then
 # `exec .dotsteward/cli.sh bootstrap --profile P --stage 1`. Stage 1 runs,
@@ -13,7 +13,7 @@
 #   2. rebuild --profile P --switch
 #   3. login-shell set --profile P
 #   4. the desktopApply hooks of the switched generation's manifest (fresh
-#      mode; adopt mode skips them with one line, D14)
+#      mode; adopt mode skips them with one line)
 #   5. e2e --profile P
 #   6. the final message
 # The first failing step stops stage 1 with its exit status (3 from the

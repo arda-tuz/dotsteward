@@ -1,13 +1,12 @@
-# Skill contract (tests/skills, SPEC 9.1, 9.5, 12.4 C1-C10): the self-tests
-# of the checks and of tools/gen-skills-manifest.sh, the contract of the
-# three framework skills and the generated skills/manifest.json (C1-C9),
-# once all four exist, and, once plugins/dotsteward/skills/dotsteward-init
-# exists, the contract of the plugin skill and the plugin files (C1-C6,
-# C10). Both are probed at evaluation time because those skills land after
-# their contract tests: the framework skills together with their manifest,
-# the plugin skill independently of them; `bash tests/run.sh tests/skills`
-# always runs everything.
-# Then shellcheck over the generator, the checks and their stand-in CLI.
+# Skill contract (tests/skills): the self-tests of the checks and of
+# tools/gen-skills-manifest.sh, the contract of the three framework skills and
+# the generated skills/manifest.json, once all four exist, and, once
+# plugins/dotsteward/skills/dotsteward-init exists, the contract of the plugin
+# skill and the plugin files. Both are probed at evaluation time because those
+# skills land after their contract tests: the framework skills together with
+# their manifest, the plugin skill independently of them; `bash tests/run.sh
+# tests/skills` always runs everything. Then shellcheck over the generator, the
+# checks and their stand-in CLI.
 {
   pkgs,
   lib,

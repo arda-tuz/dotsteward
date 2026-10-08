@@ -45,8 +45,8 @@ Any other option, or a value that is not a boolean, fails the evaluation with a 
 
 The component adds no probe, E2E command, hook, backup path or managed link: the application owns its files, and the settings target is backed up by the settings engine.
 
-## Verification (catalog facts, SPEC section 14)
+## Verification (catalog facts)
 
 - darwin `app-archive` download URL and version key: verified on 2026-10-06 from the official update API (`https://update.code.visualstudio.com/api/update/darwin-arm64/stable/latest`, `productVersion` 1.140.0). The version-addressed URL `https://update.code.visualstudio.com/1.140.0/darwin-arm64/stable` redirects to the API's file `VSCode-darwin-arm64.zip`; the download's size (317901801 bytes) and SHA-256 equal the pin and the API's `sha256hash`; its root is `Visual Studio Code.app`, whose `Contents/Info.plist` has `CFBundleShortVersionString` 1.140.0 (equal to `productVersion`), and the launcher is `Contents/Resources/app/bin/code`. The `app-archive` method is therefore enabled on darwin (the fallback, `external` only, is not needed).
 - Linux `deb`: verified on 2026-10-06 from the same API (`linux-deb-x64`): the version-addressed URL redirects to the API's file, its size (241278114 bytes) and SHA-256 equal the pin and `sha256hash`, and its control fields are `Package: code`, `Architecture: amd64`, `Version: 1.140.0-<build>`.
-- JSONC handling of the settings file: verified by the settings engine's tests with commented fixtures (P2-15) and by this component's end-to-end settings test.
+- JSONC handling of the settings file: verified by the settings engine's tests with commented fixtures and by this component's end-to-end settings test.

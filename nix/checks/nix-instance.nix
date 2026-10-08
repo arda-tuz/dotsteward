@@ -78,7 +78,7 @@ let
     pkgs.testers.testBuildFailure
       (fixtures.instance { root = lintRoot; }).checks.x86_64-linux.instance-contract;
 
-  # The complete instance with personal content (SPEC 11.2: instance scans
+  # The complete instance with personal content (instance scans
   # apply the generic secret rules and [privacy], never the home path,
   # e-mail, private address or non-ASCII rules of the framework policy): a
   # home path of a user the framework policy does not allow, a personal

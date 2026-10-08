@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # summary: Verify this machine against the instance: the end-to-end checks of a profile
 #
-# The E2E runner (SPEC 8.3). Checks, in run order, each with an id
+# The E2E runner. Checks, in run order, each with an id
 # (<component>:<check-name> or core:<check-name>) that --list prints:
 #    1. flags, configuration, profile, the Nix environment, the shape of
 #       the manifest sections the checks read (a setup error finding on
@@ -40,7 +40,7 @@
 #   12. the success line
 # Hooks run for the components active in the profile, in [components]
 # order, then declaration order, when their profiles include the profile,
-# with the hook environment (SPEC 8.4) and DOTSTEWARD_CHECK_ONLY=1. A check
+# with the hook environment and DOTSTEWARD_CHECK_ONLY=1. A check
 # with nothing to verify is not listed and does not run: no commands, no
 # managed links, no agent rules source or targets, no files, no settings
 # buffer, no login shell; --skip-repo-checks drops step 9.

@@ -1,4 +1,5 @@
-# D20: an instance's checks.<system>.manifest-consistent passes when the
+# The manifest never depends on the profile: an instance's
+# checks.<system>.manifest-consistent passes when the
 # manifest of every profile equals the check profile's and fails at
 # evaluation when a contract option depends on the profile. The consistent
 # fixture instances' checks are built (evaluated inside this flake); the
