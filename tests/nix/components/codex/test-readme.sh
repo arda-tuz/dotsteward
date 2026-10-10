@@ -5,7 +5,7 @@
 # used by lib/config.nix, and Python tomllib, used by the CLI) to the same
 # value, and the plugins example, used verbatim as the [components.codex]
 # section of an instance, reaches lib.mkInstance and the CLI as the plugin
-# list it documents.
+# list it documents, with the review row of its tracking entry.
 # shellcheck source=tests/nix/components/codex/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/components/codex/helpers.sh"
 
@@ -52,7 +52,9 @@ expected_plugins=$(jq -cS . <<'EOF'
   {
     "spec": "example-plugin@example-market",
     "minimumAt": "agent_tools.example-plugin.minimum_version",
-    "requiredSkillDirectories": ["alpha", "beta"]
+    "requiredSkillDirectories": ["alpha", "beta"],
+    "trackAt": "agent_tools.example-plugin",
+    "watched": ["plugins/example-plugin/.+"]
   }
 ]
 EOF
@@ -66,12 +68,15 @@ inst=$(codex_instance readme)
 awk '/^\[components\.codex\]$/ { exit } { print }' "$inst/workstation.toml" >"$inst/workstation.toml.new"
 cat "$plugins_block" >>"$inst/workstation.toml.new"
 mv -- "$inst/workstation.toml.new" "$inst/workstation.toml"
-codex_lock_set "$inst" agent_tools.example-plugin '{"minimum_version": "1.2.0"}'
+codex_lock_set "$inst" agent_tools.example-plugin \
+  '{"minimum_version": "1.2.0", "source": "https://github.com/example-org/example-marketplace", "observed_marketplace_revision": "0123456789abcdef0123456789abcdef01234567"}'
 
 # lib.mkInstance: the documented plugin list and the plugins hook.
 manifest=$(inst_json "storeless (homeOf ($(codex_expr "$inst")) \"x86_64-linux\" \"workstation\").dotsteward.manifest")
 json_check "$manifest" '.components[] | select(.name == "codex") | .options.plugins' "$expected_plugins"
 json_check "$manifest" '[.hooks.agents_post[] | select(.component == "codex") | .name]' '["plugins"]'
+json_check "$manifest" '[.pins.latest[] | select(.component == "codex" and .adapter == "git-compare") | .id]' \
+  '["agent_tools.example-plugin"]'
 
 # The CLI reads the same instance; its plugins hook (agents check) sees the
 # documented plugin and reports it missing without installing anything.

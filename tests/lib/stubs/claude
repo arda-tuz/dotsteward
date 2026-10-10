@@ -25,6 +25,12 @@
 #   claude plugin enable NAME@MARKET --scope user
 #                                enables an installed plugin (succeeds
 #                                without a change when "plugins" is set)
+#   claude mcp get NAME          the server NAME of the state value
+#                                "mcp-servers" ({NAME: VARIABLE}): "Status:
+#                                Connected" when VARIABLE is set and not
+#                                empty in the stub's environment (an empty
+#                                VARIABLE needs nothing), else "Status: Failed
+#                                to connect"; an unknown NAME fails
 # --version prints the state value "version" (default "2.0.0 (Claude Code)"),
 # --help the state value "help"; any other call succeeds silently. Routes and
 # overrides apply (see tests/lib/harness.sh).
@@ -133,6 +139,22 @@ if [[ ${1:-} == plugin && ${2:-} == enable ]]; then
   fi
   update "$installed" --arg id "$spec" 'map(if .id == $id then .enabled = true else . end)'
   printf 'Successfully enabled plugin: %s (scope: user)\n' "$spec"
+  exit 0
+fi
+
+if [[ ${1:-} == mcp && ${2:-} == get ]]; then
+  name=${3:-}
+  servers=$(ds_stub_value mcp-servers '{}')
+  if ! jq -e --arg name "$name" 'has($name)' >/dev/null <<<"$servers"; then
+    printf 'No MCP server named "%s".\n' "$name" >&2
+    exit 1
+  fi
+  variable=$(jq -r --arg name "$name" '.[$name]' <<<"$servers")
+  status="Failed to connect"
+  if [[ -z $variable || -n ${!variable:-} ]]; then
+    status=Connected
+  fi
+  printf '%s:\n  Scope: Dynamic config (from command line)\n  Status: %s\n  Type: http\n' "$name" "$status"
   exit 0
 fi
 
