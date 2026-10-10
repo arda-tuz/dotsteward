@@ -29,14 +29,24 @@
 #   marketplace = "OWNER/REPO"                   # optional
 #   minimumAt = "<versions.lock.json path>"      # optional
 #   requiredFiles = ["<relative path>", ...]     # optional
+#   mcpServers = ["<server>", ...]               # optional
 #   trackAt = "<versions.lock.json path>"        # optional, with watched
 #   watched = ["<path pattern>", ...]
-# A non-empty list adds the agentsPost hook plugins.sh, which adds missing
-# marketplaces and installs or enables missing plugins at user scope (agents
-# install) and verifies every listed one (both modes). Each trackAt entry
-# (source and observed_marketplace_revision) adds a git-compare review row
-# of the marketplace for its watched paths, with every method. Invalid
-# options fail the evaluation with every problem listed.
+#   [[components.claude-code.options.launchEnvironment]]   # one per variable
+#   name = "<VARIABLE>"
+#   command = ["<program>", "<argument>", ...]
+# A non-empty plugin list adds the agentsPost hook plugins.sh, which adds
+# missing marketplaces and installs or enables missing plugins at user scope
+# (agents install) and verifies every listed one (both modes). Each trackAt
+# entry (source and observed_marketplace_revision) adds a git-compare review
+# row of the marketplace for its watched paths, with every method
+# (lib/plugin-tracking.nix). With the shell component, a non-empty
+# launchEnvironment adds the ~/.zshrc block claude-code-launch-environment
+# (order 75): a claude function that runs each command at every launch and
+# passes its output to that claude process only. A launch environment or MCP
+# servers add the E2E hook claude-login-zsh (e2e-login-zsh.sh) for the
+# profiles of the shell component. Invalid options fail the evaluation with
+# every problem listed.
 {
   config,
   lib,
@@ -142,22 +152,32 @@ let
   # --- options ------------------------------------------------------------------
 
   componentOptions = component.options;
+  tracking = dotsteward.lib.pluginTracking { inherit pins; };
+  shell =
+    config.dotsteward.components.shell or {
+      enable = false;
+      profiles = null;
+    };
   plugins = componentOptions.plugins or [ ];
   pluginList = if isList plugins then plugins else [ ];
 
-  knownOptions = [ "plugins" ];
+  knownOptions = [
+    "plugins"
+    "launchEnvironment"
+  ];
   knownPluginKeys = [
     "spec"
     "marketplace"
     "minimumAt"
     "requiredFiles"
-    "trackAt"
-    "watched"
-  ];
+    "mcpServers"
+  ]
+  ++ tracking.keys;
 
   specPattern = "[A-Za-z0-9._-]+@[A-Za-z0-9._-]+";
   repoPattern = "[A-Za-z0-9._-]+/[A-Za-z0-9._-]+";
-  githubUrlPattern = "https://github[.]com/${repoPattern}";
+  serverPattern = "[A-Za-z0-9._-]+";
+  variablePattern = "[A-Z_][A-Z0-9_]*";
   lockPathPattern = "[A-Za-z0-9_][A-Za-z0-9_+-]*([.][A-Za-z0-9_][A-Za-z0-9_+-]*)*";
   isLockPath = value: isString value && match lockPathPattern value != null;
   # A path inside the plugin directory: relative, no empty, . or .. segment.
@@ -176,8 +196,7 @@ let
         ".."
       ]
     ) segments;
-  isPatternList =
-    value: isList value && value != [ ] && lib.all (item: isString item && item != "") value;
+  isArgv = value: isList value && value != [ ] && lib.all (item: isString item && item != "") value;
 
   # The lock value at a dotted path, or null when the path is missing.
   lockAt =
@@ -237,35 +256,22 @@ let
             ) files
           )
       );
-      trackProblems = lib.optionals (plugin ? trackAt) (
+      serverProblems = lib.optionals (plugin ? mcpServers) (
         let
-          path = plugin.trackAt;
-          found = lockAt path;
-          entry = found.value;
-          source = entry.source or null;
-          revision = entry.observed_marketplace_revision or null;
+          servers = plugin.mcpServers;
         in
-        if !isLockPath path then
-          [ "${at}.trackAt must be a versions.lock.json path, got ${toJSON path}" ]
-        else if found == null then
-          [ "${at}.trackAt: versions.lock.json lacks ${path}" ]
-        else if !isAttrs entry then
-          [
-            "${at}.trackAt: versions.lock.json ${path} must be an entry with source and observed_marketplace_revision"
-          ]
+        if !isList servers then
+          [ "${at}.mcpServers must be a list of server names" ]
         else
-          lib.optional (!(isString source && match githubUrlPattern source != null))
-            "${at}.trackAt: versions.lock.json ${path}.source must be a GitHub repository URL https://github.com/OWNER/REPO"
-          ++
-            lib.optional (!(isString revision && match "[0-9a-f]{40}" revision != null))
-              "${at}.trackAt: versions.lock.json ${path}.observed_marketplace_revision must be a 40-digit commit"
+          lib.concatLists (
+            lib.imap0 (
+              position: server:
+              lib.optional (
+                !(isString server && match serverPattern server != null)
+              ) "${at}.mcpServers[${toString position}] must be a plain server name, got ${toJSON server}"
+            ) servers
+          )
       );
-      watchedProblems =
-        if plugin ? watched then
-          lib.optional (!isPatternList plugin.watched) "${at}.watched must be a list of path patterns"
-          ++ lib.optional (!(plugin ? trackAt)) "${at}.watched needs trackAt"
-        else
-          lib.optional (plugin ? trackAt) "${at}.trackAt needs watched, a non-empty list of path patterns";
     in
     if !isAttrs plugin then
       [ "${at} must be a table" ]
@@ -278,8 +284,73 @@ let
       ++ map (key: "${at} has unknown key ${key} (known: ${lib.concatStringsSep ", " knownPluginKeys})") (
         filter (key: !elem key knownPluginKeys) (attrNames plugin)
       )
-      ++ trackProblems
-      ++ watchedProblems;
+      ++ serverProblems
+      ++ tracking.problems at plugin;
+
+  # --- launchEnvironment -----------------------------------------------------------
+
+  launch = componentOptions.launchEnvironment or [ ];
+  launchList = if isList launch then launch else [ ];
+  knownLaunchKeys = [
+    "name"
+    "command"
+  ];
+  isVariable = value: isString value && match variablePattern value != null;
+  isLaunchEntry =
+    entry: isAttrs entry && isVariable (entry.name or null) && isArgv (entry.command or null);
+
+  launchProblems =
+    index: entry:
+    let
+      at = "options.launchEnvironment[${toString index}]";
+      variable = entry.name or null;
+      duplicate =
+        isVariable variable
+        && lib.any (other: isAttrs other && (other.name or null) == variable) (lib.take index launchList);
+    in
+    if !isAttrs entry then
+      [ "${at} must be a table" ]
+    else
+      lib.optional (
+        !isVariable variable
+      ) "${at}.name must be an environment variable name ([A-Z_][A-Z0-9_]*), got ${toJSON variable}"
+      ++ lib.optional duplicate "${at}.name ${variable} is listed twice"
+      ++ lib.optional (
+        !isArgv (entry.command or null)
+      ) "${at}.command must be a non-empty list of non-empty strings (the argv of a command)"
+      ++ map (key: "${at} has unknown key ${key} (known: ${lib.concatStringsSep ", " knownLaunchKeys})") (
+        filter (key: !elem key knownLaunchKeys) (attrNames entry)
+      );
+
+  # Single quotes for zsh, always, so the block does not depend on how a
+  # library function quotes.
+  quote = argument: "'" + lib.replaceStrings [ "'" ] [ "'\\''" ] argument + "'";
+
+  launchBlock =
+    let
+      entries = filter isLaunchEntry launchList;
+      variableLines =
+        entry:
+        let
+          variable = entry.name;
+          argv = lib.concatMapStringsSep " " quote entry.command;
+        in
+        "  if [[ -z \${${variable}:-} ]]; then\n"
+        + "    local -x ${variable}\n"
+        + "    ${variable}=\"$(${argv} </dev/null 2>/dev/null)\" || ${variable}=\"\"\n"
+        + "    [[ -n \$${variable} ]] || unset ${variable}\n"
+        + "  fi\n";
+    in
+    "# The launch environment of the claude-code component: each variable comes\n"
+    + "# from its command at every launch of claude and reaches only that process.\n"
+    + "claude() {\n"
+    + lib.concatMapStrings variableLines entries
+    + "  command claude \"$@\"\n"
+    + "}\n";
+
+  hasServers = lib.any (
+    plugin: isAttrs plugin && isList (plugin.mcpServers or null) && plugin.mcpServers != [ ]
+  ) pluginList;
 
   optionProblems =
     map (key: "unknown option ${key} (known: ${lib.concatStringsSep ", " knownOptions})") (
@@ -290,31 +361,19 @@ let
         [ "options.plugins must be a list of tables" ]
       else
         lib.concatLists (genList (index: pluginProblems index (lib.elemAt plugins index)) (length plugins))
+    )
+    ++ (
+      if !isList launch then
+        [ "options.launchEnvironment must be a list of tables" ]
+      else
+        lib.concatLists (genList (index: launchProblems index (lib.elemAt launch index)) (length launch))
     );
-
-  # A review row per tracked plugin: the marketplace changed a watched path
-  # since the observed revision. Only valid entries; invalid ones fail the
-  # evaluation through the assertions.
-  trackedPlugins = filter (
-    plugin:
-    isAttrs plugin
-    && plugin ? trackAt
-    && isLockPath plugin.trackAt
-    && isPatternList (plugin.watched or null)
-  ) pluginList;
-  pluginLatest = map (plugin: {
-    id = plugin.trackAt;
-    adapter = "git-compare";
-    at = plugin.trackAt;
-    repo_at = ".source";
-    revision_at = ".observed_marketplace_revision";
-    inherit (plugin) watched;
-  }) trackedPlugins;
 
   # The same on every system of the instance.
   instancePins = {
     rules = officialBinaryPins.rules ++ lib.optionals debOnLinux debPins.rules;
-    latest = officialBinaryPins.latest ++ lib.optionals debOnLinux debPins.latest ++ pluginLatest;
+    latest =
+      officialBinaryPins.latest ++ lib.optionals debOnLinux debPins.latest ++ tracking.latest pluginList;
   };
 in
 {
@@ -401,7 +460,23 @@ in
       script = toString ./plugins.sh;
     };
 
+    # The E2E hook runs in an interactive login zsh, so it exists only with
+    # the shell component, for its profiles.
+    checks.e2e = lib.optional (shell.enable && (launchList != [ ] || hasServers)) {
+      name = "claude-login-zsh";
+      script = ./e2e-login-zsh.sh;
+      phase = "main";
+      inherit (shell) profiles;
+    };
+
     docs = ./README.md;
+  };
+
+  dotsteward.shell.zshrc.blocks = lib.mkIf (component.enable && shell.enable && launchList != [ ]) {
+    claude-code-launch-environment = {
+      order = 75;
+      text = launchBlock;
+    };
   };
 
   assertions = lib.optionals component.enable (

@@ -2,7 +2,7 @@
 
 Claude Code, the coding agent CLI (`claude`), on Linux and darwin, with its
 agent rules file, skill link root, settings targets and, optionally, Claude
-Code plugins.
+Code plugins and a launch environment.
 
 Enable it in `workstation.toml`:
 
@@ -153,6 +153,7 @@ spec = "example-plugin@example-market"
 marketplace = "example-org/example-marketplace"
 minimumAt = "agent_tools.example-plugin.minimum_version"
 requiredFiles = [".claude-plugin/plugin.json", "skills/example/SKILL.md"]
+mcpServers = ["example"]
 trackAt = "agent_tools.example-plugin"
 watched = ["plugins/example-plugin/.+"]
 ```
@@ -166,6 +167,7 @@ equivalent, but TOML 1.0 requires each inline table on a single line.
 | `marketplace` | no | the GitHub repository `OWNER/REPO` of the marketplace; it is added when Claude Code does not list it. Without it, the marketplace must be known to Claude Code already |
 | `minimumAt` | no | a `versions.lock.json` path holding the minimum version: a version string, or an entry with `minimum_version` or `version`. Only for plugins with a dotted manifest version |
 | `requiredFiles` | no | paths relative to the installed plugin directory that must exist |
+| `mcpServers` | no | names of the plugin's MCP servers; the E2E check requires Claude Code to connect to each, `plugin:NAME:SERVER` (see Launch environment) |
 | `trackAt` | no | a `versions.lock.json` path of an entry with `source` (`https://github.com/OWNER/REPO` of the marketplace) and `observed_marketplace_revision` (the 40-digit commit the plugin was last reviewed at); needs `watched` |
 | `watched` | with `trackAt` | regular expressions (full match) of the marketplace paths that belong to the plugin |
 
@@ -210,9 +212,54 @@ the other pins.
 Invalid options (an unknown key, a malformed spec or marketplace, a
 duplicate, a lock path that is missing or holds no version, a tracking
 entry without a GitHub source or a 40-digit revision, `trackAt` without
-`watched` or the reverse, a required file outside the plugin directory)
-fail the evaluation with every problem listed. The plugins hook works with
-every method.
+`watched` or the reverse, a required file outside the plugin directory, an
+MCP server name with a slash) fail the evaluation with every problem listed.
+The plugins hook works with every method.
+
+## Launch environment
+
+Some plugins read a credential from the environment, for example an MCP
+server that sends a token from a variable. `options.launchEnvironment`
+passes such a value to Claude Code without exporting it in the shell:
+
+```toml
+[[components.claude-code.options.launchEnvironment]]
+name = "EXAMPLE_TOKEN"
+command = ["example-credential-helper", "token"]
+```
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | the environment variable (`[A-Z_][A-Z0-9_]*`), listed once |
+| `command` | yes | the argv of the command that prints the value, typically a credential helper the user is signed in to |
+
+With the shell component, the list adds the `~/.zshrc` block
+`claude-code-launch-environment` (order 75) that wraps `claude` in a zsh
+function. At every launch, for each variable that is not already set, the
+function runs its command (stdin closed, errors discarded) and exports the
+output to that `claude` process only (`local -x`); an empty or failed output
+leaves the variable unset. The shell itself never holds the value, so other
+programs started from it do not see it, and nothing is written to disk or
+to the repository. A value the caller already set is kept. `claude` started
+another way (an editor extension, a desktop launcher) does not get the
+value.
+
+A launch environment or `mcpServers` add the E2E check `claude-login-zsh`
+(`e2e-login-zsh.sh`, main phase, for the profiles of the shell component).
+In an interactive login zsh it checks that:
+
+- no launch variable is set in the shell (the check ignores the values of
+  its own caller);
+- `claude` is the launch environment function (with a launch environment);
+- every command prints a value; when one prints nothing (the user has not
+  signed in to the helper yet), the check logs a hint and stops without
+  failing;
+- `claude mcp get plugin:NAME:SERVER` reports `Connected` for every MCP
+  server of the plugins, through the function.
+
+Without the shell component there is no block and no check. Invalid entries
+(a lower-case or duplicate name, an empty command, an unknown key) fail the
+evaluation with every problem listed.
 
 ## Verification status
 

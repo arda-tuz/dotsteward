@@ -50,6 +50,7 @@ lib.fix (
     contract = import ./contract.nix args;
     pinAt = import ./pins.nix args;
     platform = import ./platform.nix args;
+    pluginTracking = import ./plugin-tracking.nix args;
 
     # The single version source (VERSION), validated as X.Y.Z.
     version =

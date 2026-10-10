@@ -77,6 +77,8 @@ enable = true
 spec = "example-plugin@example-market"
 minimumAt = "agent_tools.example-plugin.minimum_version"
 requiredSkillDirectories = ["alpha", "beta"]
+trackAt = "agent_tools.example-plugin"
+watched = ["plugins/example-plugin/.+"]
 ```
 
 The inline form `options = { plugins = [ { spec = "..." }, ... ] }` is
@@ -87,6 +89,8 @@ equivalent, but TOML 1.0 requires each inline table on a single line.
 | `spec` | yes | `NAME@MARKETPLACE`, as `codex plugin add` takes it |
 | `minimumAt` | no | a `versions.lock.json` path holding the minimum version: a version string, or an entry with `minimum_version` or `version` |
 | `requiredSkillDirectories` | no | directory names that must hold `skills/<name>/SKILL.md` inside the installed plugin |
+| `trackAt` | no | a `versions.lock.json` path of an entry with `source` (`https://github.com/OWNER/REPO` of the marketplace) and `observed_marketplace_revision` (the 40-digit commit the plugin was last reviewed at); needs `watched` |
+| `watched` | with `trackAt` | regular expressions (full match) of the marketplace paths that belong to the plugin |
 
 A non-empty list adds the `plugins` hook (`plugins.sh`, an agentsPost hook:
 agents phase, before validation). `dotsteward agents install` runs `codex plugin add SPEC`
@@ -101,10 +105,21 @@ enabled. Both `agents install` and `agents check` then verify every plugin:
   never upgraded silently;
 - every required skill directory has a `SKILL.md`.
 
-`agents check` never installs anything. Invalid options (an unknown key, a
-malformed spec, a duplicate, a lock path that is missing or holds no
-version, a directory name with a slash) fail the evaluation with every
-problem listed. The plugins hook works with both methods.
+`agents check` never installs anything.
+
+Each plugin with `trackAt` adds a `git-compare` row to `dotsteward pins
+latest`, with both methods: the row is a review when the marketplace changed
+a `watched` path since `observed_marketplace_revision`. After reviewing the
+change, move the revision to the commit the row reports (and raise the
+minimum when the plugin version moved); `dotsteward-update` does this with
+the other pins. The tracking entry can hold the minimum too, as in the
+example (`agent_tools.example-plugin.minimum_version`).
+
+Invalid options (an unknown key, a malformed spec, a duplicate, a lock path
+that is missing or holds no version, a directory name with a slash, a
+tracking entry without a GitHub source or a 40-digit revision, `trackAt`
+without `watched` or the reverse) fail the evaluation with every problem
+listed. The plugins hook works with both methods.
 
 ## Verification
 

@@ -83,10 +83,17 @@ The plugins option (README.md, "Plugins") relies on:
 - `claude plugin marketplace add OWNER/REPO`,
   `claude plugin install NAME@MARKETPLACE --scope user` and
   `claude plugin enable NAME@MARKETPLACE --scope user`;
-- the plugin manifest `.claude-plugin/plugin.json` with `version`.
+- the plugin manifest `.claude-plugin/plugin.json` with `version`;
+- `claude mcp get plugin:NAME:SERVER` (the E2E check of `mcpServers`): a
+  line `Status: <mark> Connected` for a connected server, another status
+  text otherwise, and the server name `plugin:<plugin name>:<server>` for
+  the servers of a plugin.
 
-A change in any of them needs `plugins.sh`, the `claude` test stub and
-`tests/nix/components/claude-code/test-plugins.sh` updated together.
+A change in any of them needs `plugins.sh` or `e2e-login-zsh.sh`, the
+`claude` test stub and `tests/nix/components/claude-code/test-plugins.sh`
+or `test-launch-environment.sh` updated together. The tracking validation
+and rows come from `lib/plugin-tracking.nix`, shared with the codex
+component.
 
 An instance refreshes a tracked plugin when its `git-compare` row is a
 review: read the changed paths of the marketplace, then move

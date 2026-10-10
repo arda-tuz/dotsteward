@@ -58,3 +58,9 @@ so a pin bump never downgrades a machine; it only raises the floor.
   `${CODEX_HOME:-~/.codex}/plugins/cache/<marketplace>/<name>/<version>/.codex-plugin/plugin.json`.
   A change in any of them needs `plugins.sh`, the `codex` test stub and
   `tests/nix/components/codex/test-plugins.sh` updated together.
+- Tracked plugins: an instance refreshes a plugin when its `git-compare`
+  row is a review: read the changed paths of the marketplace, then move
+  `observed_marketplace_revision` of the `trackAt` entry to the reported
+  head and, with `minimumAt`, raise the minimum to the new plugin version.
+  The validation and the rows come from `lib/plugin-tracking.nix`, shared
+  with the claude-code component.

@@ -48,7 +48,7 @@ A component module receives the usual Home Manager arguments (`config`,
 | `inputs` | The instance flake inputs. |
 | `profile` | The profile being built. Ordinary Home Manager options may depend on it; contract values must not. |
 | `username`, `homeDirectory` | The check identity. Activation uses the runtime identity, so never bake these into files that end up on another machine. |
-| `dotsteward` | `system`, `cfg` (the evaluated `workstation.toml`), `root` (the instance source) and `lib` (the dotsteward library, including `pinAt`). |
+| `dotsteward` | `system`, `cfg` (the evaluated `workstation.toml`), `root` (the instance source) and `lib` (the dotsteward library, including `pinAt` and `pluginTracking`). |
 
 ## Step by step
 

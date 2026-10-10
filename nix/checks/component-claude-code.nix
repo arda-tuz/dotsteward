@@ -5,11 +5,12 @@
 # check` on an instance that merged the seed, the install block driven
 # through the official-binary method of the CLI, the plugins option (its
 # validation, review rows and hook, end to end through the CLI against the
-# claude stub) and the README verification record.
+# claude stub), the launch environment block and its E2E hook in a real
+# login zsh, and the README verification record.
 # Fixture instances are evaluated with nix-instantiate against an isolated
 # store, so the sandbox needs Nix and the nixpkgs and home-manager sources;
-# a setup hook exports their paths. shellcheck covers the plugins hook and
-# the tests.
+# a setup hook exports their paths. shellcheck covers the hooks and the
+# tests.
 {
   self,
   pkgs,
@@ -33,10 +34,11 @@ cli.mkTestCheck {
   paths = [ "tests/nix/components/claude-code" ];
   nativeBuildInputs = [
     pkgs.nix
+    pkgs.zsh
     pkgs.shellcheck
     testEnv
   ];
   postCheck = ''
-    shellcheck -x modules/components/claude-code/plugins.sh tests/nix/components/claude-code/*.sh
+    shellcheck -x modules/components/claude-code/*.sh tests/nix/components/claude-code/*.sh
   '';
 }

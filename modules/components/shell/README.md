@@ -85,6 +85,7 @@ block text ends in a newline. The component's blocks:
 | 30 | `local-bin-path` | `~/.local/bin` first in a de-duplicated `PATH` |
 | 40 | `plugins` | the plugins enabled by the options |
 | 70 | `nix-profile-path` | `~/.nix-profile/bin` first in `PATH` when it exists |
+| 75 | `claude-code-launch-environment` | added by the claude-code component when its `launchEnvironment` option is set (its README, "Launch environment") |
 | 99 | `starship-init` | `eval "$(starship init zsh)"` unless `TERM` is `dumb` |
 
 An instance adds its own blocks between them by order, in `home.nix`, and

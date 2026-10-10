@@ -21,9 +21,14 @@
 #   spec = "NAME@MARKETPLACE"
 #   minimumAt = "<versions.lock.json path>"       # optional
 #   requiredSkillDirectories = ["<dir>", ...]     # optional
+#   trackAt = "<versions.lock.json path>"         # optional, with watched
+#   watched = ["<path pattern>", ...]
 # A non-empty list adds the agentsPost hook plugins.sh, which installs
 # missing plugins (agents install) and verifies every listed one (both
-# modes). Invalid options fail the evaluation with every problem listed.
+# modes). Each trackAt entry (source and observed_marketplace_revision)
+# adds a git-compare review row of the marketplace for its watched paths,
+# with every method (lib/plugin-tracking.nix). Invalid options fail the
+# evaluation with every problem listed.
 {
   config,
   lib,
@@ -91,13 +96,15 @@ let
   componentOptions = component.options;
   plugins = componentOptions.plugins or [ ];
   pluginList = if isList plugins then plugins else [ ];
+  tracking = dsLib.pluginTracking { inherit pins; };
 
   knownOptions = [ "plugins" ];
   knownPluginKeys = [
     "spec"
     "minimumAt"
     "requiredSkillDirectories"
-  ];
+  ]
+  ++ tracking.keys;
 
   specPattern = "[A-Za-z0-9._-]+@[A-Za-z0-9._-]+";
   lockPathPattern = "[A-Za-z0-9_][A-Za-z0-9_+-]*(\\.[A-Za-z0-9_][A-Za-z0-9_+-]*)*";
@@ -174,7 +181,8 @@ let
       ++ lib.optional (!validSpec) "${at}.spec must look like NAME@MARKETPLACE, got ${toJSON spec}"
       ++ lib.optional duplicate "${at}.spec ${spec} is listed twice"
       ++ minimumProblems
-      ++ skillProblems;
+      ++ skillProblems
+      ++ tracking.problems at plugin;
 
   optionProblems =
     map (key: "unknown option ${key} (known: ${lib.concatStringsSep ", " knownOptions})") (
@@ -225,14 +233,16 @@ in
         at = pinOf platformName;
         url_contains = "https://github.com/${repo}/releases/download/${tagPrefix}{.version}/${releases.${platformName}.asset}";
       }) pinnedPlatforms;
-      latest = map (platformName: {
-        id = pinOf platformName;
-        adapter = "github-release";
-        inherit repo;
-        tag_prefix = tagPrefix;
-        at = pinOf platformName;
-        inherit (releases.${platformName}) asset;
-      }) pinnedPlatforms;
+      latest =
+        map (platformName: {
+          id = pinOf platformName;
+          adapter = "github-release";
+          inherit repo;
+          tag_prefix = tagPrefix;
+          at = pinOf platformName;
+          inherit (releases.${platformName}) asset;
+        }) pinnedPlatforms
+        ++ tracking.latest pluginList;
     };
 
     agentRulesTargets = [
