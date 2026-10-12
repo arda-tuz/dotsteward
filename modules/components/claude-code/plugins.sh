@@ -7,6 +7,7 @@
 #   [[components.claude-code.options.plugins]]   # one table per plugin
 #   spec = "NAME@MARKETPLACE"
 #   marketplace = "OWNER/REPO"                   # optional
+#   autoUpdate = true                            # optional, needs marketplace
 #   minimumAt = "<versions.lock.json path>"      # optional
 #   requiredFiles = ["<relative path>", ...]     # optional
 #   trackAt = "<versions.lock.json path>"        # read by the pins engine
@@ -18,9 +19,16 @@
 # `claude plugin list --json` does not list at user scope, and `claude plugin
 # enable SPEC --scope user` for one listed there but disabled. It never
 # confirms a command a marketplace declares: such a plugin is installed once
-# by hand. Both modes then verify every plugin:
+# by hand. Claude Code updates a third-party marketplace and its plugins in
+# the background only when extraKnownMarketplaces.NAME.autoUpdate is true in
+# the user's settings.json, and `claude plugin marketplace add` leaves the key
+# out; so install also writes it for every marketplace an entry names with
+# `marketplace`: true, or false for an entry with autoUpdate = false. The
+# merge keeps every other key of the file and writes nothing when the value
+# is already right. Both modes then verify every plugin:
 #   - a marketplace it names is listed with that name, from that GitHub
-#     repository;
+#     repository, and has the autoUpdate value the entry asks for in
+#     ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json;
 #   - it is listed at user scope and enabled, with an existing install
 #     directory (installPath);
 #   - with minimumAt, the listed version is a dotted version, the plugin
@@ -104,6 +112,50 @@ ensure_marketplace() {
     die "claude marketplace $market is added from $(jq -r '"\(.source // "unknown") \(.repo // .url // .path // "")"' <<<"$entry"), not from github $repo"
 }
 
+# ensure_auto_update NAME REPO WANTED: verifies (check mode) or sets (install
+# mode) extraKnownMarketplaces.NAME.autoUpdate in the user's settings.json.
+# The merge keeps every other key and the declared source; a missing file is
+# created with mode 0644.
+ensure_auto_update() {
+  local market=$1 repo=$2 wanted=$3 file current body updated tmp
+  file=${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json
+  current='unset'
+  body='{}'
+  if [[ -e $file ]]; then
+    jq -e 'type == "object"' "$file" >/dev/null 2>&1 || die "$file is not valid JSON (a JSON object is needed)"
+    body=$(<"$file")
+    # shellcheck disable=SC2016 # a jq program: $market is a jq variable
+    current=$(jq -r --arg market "$market" '
+      (.extraKnownMarketplaces // {}) as $known
+      | if ($known | type) != "object" then error("extraKnownMarketplaces is not an object") else . end
+      | ($known[$market] // {}) as $entry
+      | if ($entry | type) != "object" then error("extraKnownMarketplaces." + $market + " is not an object") else . end
+      | $entry.autoUpdate | if . == null then "unset" elif type == "boolean" then tostring else "invalid" end' <<<"$body") ||
+      die "$file: cannot read extraKnownMarketplaces.$market"
+  fi
+  if [[ $current != "$wanted" ]]; then
+    [[ $check_only != 1 ]] ||
+      die "claude marketplace $market: autoUpdate is $current in $file, expected $wanted; run 'dotsteward agents install --profile $profile'"
+    log "claude marketplace $market: setting autoUpdate to $wanted in $file"
+    # shellcheck disable=SC2016 # a jq program: the $names are jq variables
+    updated=$(jq --arg market "$market" --arg repo "$repo" --argjson wanted "$wanted" '
+      (.extraKnownMarketplaces // {}) as $known
+      | .extraKnownMarketplaces = $known + {($market):
+          ({ source: { source: "github", repo: $repo } } + ($known[$market] // {}) + { autoUpdate: $wanted })}' <<<"$body") ||
+      die "$file: cannot set extraKnownMarketplaces.$market.autoUpdate"
+    mkdir -p -- "${file%/*}"
+    tmp=$(mktemp "$file.XXXXXX")
+    if [[ -e $file ]]; then
+      cp -p -- "$file" "$tmp"
+    else
+      chmod 0644 "$tmp"
+    fi
+    printf '%s\n' "$updated" >"$tmp"
+    mv -f -- "$tmp" "$file"
+  fi
+  log "claude marketplace $market: autoUpdate $wanted verified"
+}
+
 # ensure_plugin PLUGIN_JSON: installs (install mode) and verifies one entry.
 ensure_plugin() {
   local plugin=$1 spec market repo entry version dir manifest manifest_version minimum_at minimum file
@@ -117,6 +169,7 @@ ensure_plugin() {
     [[ $repo =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] ||
       die "claude plugin $spec: marketplace must be a GitHub repository OWNER/REPO: $repo"
     ensure_marketplace "$market" "$repo"
+    ensure_auto_update "$market" "$repo" "$(jq -r 'if has("autoUpdate") then .autoUpdate else true end' <<<"$plugin")"
   fi
 
   entry=$(listed_plugin "$spec")

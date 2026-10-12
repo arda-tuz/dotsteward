@@ -132,7 +132,7 @@ assert_inst_fails "$(username "$invalid")" \
   '- dotsteward: component claude-code: options.plugins[2].requiredFiles[0] must be a relative path inside the plugin, got "../escape"' \
   '- dotsteward: component claude-code: options.plugins[2].requiredFiles[1] must be a relative path inside the plugin, got "/abs/path"' \
   '- dotsteward: component claude-code: options.plugins[2].requiredFiles[2] must be a relative path inside the plugin, got ""' \
-  "- dotsteward: component claude-code: options.plugins[2] has unknown key extra (known: spec, marketplace, minimumAt, requiredFiles, mcpServers, trackAt, watched)" \
+  "- dotsteward: component claude-code: options.plugins[2] has unknown key extra (known: spec, marketplace, autoUpdate, minimumAt, requiredFiles, mcpServers, trackAt, watched)" \
   "- dotsteward: component claude-code: options.plugins[3].spec alpha@market is listed twice" \
   "- dotsteward: component claude-code: options.plugins[4].trackAt: versions.lock.json lacks agent_tools.missing" \
   "- dotsteward: component claude-code: options.plugins[5].trackAt: versions.lock.json agent_tools.half.source must be a GitHub repository URL https://github.com/OWNER/REPO" \

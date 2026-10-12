@@ -16,7 +16,7 @@ cc_hermetic_path
 ds_use_stubs claude
 
 settings=$HOME/.claude/settings.json
-repo=example-org/example-marketplace
+repo=example-org/example-market
 other_repo=example-org/other-marketplace
 
 agents() {
@@ -31,10 +31,19 @@ fresh_home() {
   : >"$DS_CALL_LOG"
 }
 
+# canned_markets: Claude Code already lists both marketplaces, with no
+# declaration of them in settings.json.
+canned_markets() {
+  jq -cn --arg repo "$repo" --arg other "$other_repo" \
+    '[{ name: "example-market", source: "github", repo: $repo, installLocation: "/home/user/.claude/plugins/marketplaces/example-market" },
+      { name: "other-marketplace", source: "github", repo: $other, installLocation: "/home/user/.claude/plugins/marketplaces/other-marketplace" }]' |
+    ds_stub_set claude marketplaces -
+}
+
 inst=$(cc_instance auto-update 'method = "external"
 options = { plugins = [
-  { spec = "alpha@example-market", marketplace = "example-org/example-marketplace" },
-  { spec = "beta@example-market", marketplace = "example-org/example-marketplace" },
+  { spec = "alpha@example-market", marketplace = "example-org/example-market" },
+  { spec = "beta@example-market", marketplace = "example-org/example-market" },
   { spec = "gamma@other-marketplace", marketplace = "example-org/other-marketplace", autoUpdate = false },
 ] }')
 cc_mirror "$inst"
@@ -46,7 +55,7 @@ assert_exit 0 agents install
 assert_contains "$DS_STDOUT" "claude marketplace example-market: setting autoUpdate to true in $settings"
 assert_contains "$DS_STDOUT" "claude marketplace other-marketplace: setting autoUpdate to false in $settings"
 assert_json "$settings" '.extraKnownMarketplaces["example-market"]
-  == { source: { source: "github", repo: "example-org/example-marketplace" }, autoUpdate: true }'
+  == { source: { source: "github", repo: "example-org/example-market" }, autoUpdate: true }'
 assert_json "$settings" '.extraKnownMarketplaces["other-marketplace"]
   == { source: { source: "github", repo: "example-org/other-marketplace" }, autoUpdate: false }'
 assert_exit 0 agents check
@@ -94,7 +103,7 @@ jq -n '{
   theme: "example-theme",
   env: { EXAMPLE: "1" },
   extraKnownMarketplaces: {
-    "example-market": { source: { source: "github", repo: "example-org/example-marketplace" }, note: "kept" },
+    "example-market": { source: { source: "github", repo: "example-org/example-market" }, note: "kept" },
     "unrelated-market": { source: { source: "github", repo: "example-org/unrelated" }, autoUpdate: false }
   }
 }' >"$settings"
@@ -108,16 +117,14 @@ assert_json "$settings" '.extraKnownMarketplaces["unrelated-market"]
 # A marketplace Claude Code already lists, with no settings.json yet, gets
 # the file created with the declaration.
 fresh_home
-jq -cn --arg repo "$repo" --arg other "$other_repo" \
-  '[{ name: "example-market", source: "github", repo: $repo, installLocation: "/home/user/.claude/plugins/marketplaces/example-market" },
-    { name: "other-marketplace", source: "github", repo: $other, installLocation: "/home/user/.claude/plugins/marketplaces/other-marketplace" }]' |
-  ds_stub_set claude marketplaces -
+canned_markets
 assert_exit 0 agents install
 assert_json "$settings" '.extraKnownMarketplaces["example-market"].autoUpdate == true'
 assert_eq 644 "$(stat -c %a "$settings")" "settings.json is created with mode 0644"
 
 # A settings.json that is not JSON is reported, never overwritten.
 fresh_home
+canned_markets
 printf 'not json\n' >"$settings"
 for mode in check install; do
   assert_exit 1 agents "$mode"

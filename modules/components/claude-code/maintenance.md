@@ -83,6 +83,11 @@ The plugins option (README.md, "Plugins") relies on:
 - `claude plugin marketplace add OWNER/REPO`,
   `claude plugin install NAME@MARKETPLACE --scope user` and
   `claude plugin enable NAME@MARKETPLACE --scope user`;
+- `extraKnownMarketplaces.NAME.autoUpdate` in the user's `settings.json`: a
+  boolean that turns the background refresh of a marketplace and its
+  installed plugins on or off, which `claude plugin marketplace add` leaves
+  out (the settings reference and the plugin discovery page document the key
+  and its defaults);
 - the plugin manifest `.claude-plugin/plugin.json` with `version`;
 - `claude mcp get plugin:NAME:SERVER` (the E2E check of `mcpServers`): a
   line `Status: <mark> Connected` for a connected server, another status

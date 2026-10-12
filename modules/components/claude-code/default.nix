@@ -27,6 +27,7 @@
 #   [[components.claude-code.options.plugins]]   # one table per plugin
 #   spec = "NAME@MARKETPLACE"
 #   marketplace = "OWNER/REPO"                   # optional
+#   autoUpdate = true                            # optional, needs marketplace
 #   minimumAt = "<versions.lock.json path>"      # optional
 #   requiredFiles = ["<relative path>", ...]     # optional
 #   mcpServers = ["<server>", ...]               # optional
@@ -36,8 +37,10 @@
 #   name = "<VARIABLE>"
 #   command = ["<program>", "<argument>", ...]
 # A non-empty plugin list adds the agentsPost hook plugins.sh, which adds
-# missing marketplaces and installs or enables missing plugins at user scope
-# (agents install) and verifies every listed one (both modes). Each trackAt
+# missing marketplaces, turns on their background auto-update (the default;
+# autoUpdate = false opts a marketplace out), and installs or enables missing
+# plugins at user scope (agents install), and verifies every listed one (both
+# modes). Each trackAt
 # entry (source and observed_marketplace_revision) adds a git-compare review
 # row of the marketplace for its watched paths, with every method
 # (lib/plugin-tracking.nix). With the shell component, a non-empty
@@ -58,9 +61,11 @@ let
   inherit (builtins)
     attrNames
     elem
+    elemAt
     filter
     genList
     isAttrs
+    isBool
     isList
     isString
     length
@@ -168,6 +173,7 @@ let
   knownPluginKeys = [
     "spec"
     "marketplace"
+    "autoUpdate"
     "minimumAt"
     "requiredFiles"
     "mcpServers"
@@ -196,6 +202,10 @@ let
         ".."
       ]
     ) segments;
+  # The marketplace name of a valid spec, and the auto-update value an entry
+  # asks for (true unless it says otherwise).
+  marketplaceOf = spec: elemAt (match "[^@]+@(.+)" spec) 0;
+  autoUpdateOf = plugin: if isBool (plugin.autoUpdate or null) then plugin.autoUpdate else true;
   isArgv = value: isList value && value != [ ] && lib.all (item: isString item && item != "") value;
 
   # The lock value at a dotted path, or null when the path is missing.
@@ -228,6 +238,35 @@ let
         plugin ? marketplace
         && !(isString plugin.marketplace && match repoPattern plugin.marketplace != null)
       ) "${at}.marketplace must be a GitHub repository OWNER/REPO, got ${toJSON plugin.marketplace}";
+      autoUpdateProblems =
+        lib.optional (
+          plugin ? autoUpdate && !isBool plugin.autoUpdate
+        ) "${at}.autoUpdate must be true or false, got ${toJSON plugin.autoUpdate}"
+        ++ lib.optional (
+          plugin ? autoUpdate && !(plugin ? marketplace)
+        ) "${at}.autoUpdate needs marketplace"
+        ++ lib.optionals (validSpec && plugin ? marketplace && isBool (plugin.autoUpdate or true)) (
+          let
+            market = marketplaceOf spec;
+            value = autoUpdateOf plugin;
+            declaresMarket =
+              other:
+              isAttrs other
+              && other ? marketplace
+              && isString (other.spec or null)
+              && match specPattern other.spec != null
+              && marketplaceOf other.spec == market;
+            clash = lib.findFirst (
+              position:
+              let
+                other = elemAt pluginList position;
+              in
+              declaresMarket other && autoUpdateOf other != value
+            ) null (lib.range 0 (index - 1));
+          in
+          lib.optional (clash != null)
+            "${at}.autoUpdate is ${toJSON value} but options.plugins[${toString clash}] sets ${toJSON (autoUpdateOf (elemAt pluginList clash))} for the marketplace ${market} (the default is true)"
+        );
       minimumProblems = lib.optionals (plugin ? minimumAt) (
         let
           path = plugin.minimumAt;
@@ -280,6 +319,7 @@ let
       ++ lib.optional duplicate "${at}.spec ${spec} is listed twice"
       ++ minimumProblems
       ++ marketplaceProblems
+      ++ autoUpdateProblems
       ++ fileProblems
       ++ map (key: "${at} has unknown key ${key} (known: ${lib.concatStringsSep ", " knownPluginKeys})") (
         filter (key: !elem key knownPluginKeys) (attrNames plugin)

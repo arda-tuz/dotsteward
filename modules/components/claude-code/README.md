@@ -151,6 +151,7 @@ enable = true
 [[components.claude-code.options.plugins]]
 spec = "example-plugin@example-market"
 marketplace = "example-org/example-marketplace"
+autoUpdate = true
 minimumAt = "agent_tools.example-plugin.minimum_version"
 requiredFiles = [".claude-plugin/plugin.json", "skills/example/SKILL.md"]
 mcpServers = ["example"]
@@ -165,6 +166,7 @@ equivalent, but TOML 1.0 requires each inline table on a single line.
 | --- | --- | --- |
 | `spec` | yes | `NAME@MARKETPLACE`, as `claude plugin install` takes it |
 | `marketplace` | no | the GitHub repository `OWNER/REPO` of the marketplace; it is added when Claude Code does not list it. Without it, the marketplace must be known to Claude Code already |
+| `autoUpdate` | no | `true` (the default) or `false`: whether Claude Code refreshes the marketplace and updates its installed plugins in the background after startup. Needs `marketplace`; every entry of one marketplace must ask for the same value |
 | `minimumAt` | no | a `versions.lock.json` path holding the minimum version: a version string, or an entry with `minimum_version` or `version`. Only for plugins with a dotted manifest version |
 | `requiredFiles` | no | paths relative to the installed plugin directory that must exist |
 | `mcpServers` | no | names of the plugin's MCP servers; the E2E check requires Claude Code to connect to each, `plugin:NAME:SERVER` (see Launch environment) |
@@ -181,6 +183,19 @@ agents phase, before validation). `dotsteward agents install`:
   `claude plugin enable SPEC --scope user` for one listed there but
   disabled.
 
+Claude Code leaves a third-party marketplace out of its background updates
+unless `extraKnownMarketplaces.NAME.autoUpdate` is `true` in the user's
+`settings.json` (`~/.claude/settings.json`, or the directory of
+`CLAUDE_CONFIG_DIR`), and `claude plugin marketplace add` declares the
+marketplace without that key. So `agents install` also sets the key for
+every marketplace an entry names with `marketplace`: `true` by default,
+`false` for an entry with `autoUpdate = false`. The merge keeps every other
+key of the file and the declared source, writes nothing when the value is
+already right, and creates a missing file with mode 0644. The value is
+managed: a toggle in the `/plugin` screen is put back by the next
+`agents install`, so opt out with `autoUpdate = false` in the instance
+instead.
+
 It never confirms a command a marketplace declares for a plugin (Claude Code
 asks a person for that): such a plugin is installed once by hand with
 `claude plugin install SPEC`, and the hook verifies it from then on. Both
@@ -189,6 +204,10 @@ asks a person for that): such a plugin is installed once by hand with
 - a marketplace it names is listed with the marketplace name of the spec,
   from that GitHub repository; a name taken by another source fails and is
   never replaced;
+- that marketplace has the `autoUpdate` value of its entries in
+  `settings.json` (`agents check` fails when the key is missing or differs,
+  and never writes it); a `settings.json` that is not a JSON object fails
+  and is never overwritten;
 - it is listed at user scope and enabled, with an existing install
   directory (`installPath`);
 - with `minimumAt`: the listed version is a dotted version, the plugin
