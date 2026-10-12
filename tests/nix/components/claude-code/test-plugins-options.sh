@@ -156,3 +156,26 @@ assert_inst_fails "$(username "$invalid")" \
 invalid=$(cc_instance invalid-list 'options = { plugins = "example-plugin@example-market" }')
 assert_inst_fails "$(username "$invalid")" \
   "- dotsteward: component claude-code: options.plugins must be a list of tables"
+
+# --- autoUpdate: a boolean of the marketplace, one value per marketplace -------------------
+
+auto=$(cc_instance auto-update 'method = "external"
+options = { plugins = [
+  { spec = "alpha@example-market", marketplace = "example-org/example-marketplace" },
+  { spec = "beta@example-market", marketplace = "example-org/example-marketplace", autoUpdate = true },
+  { spec = "gamma@other-market", marketplace = "example-org/other-marketplace", autoUpdate = false },
+] }')
+json_check "$(cc_entry "$(manifest "$auto")")" '[.options.plugins[] | .autoUpdate]' '[null,true,false]'
+
+invalid=$(cc_instance invalid-auto-update 'options = { plugins = [
+  { spec = "alpha@example-market", marketplace = "example-org/example-marketplace" },
+  { spec = "beta@example-market", marketplace = "example-org/example-marketplace", autoUpdate = false },
+  { spec = "gamma@other-market", marketplace = "example-org/other-marketplace", autoUpdate = "yes" },
+  { spec = "delta@third-market", autoUpdate = true },
+  { spec = "epsilon@fourth-market", marketplace = "example-org/fourth-marketplace", autoUpdate = false },
+  { spec = "zeta@fourth-market", marketplace = "example-org/fourth-marketplace", autoUpdate = false },
+] }')
+assert_inst_fails "$(username "$invalid")" \
+  "- dotsteward: component claude-code: options.plugins[1].autoUpdate is false but options.plugins[0] sets true for the marketplace example-market (the default is true)" \
+  '- dotsteward: component claude-code: options.plugins[2].autoUpdate must be true or false, got "yes"' \
+  "- dotsteward: component claude-code: options.plugins[3].autoUpdate needs marketplace"

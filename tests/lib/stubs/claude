@@ -8,7 +8,12 @@
 #   claude plugin marketplace add OWNER/REPO
 #                                adds a github marketplace named after the
 #                                state value "marketplace-name" (default: the
-#                                repository name)
+#                                repository name) and declares it in
+#                                ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/
+#                                settings.json as extraKnownMarketplaces.NAME
+#                                = {source: {source: "github", repo}}, without
+#                                autoUpdate (a third-party marketplace is not
+#                                updated automatically by default)
 #   claude plugin list --json    [{id, version, scope, enabled, installPath}]:
 #                                the state value "plugins" when set (a canned
 #                                list), else the plugins installed so far
@@ -86,6 +91,13 @@ if [[ ${1:-} == plugin && ${2:-} == marketplace && ${3:-} == add ]]; then
   market=$(ds_stub_value marketplace-name "${BASH_REMATCH[1]}")
   update "$markets" --arg name "$market" --arg repo "$repo" --arg location "$config_dir/plugins/marketplaces/$market" \
     '[.[] | select(.name != $name)] + [{name: $name, source: "github", repo: $repo, installLocation: $location}]'
+  settings=$config_dir/settings.json
+  mkdir -p "$config_dir"
+  [[ -f $settings ]] || printf '{}\n' >"$settings"
+  jq --arg name "$market" --arg repo "$repo" \
+    '.extraKnownMarketplaces[$name] = ((.extraKnownMarketplaces[$name] // {}) + {source: {source: "github", repo: $repo}})' \
+    "$settings" >"$settings.tmp"
+  mv -- "$settings.tmp" "$settings"
   printf 'Successfully added marketplace: %s\n' "$market"
   exit 0
 fi
