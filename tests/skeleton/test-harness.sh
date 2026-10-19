@@ -43,6 +43,9 @@ assert_contains "$(<"$DOTSTEWARD_OS_RELEASE")" "ID=ubuntu"
 assert_contains "$(<"$DOTSTEWARD_OS_RELEASE")" 'VERSION_ID="24.04"'
 assert_eq "example:x:1000:1000:example:$HOME:/bin/bash" "$("$DOTSTEWARD_PASSWD_CMD" example)"
 assert_eq 15.0 "$("$DOTSTEWARD_SW_VERS" -productVersion)"
+# APT sources and keyrings are written under the synthetic system root.
+assert_eq "$DS_SYSTEM_ROOT/etc/apt" "$DOTSTEWARD_APT_DIR"
+[[ -d $DOTSTEWARD_APT_DIR/sources.list.d && -d $DOTSTEWARD_APT_DIR/keyrings ]] || ds_fail "DOTSTEWARD_APT_DIR lacks sources.list.d or keyrings"
 # The machine facts of the derived gate parallelism: 32768 MiB and 16 CPUs.
 assert_eq "32768 16" "$DOTSTEWARD_MEMORY_MIB $DOTSTEWARD_CPU_COUNT"
 assert_contains "$("$DOTSTEWARD_SW_VERS")" "ProductName:"

@@ -68,7 +68,8 @@ assert_cc_eq '{
     "packageNames": ["claude-code"],
     "architecture": "amd64",
     "verifyAfterInstall": true,
-    "apt": []
+    "apt": [],
+    "aptSources": []
   }
 }' 'let e = ccEntry (cc { config = ccCase "method-deb"; }) "x86_64-linux"; in { inherit (e) method install; }' \
   "deb install block"
