@@ -491,17 +491,24 @@ _contribute_wait_run() {
   esac
 }
 
-# _contribute_wait_pr_checks PR: the checks of the pull request appear and
-# all pass (gh pr checks --watch).
+# _contribute_wait_pr_checks PR: the checks of the pushed commit appear on
+# the pull request and all pass (gh pr checks --watch). Right after a push
+# GitHub may still answer for the previous head, with its old checks, and
+# then report the new head before any of its checks is registered; both
+# count as not appeared yet.
 _contribute_wait_pr_checks() {
-  local pr=$1 interval appear timeout start count
+  local pr=$1 interval appear timeout start count head
   interval=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_POLL_SECONDS 15)
   appear=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS 300)
   timeout=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_CI_TIMEOUT_SECONDS 7200)
   start=$SECONDS
   while :; do
-    count=$(gh pr checks "$pr" --json name --jq length </dev/null 2>/dev/null) || count=0
-    [[ $count =~ ^[0-9]+$ ]] || count=0
+    count=0
+    head=$(gh pr view "$pr" --json headRefOid --jq .headRefOid </dev/null 2>/dev/null) || head=''
+    if [[ $head == "$CT_TEST_SHA" ]]; then
+      count=$(gh pr checks "$pr" --json name --jq length </dev/null 2>/dev/null) || count=0
+      [[ $count =~ ^[0-9]+$ ]] || count=0
+    fi
     ((count == 0)) || break
     ((SECONDS - start < appear)) ||
       _contribute_red "no CI check appeared on $pr within ${appear}s; publishing needs green CI, main is untouched"
