@@ -1,4 +1,4 @@
-# expect: components.shell.method: expected one of "nix", "official-binary", "deb", "app-archive", "external", got "apt"
+# expect: components.shell.method: expected one of "nix", "official-binary", "pypi", "deb", "app-archive", "external", got "apt"
 # expect: nix.systems[1]: expected one of "x86_64-linux", "aarch64-darwin", got "i686-linux"
 # expect: profiles.main.mode: expected one of "fresh", "adopt", got "keep"
 # expect: upstream.contribute: expected one of "fork", "owner", got "push"

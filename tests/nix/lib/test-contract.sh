@@ -4,13 +4,13 @@
 # shellcheck source=tests/nix/lib/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/lib/helpers.sh"
 
-assert_nix_eq '["nix","official-binary","deb","app-archive","external"]' 'dsLib.contract.methods'
+assert_nix_eq '["nix","official-binary","pypi","deb","app-archive","external"]' 'dsLib.contract.methods'
 assert_nix_eq '["deb","app-archive"]' 'dsLib.contract.systemMethods'
 assert_nix_eq '["linux","darwin"]' 'dsLib.contract.platforms'
 assert_nix_eq '["early","main","late"]' 'dsLib.contract.hookPhases'
 assert_nix_eq '["flake-inputs","nix-package-format","derive","download-pin","text-guard","no-literal","npm-bundle","skills-lock-mirror","minimum-version","asset-digest","nix-resolved","skill-digests"]' \
   'dsLib.contract.ruleKinds'
-assert_nix_eq '["github-release","npm","apt-index","deb-url","official-manifest","nix-release","channel-head","git-compare","skill-source","local-apt","manual","follows","framework"]' \
+assert_nix_eq '["github-release","npm","pypi","apt-index","deb-url","official-manifest","nix-release","channel-head","git-compare","skill-source","local-apt","manual","follows","framework"]' \
   'dsLib.contract.latestAdapters'
 
 # Defaults of a component that declares only its method.

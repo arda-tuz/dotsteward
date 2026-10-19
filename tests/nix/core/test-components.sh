@@ -57,3 +57,26 @@ assert_core_eq '"$HOME/.nix-profile/bin/zsh"' '(homeOf { config = "workstation";
 assert_core_eq 'null' '(homeOf { modules = componentModules; }).dotsteward.loginShell.path'
 assert_core_eq 'null' '(homeOf { }).dotsteward.loginShell.path'
 assert_core_eq '"/usr/local/bin/zsh"' '(homeOf { modules = [ { dotsteward.loginShell.path = "/usr/local/bin/zsh"; } ]; }).dotsteward.loginShell.path'
+
+# The pypi method installs outside Home Manager. With pathAppend, an active
+# pypi component adds the bin directory of its virtual environment to the
+# end of PATH in ~/.zshrc, once; without pathAppend, or where the component
+# is not active, there is no block.
+pypi_term() {
+  printf '{ dotsteward.components.example-term = { method = lib.mkForce "pypi"; install.pypi = { pin = "pypi.example-term"; distribution = "example-term"; requirements = builtins.toFile "requirements.txt" "example-term==1.0.0\\n"; venv = "~/.local/share/example-term/venv"; bin = [ "example-term" ]; pathAppend = %s; }; }; }' "$1"
+}
+expected_block='# example-term (pypi): the commands of its virtual environment, after every other PATH entry
+if [[ ":$PATH:" != *":$HOME/.local/share/example-term/venv/bin:"* ]]; then
+  export PATH="$PATH:$HOME/.local/share/example-term/venv/bin"
+fi
+'
+blocks() {
+  core_json "lib.mapAttrs (_: block: { inherit (block) order text; }) (homeOf ($1)).dotsteward.shell.zshrc.blocks" | jq -c .
+}
+assert_eq '["example-app"]' \
+  "$(example_names "{ config = \"workstation\"; modules = componentModules ++ [ $(pypi_term true) ]; }")" "pypi is not a Home Manager package"
+assert_eq "$(jq -cn --arg text "$expected_block" '{ "pypi-path-example-term": { order: 90, text: $text } }')" \
+  "$(blocks "{ config = \"workstation\"; modules = componentModules ++ [ $(pypi_term true) ]; }")" "pathAppend block"
+assert_eq '{}' "$(blocks "{ config = \"workstation\"; modules = componentModules ++ [ $(pypi_term false) ]; }")" "no pathAppend"
+assert_eq '{}' "$(blocks "{ config = \"workstation\"; profile = \"fresh\"; modules = componentModules ++ [ $(pypi_term true) ]; }")" \
+  "inactive profile"

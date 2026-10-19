@@ -68,3 +68,11 @@ in {
   json = builtins.fromJSON (builtins.unsafeDiscardStringContext package.text) == c.dotsteward.manifest;
 }")
 json_check "$actual" . '{"destination":"/share/dotsteward/manifest.json","json":true,"same":true}'
+
+# A pypi requirements file is a store path string like a hook script, so the
+# mirror names it <store>/... instead of a literal store path.
+pypi_term='{ dotsteward.components.example-term = { method = lib.mkForce "pypi"; install.pypi = { pin = "pypi.example-term"; distribution = "example-term"; requirements = fixtures + "/instance/hook.sh"; venv = "~/.local/share/example-term/venv"; }; }; }'
+assert_core_eq '[true]' "map (c: builtins.isString c.install.requirements) (lib.filter (c: c.name == \"example-term\") (homeOf { config = \"workstation\"; modules = componentModules ++ [ $pypi_term ]; }).dotsteward.manifest.components)" \
+  "pypi requirements are a string"
+assert_eq "[$hook]" "$(core_json "map (c: c.install.requirements) (lib.filter (c: c.name == \"example-term\") (homeOf { config = \"workstation\"; modules = componentModules ++ [ $pypi_term ]; }).dotsteward.manifest.components)" | jq -c .)" \
+  "pypi requirements are the store copy"

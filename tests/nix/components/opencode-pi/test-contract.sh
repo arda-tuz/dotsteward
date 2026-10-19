@@ -169,10 +169,10 @@ assert_eq "$(jq -S -n --argjson a "$pi_rules" --argjson b "$linux_rules" '$a + $
   "$(rules_of "$both" '{ method_by_platform.darwin = "external"; }')" "darwin external"
 assert_eq "$(jq -S . <<<"$pi_rules")" "$(rules_of "$both" '{ method = "external"; }')" "external everywhere"
 
-# The contract does not depend on the profile; the app-archive block
-# is unset (no default for its required fields) and never read.
+# The contract does not depend on the profile; the app-archive and pypi blocks
+# are unset (no default for their required fields) and never read.
 assert_op_eq 'true' 'let
-    defined = c: removeAttrs c [ "install" ] // { install = removeAttrs c.install [ "app-archive" ]; };
+    defined = c: removeAttrs c [ "install" ] // { install = removeAttrs c.install [ "app-archive" "pypi" ]; };
   in defined (component { }) == defined (component { profile = "fresh"; })' "same contract in every profile"
 
 # --- Latest declarations -------------------------------------------------------------
