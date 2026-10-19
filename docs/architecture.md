@@ -23,7 +23,7 @@ The framework never contains user data. Identity (username, home directory, repo
 - **Profile**: a named way to apply the instance. Each profile has a mode:
   - `fresh`: a new machine; system-level installs, system packages and desktop-level hooks run.
   - `adopt`: an existing machine; system-level phases are skipped and system-level components are reported as `not-managed` instead of being changed.
-- **Install methods**: `nix`, `official-binary` (checksummed release download), `deb` (Ubuntu), `app-archive` (macOS, into `~/Applications`), `external` (installed by something else; verify only). The instance chooses the method per component and platform.
+- **Install methods**: `nix`, `official-binary` (checksummed release download), `pypi` (a Python application in its own virtual environment), `deb` (Ubuntu), `app-archive` (macOS, into `~/Applications`), `external` (installed by something else; verify only). The instance chooses the method per component and platform.
 
 ## Layers
 

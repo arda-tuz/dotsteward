@@ -5,6 +5,10 @@
 # are null or contain the profile, and it supports the platform. Active
 # components whose resolved method is nix get install.nix.packages in
 # home.packages; the other methods run outside Home Manager (cli methods).
+# Active pypi components with install.pypi.pathAppend add the ~/.zshrc block
+# pypi-path-<name> (order 90), which appends the bin directory of their
+# virtual environment to PATH once, after every other entry, so its
+# interpreter and pip never shadow the user's own.
 {
   config,
   lib,
@@ -20,6 +24,21 @@ let
   platform = dotsteward.lib.platform.platformOf system;
   enabled = helpers.enabled cfg config.dotsteward.components;
   active = lib.filter ({ component, ... }: helpers.isActive profile platform component) enabled;
+
+  pypiPathBlock =
+    name: venv:
+    let
+      bin = "$HOME/${lib.removePrefix "~/" venv}/bin";
+    in
+    ''
+      # ${name} (pypi): the commands of its virtual environment, after every other PATH entry
+      if [[ ":$PATH:" != *":${bin}:"* ]]; then
+        export PATH="$PATH:${bin}"
+      fi
+    '';
+  pypiPathAppended = lib.filter (
+    { component, ... }: component.method == "pypi" && component.install.pypi.pathAppend
+  ) active;
 
   list =
     type: description:
@@ -63,6 +82,16 @@ in
 
     home.packages = lib.concatMap ({ component, ... }: component.install.nix.packages) (
       lib.filter ({ component, ... }: component.method == "nix") active
+    );
+
+    dotsteward.shell.zshrc.blocks = lib.listToAttrs (
+      map (
+        { name, component }:
+        lib.nameValuePair "pypi-path-${name}" {
+          order = 90;
+          text = pypiPathBlock name component.install.pypi.venv;
+        }
+      ) pypiPathAppended
     );
   };
 }

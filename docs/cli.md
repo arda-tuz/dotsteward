@@ -86,7 +86,7 @@ Usage: dotsteward agents install|check --profile PROFILE [--generation PATH]
                                         [--keep-going] [--json]
 
 install makes the agent tools and the skill layout of PROFILE match the
-instance: official-binary components, the canonical skill root
+instance: official-binary and pypi components, the canonical skill root
 ~/.agents/skills with its entries and link-root links, copies of missing
 instance skills, refreshed drifted copies (backed up first), removed
 dangling skill links and the agents hooks; then it validates. check runs

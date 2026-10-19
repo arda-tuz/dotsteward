@@ -20,6 +20,7 @@ let
   methods = [
     "nix"
     "official-binary"
+    "pypi"
     "deb"
     "app-archive"
     "external"
@@ -62,6 +63,7 @@ let
   latestAdapters = [
     "github-release"
     "npm"
+    "pypi"
     "apt-index"
     "deb-url"
     "official-manifest"
@@ -87,6 +89,11 @@ let
 
   lockPath = types.strMatching "[A-Za-z0-9_][A-Za-z0-9_+-]*(\\.[A-Za-z0-9_][A-Za-z0-9_+-]*)*" // {
     description = "versions.lock.json key path (dot separated)";
+  };
+
+  # A console script name: a plain file name.
+  consoleScript = types.strMatching "[A-Za-z0-9_][A-Za-z0-9_.+-]*" // {
+    description = "console script name";
   };
 
   method = types.enum methods;
@@ -227,6 +234,20 @@ let
         "sha256"
         "sha256+sigstore"
       ]) "Download verification.";
+    };
+    pypi = {
+      pin = option lockPath "Lock path of the pin; its version is the exact distribution version.";
+      distribution = option types.str "Distribution name the version is read from.";
+      requirements = option types.path "Hash-pinned requirements file installed with pip --require-hashes.";
+      python =
+        optionDefault types.str "python3"
+          "Interpreter (command on the user's PATH or absolute path) that creates the environment.";
+      venv = option homePath "Virtual environment directory.";
+      bin = list consoleScript "Console scripts of the environment linked into linkDir.";
+      linkDir = optionDefault homePath "~/.local/bin" "Directory of the console script links.";
+      pathAppend =
+        optionDefault types.bool false
+          "Append the environment's bin directory to PATH in ~/.zshrc.";
     };
     deb = {
       pin = nullable lockPath "Lock path of the DEB download; null: apt only.";

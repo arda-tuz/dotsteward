@@ -17,6 +17,7 @@ Every row comes from a declaration: the built-in rows from the lock files, the o
 | `channel-head` | nixpkgs, Home Manager (`flake_inputs.<name>` with a `channel`) | `git ls-remote` of the channel branches (`nixos-YY.MM`, `release-YY.MM`); a newer series is reported as `review` |
 | `github-release` | flake inputs with a `version`, release archives, Nix package sources | GitHub releases (tags when a repository has no releases), per-platform asset size and `digest` |
 | `npm` | npm dependencies and npm-distributed tools | registry `latest` dist-tag, integrity, `gitHead`, engines |
+| `pypi` | Python applications of the `pypi` method | the package index JSON API: the newest final release with files that are not yanked; regenerate the hash-pinned requirements file for the new version |
 | `apt-index` | desktop packages from a vendor APT repository | the vendor's `dists/<dist>/<component>/binary-<arch>/Packages` index |
 | `deb-url` | vendor packages without an index | the vendor's newest-package link (redirect target, size, date) |
 | `official-manifest` | applications with a JSON update manifest, such as VS Code or Claude Code | the vendor manifest's version, SHA-256 and size fields |

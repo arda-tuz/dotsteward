@@ -214,7 +214,7 @@ emit_report() {
 delegated_detail() {
   case $1 in
     nix) printf 'installed by Home Manager\n' ;;
-    official-binary) printf 'installed by dotsteward agents install\n' ;;
+    official-binary | pypi) printf 'installed by dotsteward agents install\n' ;;
     external) printf 'not installed by dotsteward\n' ;;
   esac
 }

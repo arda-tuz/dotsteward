@@ -54,7 +54,8 @@ A component module receives the usual Home Manager arguments (`config`,
 
 1. **Choose the methods.** Prefer `nix` when nixpkgs or an upstream flake
    provides the tool. Use `official-binary` for a vendor release that
-   updates itself, `deb` or `app-archive` for desktop applications that
+   updates itself, `pypi` for a Python application published on a
+   package index, `deb` or `app-archive` for desktop applications that
    need a system install, and `external` when the user installs it. Set
    the default with `method = lib.mkDefault "...";` and list what you
    support in `supportedMethods`.

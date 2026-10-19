@@ -95,6 +95,9 @@ let
     component:
     if component.method == "nix" then
       { packages = map lib.getName component.install.nix.packages; }
+    # The requirements file is a store path string like a hook script.
+    else if component.method == "pypi" then
+      component.install.pypi // { requirements = "${component.install.pypi.requirements}"; }
     else
       component.install.${component.method};
 

@@ -105,6 +105,7 @@ declarations.
 | --- | --- |
 | `github-release` | the newest stable GitHub release, with per-platform asset size and digest; `gh`, then `git ls-remote --tags` |
 | `npm` | the `latest` dist-tag of an npm package, with integrity and engines |
+| `pypi` | the newest final release of a package on a Python package index (pre-releases and yanked releases skipped), with its `requires_python` |
 | `apt-index` | the highest version in a vendor's APT `Packages` index |
 | `deb-url` | a vendor link that always serves the newest DEB (redirect target, size, date) |
 | `official-manifest` | a vendor's JSON release manifest: version, SHA-256 and size fields |

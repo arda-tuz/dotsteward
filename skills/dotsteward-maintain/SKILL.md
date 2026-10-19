@@ -73,7 +73,7 @@ Update every affected layer, following `references/integration-contract.md`:
 
 1. the installation: `[components.<name>]` in `workstation.toml` for a catalog component (`enable`, `method` or `method_by_platform`, `profiles`, `options`), `components/<name>/default.nix` (and `package.nix` for an instance package) for a private one, `home.nix` for plain Home Manager configuration;
 2. the pins in `versions.lock.json` at the lock paths the component's rules read (and `flake.nix` plus `nix flake lock` for a new flake input), then `dotsteward sync`, which regenerates the `.dotsteward/` mirrors and the derived lock values;
-3. an idempotent installer: the framework methods (`nix`, `official-binary`, `deb`, `app-archive`, `external`) already are; a component hook script must be safe to rerun and honour `DOTSTEWARD_CHECK_ONLY=1`, and `dotsteward install --profile <profile> --check-only` must pass;
+3. an idempotent installer: the framework methods (`nix`, `official-binary`, `pypi`, `deb`, `app-archive`, `external`) already are; a component hook script must be safe to rerun and honour `DOTSTEWARD_CHECK_ONLY=1`, and `dotsteward install --profile <profile> --check-only` must pass;
 4. a static assertion (an instance script in `[gate] static`, or a component check) and a real smoke or E2E check (`checks.commands`, `checks.e2e`, `probes`);
 5. backup, adoption and rollback coverage when a user file is replaced (`bootstrap.backupPaths`, `rebuild.adoptPaths`, `rollback.managedLinks`, `rollback.forceLinkedRestore`);
 6. the instance `README.md`, `AGENTS.md` and focused docs (policy, not version numbers);

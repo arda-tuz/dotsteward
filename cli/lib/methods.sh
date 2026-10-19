@@ -46,6 +46,9 @@
 #   methods_check NAME PROFILE       --check-only semantics of the method
 #   methods_official_binary_install NAME
 #                                    user-level install (fresh and adopt)
+#   methods_pypi_install NAME        user-level install (fresh and adopt) of
+#                                    a Python application into its own
+#                                    virtual environment
 #   methods_deb_transaction NAME...  the fresh-mode deb transaction of the
 #                                    given deb components (Linux); sets
 #                                    METHODS_DEB_STATUS[name] and
@@ -147,7 +150,7 @@ methods_validate() {
   local name=$1 method
   method=$(methods_component_method "$name") || exit 1
   case $method in
-    nix | official-binary | external) ;;
+    nix | official-binary | pypi | external) ;;
     deb)
       [[ $DS_RUNTIME_PLATFORM == linux ]] ||
         die "$name (deb): the deb method is not available on $DS_RUNTIME_PLATFORM"
@@ -371,6 +374,7 @@ methods_check() {
       ;;
     deb) _methods_deb_check "$name" ;;
     official-binary) _methods_official_binary_check "$name" "$profile" ;;
+    pypi) _methods_pypi_check "$name" "$profile" ;;
     external) _methods_external_check "$name" ;;
     app-archive) platform_app_archive_check "$name" ;;
   esac
@@ -560,6 +564,173 @@ _methods_official_binary_fetch() {
     log "$name (official-binary): previous $_ob_dest backed up in $backup_root"
   fi
   install -D -m 0755 -- "$source" "$_ob_dest" || die "$name (official-binary): cannot install $_ob_dest"
+}
+
+# --- pypi -----------------------------------------------------------------
+
+# _methods_pypi_expand NAME FIELD VALUE: VALUE (~/... or absolute) as an
+# absolute path.
+_methods_pypi_expand() {
+  case $3 in
+    \~/?*) printf '%s\n' "$HOME/${3#\~/}" ;;
+    /?*) printf '%s\n' "$3" ;;
+    *) die "$1 (pypi): $2 must be ~/... or absolute: $3" ;;
+  esac
+}
+
+# _methods_pypi_state NAME: reads the install block and the pin and finds the
+# installed version. Sets _py_* variables.
+_methods_pypi_state() {
+  local name=$1 component script
+  component=$(methods_component "$name") || exit 1
+  _py_pin=$(jq -r '.install.pin // empty' <<<"$component")
+  _py_dist=$(jq -r '.install.distribution // empty' <<<"$component")
+  _py_requirements=$(jq -r '.install.requirements // empty' <<<"$component")
+  _py_python=$(jq -r '.install.python // "python3"' <<<"$component")
+  _py_venv_text=$(jq -r '.install.venv // empty' <<<"$component")
+  _py_link_text=$(jq -r '.install.linkDir // "~/.local/bin"' <<<"$component")
+  mapfile -t _py_bin < <(jq -r '(.install.bin // [])[]' <<<"$component")
+  [[ -n $_py_pin && -n $_py_dist && -n $_py_requirements && -n $_py_venv_text ]] ||
+    die "$name (pypi): the install block needs pin, distribution, requirements and venv"
+  [[ $_py_dist =~ ^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$ ]] ||
+    die "$name (pypi): invalid distribution name: $_py_dist"
+  _py_venv=$(_methods_pypi_expand "$name" venv "$_py_venv_text") || exit 1
+  _py_link_dir=$(_methods_pypi_expand "$name" linkDir "$_py_link_text") || exit 1
+  for script in "${_py_bin[@]}"; do
+    [[ $script =~ ^[A-Za-z0-9_][A-Za-z0-9_.+-]*$ ]] || die "$name (pypi): invalid console script name: $script"
+  done
+  _py_entry=$(_methods_pin_entry "$name" pypi "$_py_pin") || exit 1
+  _py_version=$(_methods_pin_version "$name" pypi "$_py_pin" "$_py_entry") || exit 1
+  _py_found=$(_methods_pypi_installed)
+}
+
+# _methods_pypi_installed: the version of the distribution in the virtual
+# environment (empty when there is none or its interpreter does not run).
+_methods_pypi_installed() {
+  [[ -x $_py_venv/bin/python ]] || return 0
+  timeout 60 "$_py_venv/bin/python" -I -c '
+import importlib.metadata, sys
+try:
+    print(importlib.metadata.version(sys.argv[1]))
+except importlib.metadata.PackageNotFoundError:
+    pass' "$_py_dist" 2>/dev/null </dev/null || true
+}
+
+_methods_pypi_version_ok() {
+  [[ -n $_py_found && $(methods_version_compare "$_py_found" "$_py_version") == 0 ]]
+}
+
+# _methods_pypi_links_ok: every console script link points at its script in
+# the environment; else sets _py_bad_link (as written in linkDir) and
+# _py_bad_target and returns 1.
+_methods_pypi_links_ok() {
+  local script link target
+  for script in "${_py_bin[@]}"; do
+    link=$_py_link_dir/$script
+    target=$_py_venv/bin/$script
+    if [[ ! -L $link || $(readlink -- "$link") != "$target" || ! -x $target ]]; then
+      _py_bad_link=$_py_link_text/$script
+      _py_bad_target=$target
+      return 1
+    fi
+  done
+}
+
+_methods_pypi_check() {
+  local name=$1 profile=$2 hint
+  _methods_pypi_state "$name"
+  hint="run 'dotsteward rebuild --profile $profile --switch'"
+  if ! _methods_pypi_version_ok; then
+    _methods_set failed "$_py_dist $_py_version not found in $_py_venv_text (found ${_py_found:-none}); $hint"
+    return 1
+  fi
+  if ! _methods_pypi_links_ok; then
+    _methods_set failed "$_py_bad_link does not link to $_py_bad_target; $hint"
+    return 1
+  fi
+  _methods_set satisfied "$_py_dist $_py_found"
+}
+
+# _methods_pypi_pinned FILE: FILE has a requirement line that pins the
+# distribution (any spelling its normalized name allows) at the pin's
+# version.
+_methods_pypi_pinned() {
+  local name_re version_re
+  name_re=$(sed -E 's/[-_.]+/[-_.]+/g' <<<"$_py_dist")
+  version_re=${_py_version//./[.]}
+  grep -qiE "^[[:space:]]*${name_re}[[:space:]]*==[[:space:]]*${version_re}([[:space:];\\]|\$)" -- "$1"
+}
+
+# _methods_pypi_create NAME: creates the virtual environment with the
+# interpreter of the install block, found on the user's PATH; an
+# interpreter whose base prefix is in the Nix store is refused, since the
+# environment would break when that store path is garbage-collected.
+_methods_pypi_create() {
+  local name=$1 python_path base store=${NIX_STORE_DIR:-/nix/store} status=0 output
+  if [[ $_py_python == /* ]]; then
+    [[ -x $_py_python ]] || die "$name (pypi): $_py_python not found"
+    python_path=$_py_python
+  else
+    python_path=$(PATH=$(user_path) command -v -- "$_py_python") ||
+      die "$name (pypi): $_py_python not found on PATH"
+  fi
+  base=$(timeout 60 "$python_path" -I -c 'import sys; print(sys.base_prefix)' 2>/dev/null </dev/null) ||
+    die "$name (pypi): the interpreter $_py_python does not run"
+  case $base/ in
+    "${store%/}"/*)
+      die "$name (pypi): the interpreter $_py_python lives in the Nix store ($base); an environment created from it breaks when that store path is garbage-collected; set install.pypi.python to an interpreter outside the store"
+      ;;
+  esac
+  mkdir -p -- "${_py_venv%/*}" || die "$name (pypi): cannot create ${_py_venv%/*}"
+  log "$name (pypi): creating the virtual environment $_py_venv with $python_path"
+  output=$(timeout 300 "$python_path" -I -m venv -- "$_py_venv" 2>&1 </dev/null) || status=$?
+  ((status == 0)) ||
+    die "$name (pypi): cannot create the virtual environment $_py_venv (exit $status; on Debian and Ubuntu the python3-venv package provides the venv module): $(tail -n 3 <<<"$output")"
+}
+
+methods_pypi_install() {
+  (($# == 1)) || die "usage: methods_pypi_install NAME"
+  local name=$1 requirements script link target status=0 output
+  [[ $(methods_component_method "$name") == pypi ]] || die "$name: not a pypi component"
+  _methods_pypi_state "$name"
+  if _methods_pypi_version_ok && _methods_pypi_links_ok; then
+    _methods_set satisfied "$_py_dist $_py_found"
+    return 0
+  fi
+  requirements=$(_methods_manifest_path "$name (pypi): requirements" "$_py_requirements") || exit 1
+  [[ -f $requirements ]] || die "$name (pypi): requirements file not found: $requirements"
+  _methods_pypi_pinned "$requirements" || die "$name (pypi): $requirements does not pin $_py_dist==$_py_version"
+  # A file that is not a link into the environment is never replaced.
+  for script in "${_py_bin[@]}"; do
+    link=$_py_link_dir/$script
+    if [[ -e $link || -L $link ]] && [[ ! -L $link || $(readlink -- "$link") != "$_py_venv"/* ]]; then
+      die "$name (pypi): refusing to replace $link, which is not a link into $_py_venv"
+    fi
+  done
+  # An existing environment is kept: packages the application installed into
+  # it survive a new pin.
+  if [[ ! -e $_py_venv/bin/python && ! -L $_py_venv/bin/python ]]; then
+    _methods_pypi_create "$name"
+  elif ! timeout 60 "$_py_venv/bin/python" -I -c '' >/dev/null 2>&1 </dev/null; then
+    die "$name (pypi): the virtual environment $_py_venv does not run; remove it and run 'dotsteward agents install' again"
+  fi
+  log "$name (pypi): installing $_py_dist $_py_version into $_py_venv"
+  output=$(timeout 900 "$_py_venv/bin/python" -I -m pip install --no-input --disable-pip-version-check \
+    --require-hashes -r "$requirements" 2>&1 </dev/null) || status=$?
+  ((status == 0)) || die "$name (pypi): pip install failed (exit $status): $(tail -n 5 <<<"$output")"
+  _py_found=$(_methods_pypi_installed)
+  _methods_pypi_version_ok ||
+    die "$name (pypi): $_py_dist $_py_version not found in $_py_venv after the install (found ${_py_found:-none})"
+  for script in "${_py_bin[@]}"; do
+    link=$_py_link_dir/$script
+    target=$_py_venv/bin/$script
+    [[ -f $target && -x $target ]] || die "$name (pypi): the environment has no console script $script: $target"
+    [[ -L $link && $(readlink -- "$link") == "$target" ]] && continue
+    mkdir -p -- "$_py_link_dir" || die "$name (pypi): cannot create $_py_link_dir"
+    rm -f -- "$link"
+    ln -s -- "$target" "$link" || die "$name (pypi): cannot link $link"
+  done
+  _methods_set installed "$_py_dist $_py_found"
 }
 
 # --- deb ------------------------------------------------------------------
@@ -768,22 +939,34 @@ methods_hooks() {
     | sort_by(.key)[] | .hook'
 }
 
+# _methods_manifest_path WHAT PATH: a file path of the manifest as a path on
+# this machine: <instance>/ and <dotsteward>/ paths of a mirror are
+# resolved, <store>/ paths need a generation. WHAT starts the messages.
+_methods_manifest_path() {
+  local what=$1 value=$2 framework
+  framework=${DOTSTEWARD_FRAMEWORK_ROOT:-$(cd -- "$_DS_METHODS_LIB_DIR/../.." && pwd -P)}
+  case $value in
+    "<instance>/"?*) printf '%s\n' "$DS_INSTANCE_ROOT/${value#"<instance>/"}" ;;
+    "<dotsteward>/"?*) printf '%s\n' "$framework/${value#"<dotsteward>/"}" ;;
+    "<store>/"*)
+      die "$what: $value is a Nix store path the manifest mirror does not carry; pass --generation with a built generation"
+      ;;
+    /?*) printf '%s\n' "$value" ;;
+    *) die "$what: unsupported path: $value" ;;
+  esac
+}
+
 methods_hook_path() {
   (($# == 1)) || die "usage: methods_hook_path HOOK_JSON"
-  local component name script path framework
+  local component name script path
   component=$(jq -r '.component' <<<"$1")
   name=$(jq -r '.name' <<<"$1")
   script=$(jq -r '.script' <<<"$1")
-  framework=${DOTSTEWARD_FRAMEWORK_ROOT:-$(cd -- "$_DS_METHODS_LIB_DIR/../.." && pwd -P)}
   case $script in
-    "<instance>/"?*) path=$DS_INSTANCE_ROOT/${script#"<instance>/"} ;;
-    "<dotsteward>/"?*) path=$framework/${script#"<dotsteward>/"} ;;
-    "<store>/"*)
-      die "component $component hook $name: $script is a Nix store path the manifest mirror does not carry; pass --generation with a built generation"
-      ;;
-    /?*) path=$script ;;
+    "<instance>/"?* | "<dotsteward>/"?* | "<store>/"* | /?*) ;;
     *) die "component $component hook $name: unsupported script path: $script" ;;
   esac
+  path=$(_methods_manifest_path "component $component hook $name" "$script") || exit 1
   [[ -f $path && -x $path ]] || die "component $component hook $name: not an executable file: $path"
   printf '%s\n' "$path"
 }

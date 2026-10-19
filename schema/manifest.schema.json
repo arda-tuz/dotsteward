@@ -295,7 +295,7 @@
   "$defs": {
     "name": { "type": "string", "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*$" },
     "platform": { "enum": ["linux", "darwin"] },
-    "method": { "enum": ["nix", "official-binary", "deb", "app-archive", "external"] },
+    "method": { "enum": ["nix", "official-binary", "pypi", "deb", "app-archive", "external"] },
     "profiles": {
       "description": "Profiles where the entry applies; null: every profile.",
       "oneOf": [{ "type": "null" }, { "type": "array", "items": { "type": "string" } }]

@@ -385,12 +385,14 @@ def _registry() -> dict[str, type[Adapter]]:
         nix_release,
         npm,
         official_manifest,
+        pypi,
         skill_source,
     )
 
     adapters: list[type[Adapter]] = [
         github_release.GithubRelease,
         npm.Npm,
+        pypi.Pypi,
         apt_index.AptIndex,
         deb_url.DebUrl,
         official_manifest.OfficialManifest,

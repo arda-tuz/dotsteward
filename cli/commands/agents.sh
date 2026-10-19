@@ -5,7 +5,9 @@
 # Phases, in this order:
 #   1. official-binary   every active official-binary component: installed
 #                        at the user level (install) or checked by its pin
-#                        policy (check); then the agentsInstall hooks
+#                        policy (check); then every active pypi component
+#      pypi              (its virtual environment, step pypi); then the
+#                        agentsInstall hooks
 #   2. layout            the canonical skill root ~/.agents/skills, the
 #                        legacy roots and the excluded subtrees
 #   3. skills            the framework skills of the manifest first, then the
@@ -19,7 +21,7 @@
 # the profile. The skill layout engine is cli/lib/skills.sh, the method
 # engine cli/lib/methods.sh, the probe runner cli/lib/probes.sh.
 #
-# Findings have a step (official-binary, agents-install, layout,
+# Findings have a step (official-binary, pypi, agents-install, layout,
 # framework-skills, skills, sweep, agents-migrate, agents-post, commands,
 # floors, probes, agents-checks, or setup), a path (the file, the command,
 # <component>/<hook> or the component), a code and a message. Without
@@ -33,6 +35,8 @@
 # Codes besides the skill layout codes of cli/lib/skills.sh:
 #   official-binary-failed  a missing or older binary (check), a failed
 #                           install
+#   pypi-failed             a missing environment, version or console script
+#                           link (check), a failed install
 #   hook-failed             a hook exited non-zero or cannot run
 #   missing-command         a checks.commands or floor command is not on the
 #                           user's PATH (user_path: without the CLI's own
@@ -62,7 +66,7 @@ Usage: dotsteward agents install|check --profile PROFILE [--generation PATH]
                                         [--keep-going] [--json]
 
 install makes the agent tools and the skill layout of PROFILE match the
-instance: official-binary components, the canonical skill root
+instance: official-binary and pypi components, the canonical skill root
 ~/.agents/skills with its entries and link-root links, copies of missing
 instance skills, refreshed drifted copies (backed up first), removed
 dangling skill links and the agents hooks; then it validates. check runs
@@ -283,6 +287,21 @@ _agents_official_binary() {
   fi
 }
 
+_agents_pypi() {
+  local name=$1 status=0
+  SKILLS_DIE_CODE='pypi-failed'
+  SKILLS_DIE_PATH=$name
+  if ((check_only)); then
+    methods_check "$name" "$profile" || status=$?
+    ((status == 0)) || skills_fail pypi-failed "$name" "$name (pypi): $METHODS_DETAIL"
+  else
+    methods_pypi_install "$name"
+    if [[ $METHODS_STATUS == installed ]]; then
+      log "$name (pypi): installed $METHODS_DETAIL"
+    fi
+  fi
+}
+
 _agents_run_hook() {
   local hook=$1 component name status=0
   component=$(jq -r '.component' <<<"$hook")
@@ -414,10 +433,15 @@ _agents_probes() {
 
 # --- Phases ---------------------------------------------------------------
 
-# 1. User-level official binaries, then the agentsInstall hooks.
+# 1. User-level official binaries and Python applications, then the
+# agentsInstall hooks.
 for name in "${active[@]}"; do
   [[ -n $name && $(methods_component_method "$name") == official-binary ]] || continue
   _agents_unit official-binary _agents_official_binary "$name"
+done
+for name in "${active[@]}"; do
+  [[ -n $name && $(methods_component_method "$name") == pypi ]] || continue
+  _agents_unit pypi _agents_pypi "$name"
 done
 _agents_run_hooks agents_install agents-install
 

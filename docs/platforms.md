@@ -81,6 +81,7 @@ dialog.
 | --- | --- | --- | --- | --- |
 | `nix` | yes | yes | user (Home Manager) | installed |
 | `official-binary` | yes | yes (its own release asset and pin) | user (`~/.local/bin`) | installed |
+| `pypi` | yes | yes | user (a virtual environment, links in `~/.local/bin`) | installed |
 | `deb` | yes | no | system (one APT transaction) | not managed |
 | `app-archive` | no | yes | system (`~/Applications`) | not managed |
 | `external` | yes | yes | nothing is installed | as in `fresh` |

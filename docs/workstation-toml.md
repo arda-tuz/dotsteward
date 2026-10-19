@@ -143,7 +143,7 @@ catalog component (see [catalog.md](catalog.md)) or a private component in
 | --- | --- | --- |
 | `components.<name>.enable` | `false` | Whether the component is part of the instance. |
 | `components.<name>.source` | `catalog` for a catalog name, else `instance` | Where the module comes from. |
-| `components.<name>.method` | the component's default | The install method on every platform: `nix`, `official-binary`, `deb`, `app-archive` or `external`. |
+| `components.<name>.method` | the component's default | The install method on every platform: `nix`, `official-binary`, `pypi`, `deb`, `app-archive` or `external`. |
 | `components.<name>.method_by_platform.linux` | none | The method on Linux; wins over `method`. |
 | `components.<name>.method_by_platform.darwin` | none | The method on macOS; wins over `method`. |
 | `components.<name>.profiles` | every profile | The profiles where the component is active. |

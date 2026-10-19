@@ -54,6 +54,7 @@ a default; the instance may choose another one per component and platform.
 | --- | --- |
 | `nix` | Home Manager installs it from Nix. |
 | `official-binary` | A pinned vendor release, checked by size and SHA-256, into `~/.local/bin`. |
+| `pypi` | A Python application from a hash-pinned requirements file, in its own virtual environment, with its commands linked into `~/.local/bin`. |
 | `deb` | Debian packages with pinned minimum versions, in one APT transaction (Ubuntu). |
 | `app-archive` | A pinned application bundle, copied into `~/Applications` (macOS). |
 | `external` | Installed by something else; dotsteward only verifies it. |

@@ -23,7 +23,7 @@ Every component, a catalog one in the framework or a private one in `components/
 | --- | --- |
 | Platforms and methods | `platforms`, `method` (use `lib.mkDefault` for the component's default), `supportedMethods.linux`, `supportedMethods.darwin` |
 | Installation | `install.nix.packages`; `install.official-binary` (`pin`, `asset` per platform, `member`, `dest`, `versionArgv`, `versionRegex`, `policy` `at-least` or `exact`, `verify`); `install.deb` (`pin`, `packageNames`, `architecture`, `verifyAfterInstall`, `apt`); `install.app-archive` (`pin`, `appName`, `dest`); `install.external` (`command`, `versionArgv`, `minimum`). Only the block of the resolved method is read. |
-| Pins | `pins.rules` (kinds such as `derive`, `download-pin`, `skills-lock-mirror`, `minimum-version`, `no-literal`), `pins.latest` (row `id` and `adapter`, for example `github-release`, `npm`, `apt-index`, `official-manifest`, `manual`), `pins.resolvedVersions`, `pins.flakeInputs` |
+| Pins | `pins.rules` (kinds such as `derive`, `download-pin`, `skills-lock-mirror`, `minimum-version`, `no-literal`), `pins.latest` (row `id` and `adapter`, for example `github-release`, `npm`, `pypi`, `apt-index`, `official-manifest`, `manual`), `pins.resolvedVersions`, `pins.flakeInputs` |
 | Settings | `settingsTargets.<name>` (`path` as a home path or per platform, `format` `json`, `toml` or `jsonc`, `createIfMissing`, `createMode`, `backup`, `reload`), `reloadHooks.<name>` (`command`, `timeout`, `env`, `unsetEnv`, `requireCommand`, `onSuccess`, `onFailure`) |
 | Checks | `probes` (`command`, `kind` `version`, `presence` or `features`, `argv`, `extract`, `expected` as `versions:<lock path>`, `needles`, `profiles`); `checks.commands` (commands E2E requires); `checks.e2e` (hook scripts with `phase` `early`, `main` or `late`); `checks.agents`; `checks.floors` (`command`, `argv`, `minimum`, `compare`) |
 | Machine safety | `bootstrap.backupPaths`, `bootstrap.snapshots`, `bootstrap.prerequisites.apt`; `rebuild.adoptPaths`; `rollback.managedLinks`, `rollback.forceLinkedRestore` |
@@ -38,6 +38,7 @@ Every component, a catalog one in the framework or a private one in `components/
 | --- | --- | --- | --- |
 | `nix` | package in `home.packages` | same | probes |
 | `official-binary` | verified download into `dest` (user level); `at-least` keeps a newer self-updated binary | same | version per policy |
+| `pypi` | own virtual environment (user level) from a hash-pinned requirements file, console scripts linked into `~/.local/bin` | same | exact version and links |
 | `deb` (Linux) | one verified apt transaction in the system-install phase | not managed | `dpkg` floor |
 | `app-archive` (macOS) | verified archive into `~/Applications` | not managed | bundle version |
 | `external` | nothing (the user installs it) | same | optional presence and floor |

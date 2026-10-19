@@ -571,6 +571,7 @@
       "enum": [
         "nix",
         "official-binary",
+        "pypi",
         "deb",
         "app-archive",
         "external"

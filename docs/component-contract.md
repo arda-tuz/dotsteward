@@ -64,6 +64,15 @@ needs code specific to one component.
 | `install.official-binary.versionRegex` | string | Regular expression whose first group is the version. |
 | `install.official-binary.policy` | `at-least` or `exact` | `at-least` keeps a newer binary the application installed itself. |
 | `install.official-binary.verify` | `sha256` or `sha256+sigstore` | Download verification. |
+| `install.pypi` | block | Method `pypi`: a Python application in its own virtual environment in the home directory. |
+| `install.pypi.pin` | lock path | The pin; its `version` is the exact version of the distribution. |
+| `install.pypi.distribution` | string | The distribution whose installed version is checked. |
+| `install.pypi.requirements` | path | A requirements file with a hash for every distribution, installed with `pip install --require-hashes`; it must pin `<distribution>==<version>`. |
+| `install.pypi.python` | string, default `python3` | The interpreter that creates the environment: a command on the user's `PATH` or an absolute path. One whose base prefix is in the Nix store is refused. |
+| `install.pypi.venv` | home path | The virtual environment directory. It is created once and kept, so packages the application installs into it survive a new pin. |
+| `install.pypi.bin` | list of strings | Console scripts of the environment linked into `linkDir`. A file there that is not a link into the environment is an error. |
+| `install.pypi.linkDir` | home path, default `~/.local/bin` | The directory of the links. |
+| `install.pypi.pathAppend` | bool, default `false` | With the shell component, the `~/.zshrc` block `pypi-path-<name>` appends the environment's `bin` directory to `PATH`, after every other entry, for commands the application installs into its environment later. |
 | `install.deb` | block | Method `deb` (Ubuntu, system level). |
 | `install.deb.pin` | null or lock path | The DEB download with its minimum version; `null` installs plain APT packages only. |
 | `install.deb.packageNames` | list of strings | Package names (aliases allowed) asserted in the downloaded DEB. |
@@ -85,6 +94,7 @@ needs code specific to one component.
 | --- | --- | --- | --- |
 | `nix` | the packages join `home.packages` | same | the probes cover it |
 | `official-binary` | verified download (HTTPS, size, SHA-256, optional sigstore), the member installed with mode 0755 into `dest`, version re-checked | same (user level) | version per `policy`, else exit 1 with a rebuild hint |
+| `pypi` | the virtual environment created when missing, the requirements installed with `pip install --require-hashes`, the exact version re-checked, the console scripts linked | same (user level) | exact version and links, else exit 1 with a rebuild hint |
 | `deb` | one APT transaction: verified DEBs only where the installed version is below the floor, never a downgrade, then the floors re-checked | `not-managed` | `dpkg --compare-versions` against the floor |
 | `app-archive` | verified zip or disk image into `dest`; an existing bundle is backed up first | `not-managed` | `CFBundleShortVersionString` of the bundle |
 | `external` | nothing | nothing | optional presence and floor |
