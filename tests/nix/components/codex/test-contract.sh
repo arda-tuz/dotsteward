@@ -86,7 +86,7 @@ for platform in linux darwin; do
   # Skill layout: the legacy skill root, whose .system subtree belongs to
   # Codex and is never touched.
   json_check "$manifest" '.skill_layout' \
-    '{"excluded_subtrees":[".system"],"legacy_roots":["~/.codex/skills"],"link_roots":{}}'
+    '{"agent_roots":{},"excluded_subtrees":[".system"],"legacy_roots":["~/.codex/skills"],"link_roots":{}}'
   # Nothing else: no hooks without plugins, no probes, checks, snapshots,
   # adoption paths, detectors or resolved versions.
   json_check "$manifest" '[.hooks[][] | select(.component == "codex")]' '[]'

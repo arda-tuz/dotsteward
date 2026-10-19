@@ -116,7 +116,7 @@ for system in x86_64-linux aarch64-darwin; do
   json_check "$all" .rollback '{"forceLinkedRestore":[],"managedLinks":[]}'
   json_check "$all" .rebuild '{"adoptPaths":[]}'
   json_check "$all" .agentRulesTargets '[]'
-  json_check "$all" .skillLayout '{"excludedSubtrees":[],"legacyRoots":[],"linkRoots":{}}'
+  json_check "$all" .skillLayout '{"agentRoots":{},"excludedSubtrees":[],"legacyRoots":[],"linkRoots":{}}'
   json_check "$all" .preflight '{"detectors":{}}'
   json_check "$all" .gate '{"updatePaths":[]}'
 
