@@ -14,7 +14,10 @@ in
 cli.mkTestCheck {
   name = "cli-methods";
   paths = [ "tests/cli/methods" ];
-  nativeBuildInputs = [ pkgs.shellcheck ];
+  nativeBuildInputs = [
+    pkgs.gnupg
+    pkgs.shellcheck
+  ];
   postCheck = ''
     shellcheck -x cli/lib/methods.sh cli/commands/install.sh tests/cli/methods/*.sh
   '';

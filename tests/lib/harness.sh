@@ -34,7 +34,8 @@
 # and automatic maintenance off (a detached repack after a commit races with
 # the test), TZ=UTC and the C locale apply, and the platform injection points
 # (DOTSTEWARD_ETC_SHELLS, DOTSTEWARD_OS_RELEASE, DOTSTEWARD_PASSWD_CMD,
-# DOTSTEWARD_SW_VERS) point at synthetic files inside DS_TEST_ROOT, and the
+# DOTSTEWARD_SW_VERS) point at synthetic files inside DS_TEST_ROOT,
+# DOTSTEWARD_APT_DIR at DS_SYSTEM_ROOT/etc/apt, and the
 # machine facts of the derived gate parallelism (DOTSTEWARD_MEMORY_MIB,
 # DOTSTEWARD_CPU_COUNT) describe a machine with 32768 MiB and 16 CPUs.
 #
@@ -131,6 +132,7 @@ ds_harness_init() {
   mkdir -p "$DS_SYSTEM_ROOT"/{etc/default,etc/apt/sources.list.d,etc/apt/keyrings,opt,srv} \
     "$DS_SYSTEM_ROOT"/{usr/local/bin,usr/share,usr/lib,var/lib,Applications,Library} \
     "$DS_SYSTEM_ROOT"/{home,root,tmp,run}
+  export DOTSTEWARD_APT_DIR=$DS_SYSTEM_ROOT/etc/apt
 
   export GIT_CONFIG_NOSYSTEM=1
   export GIT_CONFIG_GLOBAL=$DS_TEST_ROOT/gitconfig
