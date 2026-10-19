@@ -5,12 +5,19 @@
 #
 #   [[components.codex.options.plugins]]          # one table per plugin
 #   spec = "NAME@MARKETPLACE"
+#   marketplace = "OWNER/REPO"                   # optional
 #   minimumAt = "<versions.lock.json path>"       # optional
 #   requiredSkillDirectories = ["<dir>", ...]     # optional
 #
-# install (DOTSTEWARD_CHECK_ONLY=0) runs `codex plugin add SPEC` for a plugin
-# that `codex plugin list --json` does not show installed and enabled. Both
-# modes then verify every plugin:
+# install (DOTSTEWARD_CHECK_ONLY=0) runs `codex plugin marketplace add
+# OWNER/REPO` for an entry's marketplace that `codex plugin marketplace list
+# --json` does not list under the spec's marketplace name, then `codex plugin
+# add SPEC` for a plugin that `codex plugin list --json` does not show
+# installed and enabled. Codex refreshes configured Git marketplaces and
+# their plugins itself. Both modes then verify every plugin:
+#   - the marketplace an entry names is listed under the spec's marketplace
+#     name, from https://github.com/OWNER/REPO (a trailing .git and letter
+#     case aside);
 #   - it is listed installed and enabled, with a plain version string;
 #   - its directory (the listed local source path, else
 #     ${CODEX_HOME:-~/.codex}/plugins/cache/<marketplace>/<name>/<version>)
@@ -54,6 +61,38 @@ listed_entry() {
     <<<"$list"
 }
 
+# listed_marketplace NAME: the `codex plugin marketplace list --json` entry
+# named NAME, else nothing.
+listed_marketplace() {
+  local list
+  list=$(codex plugin marketplace list --json) || die "codex plugin marketplace list --json failed"
+  jq -e 'type == "object"' >/dev/null 2>&1 <<<"$list" ||
+    die "codex plugin marketplace list --json printed no JSON object"
+  jq -c --arg name "$1" 'first((.marketplaces // [])[] | select(.name == $name)) // empty' <<<"$list"
+}
+
+# ensure_marketplace NAME REPO: adds (install mode) and verifies one GitHub
+# marketplace.
+ensure_marketplace() {
+  local market=$1 repo=$2 entry source normalized
+  entry=$(listed_marketplace "$market")
+  if [[ -z $entry ]]; then
+    [[ $check_only != 1 ]] ||
+      die "codex marketplace $market ($repo) is not added; run 'dotsteward agents install --profile $profile'"
+    log "codex marketplace $market: adding $repo with codex plugin marketplace add"
+    codex plugin marketplace add "$repo" || die "codex plugin marketplace add $repo failed"
+    entry=$(listed_marketplace "$market")
+    [[ -n $entry ]] || die "codex plugin marketplace add $repo did not add the marketplace $market"
+  fi
+  source=$(jq -r '.marketplaceSource.source // empty | strings' <<<"$entry")
+  normalized=${source%/}
+  normalized=${normalized%.git}
+  [[ $(jq -r '.marketplaceSource.sourceType // empty | strings' <<<"$entry") == git &&
+    ${normalized,,} == "https://github.com/${repo,,}" ]] ||
+    die "codex marketplace $market is added from ${source:-an unknown source}, not from github $repo"
+  log "codex marketplace $market ($repo) verified"
+}
+
 # lock_minimum PATH: the minimum version at the lock PATH.
 lock_minimum() {
   local value minimum
@@ -68,13 +107,16 @@ lock_minimum() {
 
 # ensure_plugin PLUGIN_JSON: installs (install mode) and verifies one entry.
 ensure_plugin() {
-  local plugin=$1 spec name market entry version source_kind source_path dir manifest
+  local plugin=$1 spec name market repo entry version source_kind source_path dir manifest
   local manifest_version minimum_at minimum skill
   spec=$(jq -r '.spec // empty | strings' <<<"$plugin")
   [[ $spec =~ ^([A-Za-z0-9._-]+)@([A-Za-z0-9._-]+)$ ]] ||
     die "codex plugin spec must look like NAME@MARKETPLACE: ${spec:-none}"
   name=${BASH_REMATCH[1]}
   market=${BASH_REMATCH[2]}
+
+  repo=$(jq -r '.marketplace // empty | strings' <<<"$plugin")
+  [[ -z $repo ]] || ensure_marketplace "$market" "$repo"
 
   entry=$(listed_entry "$spec")
   if [[ -z $entry ]]; then

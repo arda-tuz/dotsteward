@@ -19,13 +19,15 @@
 # options (the [components.codex] options table of workstation.toml):
 #   [[components.codex.options.plugins]]          # one table per plugin
 #   spec = "NAME@MARKETPLACE"
+#   marketplace = "OWNER/REPO"                   # optional
 #   minimumAt = "<versions.lock.json path>"       # optional
 #   requiredSkillDirectories = ["<dir>", ...]     # optional
 #   trackAt = "<versions.lock.json path>"         # optional, with watched
 #   watched = ["<path pattern>", ...]
-# A non-empty list adds the agentsPost hook plugins.sh, which installs
-# missing plugins (agents install) and verifies every listed one (both
-# modes). Each trackAt entry (source and observed_marketplace_revision)
+# A non-empty list adds the agentsPost hook plugins.sh, which adds missing
+# Git marketplaces that entries name and installs missing plugins (agents
+# install) and verifies every listed one (both modes). Codex refreshes
+# configured Git marketplaces itself. Each trackAt entry (source and observed_marketplace_revision)
 # adds a git-compare review row of the marketplace for its watched paths,
 # with every method (lib/plugin-tracking.nix). Invalid options fail the
 # evaluation with every problem listed.
@@ -40,6 +42,7 @@ let
   inherit (builtins)
     attrNames
     elem
+    elemAt
     filter
     genList
     isAttrs
@@ -101,12 +104,17 @@ let
   knownOptions = [ "plugins" ];
   knownPluginKeys = [
     "spec"
+    "marketplace"
     "minimumAt"
     "requiredSkillDirectories"
   ]
   ++ tracking.keys;
 
   specPattern = "[A-Za-z0-9._-]+@[A-Za-z0-9._-]+";
+  repoPattern = "[A-Za-z0-9._-]+/[A-Za-z0-9._-]+";
+  isRepo = value: isString value && match repoPattern value != null;
+  # The marketplace name of a valid spec.
+  marketplaceOf = spec: elemAt (match "[^@]+@(.+)" spec) 0;
   lockPathPattern = "[A-Za-z0-9_][A-Za-z0-9_+-]*(\\.[A-Za-z0-9_][A-Za-z0-9_+-]*)*";
   isPlainName =
     value:
@@ -143,6 +151,30 @@ let
       validSpec = isString spec && match specPattern spec != null;
       earlier = lib.take index pluginList;
       duplicate = validSpec && lib.any (other: isAttrs other && (other.spec or null) == spec) earlier;
+      # One marketplace name comes from one repository.
+      marketplaceProblems =
+        if !(plugin ? marketplace) then
+          [ ]
+        else if !isRepo plugin.marketplace then
+          [ "${at}.marketplace must be a GitHub repository OWNER/REPO, got ${toJSON plugin.marketplace}" ]
+        else
+          let
+            market = marketplaceOf spec;
+            clash = lib.findFirst (
+              position:
+              let
+                other = elemAt pluginList position;
+              in
+              isAttrs other
+              && isRepo (other.marketplace or null)
+              && isString (other.spec or null)
+              && match specPattern other.spec != null
+              && marketplaceOf other.spec == market
+              && other.marketplace != plugin.marketplace
+            ) null (lib.range 0 (index - 1));
+          in
+          lib.optional (validSpec && clash != null)
+            "${at}.marketplace is ${toJSON plugin.marketplace} but options.plugins[${toString clash}] adds the marketplace ${market} from ${toJSON (elemAt pluginList clash).marketplace}";
       minimumProblems = lib.optionals (plugin ? minimumAt) (
         let
           path = plugin.minimumAt;
@@ -180,6 +212,7 @@ let
       )
       ++ lib.optional (!validSpec) "${at}.spec must look like NAME@MARKETPLACE, got ${toJSON spec}"
       ++ lib.optional duplicate "${at}.spec ${spec} is listed twice"
+      ++ marketplaceProblems
       ++ minimumProblems
       ++ skillProblems
       ++ tracking.problems at plugin;

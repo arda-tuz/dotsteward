@@ -85,7 +85,7 @@ rm -rf -- "$DS_STUB_STATE/codex"
 ds_stub_set codex marketplace-name other-market
 assert_exit 1 agents install
 assert_contains "$DS_STDERR" "codex plugin marketplace add $repo did not add the marketplace example-market"
-assert_call_count 0 codex "plugin add $spec"
+assert_call_count 1 codex "plugin add $spec"
 
 # --- entries without marketplace never touch marketplaces ---------------------------------
 
@@ -93,9 +93,10 @@ rm -rf -- "$DS_STUB_STATE/codex" "$HOME/.codex/plugins"
 inst=$(codex_instance plain '["x86_64-linux"]' "method = \"external\"
 options = { plugins = [{ spec = \"$spec\" }] }")
 codex_mirror "$inst"
+markets_before=$(ds_call_count codex 'plugin marketplace*')
 assert_exit 0 agents install
-assert_call_count 0 codex 'plugin marketplace*'
-assert_call_count 1 codex "plugin add $spec"
+assert_eq "$markets_before" "$(ds_call_count codex 'plugin marketplace*')" "no marketplace call"
+assert_call_count 2 codex "plugin add $spec"
 
 # --- invalid marketplace values ------------------------------------------------------------
 

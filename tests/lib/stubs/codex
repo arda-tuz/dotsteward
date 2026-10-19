@@ -54,14 +54,14 @@ if [[ ${1:-} == plugin && ${2:-} == marketplace && ${3:-} == add ]]; then
   mkdir -p "$DS_STUB_DIR"
   [[ -f $markets ]] || printf '[]\n' >"$markets"
   if jq -e --arg name "$market" 'any(.[]; .name == $name)' "$markets" >/dev/null; then
-    printf 'Marketplace `%s` is already added from %s.\n' "$market" "$url"
+    printf 'Marketplace %s is already added from %s.\n' "$market" "$url"
     exit 0
   fi
   jq --arg name "$market" --arg url "$url" \
     '. + [{name: $name, root: "/synthetic/marketplaces/\($name)", marketplaceSource: {sourceType: "git", source: $url}}]' \
     "$markets" >"$markets.tmp"
   mv -- "$markets.tmp" "$markets"
-  printf 'Added marketplace `%s` from %s.\n' "$market" "$url"
+  printf 'Added marketplace %s from %s.\n' "$market" "$url"
   exit 0
 fi
 

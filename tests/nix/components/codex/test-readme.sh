@@ -51,6 +51,7 @@ expected_plugins=$(jq -cS . <<'EOF'
 [
   {
     "spec": "example-plugin@example-market",
+    "marketplace": "example-org/example-marketplace",
     "minimumAt": "agent_tools.example-plugin.minimum_version",
     "requiredSkillDirectories": ["alpha", "beta"],
     "trackAt": "agent_tools.example-plugin",
@@ -79,7 +80,7 @@ json_check "$manifest" '[.pins.latest[] | select(.component == "codex" and .adap
   '["agent_tools.example-plugin"]'
 
 # The CLI reads the same instance; its plugins hook (agents check) sees the
-# documented plugin and reports it missing without installing anything.
+# documented marketplace and reports it missing without adding anything.
 codex_hermetic_path
 ds_use_stubs codex
 # The example keeps the default method (official-binary): the binary on PATH
@@ -88,5 +89,6 @@ ds_stub_set codex version "codex-cli $(jq -r .agent_tools.codex.linux.version "$
 codex_mirror "$inst"
 mkdir -p "$HOME/.codex/skills" "$HOME/.agents/skills"
 assert_exit 1 codex_cli "$inst" agents check --profile workstation
-assert_contains "$DS_STDERR" "codex plugin example-plugin@example-market is not installed and enabled"
+assert_contains "$DS_STDERR" "codex marketplace example-market (example-org/example-marketplace) is not added"
+assert_call_count 0 codex 'plugin marketplace add*'
 assert_call_count 0 codex 'plugin add*'

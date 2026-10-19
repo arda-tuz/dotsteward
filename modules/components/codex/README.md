@@ -75,6 +75,7 @@ enable = true
 
 [[components.codex.options.plugins]]
 spec = "example-plugin@example-market"
+marketplace = "example-org/example-marketplace"
 minimumAt = "agent_tools.example-plugin.minimum_version"
 requiredSkillDirectories = ["alpha", "beta"]
 trackAt = "agent_tools.example-plugin"
@@ -87,16 +88,23 @@ equivalent, but TOML 1.0 requires each inline table on a single line.
 | Key | Required | Meaning |
 | --- | --- | --- |
 | `spec` | yes | `NAME@MARKETPLACE`, as `codex plugin add` takes it |
+| `marketplace` | no | the GitHub repository `OWNER/REPO` of a Git marketplace that `codex plugin marketplace add` adds under the spec's marketplace name; entries naming the same marketplace name the same repository |
 | `minimumAt` | no | a `versions.lock.json` path holding the minimum version: a version string, or an entry with `minimum_version` or `version` |
 | `requiredSkillDirectories` | no | directory names that must hold `skills/<name>/SKILL.md` inside the installed plugin |
 | `trackAt` | no | a `versions.lock.json` path of an entry with `source` (`https://github.com/OWNER/REPO` of the marketplace) and `observed_marketplace_revision` (the 40-digit commit the plugin was last reviewed at); needs `watched` |
 | `watched` | with `trackAt` | regular expressions (full match) of the marketplace paths that belong to the plugin |
 
 A non-empty list adds the `plugins` hook (`plugins.sh`, an agentsPost hook:
-agents phase, before validation). `dotsteward agents install` runs `codex plugin add SPEC`
-for each plugin that `codex plugin list --json` does not show installed and
-enabled. Both `agents install` and `agents check` then verify every plugin:
+agents phase, before validation). `dotsteward agents install` first runs
+`codex plugin marketplace add OWNER/REPO` for each `marketplace` that
+`codex plugin marketplace list --json` does not list under the spec's
+marketplace name, then `codex plugin add SPEC` for each plugin that
+`codex plugin list --json` does not show installed and enabled. Both
+`agents install` and `agents check` then verify every plugin:
 
+- the marketplace an entry names is listed under the spec's marketplace
+  name, as a Git marketplace from `https://github.com/OWNER/REPO` (a
+  trailing `.git` and letter case aside);
 - it is listed as installed and enabled, with a plain version string;
 - its directory (the listed local source path, else
   `${CODEX_HOME:-~/.codex}/plugins/cache/<marketplace>/<name>/<version>`)
@@ -106,6 +114,12 @@ enabled. Both `agents install` and `agents check` then verify every plugin:
 - every required skill directory has a `SKILL.md`.
 
 `agents check` never installs anything.
+
+Codex refreshes configured Git marketplaces in the background when a
+session starts and then refreshes the cached copies of their installed
+plugins, so a marketplace entry needs no update switch; the minimum still refuses an
+older plugin. A marketplace that is not on GitHub (a local path, another Git
+host) is added by hand and its plugins are listed without `marketplace`.
 
 Each plugin with `trackAt` adds a `git-compare` row to `dotsteward pins
 latest`, with both methods: the row is a review when the marketplace changed
