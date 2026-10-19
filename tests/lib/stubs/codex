@@ -10,6 +10,16 @@
 #                                MARKET/NAME/VERSION/.codex-plugin/plugin.json
 #                                and one skills/<skill>/SKILL.md per name in
 #                                the state value "plugin-skills"
+#   codex plugin marketplace list --json
+#                                {"marketplaces": [...]}: the state value
+#                                "marketplaces" when set (a canned list),
+#                                else the marketplaces added so far
+#   codex plugin marketplace add OWNER/REPO
+#                                adds a Git marketplace from
+#                                https://github.com/OWNER/REPO.git, named
+#                                by the state value "marketplace-name"
+#                                (default REPO); an added name is reported
+#                                as already added
 # --version prints "version" (default "codex-cli 0.50.0"); anything else
 # succeeds silently.
 set -euo pipefail
@@ -19,6 +29,41 @@ DS_STUB_ENV_DEFAULT="CODEX_HOME"
 ds_stub_begin codex "$@"
 
 installed=$DS_STUB_DIR/installed.json
+
+markets=$DS_STUB_DIR/marketplaces.json
+
+if [[ ${1:-} == plugin && ${2:-} == marketplace && ${3:-} == list ]]; then
+  if [[ -f $DS_STUB_DIR/marketplaces ]]; then
+    cat -- "$DS_STUB_DIR/marketplaces"
+  elif [[ -f $markets ]]; then
+    jq '{marketplaces: .}' "$markets"
+  else
+    printf '{"marketplaces": []}\n'
+  fi
+  exit 0
+fi
+
+if [[ ${1:-} == plugin && ${2:-} == marketplace && ${3:-} == add ]]; then
+  source_repo=${4:-}
+  if [[ ! $source_repo =~ ^[A-Za-z0-9._-]+/([A-Za-z0-9._-]+)$ ]]; then
+    printf 'error: unsupported marketplace source %s\n' "${source_repo:-''}" >&2
+    exit 1
+  fi
+  market=$(ds_stub_value marketplace-name "${BASH_REMATCH[1]}")
+  url=https://github.com/$source_repo.git
+  mkdir -p "$DS_STUB_DIR"
+  [[ -f $markets ]] || printf '[]\n' >"$markets"
+  if jq -e --arg name "$market" 'any(.[]; .name == $name)' "$markets" >/dev/null; then
+    printf 'Marketplace `%s` is already added from %s.\n' "$market" "$url"
+    exit 0
+  fi
+  jq --arg name "$market" --arg url "$url" \
+    '. + [{name: $name, root: "/synthetic/marketplaces/\($name)", marketplaceSource: {sourceType: "git", source: $url}}]' \
+    "$markets" >"$markets.tmp"
+  mv -- "$markets.tmp" "$markets"
+  printf 'Added marketplace `%s` from %s.\n' "$market" "$url"
+  exit 0
+fi
 
 if [[ ${1:-} == plugin && ${2:-} == list ]]; then
   if [[ -f $DS_STUB_DIR/plugins ]]; then

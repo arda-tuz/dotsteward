@@ -239,7 +239,7 @@ assert_inst_fails "$(username "$invalid")" \
   "- dotsteward: component codex: options.plugins[2].minimumAt: versions.lock.json agent_tools is not a version (a string, or an entry with minimum_version or version)" \
   '- dotsteward: component codex: options.plugins[2].requiredSkillDirectories[0] must be a plain directory name, got "../escape"' \
   '- dotsteward: component codex: options.plugins[2].requiredSkillDirectories[1] must be a plain directory name, got ""' \
-  "- dotsteward: component codex: options.plugins[2] has unknown key extra (known: spec, minimumAt, requiredSkillDirectories, trackAt, watched)" \
+  "- dotsteward: component codex: options.plugins[2] has unknown key extra (known: spec, marketplace, minimumAt, requiredSkillDirectories, trackAt, watched)" \
   "- dotsteward: component codex: options.plugins[3].spec alpha@market is listed twice"
 
 invalid=$(codex_instance invalid-types '["x86_64-linux"]' 'options = { plugins = [
