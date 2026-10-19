@@ -50,7 +50,9 @@
 #                                    a Python application into its own
 #                                    virtual environment
 #   methods_deb_transaction NAME...  the fresh-mode deb transaction of the
-#                                    given deb components (Linux); sets
+#                                    given deb components (Linux): their
+#                                    vendor APT sources, then one apt
+#                                    transaction; sets
 #                                    METHODS_DEB_STATUS[name] and
 #                                    METHODS_DEB_DETAIL[name]
 #   app-archive dispatches to platform_app_archive_install NAME and
@@ -739,7 +741,8 @@ methods_pypi_install() {
 # --- deb ------------------------------------------------------------------
 
 # _methods_deb_block NAME: sets _deb_pin, _deb_names, _deb_arch,
-# _deb_verify, _deb_apt and, with a pin, _deb_entry and _deb_floor.
+# _deb_verify, _deb_apt, _deb_sources (one JSON object per vendor APT
+# source) and, with a pin, _deb_entry and _deb_floor.
 _methods_deb_block() {
   local name=$1 component
   component=$(methods_component "$name") || exit 1
@@ -748,6 +751,7 @@ _methods_deb_block() {
   _deb_verify=$(jq -r 'if .install.verifyAfterInstall == false then "false" else "true" end' <<<"$component")
   mapfile -t _deb_names < <(jq -r '(.install.packageNames // [])[]' <<<"$component")
   mapfile -t _deb_apt < <(jq -r '(.install.apt // [])[]' <<<"$component")
+  mapfile -t _deb_sources < <(jq -c '(.install.aptSources // [])[]' <<<"$component")
   _deb_entry=''
   _deb_floor=''
   if [[ -n $_deb_pin ]]; then
@@ -793,10 +797,91 @@ _methods_deb_requirements() {
   require_command dpkg
 }
 
+# --- Vendor APT sources ----------------------------------------------------
+#
+# install.aptSources of a deb component: a deb822 file
+# <apt>/sources.list.d/<name>.sources whose Signed-By is the keyring
+# <apt>/keyrings/<name>.asc (<apt> is DOTSTEWARD_APT_DIR, else /etc/apt).
+# The keyring must hold exactly one primary key, the pinned fingerprint.
+
+_methods_apt_dir() {
+  printf '%s\n' "${DOTSTEWARD_APT_DIR:-/etc/apt}"
+}
+
+# _methods_apt_source_paths SOURCE_JSON: sets _src_name, _src_file,
+# _src_keyring, _src_fpr and _src_key_url.
+_methods_apt_source_paths() {
+  local dir
+  dir=$(_methods_apt_dir)
+  _src_name=$(jq -r .name <<<"$1")
+  _src_file=$dir/sources.list.d/$_src_name.sources
+  _src_keyring=$dir/keyrings/$_src_name.asc
+  _src_fpr=$(jq -r .keyFingerprint <<<"$1")
+  _src_key_url=$(jq -r .keyUrl <<<"$1")
+}
+
+# _methods_apt_source_text SOURCE_JSON: the deb822 stanza of the source;
+# {codename} in a suite is VERSION_CODENAME of os-release.
+_methods_apt_source_text() {
+  local source=$1 codename='' keyring
+  if jq -e 'any(.suites[]; contains("{codename}"))' <<<"$source" >/dev/null; then
+    codename=$(os_release_value VERSION_CODENAME) || exit 1
+    [[ -n $codename ]] || die "apt source $(jq -r .name <<<"$source"): os-release has no VERSION_CODENAME for {codename}"
+  fi
+  keyring=$(_methods_apt_dir)/keyrings/$(jq -r .name <<<"$source").asc
+  jq -r --arg codename "$codename" --arg keyring "$keyring" '
+    "Types: deb",
+    "URIs: \(.uri)",
+    "Suites: \(.suites | map(gsub("\\{codename\\}"; $codename)) | join(" "))",
+    (if (.components // []) != [] then "Components: \(.components | join(" "))" else empty end),
+    (if (.architectures // []) != [] then "Architectures: \(.architectures | join(" "))" else empty end),
+    "Signed-By: \($keyring)"' <<<"$source"
+}
+
+# _methods_key_fingerprints FILE: the primary key fingerprints of an
+# OpenPGP key file, one per line (none for a file gpg cannot read).
+_methods_key_fingerprints() {
+  local file=$1 home status=0
+  require_command gpg
+  home=$(mktemp -d "${TMPDIR:-/tmp}/dotsteward-gpg.XXXXXX") ||
+    die "cannot create a temporary directory for gpg"
+  gpg --batch --no-tty --homedir "$home" --with-colons --show-keys -- "$file" 2>/dev/null |
+    awk -F: '$1 == "pub" { primary = 1; next } $1 == "fpr" && primary { print $10; primary = 0 }' ||
+    status=$?
+  cleanup_temp_dir "$home"
+  ((status == 0)) || return 0
+}
+
+# _methods_key_is FILE FINGERPRINT: FILE holds exactly the one key.
+_methods_key_is() {
+  [[ -f $1 && $(_methods_key_fingerprints "$1") == "$2" ]]
+}
+
+# _methods_apt_source_check NAME: the --check-only part of the sources.
+_methods_apt_source_check() {
+  local name=$1 source
+  for source in "${_deb_sources[@]}"; do
+    _methods_apt_source_paths "$source"
+    if [[ ! -f $_src_file ]]; then
+      _methods_set failed "apt source $_src_name is not configured ($_src_file)"
+      return 1
+    fi
+    if [[ $(<"$_src_file") != "$(_methods_apt_source_text "$source")" ]]; then
+      _methods_set failed "apt source $_src_name differs from the component ($_src_file)"
+      return 1
+    fi
+    if ! _methods_key_is "$_src_keyring" "$_src_fpr"; then
+      _methods_set failed "the keyring of apt source $_src_name does not hold exactly the key $_src_fpr ($_src_keyring)"
+      return 1
+    fi
+  done
+}
+
 _methods_deb_check() {
   local name=$1 met package
   _methods_deb_requirements
   _methods_deb_block "$name"
+  _methods_apt_source_check "$name" || return 1
   if [[ -n $_deb_pin ]] && ! met=$(_methods_deb_floor_met); then
     _methods_set failed "${_deb_names[0]} $_deb_floor or newer is not installed (found $(_methods_deb_found "$met"))"
     return 1
@@ -819,7 +904,9 @@ methods_deb_transaction() {
   local name package met tmp_dir status=0 queued existing download url size sha256 detail
   local -a names=("$@") apt_queue=() deb_names=() deb_urls=() deb_sizes=() deb_sha=() deb_files=()
   local -a deb_expected=() deb_arch=()
-  local -A component_apt=() component_deb=()
+  local -a src_components=() src_json=() src_text=() src_key=()
+  local -A component_apt=() component_deb=() component_src=() src_seen=()
+  local source text
   METHODS_DEB_STATUS=()
   METHODS_DEB_DETAIL=()
   ((${#names[@]})) || return 0
@@ -843,6 +930,26 @@ methods_deb_transaction() {
       deb_arch+=("$_deb_arch")
       component_deb[$name]=1
     fi
+    for source in "${_deb_sources[@]}"; do
+      _methods_apt_source_paths "$source"
+      if [[ -n ${src_seen[$_src_name]:-} ]]; then
+        [[ ${src_seen[$_src_name]} == "$source" ]] ||
+          die "$name (deb): apt source $_src_name is declared again with other values"
+        continue
+      fi
+      src_seen[$_src_name]=$source
+      text=$(_methods_apt_source_text "$source") || exit 1
+      if _methods_key_is "$_src_keyring" "$_src_fpr"; then
+        [[ -f $_src_file && $(<"$_src_file") == "$text" ]] && continue
+        src_key+=(0)
+      else
+        src_key+=(1)
+      fi
+      src_components+=("$name")
+      src_json+=("$source")
+      src_text+=("$text")
+      component_src[$name]=1
+    done
     for package in "${_deb_apt[@]}"; do
       dpkg_installed "$package" && continue
       component_apt[$name]+="${component_apt[$name]:+ }$package"
@@ -854,15 +961,32 @@ methods_deb_transaction() {
     done
   done
 
-  # Download and verify every DEB before the first sudo call, then one
-  # transaction. The subshell is the left operand of `||`, where bash ignores
-  # errexit, so every step checks its own status.
-  if ((${#apt_queue[@]} || ${#deb_names[@]})); then
+  # Download and verify every signing key and DEB before the first sudo
+  # call, then the sources and one transaction. The subshell is the left
+  # operand of `||`, where bash ignores errexit, so every step checks its
+  # own status.
+  if ((${#apt_queue[@]} || ${#deb_names[@]} || ${#src_json[@]})); then
     tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotsteward-install.XXXXXX") ||
       die "cannot create a temporary directory for the deb transaction"
     (
       trap 'cleanup_temp_dir "$tmp_dir"' EXIT
-      local i file field paths=() shown=()
+      local i file field found found_keys=() paths=() shown=()
+      for i in "${!src_json[@]}"; do
+        name=${src_components[i]}
+        _methods_apt_source_paths "${src_json[i]}"
+        printf '%s\n' "${src_text[i]}" >"$tmp_dir/$_src_name.sources"
+        ((src_key[i])) || continue
+        file=$tmp_dir/$_src_name.asc
+        log "$name (deb): downloading the signing key $_src_key_url"
+        status=0
+        download_https "$_src_key_url" "$file" || status=$?
+        ((status == 0)) || die "$name (deb): signing key download failed (curl exit $status): $_src_key_url"
+        found=$(_methods_key_fingerprints "$file")
+        if [[ $found != "$_src_fpr" ]]; then
+          mapfile -t found_keys <<<"${found:-none}"
+          die "$name (deb): the signing key at $_src_key_url is not exactly the key $_src_fpr (found $(_methods_join "${found_keys[@]}"))"
+        fi
+      done
       for i in "${!deb_names[@]}"; do
         name=${deb_names[i]}
         [[ ${deb_urls[i]} == https://* ]] ||
@@ -883,10 +1007,25 @@ methods_deb_transaction() {
         paths+=("$file")
         shown+=("${deb_files[i]}")
       done
+      for i in "${!src_json[@]}"; do
+        name=${src_components[i]}
+        _methods_apt_source_paths "${src_json[i]}"
+        if ((src_key[i])); then
+          sudo install -D -o root -g root -m 0644 "$tmp_dir/$_src_name.asc" "$_src_keyring" ||
+            die "$name (deb): cannot write the keyring $_src_keyring"
+        fi
+        sudo install -D -o root -g root -m 0644 "$tmp_dir/$_src_name.sources" "$_src_file" ||
+          die "$name (deb): cannot write the apt source $_src_file"
+        log "$name (deb): apt source $_src_name: $(sed -nE 's/^(URIs|Suites|Components): //p' <<<"${src_text[i]}" | paste -sd ' ')"
+      done
       local listing=("${apt_queue[@]}" "${shown[@]}")
-      log "installing system packages: ${listing[*]}"
+      if ((${#listing[@]})); then
+        log "installing system packages: ${listing[*]}"
+      fi
       apt_update || die "apt-get update failed; nothing was installed"
-      apt_install "${apt_queue[@]}" "${paths[@]}" || die "apt-get install failed"
+      if ((${#listing[@]})); then
+        apt_install "${apt_queue[@]}" "${paths[@]}" || die "apt-get install failed"
+      fi
     ) || status=$?
     ((status == 0)) || exit "$status"
   fi
@@ -910,12 +1049,14 @@ methods_deb_transaction() {
           die "$name (deb): apt package $package is not installed after the transaction"
       done
     fi
-    if [[ -n ${component_deb[$name]:-} || -n ${component_apt[$name]:-} ]]; then
+    if [[ -n ${component_deb[$name]:-} || -n ${component_apt[$name]:-} || -n ${component_src[$name]:-} ]]; then
       METHODS_DEB_STATUS[$name]=installed
       if [[ -n $_deb_pin && -n ${component_apt[$name]:-} ]]; then
         detail+=", ${component_apt[$name]// /, }"
-      elif [[ -z $_deb_pin ]]; then
+      elif [[ -z $_deb_pin && -n ${component_apt[$name]:-} ]]; then
         detail=${component_apt[$name]// /, }
+      elif [[ -z $_deb_pin ]]; then
+        detail="apt sources; $(_methods_join "${_deb_apt[@]}")"
       fi
     else
       METHODS_DEB_STATUS[$name]=satisfied

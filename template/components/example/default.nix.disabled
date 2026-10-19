@@ -71,7 +71,7 @@ in
     # with the package in components/example-term/package.nix;
     # pypi = { pin; distribution; requirements; venv; bin; } (a Python
     # application in its own virtual environment);
-    # deb = { pin; packageNames; apt; } (Linux system packages);
+    # deb = { pin; packageNames; apt; aptSources; } (Linux system packages);
     # app-archive = { pin; appName; } (macOS application bundles).
     install = {
       official-binary = {

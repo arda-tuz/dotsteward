@@ -19,7 +19,8 @@
 #                forbid_paths GLOB DIR...
 # Locks:         lock_value QUERY [FILE], pin_value PACKAGE FIELD
 #                (desktop_pin is the same function under its old name)
-# Network:       git_net SECONDS ARG..., download_verified URL DEST SIZE SHA256
+# Network:       git_net SECONDS ARG..., download_https URL DEST,
+#                download_verified URL DEST SIZE SHA256
 # Nix:           source_nix_daemon, nix_cmd ARG...
 # State:         state_root, cleanup_temp_dir DIR,
 #                backup_file_private SRC BACKUP_ROOT, backup_copy_of TARGET
@@ -268,6 +269,19 @@ nix_cmd() {
   nix --extra-experimental-features 'nix-command flakes' "$@"
 }
 
+# download_https URL DEST: HTTPS only (redirects too); returns curl's exit
+# status. The caller verifies the content.
+download_https() {
+  local url=$1
+  local destination=$2
+
+  require_command curl
+  curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+    --connect-timeout 20 --retry 3 --retry-delay 5 --speed-limit 10240 --speed-time 60 \
+    --output "$destination" "$url" || return
+  [[ -f $destination && ! -L $destination ]] || die "downloaded file is not a regular file: $destination"
+}
+
 # download_verified URL DEST SIZE SHA256: HTTPS only; the exact size is
 # checked before the digest.
 download_verified() {
@@ -277,11 +291,7 @@ download_verified() {
   local expected_sha256=$4
   local actual_size actual_sha256
 
-  require_command curl
-  curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
-    --connect-timeout 20 --retry 3 --retry-delay 5 --speed-limit 10240 --speed-time 60 \
-    --output "$destination" "$url" || return
-  [[ -f $destination && ! -L $destination ]] || die "downloaded file is not a regular file: $destination"
+  download_https "$url" "$destination" || return
 
   actual_size=$(stat -c '%s' -- "$destination")
   [[ $actual_size == "$expected_size" ]] ||

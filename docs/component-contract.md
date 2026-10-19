@@ -79,6 +79,14 @@ needs code specific to one component.
 | `install.deb.architecture` | null or string | The architecture asserted in the DEB. |
 | `install.deb.verifyAfterInstall` | bool, default `true` | Check the version floor after installing. |
 | `install.deb.apt` | list of strings | Plain APT packages installed in the same transaction. |
+| `install.deb.aptSources` | list of sources | Vendor APT repositories the packages come from, written before the transaction (see below). |
+| `install.deb.aptSources.*.name` | string | `sources.list.d/<name>.sources` and `keyrings/<name>.asc` below `/etc/apt`: lower-case letters, digits, dots and dashes. |
+| `install.deb.aptSources.*.uri` | HTTPS URL | The repository URI. |
+| `install.deb.aptSources.*.suites` | non-empty list of strings | The suites; `{codename}` is `VERSION_CODENAME` of os-release. |
+| `install.deb.aptSources.*.components` | list of strings | The components; empty for a flat repository. |
+| `install.deb.aptSources.*.architectures` | list of strings | The architectures; empty: every architecture dpkg knows. |
+| `install.deb.aptSources.*.keyUrl` | HTTPS URL | The download URL of the repository signing key. |
+| `install.deb.aptSources.*.keyFingerprint` | 40 upper-case hex digits | The fingerprint of the one primary key the key file must hold. |
 | `install.app-archive` | block | Method `app-archive` (macOS, system level). |
 | `install.app-archive.pin` | lock path | The archive download. |
 | `install.app-archive.appName` | string | The application bundle name. |
@@ -101,6 +109,16 @@ needs code specific to one component.
 
 The system-install transaction installs the `deb` components in the order
 of `[components] order`.
+
+A vendor APT source (`install.deb.aptSources`) is written in `fresh` mode
+only, before the transaction: the signing key is downloaded over HTTPS
+before the first `sudo` call and must hold exactly the pinned primary key;
+then the keyring and the deb822 source file are installed (each only when
+it differs) and `apt-get update` reads them. The packages of the
+component, and later updates with plain `apt`, then come from the vendor
+repository. `--check-only` fails while a source or its keyring is missing
+or differs. Back them up with `bootstrap.backupPaths` when a machine may
+already have them.
 
 ## Pins
 

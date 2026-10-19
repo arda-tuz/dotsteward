@@ -118,6 +118,19 @@ let
     description = "octal file mode (0644)";
   };
 
+  httpsUrl = types.strMatching "https://[^[:space:]]+" // {
+    description = "HTTPS URL";
+  };
+
+  # The file name of an APT source and its keyring.
+  aptSourceName = types.strMatching "[a-z0-9][a-z0-9.-]*" // {
+    description = "apt source name (lower-case letters, digits, dots and dashes)";
+  };
+
+  keyFingerprint = types.strMatching "[0-9A-F]{40}" // {
+    description = "OpenPGP fingerprint (40 upper-case hex digits)";
+  };
+
   perPlatform =
     type:
     types.submodule {
@@ -192,6 +205,19 @@ let
     options.kind = option (types.enum ruleKinds) "Pin rule kind; the other fields depend on it.";
   };
 
+  # A vendor APT repository of a deb component (deb822 source file).
+  aptSourceSpec = types.submodule {
+    options = {
+      name = option aptSourceName "File name of sources.list.d/<name>.sources and keyrings/<name>.asc.";
+      uri = option httpsUrl "Repository URI.";
+      suites = option (types.nonEmptyListOf types.str) "Suites; {codename} is the VERSION_CODENAME of os-release.";
+      components = list types.str "Components; empty for a flat repository.";
+      architectures = list types.str "Architectures; empty: every architecture dpkg knows.";
+      keyUrl = option httpsUrl "Download URL of the repository signing key.";
+      keyFingerprint = option keyFingerprint "Fingerprint of the one primary key the key file must hold.";
+    };
+  };
+
   latestSpec = types.submodule {
     freeformType = freeform;
     options = {
@@ -255,6 +281,7 @@ let
       architecture = nullable types.str "Architecture asserted for the DEB.";
       verifyAfterInstall = optionDefault types.bool true "Verify the floor after installing.";
       apt = list types.str "Plain apt packages in the same transaction.";
+      aptSources = list aptSourceSpec "Vendor APT repositories written before the transaction.";
     };
     app-archive = {
       pin = option lockPath "Lock path of the archive.";
@@ -407,12 +434,14 @@ in
       hostPath
       homeRelativePath
       fileMode
+      httpsUrl
       perPlatformPath
       hookSpec
       reloadSpec
       probeSpec
       ruleSpec
       latestSpec
+      aptSourceSpec
       settingsTarget
       ;
     component = types.submodule componentModule;

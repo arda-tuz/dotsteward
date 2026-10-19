@@ -12,6 +12,9 @@ plutil hdiutil ditto sysctl free
 # library tests against an isolated store).
 unzip tar curl git gh nix nix-store nix-instantiate ssh
 
+# OpenPGP: the signing keys of vendor APT sources.
+gpg
+
 # Toolchain and linters.
 install mktemp flock jq python3 bash shellcheck actionlint nixfmt
 

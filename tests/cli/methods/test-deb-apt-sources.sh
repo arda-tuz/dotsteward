@@ -23,7 +23,7 @@ make_key() {
   gpg --batch --quiet --homedir "$gpg_home" --passphrase '' --trust-model always \
     --quick-generate-key "$1" ed25519 sign never
   gpg --batch --quiet --homedir "$gpg_home" --armor --export "$1" >"$2"
-  gpg --batch --homedir "$gpg_home" --with-colons --fingerprint "$1" |
+  gpg --batch --homedir "$gpg_home" --trust-model always --with-colons --fingerprint "$1" 2>/dev/null |
     awk -F: '$1 == "fpr" { print $10; exit }'
 }
 vendor_key=$DS_TEST_ROOT/vendor.asc
@@ -72,8 +72,8 @@ assert_contains "$DS_STDERR" "example-app (deb): apt source example-vendor is no
 assert_exit 0 run_install --profile fresh
 assert_eq "$expected_source" "$(<"$source_file")"
 assert_eq "$(<"$vendor_key")" "$(<"$keyring")"
-assert_file_mode 0644 "$source_file"
-assert_file_mode 0644 "$keyring"
+assert_file_mode "$source_file" 0644
+assert_file_mode "$keyring" 0644
 assert_eq "1.0" "$(ds_dpkg_version example-cli)"
 assert_eq "2.0" "$(ds_dpkg_version example-plugin)"
 mapfile -t calls < <(grep -E '^(curl|sudo) ' "$DS_CALL_LOG")
