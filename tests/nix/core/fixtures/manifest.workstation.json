@@ -183,7 +183,8 @@
     "link_roots": {
       "~/.example-term/linked": { "component": "example-term", "target_prefix": "../../.agents/skills/" }
     },
-    "excluded_subtrees": [".system"]
+    "excluded_subtrees": [".system"],
+    "agent_roots": { "example-agent": "~/.example-term/agent-skills" }
   },
   "agent_rules": {
     "targets": [

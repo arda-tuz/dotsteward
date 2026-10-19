@@ -4,7 +4,8 @@
 # RPC session answers get_commands: PI_OFFLINE=1, no session, extensions or
 # prompt templates, and a fresh temporary PI_CODING_AGENT_DIR, so neither
 # the network nor the user's own Pi configuration (~/.pi/agent) takes part;
-# the directory is removed afterwards. The skill commands (source "skill",
+# only Pi's own skill root ~/.pi/agent/skills, where the skills scoped to Pi
+# are linked, is linked into it. The directory is removed afterwards. The skill commands (source "skill",
 # named skill:<name>) are compared with the expected skills.
 set -Eeuo pipefail
 
@@ -23,6 +24,9 @@ cleanup() {
   rm -f -- "$responses"
 }
 trap cleanup EXIT
+if [[ -d $HOME/.pi/agent/skills ]]; then
+  ln -s -- "$HOME/.pi/agent/skills" "$config_dir/skills"
+fi
 
 status=0
 printf '%s\n' '{"type":"get_commands"}' |
@@ -36,4 +40,4 @@ actual=$(jq -cRn '[inputs | fromjson? | objects
   | [.[] | .data.commands[]? | objects | select(.source == "skill") | .name | strings | sub("^skill:"; "")]
   | unique' <"$responses" 2>/dev/null) ||
   die "Pi RPC answered no valid get_commands response"
-opencode_pi_compare Pi "$actual"
+opencode_pi_compare pi Pi "$actual"

@@ -181,6 +181,11 @@ let
       excluded_subtrees = union (
         lib.concatMap ({ component, ... }: component.skillLayout.excludedSubtrees) enabled
       );
+      agent_roots = lib.mapAttrs (_: entry: entry.root) (
+        named "skill agent root" (component: component.skillLayout.agentRoots) (root: {
+          inherit root;
+        })
+      );
     };
 
     agent_rules = {

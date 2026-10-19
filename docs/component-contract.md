@@ -249,6 +249,7 @@ answered by the CLI's copy. The commands, version floors and probes of
 | `skillLayout.linkRoots` | attribute set | Skill link roots by path. |
 | `skillLayout.linkRoots.<name>.targetPrefix` | string | The relative link target prefix of that root. |
 | `skillLayout.excludedSubtrees` | list of strings | Subtrees the installer never touches. |
+| `skillLayout.agentRoots` | attribute set of host paths | By agent name, a skill root only that agent reads; the scoped skills of the skills lock (`agents`) are linked there. An agent name declared by two components fails the evaluation. |
 
 ## Updates
 

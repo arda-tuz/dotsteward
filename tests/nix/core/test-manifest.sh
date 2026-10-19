@@ -76,3 +76,9 @@ assert_core_eq '[true]' "map (c: builtins.isString c.install.requirements) (lib.
   "pypi requirements are a string"
 assert_eq "[$hook]" "$(core_json "map (c: c.install.requirements) (lib.filter (c: c.name == \"example-term\") (homeOf { config = \"workstation\"; modules = componentModules ++ [ $pypi_term ]; }).dotsteward.manifest.components)" | jq -c .)" \
   "pypi requirements are the store copy"
+
+# One agent skill root per agent name: a second component declaring the same
+# agent fails the evaluation.
+twice='{ dotsteward.components.example-app.skillLayout.agentRoots.example-agent = "~/.example-app/skills"; }'
+assert_core_fails "(homeOf { config = \"workstation\"; modules = componentModules ++ [ $twice ]; }).dotsteward.manifest.skill_layout" \
+  "dotsteward: skill agent root example-agent is declared by components"

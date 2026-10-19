@@ -30,7 +30,7 @@ assert_nix_eq '{
   "rebuild": {"adoptPaths": []},
   "rollback": {"managedLinks": [], "forceLinkedRestore": []},
   "preflight": {"detectors": {}},
-  "skillLayout": {"legacyRoots": [], "linkRoots": {}, "excludedSubtrees": []},
+  "skillLayout": {"legacyRoots": [], "linkRoots": {}, "excludedSubtrees": [], "agentRoots": {}},
   "agentRulesTargets": [], "gate": {"updatePaths": []}, "docs": null
 }' "let c = $minimal; in {
   inherit (c) enable profiles platforms method supportedMethods options pins settingsTargets reloadHooks probes checks hooks bootstrap rebuild rollback preflight skillLayout agentRulesTargets gate docs;

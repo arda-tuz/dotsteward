@@ -13,6 +13,15 @@
 # and excluded subtrees (names that must never appear in the canonical
 # root). Home Manager links skills under ~/<skills.hm_root>.
 #
+# Scoped skills. A lock entry with agents = [AGENT, ...] is for those agents
+# only: it is copied into the scoped skill store
+# ${XDG_DATA_HOME:-~/.local/share}/dotsteward/scoped-skills/<directory>
+# (never into the canonical root or a link root) and linked from the skill
+# root of each named agent (manifest skill_layout.agent_roots, AGENT ->
+# root, contributed by components; a root only that agent reads):
+# <agent root>/<name> -> <store>/<directory>, an absolute link. Scoped
+# skills always use the native copy.
+#
 #   skills_init PROFILE CHECK_ONLY [GENERATION]
 #       reads the layout, the Home Manager root and the instance skills lock
 #       paths; GENERATION (a built or active Home Manager generation) is
@@ -26,9 +35,10 @@
 #       the instance skills lock: a regular file, schema_version "1.0",
 #       expected_skill_count equal to its entries, each entry with name,
 #       directory (a plain name) and skill_sha256, optional
-#       legacy_directory, directory_sha256 and deployment (copy, the
-#       default, or home-manager); no dotsteward-* name (framework skills
-#       are never instance lock entries)
+#       legacy_directory, directory_sha256, deployment (copy, the
+#       default, or home-manager) and agents (a non-empty list of unique
+#       plain agent names, copy deployment only); no dotsteward-* name
+#       (framework skills are never instance lock entries)
 #   skills_ensure_layout
 #       install: creates ~/.agents and every legacy root; a canonical root
 #       that is a link to a legacy root is migrated to a directory. Both
@@ -56,11 +66,14 @@
 #       destination is refused. Present copy skills with a
 #       directory digest are refreshed when they differ (check: fatal).
 #       Home-managed skills must be links with the lock digest. Then the
-#       canonical entry and the link-root links.
+#       canonical entry and the link-root links. A scoped entry (agents)
+#       is searched, installed and refreshed in the scoped store only, is
+#       refused when it is also in a shared root or names an agent
+#       without a skill root, and gets one link per named agent root.
 #   skills_sweep
 #       removes (install) or reports (check) every dangling link directly
-#       in the canonical root and the link roots whose literal target is
-#       in a managed root (relative ../../<root>/... or $HOME/<root>/...,
+#       in the canonical root, the link roots and the agent roots whose
+#       literal target is in a managed root or the scoped store (relative ../../<root>/... or $HOME/<root>/...,
 #       or a link-root target prefix); other links stay
 #   skills_find_existing DIRECTORY LEGACY_DIRECTORY
 #   skills_canonical_entry PATH
@@ -84,6 +97,7 @@
 #     framework-skill-unverifiable, framework-skill-not-in-generation,
 #     framework-skill-foreign, framework-skill-digest-mismatch
 #   skills: source-missing, source-digest-mismatch, skill-missing,
+#     agent-root-unknown, scoped-skill-shared,
 #     home-managed-missing, home-managed-not-link,
 #     home-managed-digest-mismatch, skill-unresolvable, skill-drift,
 #     skill-not-directory, refresh-digest-mismatch,
@@ -114,6 +128,9 @@ SKILLS_LINK_ROOTS=()
 SKILLS_LINK_PREFIXES=()
 SKILLS_EXCLUDED=()
 SKILLS_SWEEP_PREFIXES=()
+SKILLS_AGENT_NAMES=()
+SKILLS_AGENT_ROOTS=()
+SKILLS_SCOPED_STORE=''
 
 # --- Findings -------------------------------------------------------------
 
@@ -191,6 +208,17 @@ skills_init() {
   done < <(jq -j '(.skill_layout.link_roots // {}) | to_entries[] | .key, "\u0000", (.value.target_prefix // ""), "\u0000"' \
     <<<"$DS_MANIFEST_JSON")
 
+  SKILLS_AGENT_NAMES=()
+  SKILLS_AGENT_ROOTS=()
+  while IFS= read -r -d '' prefix && IFS= read -r -d '' root; do
+    root=$(_skills_expand "$root") || exit 1
+    SKILLS_AGENT_NAMES+=("$prefix")
+    SKILLS_AGENT_ROOTS+=("$root")
+  done < <(jq -j '(.skill_layout.agent_roots // {}) | to_entries | sort_by(.key)[] | .key, "\u0000", .value, "\u0000"' \
+    <<<"$DS_MANIFEST_JSON")
+  SKILLS_SCOPED_STORE=${XDG_DATA_HOME:-$HOME/.local/share}
+  SKILLS_SCOPED_STORE=${SKILLS_SCOPED_STORE%/}/dotsteward/scoped-skills
+
   SKILLS_EXCLUDED=()
   while IFS= read -r -d '' root; do
     [[ -n $root && $root != /* && /$root/ != */../* ]] || die "invalid excluded skill subtree: $root"
@@ -199,7 +227,7 @@ skills_init() {
 
   SKILLS_SEARCH_ROOTS=("$SKILLS_CANONICAL" "${SKILLS_LEGACY_ROOTS[@]}")
   _skills_contains "$SKILLS_HM_ROOT" "${SKILLS_SEARCH_ROOTS[@]}" || SKILLS_SEARCH_ROOTS+=("$SKILLS_HM_ROOT")
-  SKILLS_MANAGED_ROOTS=("$SKILLS_CANONICAL" "${SKILLS_LEGACY_ROOTS[@]}")
+  SKILLS_MANAGED_ROOTS=("$SKILLS_CANONICAL" "${SKILLS_LEGACY_ROOTS[@]}" "$SKILLS_SCOPED_STORE")
 
   # Literal link targets that point into a managed root.
   SKILLS_SWEEP_PREFIXES=()
@@ -213,6 +241,7 @@ skills_init() {
   for prefix in "${SKILLS_LINK_PREFIXES[@]}"; do
     _skills_contains "$prefix" "${SKILLS_SWEEP_PREFIXES[@]}" || SKILLS_SWEEP_PREFIXES+=("$prefix")
   done
+  SKILLS_SWEEP_PREFIXES+=("$SKILLS_SCOPED_STORE/")
 
   SKILLS_LOCK=$(config_instance_path "${DS_SKILLS_LOCK:-agent/skills.lock.json}") || exit 1
   SKILLS_VENDOR=$(config_instance_path "${DS_SKILLS_VENDOR_DIR:-agent/skills}") || exit 1
@@ -257,7 +286,13 @@ else
           (if $s.directory_sha256 == null or ($s.directory_sha256 | nonempty) then empty
            else "skill \($s.name): directory_sha256 must be a non-empty string" end),
           (if $s.deployment == null or $s.deployment == "copy" or $s.deployment == "home-manager" then empty
-           else "skill \($s.name): unknown deployment \($s.deployment)" end)
+           else "skill \($s.name): unknown deployment \($s.deployment)" end),
+          (if $s.agents == null then empty
+           elif ($s.agents | type) != "array" or ($s.agents | length) == 0
+             or ($s.agents | all(plain) | not) or ($s.agents | unique | length) != ($s.agents | length) then
+             "skill \($s.name): agents must be a non-empty list of plain agent names"
+           elif ($s.deployment // "copy") != "copy" then "skill \($s.name): agents needs the copy deployment"
+           else empty end)
         end),
      (if all(.skills[]; type == "object") then
         (.skills | map(.name) | group_by(.) | map(select(length > 1) | .[0])[]
@@ -383,26 +418,33 @@ skills_canonical_entry() {
   printf '%s\n' "$link"
 }
 
+# _skills_link LINK TARGET ACTUAL_REAL: LINK must be a symlink resolving to
+# ACTUAL_REAL; a missing one is created (install) with the literal TARGET.
+_skills_link() {
+  local link=$1 target=$2 actual_real=$3 link_real
+  if [[ -L $link ]]; then
+    link_real=$(realpath -e -- "$link" 2>/dev/null) ||
+      skills_fail link-broken "$link" "broken skill link: $link"
+    [[ $link_real == "$actual_real" ]] ||
+      skills_fail link-foreign "$link" "skill link points to an unexpected target: $link"
+  elif [[ -e $link ]]; then
+    skills_fail link-not-symlink "$link" "skill link path is not a symlink: $link"
+  elif ((SKILLS_CHECK_ONLY)); then
+    skills_fail link-missing "$link" "skill link missing: $link"
+  else
+    mkdir -p -- "${link%/*}"
+    ln -s -- "$target" "$link"
+  fi
+}
+
 # _skills_link_roots NAME ENTRY: <link root>/NAME -> <prefix><entry name>.
 _skills_link_roots() {
-  local name=$1 entry=$2 actual_real link_real link i
+  local name=$1 entry=$2 actual_real link i
   actual_real=$(realpath -e -- "$entry" 2>/dev/null) ||
     skills_fail skill-unresolvable "$entry" "cannot resolve the skill path: $entry"
   for i in "${!SKILLS_LINK_ROOTS[@]}"; do
     link=${SKILLS_LINK_ROOTS[i]}/$name
-    if [[ -L $link ]]; then
-      link_real=$(realpath -e -- "$link" 2>/dev/null) ||
-        skills_fail link-broken "$link" "broken skill link: $link"
-      [[ $link_real == "$actual_real" ]] ||
-        skills_fail link-foreign "$link" "skill link points to an unexpected target: $link"
-    elif [[ -e $link ]]; then
-      skills_fail link-not-symlink "$link" "skill link path is not a symlink: $link"
-    elif ((SKILLS_CHECK_ONLY)); then
-      skills_fail link-missing "$link" "skill link missing: $link"
-    else
-      mkdir -p -- "${SKILLS_LINK_ROOTS[i]}"
-      ln -s -- "${SKILLS_LINK_PREFIXES[i]}${entry##*/}" "$link"
-    fi
+    _skills_link "$link" "${SKILLS_LINK_PREFIXES[i]}${entry##*/}" "$actual_real"
   done
 }
 
@@ -454,20 +496,21 @@ _skills_copy_tree() {
   chmod "$(printf '%o' $((8#$(stat -L -c %a -- "$source") & 8#777)))" -- "$destination"
 }
 
-# _skills_install NAME DIRECTORY SOURCE: installs a missing copy-deployed
-# skill with the [skills] installer argv, else the native copy into
-# <canonical>/<directory>.
+# _skills_install NAME DIRECTORY SOURCE [ROOT]: installs a missing
+# copy-deployed skill with the [skills] installer argv, else the native copy
+# into <canonical>/<directory>; with ROOT (the scoped store) always the
+# native copy into ROOT/<directory>.
 _skills_install() {
-  local name=$1 directory=$2 source=$3 destination staging argument status=0
+  local name=$1 directory=$2 source=$3 root=${4:-} destination staging argument status=0
   local -a argv=()
-  destination=$SKILLS_CANONICAL/$directory
+  destination=${root:-$SKILLS_CANONICAL}/$directory
   # A dangling managed link here is what the sweep removes; it would block
   # the copy (or let an installer write through it) before the sweep runs.
   if [[ -L $destination && ! -e $destination ]] && _skills_is_managed_target "$(readlink -- "$destination")"; then
     unlink -- "$destination"
     log "removed dangling skill link: $destination"
   fi
-  if ((${#DS_SKILLS_INSTALLER[@]})); then
+  if [[ -z $root ]] && ((${#DS_SKILLS_INSTALLER[@]})); then
     for argument in "${DS_SKILLS_INSTALLER[@]}"; do
       argument=${argument//\{source\}/$source}
       argument=${argument//\{name\}/$name}
@@ -490,6 +533,7 @@ _skills_install() {
   fi
   staging=$(_skills_staging_dir)
   _skills_copy_tree "$source" "$staging"
+  mkdir -p -- "${destination%/*}"
   mv -- "$staging" "$destination"
 }
 
@@ -583,16 +627,18 @@ skills_process_framework() {
 
 skills_process_instance() {
   (($# == 1)) || die "usage: skills_process_instance ENTRY_JSON"
-  local entry=$1 name directory legacy skill_sha directory_sha deployment source found hm canonical_entry
+  local entry=$1 name directory legacy skill_sha directory_sha deployment agents source found hm canonical_entry
   local -a fields=()
   mapfile -d '' fields < <(jq -j '[.name, .directory, (.legacy_directory // ""), .skill_sha256,
-    (.directory_sha256 // ""), (.deployment // "copy")] | map(. + "\u0000") | add' <<<"$entry")
+    (.directory_sha256 // ""), (.deployment // "copy"), ((.agents // []) | join(" "))]
+    | map(. + "\u0000") | add' <<<"$entry")
   name=${fields[0]}
   directory=${fields[1]}
   legacy=${fields[2]}
   skill_sha=${fields[3]}
   directory_sha=${fields[4]}
   deployment=${fields[5]}
+  agents=${fields[6]}
   source=$SKILLS_VENDOR/$directory
   hm=$SKILLS_HM_ROOT/$directory
 
@@ -602,6 +648,10 @@ skills_process_instance() {
     skills_fail source-digest-mismatch "$source/SKILL.md" "skill source digest differs from the lock: $name ($source/SKILL.md)"
   if [[ -n $directory_sha && $(directory_sha256 "$source") != "$directory_sha" ]]; then
     skills_fail source-digest-mismatch "$source" "skill source digest differs from the lock: $name ($source)"
+  fi
+  if [[ -n $agents ]]; then
+    _skills_process_scoped "$name" "$directory" "$directory_sha" "$source" "$agents"
+    return 0
   fi
 
   found=$(skills_find_existing "$directory" "$legacy")
@@ -635,6 +685,57 @@ skills_process_instance() {
   _skills_link_roots "$name" "$canonical_entry"
 }
 
+# _skills_process_scoped NAME DIRECTORY DIGEST SOURCE AGENTS: a scoped
+# skill (AGENTS space-separated): the copy <store>/<directory>, installed or
+# refreshed like a shared copy, and <agent root>/NAME -> that copy for each
+# agent.
+_skills_process_scoped() {
+  local name=$1 directory=$2 directory_sha=$3 source=$4 agents=$5 agent root found real i known
+  local -a roots=() names=()
+  read -r -a names <<<"$agents"
+  for agent in "${names[@]}"; do
+    root=''
+    for i in "${!SKILLS_AGENT_NAMES[@]}"; do
+      [[ ${SKILLS_AGENT_NAMES[i]} == "$agent" ]] && root=${SKILLS_AGENT_ROOTS[i]}
+    done
+    if [[ -z $root ]]; then
+      known=$(IFS=,; printf '%s' "${SKILLS_AGENT_NAMES[*]}")
+      known=${known//,/, }
+      skills_fail agent-root-unknown "$name" \
+        "skill $name names the agent $agent, which has no skill root (known: ${known:-none})"
+    fi
+    roots+=("$root")
+  done
+  for root in "${SKILLS_SEARCH_ROOTS[@]}"; do
+    if [[ -f $root/$directory/SKILL.md ]]; then
+      skills_fail scoped-skill-shared "$root/$directory" \
+        "skill $name is for ${agents// /, } only but is also in the shared skill root: $root/$directory; remove it there"
+    fi
+  done
+
+  found=$SKILLS_SCOPED_STORE/$directory
+  if [[ ! -f $found/SKILL.md ]]; then
+    if ((SKILLS_CHECK_ONLY)); then
+      skills_fail skill-missing "$found" "skill missing: $name; $(_skills_rebuild_hint) to install it"
+    fi
+    _skills_install "$name" "$directory" "$source" "$SKILLS_SCOPED_STORE"
+    [[ -f $found/SKILL.md ]] || skills_fail install-unverified "$found" "skill install could not be verified: $name"
+    log "installed skill $name into $found"
+    if [[ -n $directory_sha && $(directory_sha256 "$found") != "$directory_sha" ]]; then
+      skills_fail install-digest-mismatch "$found" \
+        "installed skill digest differs from the lock: $name ($found); the native copy leaves out metadata.json, .git, __pycache__ and __pypackages__ and follows symlinks"
+    fi
+  elif [[ -n $directory_sha ]]; then
+    _skills_refresh "$name" "$found" "$source" "$directory_sha"
+  fi
+
+  real=$(realpath -e -- "$found" 2>/dev/null) ||
+    skills_fail skill-unresolvable "$found" "cannot resolve the skill path: $found"
+  for root in "${roots[@]}"; do
+    _skills_link "$root/$name" "$found" "$real"
+  done
+}
+
 # --- Sweep ----------------------------------------------------------------
 
 # _skills_is_managed_target TARGET: whether the literal link TARGET points
@@ -650,7 +751,7 @@ _skills_is_managed_target() {
 skills_sweep() {
   local root link failed=0
   local -a links=()
-  for root in "$SKILLS_CANONICAL" "${SKILLS_LINK_ROOTS[@]}"; do
+  for root in "$SKILLS_CANONICAL" "${SKILLS_LINK_ROOTS[@]}" "${SKILLS_AGENT_ROOTS[@]}"; do
     [[ -d $root ]] || continue
     mapfile -d '' links < <(find "$root" -mindepth 1 -maxdepth 1 -xtype l -print0 | LC_ALL=C sort -z)
     for link in "${links[@]}"; do

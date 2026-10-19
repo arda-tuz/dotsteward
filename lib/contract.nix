@@ -369,6 +369,7 @@ let
           options.targetPrefix = option types.str "Relative link target prefix.";
         }) "Skill link roots and their target prefixes.";
         excludedSubtrees = list types.str "Subtrees never touched.";
+        agentRoots = attrs hostPath "Skill roots only one agent reads, by agent name; scoped skills (skills lock agents) are linked there.";
       } "Skill layout contributions.";
 
       agentRulesTargets = list (types.submodule {

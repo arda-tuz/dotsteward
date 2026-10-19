@@ -80,7 +80,7 @@ Update every affected layer, following `references/integration-contract.md`:
 7. the update allowlist, through the component's `gate.updatePaths` or `[gate] update_allowlist`, when version updates may need to touch the new paths; it never matches the settings buffer;
 8. the removal of every stale reference when replacing a component.
 
-New tracked files follow the new-file checklist in `references/framework-map.md`. For a new instance skill, vendor the complete directory under `agent/skills/<name>/` (`[skills] vendor_dir`): `SKILL.md`, `agents/openai.yaml`, a license, and only `references/`, `scripts/` and `assets/` besides. Add its entry to `agent/skills.lock.json` (`[skills] lock`), then refresh its digests:
+New tracked files follow the new-file checklist in `references/framework-map.md`. For a new instance skill, vendor the complete directory under `agent/skills/<name>/` (`[skills] vendor_dir`): `SKILL.md`, `agents/openai.yaml`, a license, and only `references/`, `scripts/` and `assets/` besides. Add its entry to `agent/skills.lock.json` (`[skills] lock`); a skill only some agents need (for example because the others load it from a plugin) also gets `agents`, the agent names of the manifest's `skill_layout.agent_roots`. Then refresh its digests:
 
 ```bash
 dotsteward pins sync --skill NAME

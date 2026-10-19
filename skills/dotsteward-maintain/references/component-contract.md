@@ -27,7 +27,7 @@ Every component, a catalog one in the framework or a private one in `components/
 | Settings | `settingsTargets.<name>` (`path` as a home path or per platform, `format` `json`, `toml` or `jsonc`, `createIfMissing`, `createMode`, `backup`, `reload`), `reloadHooks.<name>` (`command`, `timeout`, `env`, `unsetEnv`, `requireCommand`, `onSuccess`, `onFailure`) |
 | Checks | `probes` (`command`, `kind` `version`, `presence` or `features`, `argv`, `extract`, `expected` as `versions:<lock path>`, `needles`, `profiles`); `checks.commands` (commands E2E requires); `checks.e2e` (hook scripts with `phase` `early`, `main` or `late`); `checks.agents`; `checks.floors` (`command`, `argv`, `minimum`, `compare`) |
 | Machine safety | `bootstrap.backupPaths`, `bootstrap.snapshots`, `bootstrap.prerequisites.apt`; `rebuild.adoptPaths`; `rollback.managedLinks`, `rollback.forceLinkedRestore` |
-| Agents | `agentRulesTargets` (home-relative path, `force`), `skillLayout` (`legacyRoots`, `linkRoots`, `excludedSubtrees`) |
+| Agents | `agentRulesTargets` (home-relative path, `force`), `skillLayout` (`legacyRoots`, `linkRoots`, `excludedSubtrees`, `agentRoots`) |
 | Preflight | `preflight.detectors.<name>` (`argv`, `matchLine`), referenced from `[platform.linux.fast_path] detectors` |
 | Updates | `gate.updatePaths` (extended regular expressions added to the update-scope allowlist; never the settings buffer) |
 | Docs | `docs` (the component's README; required for catalog components) |

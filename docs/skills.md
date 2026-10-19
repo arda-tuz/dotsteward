@@ -45,6 +45,23 @@ with `dotsteward pins sync --skill NAME`, and researched by `pins latest`
 (adapter `skill-source`). Framework skills never appear in that lock; they
 move only with a framework upgrade.
 
+A lock entry may name the agents a skill is for, for example when Claude
+Code and Codex already load the same skills from a plugin and only the
+other agents need copies:
+
+```json
+{ "name": "example-skill", "directory": "example-skill", "agents": ["opencode", "pi"], "...": "..." }
+```
+
+Such a scoped skill is copied into
+`${XDG_DATA_HOME:-~/.local/share}/dotsteward/scoped-skills/<directory>`
+instead of `~/.agents/skills`, is not linked into `~/.claude/skills`, and
+gets one link per named agent in that agent's own skill root (component
+`skillLayout.agentRoots`; `opencode-pi` declares `opencode`,
+`~/.config/opencode/skills`, and `pi`, `~/.pi/agent/skills`). `agents` is a
+non-empty list of unique agent names with a declared root, for copy
+deployment only, and a scoped skill must not also be in a shared skill root.
+
 ## Structure of a skill
 
 Each framework skill is a directory with:

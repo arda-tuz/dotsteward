@@ -227,6 +227,13 @@ in
       createIfMissing = true;
     };
 
+    # Skill roots that only OpenCode and only Pi read: the scoped skills of
+    # the skills lock (agents = ["opencode"] or ["pi"]) are linked there.
+    skillLayout.agentRoots = {
+      opencode = "~/.config/opencode/skills";
+      pi = "~/.pi/agent/skills";
+    };
+
     agentRulesTargets = [ { path = ".pi/agent/AGENTS.md"; } ];
     bootstrap.backupPaths = [ "~/.pi/agent/AGENTS.md" ];
     rollback.managedLinks = [ "~/.pi/agent/AGENTS.md" ];

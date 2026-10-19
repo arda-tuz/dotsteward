@@ -202,6 +202,7 @@ in
         legacyRoots = [ "~/.example-term/skills" ];
         linkRoots."~/.example-term/linked".targetPrefix = "../../.agents/skills/";
         excludedSubtrees = [ ".system" ];
+        agentRoots.example-agent = "~/.example-term/agent-skills";
       };
       gate.updatePaths = [ "components/example-term/[^/]+" ];
       pins = {

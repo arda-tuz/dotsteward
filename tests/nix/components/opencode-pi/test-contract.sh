@@ -89,7 +89,7 @@ for system in "$linux" "$darwin"; do
   assert_op_eq '{"opencode":{"path":"~/.config/opencode/opencode.json","format":"jsonc","createIfMissing":true,"createMode":"0644","backup":true,"reload":null}}' \
     "($system).settingsTargets" "settings targets"
   assert_op_eq '{}' "($system).reloadHooks" "reload hooks"
-  assert_op_eq '{"legacyRoots":[],"linkRoots":{},"excludedSubtrees":[]}' "($system).skillLayout" "skill layout"
+  assert_op_eq '{"legacyRoots":[],"linkRoots":{},"excludedSubtrees":[],"agentRoots":{"opencode":"~/.config/opencode/skills","pi":"~/.pi/agent/skills"}}' "($system).skillLayout" "skill layout"
   assert_op_eq '[]' "($system).pins.flakeInputs" "flake inputs"
   assert_op_eq "{\"pi\":$(jq '.versions_lock.agent_tools.pi.version' "$op_seed")}" "($system).pins.resolvedVersions" \
     "resolved versions"

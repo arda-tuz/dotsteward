@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The OpenCode /skill API probe of the opencode-pi component.
 
-Usage: opencode-skill-api.py HOME
+Usage: opencode-skill-api.py HOME [SCOPED_STORE]
 
 Starts `opencode serve --pure` on a free loopback port, waits up to 20
 seconds for GET /skill, and prints the sorted JSON array of the names of the
@@ -10,7 +10,9 @@ any .system subtree). OpenCode also reads other roots such as
 HOME/.claude/skills, whose entries link into the canonical root, and lists a
 name found in several roots once, from whichever root it loaded last; a
 listed location therefore counts when it resolves to a SKILL.md of the
-canonical root. The server is always stopped (SIGTERM, then SIGKILL after 5
+canonical root. A location that resolves to a SKILL.md of SCOPED_STORE
+(the store of skills scoped to some agents, linked from
+HOME/.config/opencode/skills) counts too. The server is always stopped (SIGTERM, then SIGKILL after 5
 seconds). On failure it prints "OpenCode skill catalog could not be
 verified: <reason>" and the tail of the server output to standard error and
 exits 1. Proxies are bypassed: the server is local.
@@ -81,10 +83,12 @@ def canonical_skills(root: str) -> set[str]:
     return found
 
 
-def shared_names(skills: object, home: str) -> list[str]:
+def shared_names(skills: object, home: str, store: str | None) -> list[str]:
     if not isinstance(skills, list):
         raise RuntimeError("GET /skill did not answer a list")
     canonical = canonical_skills(os.path.join(home, ".agents", "skills"))
+    if store is not None and os.path.isdir(store):
+        canonical |= canonical_skills(store)
     names = {
         item["name"]
         for item in skills
@@ -97,10 +101,11 @@ def shared_names(skills: object, home: str) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: opencode-skill-api.py HOME", file=sys.stderr)
+    if len(argv) not in (2, 3):
+        print("usage: opencode-skill-api.py HOME [SCOPED_STORE]", file=sys.stderr)
         return 2
     home = argv[1]
+    store = argv[2] if len(argv) == 3 else None
     port = free_port()
     with tempfile.TemporaryFile(mode="w+t") as log:
         server = subprocess.Popen(
@@ -111,7 +116,7 @@ def main(argv: list[str]) -> int:
             text=True,
         )
         try:
-            names = shared_names(fetch_skills(port, server), home)
+            names = shared_names(fetch_skills(port, server), home, store)
         except Exception as error:  # every failure is reported the same way
             stop(server)
             log.seek(0)
