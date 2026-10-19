@@ -17,6 +17,12 @@
 #                  writing that file lands on main (once)
 #   ci-tags        a tag name: while `pr checks --watch` runs, that tag
 #                  (annotated) lands on main of the repository (once)
+#   stale-head     a count: the next that many `pr view` and `pr checks`
+#                  calls answer for the head the pull request had before
+#                  the last push (headRefOid 1111...; one failed check), as
+#                  GitHub does for a moment after a push
+#   checks-later   a count: the next that many `pr checks` calls (after any
+#                  stale-head calls) find no check on the new head yet
 #
 # Supported commands (--jq/-q FILTER is applied to the JSON answer):
 #   auth status; api user; config get git_protocol; api repos/R;
@@ -165,6 +171,21 @@ sync_prs() {
 }
 sync_prs
 
+# consume NAME: true while the counter knob NAME is above zero, counting it
+# down (the knob is removed at zero).
+consume() {
+  local file=$hub/knobs/$1 count
+  [[ -f $file ]] || return 1
+  count=$(tr -d '\n' <"$file")
+  if ((count <= 1)); then
+    rm -f -- "$file"
+  else
+    printf '%s\n' "$((count - 1))" >"$file"
+  fi
+  ((count >= 1))
+}
+stale_head=1111111111111111111111111111111111111111
+
 case "${1:-} ${2:-}" in
   "auth status")
     printf 'github.com\n  - Logged in to github.com account dotsteward-test (keyring)\n'
@@ -254,12 +275,26 @@ case "${1:-} ${2:-}" in
     file=$(pr_file_of "$3")
     bare=$(bare_of "$(jq -r .head_repo "$file")")
     head=$(tip_of "$bare" "$(jq -r .head_branch "$file")")
+    if consume stale-head; then
+      head=$stale_head
+    fi
     jq --arg head "$head" '{url, state, headRefOid: $head,
       mergeCommit: (if .merge_commit then {oid: .merge_commit} else null end)}' "$file" | answer
     ;;
   "pr checks")
     pr_file_of "$3" >/dev/null
     state=$(knob checks pass)
+    if consume stale-head; then
+      if [[ " ${args[*]} " == *" --watch "* ]]; then
+        printf 'Some checks were not successful\nci\tfail\t1m\n'
+        exit 1
+      fi
+      jq -n '[{name: "ci", bucket: "fail"}]' | answer
+      exit 0
+    fi
+    if consume checks-later; then
+      state=none
+    fi
     if [[ " ${args[*]} " == *" --watch "* ]]; then
       case $state in
         pass)
