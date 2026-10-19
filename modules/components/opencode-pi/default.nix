@@ -227,6 +227,15 @@ in
       createIfMissing = true;
     };
 
+    # Pi reads its user-level MCP servers from ~/.pi/agent/mcp.json (strict
+    # JSON); new MCP servers load in a new session or after /reload.
+    settingsTargets.pi-mcp = {
+      path = "~/.pi/agent/mcp.json";
+      format = "json";
+      createIfMissing = true;
+      createMode = "0600";
+    };
+
     # Skill roots that only OpenCode and only Pi read: the scoped skills of
     # the skills lock (agents = ["opencode"] or ["pi"]) are linked there.
     skillLayout.agentRoots = {

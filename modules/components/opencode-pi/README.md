@@ -27,6 +27,7 @@ enable = true
 
 - Agent rules: `~/.pi/agent/AGENTS.md` links to the instance's agent rules file (`[agent_rules] source`). It is a managed link (checked by E2E, removed by rollback) and a bootstrap backup path.
 - Settings target `opencode`: `~/.config/opencode/opencode.json` on both platforms, format `jsonc` (OpenCode accepts JSON with comments), created with mode `0644` when a buffer entry applies, backed up before the first write. Nothing is reloaded: OpenCode reads the file at start.
+- Settings target `pi-mcp`: `~/.pi/agent/mcp.json`, Pi's user-level MCP servers (`mcpServers.<name>`), format `json` (Pi reads it as strict JSON), created with mode `0600` when a buffer entry applies, backed up before the first write. Nothing is reloaded: Pi connects to new servers in a new session or after `/reload`.
 - Pi's user state below `~/.pi/agent` (credentials, settings, sessions, trust, npm and git caches) is never tracked.
 
 ## Checks
@@ -60,6 +61,7 @@ Only the release pins of the platforms in `nix.systems` whose OpenCode method is
 
 Catalog facts of this component:
 
+- Pi MCP configuration: verified on 2026-10-19 from the Pi 1.0.1 documentation (`docs/mcp.md` of the package): user-level servers are read from `~/.pi/agent/mcp.json` (`mcpServers`, strict JSON), project servers from `.pi/mcp.json` after project trust.
 - OpenCode configuration path: verified on 2026-10-06 from the OpenCode documentation (https://opencode.ai/docs/config/, section "Global"): the global configuration is `~/.config/opencode/opencode.json`, the same path on Linux and macOS, in JSON or JSONC.
 - OpenCode release assets: verified on 2026-10-06 from the GitHub release `v1.18.34` of `anomalyco/opencode`: `opencode-linux-x64.tar.gz` and `opencode-darwin-arm64.zip` each hold the single member `opencode`; sizes and SHA-256 digests in `seed.json` match the downloaded assets.
 - Pi on Linux: verified on 2026-10-06 by building the package from `seed.json` with the framework's nixpkgs on `x86_64-linux` (install check `pi --version` passed).
