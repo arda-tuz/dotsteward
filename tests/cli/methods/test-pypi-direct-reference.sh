@@ -48,17 +48,21 @@ assert_eq "example-app 1.0.0" "$("$link")"
 assert_exit 0 install_app
 assert_eq "satisfied: example-app 1.0.0" "$DS_STDOUT"
 
-# The name is matched like a PEP 503 normalized name.
+# The name is matched like a PEP 503 normalized name (read when the
+# environment has to be installed).
+rm -rf -- "$HOME/.local/share/example-app" "$link"
 direct Example_App 1.0.0
 assert_exit 0 install_app
-assert_eq "satisfied: example-app 1.0.0" "$DS_STDOUT"
+assert_eq "installed: example-app 1.0.0" "$DS_STDOUT"
 
 # The archive's version must still be the pin's version.
 direct example-app 1.1.0
 assert_exit 1 install_app
 assert_contains "$DS_STDERR" "example-app 1.1.0"
 
-# A direct reference of another distribution does not pin this one.
+# A direct reference of another distribution does not pin this one (read
+# when the environment has to be installed).
+rm -rf -- "$HOME/.local/share/example-app" "$link"
 direct example-application 1.0.0
 assert_exit 1 install_app
 assert_contains "$DS_STDERR" "example-app (pypi): $requirements does not pin example-app==1.0.0"

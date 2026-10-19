@@ -653,12 +653,13 @@ _methods_pypi_check() {
 
 # _methods_pypi_pinned FILE: FILE has a requirement line that pins the
 # distribution (any spelling its normalized name allows) at the pin's
-# version.
+# version, or a direct reference to it (`NAME @ URL`, which the required
+# hash fixes to one archive; the installed version is checked afterwards).
 _methods_pypi_pinned() {
   local name_re version_re
   name_re=$(sed -E 's/[-_.]+/[-_.]+/g' <<<"$_py_dist")
   version_re=${_py_version//./[.]}
-  grep -qiE "^[[:space:]]*${name_re}[[:space:]]*==[[:space:]]*${version_re}([[:space:];\\]|\$)" -- "$1"
+  grep -qiE "^[[:space:]]*${name_re}[[:space:]]*(==[[:space:]]*${version_re}([[:space:];\\]|\$)|@[[:space:]]*[^[:space:]])" -- "$1"
 }
 
 # _methods_pypi_create NAME: creates the virtual environment with the

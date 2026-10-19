@@ -67,7 +67,7 @@ needs code specific to one component.
 | `install.pypi` | block | Method `pypi`: a Python application in its own virtual environment in the home directory. |
 | `install.pypi.pin` | lock path | The pin; its `version` is the exact version of the distribution. |
 | `install.pypi.distribution` | string | The distribution whose installed version is checked. |
-| `install.pypi.requirements` | path | A requirements file with a hash for every distribution, installed with `pip install --require-hashes`; it must pin `<distribution>==<version>`. |
+| `install.pypi.requirements` | path | A requirements file with a hash for every distribution, installed with `pip install --require-hashes`; it must pin `<distribution>==<version>`, or reference the distribution directly (`<distribution> @ <URL>`, an archive its hash fixes) when the index does not carry it under that name; the installed version is the pin's version either way. |
 | `install.pypi.python` | string, default `python3` | The interpreter that creates the environment: a command on the user's `PATH` or an absolute path, run with the user's `PATH` (without the CLI's toolchain), so a version-manager shim reaches the user's interpreter. One whose base prefix is in the Nix store is refused. |
 | `install.pypi.venv` | home path | The virtual environment directory. It is created once and kept, so packages the application installs into it survive a new pin. |
 | `install.pypi.bin` | list of strings | Console scripts of the environment linked into `linkDir`. A file there that is not a link into the environment is an error. |
