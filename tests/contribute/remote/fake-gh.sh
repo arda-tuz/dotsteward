@@ -13,9 +13,10 @@
 #                  success, failure or none (default success)
 #   clean-install  conclusion of a dispatched clean-install.yml run
 #                  (default success)
-#   ci-moves-main  a file name: while `pr checks --watch` runs, a commit
+#   ci-moves-main  a file name: while the checks run (`pr checks --watch`,
+#                  or the green `pr checks --json bucket` answer), a commit
 #                  writing that file lands on main (once)
-#   ci-tags        a tag name: while `pr checks --watch` runs, that tag
+#   ci-tags        a tag name: while the checks run (as above), that tag
 #                  (annotated) lands on main of the repository (once)
 #   stale-head     a count: the next that many `pr view` and `pr checks`
 #                  calls answer for the head the pull request had before
@@ -23,6 +24,10 @@
 #                  GitHub does for a moment after a push
 #   checks-later   a count: the next that many `pr checks` calls (after any
 #                  stale-head calls) find no check on the new head yet
+#   checks-flaky   a count: the next that many `pr checks --json bucket`
+#                  calls fail with HTTP 502, as GitHub's API does at times
+#   checks-pending a count: the next that many `pr checks --json bucket`
+#                  calls find the check still pending
 #
 # Supported commands (--jq/-q FILTER is applied to the JSON answer):
 #   auth status; api user; config get git_protocol; api repos/R;
@@ -30,7 +35,7 @@
 #   -f head_sha=S ...; api repos/R/actions/runs/ID; workflow run W -R R
 #   --ref B; pr list -R R --head B ...; pr create -R R --base main --head
 #   [OWNER:]B --title T --body B; pr view URL; pr checks URL --json name |
-#   --watch ...; pr merge URL --squash --match-head-commit SHA (a merge
+#   --json bucket | --watch ...; pr merge URL --squash --match-head-commit SHA (a merge
 #   made on GitHub by hand: a new squash commit on main); release view TAG
 #   -R R; release create TAG -R R ... --verify-tag
 #
@@ -294,6 +299,24 @@ case "${1:-} ${2:-}" in
     fi
     if consume checks-later; then
       state=none
+    fi
+    if [[ " ${args[*]} " == *" bucket"* ]]; then
+      consume checks-flaky && fail "HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)"
+      if consume checks-pending; then
+        jq -n '[{name: "ci", bucket: "pending"}]' | answer
+        exit 0
+      fi
+      if [[ $state == pass ]]; then
+        if [[ -f $hub/knobs/ci-moves-main ]]; then
+          move_main "$(jq -r .repo "$(pr_file_of "$3")")" "$(<"$hub/knobs/ci-moves-main")"
+          rm -f "$hub/knobs/ci-moves-main"
+        fi
+        if [[ -f $hub/knobs/ci-tags ]]; then
+          tag=$(<"$hub/knobs/ci-tags")
+          git -C "$(bare_of "$(jq -r .repo "$(pr_file_of "$3")")")" tag -a "$tag" -m "dotsteward $tag" refs/heads/main
+          rm -f "$hub/knobs/ci-tags"
+        fi
+      fi
     fi
     if [[ " ${args[*]} " == *" --watch "* ]]; then
       case $state in
