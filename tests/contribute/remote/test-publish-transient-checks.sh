@@ -16,6 +16,12 @@ sha=$(git -C "$ct_clone" rev-parse HEAD)
 pr_url=https://github.com/$CT_UPSTREAM_SLUG/pull/1
 mark_trialled full false
 
+# Answers that keep failing stop the wait; main is untouched.
+hub_knob checks-flaky 10
+assert_exit 1 run_contribute publish
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: cannot read the CI checks of $pr_url (10 failed answers in a row); main is untouched"
+[[ $(upstream_main) != "$sha" ]] || ds_fail "main moved although the checks could not be read"
+
 # Checks pending for a while, two failing answers in between: green.
 hub_knob checks-pending 2
 hub_knob checks-flaky 2

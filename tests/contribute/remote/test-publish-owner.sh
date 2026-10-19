@@ -74,7 +74,7 @@ reset_calls
 assert_exit 0 run_contribute publish
 assert_call_count 0 gh 'pr create*'
 assert_call_count 1 gh "pr list -R $CT_UPSTREAM_SLUG --head fix/add-feature --state open *"
-assert_call_count 1 gh "pr checks $pr_url --watch --fail-fast --interval 1"
+assert_call_count 1 gh "pr checks $pr_url --json bucket *"
 assert_call_count 0 gh 'pr merge*'
 assert_call_count 0 gh 'workflow run*'
 assert_contains "$DS_STDOUT" "[dotsteward] merging $pr_url: fast-forwarding main of $CT_UPSTREAM_SLUG to ${sha:0:12}"
@@ -169,6 +169,6 @@ hub_knob ci-tags v0.1.1
 reset_calls
 assert_exit 1 run_contribute publish
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: VERSION is 0.1.1 at ${sha5:0:12}, but the next release is v0.1.2: set VERSION to 0.1.2 in the fix, then run: dotsteward contribute check; nothing is published"
-assert_call_count 1 gh 'pr checks * --watch *'
+assert_call_count 1 gh 'pr checks * --json bucket *'
 assert_eq "$main4_before" "$(upstream_main)" "upstream main after a release during CI"
 assert_eq publish "$(field .step)" "step after a release during CI"

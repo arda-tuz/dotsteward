@@ -83,7 +83,7 @@ hub_knob push-main none
 hub_knob ci-moves-main late.txt
 reset_calls
 assert_exit 5 run_contribute publish
-assert_call_count 1 gh 'pr checks * --watch *'
+assert_call_count 1 gh 'pr checks * --json bucket *'
 [[ $(upstream_main) != "$(git -C "$ct_clone" rev-parse HEAD)" ]] || ds_fail "main was fast-forwarded after it moved during CI"
 assert_eq check "$(field .step)" "step after main moved during CI"
 # The remote branch holds the old commit: the rebased one replaces it.

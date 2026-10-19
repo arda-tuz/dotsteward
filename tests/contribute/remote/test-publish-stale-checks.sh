@@ -24,6 +24,6 @@ assert_exit 0 run_contribute publish
 assert_contains "$DS_STDOUT" "[dotsteward] CI is green on $pr_url"
 assert_contains "$DS_STDOUT" "[dotsteward] merging $pr_url: fast-forwarding main of $CT_UPSTREAM_SLUG to ${sha:0:12}"
 assert_eq "$sha" "$(upstream_main)" "upstream main after the merge"
-assert_call_count 1 gh "pr checks $pr_url --watch --fail-fast --interval 1"
+assert_call_count 1 gh "pr checks $pr_url --json bucket *"
 [[ ! -e $rt_hub/knobs/stale-head && ! -e $rt_hub/knobs/checks-later ]] ||
   ds_fail "publish did not wait through the stale head and the missing checks"

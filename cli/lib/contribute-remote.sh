@@ -514,9 +514,28 @@ _contribute_wait_pr_checks() {
       _contribute_red "no CI check appeared on $pr within ${appear}s; publishing needs green CI, main is untouched"
     sleep "$interval"
   done
+  # The checks are read until none is pending. A failed read (GitHub
+  # answers HTTP 502 at times) is not a CI result and is read again; only
+  # answers that keep failing stop the wait.
   log "waiting for the CI checks of $pr"
-  timeout "$timeout" gh pr checks "$pr" --watch --fail-fast --interval "$interval" </dev/null ||
-    _contribute_red "CI is not green on $pr; main is untouched"
+  local buckets failures=0 limit=10
+  start=$SECONDS
+  while :; do
+    if buckets=$(gh pr checks "$pr" --json bucket --jq '[.[].bucket] | join(" ")' </dev/null 2>/dev/null); then
+      failures=0
+      case " $buckets " in
+        *" fail "* | *" cancel "*) _contribute_red "CI is not green on $pr; main is untouched" ;;
+      esac
+      [[ " $buckets " == *" pending "* ]] || break
+    else
+      failures=$((failures + 1))
+      ((failures < limit)) ||
+        _contribute_red "cannot read the CI checks of $pr ($failures failed answers in a row); main is untouched"
+    fi
+    ((SECONDS - start < timeout)) ||
+      _contribute_red "the CI checks of $pr did not finish within ${timeout}s; main is untouched"
+    sleep "$interval"
+  done
   log "CI is green on $pr"
 }
 

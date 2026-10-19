@@ -13,9 +13,9 @@
 #                  success, failure or none (default success)
 #   clean-install  conclusion of a dispatched clean-install.yml run
 #                  (default success)
-#   ci-moves-main  a file name: while the checks run (`pr checks --watch`,
-#                  or the green `pr checks --json bucket` answer), a commit
-#                  writing that file lands on main (once)
+#   ci-moves-main  a file name: while the checks run (at the green
+#                  `pr checks --json bucket` answer), a commit writing that
+#                  file lands on main (once)
 #   ci-tags        a tag name: while the checks run (as above), that tag
 #                  (annotated) lands on main of the repository (once)
 #   stale-head     a count: the next that many `pr view` and `pr checks`
@@ -35,7 +35,7 @@
 #   -f head_sha=S ...; api repos/R/actions/runs/ID; workflow run W -R R
 #   --ref B; pr list -R R --head B ...; pr create -R R --base main --head
 #   [OWNER:]B --title T --body B; pr view URL; pr checks URL --json name |
-#   --json bucket | --watch ...; pr merge URL --squash --match-head-commit SHA (a merge
+#   --json bucket; pr merge URL --squash --match-head-commit SHA (a merge
 #   made on GitHub by hand: a new squash commit on main); release view TAG
 #   -R R; release create TAG -R R ... --verify-tag
 #
@@ -290,10 +290,6 @@ case "${1:-} ${2:-}" in
     pr_file_of "$3" >/dev/null
     state=$(knob checks pass)
     if consume stale-head; then
-      if [[ " ${args[*]} " == *" --watch "* ]]; then
-        printf 'Some checks were not successful\nci\tfail\t1m\n'
-        exit 1
-      fi
       jq -n '[{name: "ci", bucket: "fail"}]' | answer
       exit 0
     fi
@@ -318,27 +314,7 @@ case "${1:-} ${2:-}" in
         fi
       fi
     fi
-    if [[ " ${args[*]} " == *" --watch "* ]]; then
-      case $state in
-        pass)
-          if [[ -f $hub/knobs/ci-moves-main ]]; then
-            move_main "$(jq -r .repo "$(pr_file_of "$3")")" "$(<"$hub/knobs/ci-moves-main")"
-            rm -f "$hub/knobs/ci-moves-main"
-          fi
-          if [[ -f $hub/knobs/ci-tags ]]; then
-            tag=$(<"$hub/knobs/ci-tags")
-            git -C "$(bare_of "$(jq -r .repo "$(pr_file_of "$3")")")" tag -a "$tag" -m "dotsteward $tag" refs/heads/main
-            rm -f "$hub/knobs/ci-tags"
-          fi
-          printf 'All checks were successful\nci\tpass\t1m\n'
-          ;;
-        fail)
-          printf 'Some checks were not successful\nci\tfail\t1m\n'
-          exit 1
-          ;;
-        *) fail "no checks reported on the branch" ;;
-      esac
-    elif [[ $state == none ]]; then
+    if [[ $state == none ]]; then
       jq -n '[]' | answer
     else
       jq -n --arg state "$state" '[{name: "ci", bucket: $state}]' | answer
