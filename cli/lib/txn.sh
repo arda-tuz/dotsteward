@@ -118,10 +118,27 @@ txn_require_clone() {
     die "unexpected origin URL: $origin (expected $DS_INSTANCE_REMOTE)"
 }
 
+# _txn_git_list ARRAY ARG...: the NUL-separated output of `git -C <instance>
+# ARG...` as the elements of ARRAY; returns git's status. The output goes
+# through a temporary file: the status of a process substitution read with
+# `wait "$!"` depends on whether bash already reaped it, which made the
+# callers fail at random.
+_txn_git_list() {
+  local -n _txn_list=$1
+  local list status=0
+  shift
+  list=$(mktemp "${TMPDIR:-/tmp}/dotsteward-git.XXXXXX") || return 1
+  git -C "$DS_INSTANCE_ROOT" "$@" >"$list" || status=$?
+  _txn_list=()
+  ((status != 0)) || mapfile -d '' -t _txn_list <"$list"
+  rm -f -- "$list"
+  return "$status"
+}
+
 txn_require_no_untracked() {
   local -a files=()
-  mapfile -d '' -t files < <(git -C "$DS_INSTANCE_ROOT" ls-files -z --others --exclude-standard)
-  wait "$!" || die "cannot list the untracked files of $DS_INSTANCE_ROOT"
+  _txn_git_list files ls-files -z --others --exclude-standard ||
+    die "cannot list the untracked files of $DS_INSTANCE_ROOT"
   ((${#files[@]} == 0)) || die "Nix does not see untracked files; run 'git add -A' first: ${files[*]}"
 }
 
@@ -248,8 +265,8 @@ txn_check_allowlist() {
   local -a paths=() outside=() buffered=()
   buffer=${DS_SETTINGS_BUFFER_DIR%/}
   txn_allowlist_load
-  mapfile -d '' -t paths < <(git -C "$DS_INSTANCE_ROOT" diff --name-only --no-renames -z "$base" --)
-  wait "$!" || die "cannot list the changes since the base OID $base"
+  _txn_git_list paths diff --name-only --no-renames -z "$base" -- ||
+    die "cannot list the changes since the base OID $base"
   for path in "${paths[@]}"; do
     if [[ $path == "$buffer" || $path == "$buffer"/* ]]; then
       buffered+=("$path")

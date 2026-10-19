@@ -76,6 +76,13 @@ printf 'not json\n' >"$gate_candidate"
 assert_exit 0 run_gate --scope maintain --force
 assert_eq "$head" "$(jq -r .base_oid "$gate_validation")"
 
+# git cannot list the untracked files (an unreadable index): the gate stops
+# with that reason, never with a misleading one.
+chmod 000 "$gate_inst/.git/index"
+assert_exit 1 run_gate --scope maintain --force
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: cannot list the untracked files of $gate_inst"
+chmod 644 "$gate_inst/.git/index"
+
 # A branch without any commit: the instance is committed first.
 git -C "$gate_inst" update-ref -d refs/heads/main
 : >"$DS_CALL_LOG"
