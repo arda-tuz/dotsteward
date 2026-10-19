@@ -459,6 +459,35 @@
           "minLength": 1,
           "default": null,
           "description": "Optional instance denylist path."
+        },
+        "exemptions": {
+          "description": "Findings of one generic secret rule or forbidden-path on one file, silenced while the file has the given SHA-256 (third-party text that matches a rule without holding a secret). A denylist term or a file rule is never exempted; an exemption that no longer applies fails the scan.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "$ref": "#/$defs/nonEmptyString",
+                "description": "Repository-relative path of the file."
+              },
+              "rule": {
+                "$ref": "#/$defs/nonEmptyString",
+                "description": "A generic secret rule (secret-*) or forbidden-path."
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "SHA-256 of the file the exemption was reviewed at."
+              },
+              "reason": {
+                "$ref": "#/$defs/nonEmptyString",
+                "description": "Why the finding holds no secret."
+              }
+            },
+            "required": ["path", "rule", "sha256", "reason"],
+            "additionalProperties": false
+          },
+          "default": []
         }
       },
       "additionalProperties": false

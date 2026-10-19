@@ -904,7 +904,8 @@ Instance checks, in this order:
   overlays       declared overlay files exist; agent/overlays holds only
                  overlays of framework skills (and its README.md)
   privacy        the privacy scan with the instance policy: generic secret
-                 rules, [privacy] forbidden_paths and file_rules, and the
+                 rules, [privacy] forbidden_paths and file_rules, the
+                 digest-bound [privacy] exemptions, and the
                  [privacy] denylist outside the sandbox
   scripts        every [gate] static script exists and is executable; when
                  every selected check passed they run in order from the

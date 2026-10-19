@@ -86,7 +86,8 @@
   "privacy": {
     "forbidden_paths": [],
     "file_rules": [],
-    "denylist": null
+    "denylist": null,
+    "exemptions": []
   },
   "protected": {},
   "agent_rules": {

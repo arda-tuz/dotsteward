@@ -31,7 +31,8 @@
 #   overlays       declared overlay files exist; agent/overlays holds only
 #                  overlays of framework skills (and its README.md)
 #   privacy        the privacy scan with the instance policy: generic secret
-#                  rules, [privacy] forbidden_paths and file_rules, and the
+#                  rules, [privacy] forbidden_paths and file_rules, the
+#                  digest-bound [privacy] exemptions, and the
 #                  [privacy] denylist outside the sandbox
 #   scripts        every [gate] static script exists and is executable; when
 #                  every selected check passed they run in order from the
@@ -590,6 +591,11 @@ run_privacy() (
       mapfile -t globs < <(jq -r '.files[]' <<<"$rule")
       ds_privacy_add_file_rule "$message" "$pattern" "${globs[@]}" || exit 1
     done < <(jq -c '.[]' <<<"$DS_PRIVACY_FILE_RULES_JSON")
+    while IFS= read -r rule; do
+      [[ -n $rule ]] || continue
+      ds_privacy_add_exemption "$(jq -r '.path' <<<"$rule")" "$(jq -r '.rule' <<<"$rule")" \
+        "$(jq -r '.sha256' <<<"$rule")" || exit 1
+    done < <(jq -c '.[]' <<<"${DS_PRIVACY_EXEMPTIONS_JSON:-[]}")
     if ((!sandbox)) && [[ -n $DS_PRIVACY_DENYLIST ]]; then
       shown=$(jq -r '.privacy.denylist // empty' <<<"$DS_CONFIG_JSON")
       denylist=$DS_PRIVACY_DENYLIST
@@ -604,9 +610,18 @@ run_privacy() (
   ds_privacy_begin || exit 1
   ds_privacy_collect_tree "$root" "$git_context" || exit 1
   ds_privacy_report 1 0 || exit 1
-  if ((DS_PRIVACY_FINDINGS == 0)); then
+  if ((DS_PRIVACY_EXEMPTED)); then
+    noun=findings
+    ((DS_PRIVACY_EXEMPTED != 1)) || noun=finding
+    log "$DS_PRIVACY_EXEMPTED $noun exempted by [privacy] exemptions"
+  fi
+  if ((DS_PRIVACY_FINDINGS == 0 && DS_PRIVACY_STALE_EXEMPTIONS == 0)); then
     log "scan clean: $DS_PRIVACY_FILES files, $DS_PRIVACY_COMMITS commits"
     exit 0
+  fi
+  if ((DS_PRIVACY_FINDINGS == 0)); then
+    error "static privacy: $DS_PRIVACY_STALE_EXEMPTIONS [privacy] exemptions no longer apply"
+    exit 1
   fi
   noun=findings
   ((DS_PRIVACY_FINDINGS != 1)) || noun=finding

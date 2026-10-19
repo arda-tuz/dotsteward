@@ -186,6 +186,26 @@ The instance's own privacy policy, applied by `dotsteward static` and the gate.
 | `privacy.forbidden_paths` | `[]` | Globs of paths the instance never tracks (`*` also matches `/`). |
 | `privacy.file_rules` | `[]` | Rules with `files` (globs), `pattern` (an extended regular expression) and `message`: a matching line in a matching file is a finding. |
 | `privacy.denylist` | none | An optional denylist file of private terms, read outside the Nix sandbox. |
+| `privacy.exemptions` | `[]` | Entries with `path`, `rule`, `sha256` and `reason`: the findings of `rule` on the file `path` are silenced while the file's SHA-256 is `sha256`. |
+
+An exemption is for third-party text that matches a rule without holding a
+secret, such as vendored code that reads an API key from the environment or a
+file name that matches a forbidden-path glob. `rule` is one of the generic
+secret rules (`secret-private-key`, `secret-aws-key`, `secret-github-token`,
+`secret-github-pat`, `secret-google-key`, `secret-sk-key`,
+`secret-assignment`) or `forbidden-path`; a denylist term or a file rule is
+never exempted. The scan reports how many findings exemptions silenced, and
+fails when an exemption no longer applies (the file changed, is gone, or
+yields no finding of that rule), so every exemption is reviewed again after
+the file changes:
+
+```toml
+[[privacy.exemptions]]
+path = "agent/skills/example/scripts/client.py"
+rule = "secret-assignment"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+reason = "reads the key from the environment"
+```
 
 ## `[agent_rules]`
 

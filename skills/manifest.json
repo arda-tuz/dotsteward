@@ -10,8 +10,8 @@
     {
       "name": "dotsteward-maintain",
       "directory": "dotsteward-maintain",
-      "skill_sha256": "dc9823506b741119b6db150f6f90ad4cd12f254aabf223c9ecdf6f1d0315b534",
-      "directory_sha256": "d0f8b8fe0e0bf5d533d39926e7dfff119d948cccfaa115da5922a767e1b1e868"
+      "skill_sha256": "e79767ee56e6b28df97cb017aad58b54d1d04a76f9596208d5cc29d421ebe75c",
+      "directory_sha256": "c6c97fe9063433ecefc9d227a3d535140620f1a64e0b39ce35462efaab67cb85"
     },
     {
       "name": "dotsteward-update",

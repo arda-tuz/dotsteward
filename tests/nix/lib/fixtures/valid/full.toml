@@ -118,6 +118,12 @@ files = ["profiles/example/history.json"]
 pattern = '"recent":'
 message = "example profile records recent items"
 
+[[privacy.exemptions]]
+path = "vendor/example/client.py"
+rule = "secret-assignment"
+sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+reason = "reads the key from the environment"
+
 [protected]
 "home/AGENTS.md" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 

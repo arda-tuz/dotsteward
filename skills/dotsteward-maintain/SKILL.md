@@ -86,7 +86,7 @@ New tracked files follow the new-file checklist in `references/framework-map.md`
 dotsteward pins sync --skill NAME
 ```
 
-`dotsteward agents install` (run by the rebuild) installs it into the canonical skill root and creates the per-agent links. Framework skills (`dotsteward-*`) never go into the skills lock.
+`dotsteward agents install` (run by the rebuild) installs it into the canonical skill root and creates the per-agent links. When a vendored third-party file trips a generic secret rule or a forbidden-path glob without holding a secret, review each finding and record it as a `[[privacy.exemptions]]` entry bound to the file's SHA-256 (with the reason); never exempt a denylist term, and never edit the vendored text to dodge a rule. Framework skills (`dotsteward-*`) never go into the skills lock.
 
 ## 4. Validate once
 

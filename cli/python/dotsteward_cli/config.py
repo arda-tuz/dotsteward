@@ -1077,6 +1077,7 @@ def export_variables(instance: Instance, env: Mapping[str, str] | None = None) -
         ("DS_PINS_APT_ARCH", c["pins"]["apt_arch"]),
         ("DS_PRIVACY_DENYLIST", values["denylist"]),
         ("DS_PRIVACY_FILE_RULES_JSON", to_json(c["privacy"]["file_rules"])),
+        ("DS_PRIVACY_EXEMPTIONS_JSON", to_json(c["privacy"]["exemptions"])),
         ("DS_AGENT_RULES_SOURCE", c["agent_rules"]["source"]),
         ("DS_UPSTREAM_CONTRIBUTE", c["upstream"]["contribute"]),
         ("DS_UPSTREAM_FORK", c["upstream"]["fork"]),

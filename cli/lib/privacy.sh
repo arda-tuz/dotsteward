@@ -15,7 +15,16 @@
 #      ds_privacy_collect_tree ROOT GIT(0|1), ds_privacy_collect_staged ROOT,
 #      ds_privacy_collect_range DIR RANGE;
 #   3. ds_privacy_report REDACT(0|1) METADATA(0|1): prints the findings
-#      and sets DS_PRIVACY_FINDINGS, DS_PRIVACY_FILES, DS_PRIVACY_COMMITS.
+#      and sets DS_PRIVACY_FINDINGS, DS_PRIVACY_FILES, DS_PRIVACY_COMMITS,
+#      DS_PRIVACY_EXEMPTED and DS_PRIVACY_STALE_EXEMPTIONS.
+#
+# Exemptions (instances): ds_privacy_add_exemption PATH RULE SHA256 (step 1)
+# silences the findings of RULE, a generic secret rule or forbidden-path, on
+# the working tree file PATH while its collected content has SHA256; they
+# count in DS_PRIVACY_EXEMPTED instead of DS_PRIVACY_FINDINGS. An exemption
+# whose file is not collected, has another digest or yields no finding is
+# reported as an error and counted in DS_PRIVACY_STALE_EXEMPTIONS. Denylist
+# terms, extra terms and file rules are never exempted.
 #
 # Collection turns everything into numbered units in a temporary directory:
 # file contents (working tree files, index blobs, blobs changed by a commit),
@@ -797,6 +806,8 @@ ds_privacy_begin() {
   DS_PRIVACY_FILES=0
   DS_PRIVACY_COMMITS=0
   DS_PRIVACY_FINDINGS=0
+  DS_PRIVACY_EXEMPTED=0
+  DS_PRIVACY_STALE_EXEMPTIONS=0
 }
 
 # ds_privacy_end: removes the work directory (only a real directory named
@@ -1303,6 +1314,48 @@ _ds_privacy_location() {
 # ds_privacy_report REDACT METADATA
 # Applies every rule to the collected units, prints one line per finding in
 # collection order and sets DS_PRIVACY_FINDINGS. Returns 1 on an error.
+# ds_privacy_add_exemption PATH RULE SHA256: see the header. Refuses a rule
+# that cannot be exempted and a digest that is not 64 lowercase hex digits.
+ds_privacy_add_exemption() {
+  local path=$1 rule=$2 sha=$3 number i
+  local -a allowed=()
+  number=$((${#_DS_EXEMPT_PATH[@]} + 1))
+  for ((i = 0; i < ${#_DS_PRIVACY_SECRET_RULES[@]}; i += 2)); do
+    allowed+=("${_DS_PRIVACY_SECRET_RULES[i]}")
+  done
+  allowed+=(forbidden-path)
+  if ! printf '%s\n' "${allowed[@]}" | grep -qxF -e "$rule"; then
+    _ds_privacy_error "privacy exemption $number: rule $rule cannot be exempted (allowed: $(printf '%s\n' "${allowed[@]}" | paste -sd, - | sed 's/,/, /g'))"
+    return 1
+  fi
+  if [[ ! $sha =~ ^[0-9a-f]{64}$ ]]; then
+    _ds_privacy_error "privacy exemption $number: sha256 must be 64 lowercase hexadecimal digits, got $sha"
+    return 1
+  fi
+  if [[ -z $path ]]; then
+    _ds_privacy_error "privacy exemption $number: empty path"
+    return 1
+  fi
+  _DS_EXEMPT_PATH+=("$path")
+  _DS_EXEMPT_RULE+=("$rule")
+  _DS_EXEMPT_SHA+=("$sha")
+}
+
+# _ds_privacy_exemption SEQ RULE: prints the index of the exemption that
+# silences RULE on unit SEQ (a working tree file or its path), else nothing.
+_ds_privacy_exemption() {
+  local seq=$1 rule=$2 kind path k
+  kind=${_DS_U_KIND[$seq]:-}
+  [[ $kind == file || $kind == path ]] || return 0
+  path=${_DS_U_PATH[$seq]}
+  for k in "${!_DS_EXEMPT_PATH[@]}"; do
+    [[ ${_DS_EXEMPT_PATH[k]} == "$path" && ${_DS_EXEMPT_RULE[k]} == "$rule" ]] || continue
+    [[ ${_DS_EXEMPT_DIGEST[$path]:-} == "${_DS_EXEMPT_SHA[k]}" ]] || continue
+    printf '%s\n' "$k"
+    return 0
+  done
+}
+
 ds_privacy_report() {
   local redact=$1 metadata=$2 seq i from to rule location
   local -a names=()
@@ -1312,6 +1365,16 @@ ds_privacy_report() {
   _ds_privacy_compile_globs _DS_FORBIDDEN_ERES "${DS_PRIVACY_FORBIDDEN_PATHS[@]}"
   _ds_privacy_compile_globs _DS_EXCEPT_ERES "${DS_PRIVACY_NON_ASCII_EXCEPT[@]}"
   : >"$_DS_PRIVACY_WORK/findings"
+  # The digests of the collected working tree files that exemptions name.
+  declare -gA _DS_EXEMPT_DIGEST=()
+  local -A exempt_used=()
+  if ((${#_DS_EXEMPT_PATH[@]})); then
+    for seq in "${_DS_CONTENT[@]}"; do
+      [[ ${_DS_U_KIND[$seq]} == file ]] || continue
+      printf '%s\n' "${_DS_EXEMPT_PATH[@]}" | grep -qxF -e "${_DS_U_PATH[$seq]}" || continue
+      _DS_EXEMPT_DIGEST[${_DS_U_PATH[$seq]}]=$(sha256sum <"$_DS_PRIVACY_WORK/u/$seq" | cut -d ' ' -f 1)
+    done
+  fi
 
   # Text units: grep lists the files with at least one line and no NUL byte.
   for seq in "${_DS_CONTENT[@]}"; do
@@ -1376,8 +1439,16 @@ ds_privacy_report() {
     _ds_privacy_metadata || return 1
   fi
 
-  local line field match number
+  local line field match number exemption k
   while IFS=$'\037' read -r seq line rule field match; do
+    if ((${#_DS_EXEMPT_PATH[@]})); then
+      exemption=$(_ds_privacy_exemption "$seq" "$rule")
+      if [[ -n $exemption ]]; then
+        exempt_used[$exemption]=1
+        DS_PRIVACY_EXEMPTED=$((DS_PRIVACY_EXEMPTED + 1))
+        continue
+      fi
+    fi
     location=$(_ds_privacy_location "$seq" "$line" "$field" "$redact")
     if [[ $rule == file-rule:* ]]; then
       number=${rule#file-rule:}
@@ -1390,6 +1461,20 @@ ds_privacy_report() {
     fi
     DS_PRIVACY_FINDINGS=$((DS_PRIVACY_FINDINGS + 1))
   done < <(LC_ALL=C sort -t $'\037' -k1,1n -k2,2n -k3,3 "$_DS_PRIVACY_WORK/findings")
+
+  for k in "${!_DS_EXEMPT_PATH[@]}"; do
+    [[ -z ${exempt_used[$k]:-} ]] || continue
+    DS_PRIVACY_STALE_EXEMPTIONS=$((DS_PRIVACY_STALE_EXEMPTIONS + 1))
+    local digest=${_DS_EXEMPT_DIGEST[${_DS_EXEMPT_PATH[k]}]:-} what
+    if [[ -z $digest ]]; then
+      what="no longer matches: the file is not in the tree"
+    elif [[ $digest != "${_DS_EXEMPT_SHA[k]}" ]]; then
+      what="no longer matches: the file's SHA-256 is $digest"
+    else
+      what="silences no finding; remove it"
+    fi
+    printf '[dotsteward] ERROR: privacy exemption %s (%s, %s) %s\n' "$((k + 1))" "${_DS_EXEMPT_PATH[k]}" "${_DS_EXEMPT_RULE[k]}" "$what" >&2
+  done
 }
 
 # Term tables and file rules start empty when the library is sourced; globs
@@ -1398,6 +1483,9 @@ _DS_PRIVACY_GLOB_MODE=path
 _DS_FILE_RULE_MESSAGE=()
 _DS_FILE_RULE_PATTERN=()
 _DS_FILE_RULE_GLOBS=()
+_DS_EXEMPT_PATH=()
+_DS_EXEMPT_RULE=()
+_DS_EXEMPT_SHA=()
 _DS_TERM_RULE=()
 _DS_TERM_MODE=()
 _DS_TERM_VALUE=()

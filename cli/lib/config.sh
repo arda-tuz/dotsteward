@@ -66,6 +66,7 @@
 #   DS_PRIVACY_DENYLIST                  expanded; relative to the instance
 #                                        root when relative
 #   DS_PRIVACY_FILE_RULES_JSON           privacy.file_rules as JSON
+#   DS_PRIVACY_EXEMPTIONS_JSON           privacy.exemptions as JSON
 #   DS_AGENT_RULES_SOURCE
 #   DS_UPSTREAM_CONTRIBUTE, DS_UPSTREAM_FORK, DS_UPSTREAM_PR_TO_UPSTREAM,
 #   DS_UPSTREAM_LOCAL_CLONE (expanded)
