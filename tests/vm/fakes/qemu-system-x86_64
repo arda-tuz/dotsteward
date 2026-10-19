@@ -49,7 +49,15 @@ if [[ -f $state/crash ]]; then
   printf '%s\n' "$pid" >"$pidfile"
   exit 0
 fi
-# The subshell execs sleep, so $! is the sleep process itself.
+# The subshell execs sleep, so $! is the sleep process itself. Like a real
+# -daemonize, the pid file is written only once that process runs as QEMU:
+# before its exec it still carries the shell's command line, which the
+# harness would not recognize as this run's QEMU.
 (exec -a "fake-qemu -pidfile $pidfile" sleep 300) </dev/null >/dev/null 2>&1 &
-printf '%s\n' "$!" >"$pidfile"
+pid=$!
+for _ in $(seq 1 200); do
+  [[ $(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null) == "fake-qemu -pidfile $pidfile"* ]] && break
+  sleep 0.05
+done
+printf '%s\n' "$pid" >"$pidfile"
 exit 0
