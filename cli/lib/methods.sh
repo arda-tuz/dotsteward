@@ -662,9 +662,11 @@ _methods_pypi_pinned() {
 }
 
 # _methods_pypi_create NAME: creates the virtual environment with the
-# interpreter of the install block, found on the user's PATH; an
-# interpreter whose base prefix is in the Nix store is refused, since the
-# environment would break when that store path is garbage-collected.
+# interpreter of the install block, found and run on the user's PATH (a
+# version-manager shim looks the real interpreter up on PATH, which must
+# not reach the CLI's own toolchain); an interpreter whose base prefix is in
+# the Nix store is refused, since the environment would break when that
+# store path is garbage-collected.
 _methods_pypi_create() {
   local name=$1 python_path base store=${NIX_STORE_DIR:-/nix/store} status=0 output
   if [[ $_py_python == /* ]]; then
@@ -674,7 +676,7 @@ _methods_pypi_create() {
     python_path=$(PATH=$(user_path) command -v -- "$_py_python") ||
       die "$name (pypi): $_py_python not found on PATH"
   fi
-  base=$(timeout 60 "$python_path" -I -c 'import sys; print(sys.base_prefix)' 2>/dev/null </dev/null) ||
+  base=$(timeout 60 env PATH="$(user_path)" "$python_path" -I -c 'import sys; print(sys.base_prefix)' 2>/dev/null </dev/null) ||
     die "$name (pypi): the interpreter $_py_python does not run"
   case $base/ in
     "${store%/}"/*)
@@ -683,7 +685,7 @@ _methods_pypi_create() {
   esac
   mkdir -p -- "${_py_venv%/*}" || die "$name (pypi): cannot create ${_py_venv%/*}"
   log "$name (pypi): creating the virtual environment $_py_venv with $python_path"
-  output=$(timeout 300 "$python_path" -I -m venv -- "$_py_venv" 2>&1 </dev/null) || status=$?
+  output=$(timeout 300 env PATH="$(user_path)" "$python_path" -I -m venv -- "$_py_venv" 2>&1 </dev/null) || status=$?
   ((status == 0)) ||
     die "$name (pypi): cannot create the virtual environment $_py_venv (exit $status; on Debian and Ubuntu the python3-venv package provides the venv module): $(tail -n 3 <<<"$output")"
 }
