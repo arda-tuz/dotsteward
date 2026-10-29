@@ -16,7 +16,7 @@ summary=$(grep -m 1 '^  install ' <<<"$DS_STDOUT")
 assert_contains "$summary" "system-install phase"
 
 assert_exit 0 run_install --help
-assert_contains "$DS_STDOUT" "Usage: dotsteward install --profile PROFILE [--check-only] [--json] [--generation PATH]"
+assert_contains "$DS_STDOUT" "Usage: dotsteward install --profile PROFILE [--component NAME]... [--check-only] [--json] [--generation PATH]"
 
 assert_exit 1 run_install
 assert_eq "[dotsteward] ERROR: install: --profile is required" "$DS_STDERR"

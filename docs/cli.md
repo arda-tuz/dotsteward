@@ -492,7 +492,7 @@ Exit status: 0 success, 1 refusal or failed step, 2 usage error.
 Run the system-install phase (deb transaction, phase hooks) or check every install method.
 
 ```text
-Usage: dotsteward install --profile PROFILE [--check-only] [--json] [--generation PATH]
+Usage: dotsteward install --profile PROFILE [--component NAME]... [--check-only] [--json] [--generation PATH]
 
 Runs the system-install phase of PROFILE: in fresh mode the preflight gate,
 one apt transaction for the deb components (DEBs below their floor are
@@ -501,9 +501,13 @@ floors verified afterwards, then the systemInstall, postInstall and forbid
 hooks. When a hook to run is a Nix store path of the manifest mirror, the
 generation is built first (dotsteward rebuild --build-only, after the
 preflight gate) and its manifest is used. In adopt mode the phase is
-skipped.
+skipped, unless components are named.
 
   --profile PROFILE   a profile of the instance (required)
+  --component NAME    only this active component and its hooks (repeatable);
+                      in adopt mode the phase runs for the named components
+                      as in fresh mode, and --check-only checks them by their
+                      method
   --check-only        check every active component by its method, run only
                       the forbid hooks (store-path hooks from the active
                       generation); no change, no preflight

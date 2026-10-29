@@ -87,6 +87,10 @@ needs code specific to one component.
 | `install.deb.aptSources.*.architectures` | list of strings | The architectures; empty: every architecture dpkg knows. |
 | `install.deb.aptSources.*.keyUrl` | HTTPS URL | The download URL of the repository signing key. |
 | `install.deb.aptSources.*.keyFingerprint` | 40 upper-case hex digits | The fingerprint of the one primary key the key file must hold. |
+| `install.deb.githubRelease` | null or block | DEBs published as assets of the newest GitHub release, served by the local APT bridge (see below); needs `packageNames` (the first is served). |
+| `install.deb.githubRelease.repository` | `owner/name` | The GitHub repository. |
+| `install.deb.githubRelease.assets` | attribute set, at least one | The DEB asset name per dpkg architecture (`amd64`, `arm64`, ...); `{version}` stands for the release version, no path. |
+| `install.deb.githubRelease.checksums` | file name, default `SHA256SUMS.txt` | The checksum file of the release, in `sha256sum` format. |
 | `install.app-archive` | block | Method `app-archive` (macOS, system level). |
 | `install.app-archive.pin` | lock path | The archive download. |
 | `install.app-archive.appName` | string | The application bundle name. |
@@ -103,7 +107,7 @@ needs code specific to one component.
 | `nix` | the packages join `home.packages` | same | the probes cover it |
 | `official-binary` | verified download (HTTPS, size, SHA-256, optional sigstore), the member installed with mode 0755 into `dest`, version re-checked | same (user level) | version per `policy`, else exit 1 with a rebuild hint |
 | `pypi` | the virtual environment created when missing, the requirements installed with `pip install --require-hashes`, the exact version re-checked, the console scripts linked | same (user level) | exact version and links, else exit 1 with a rebuild hint |
-| `deb` | one APT transaction: verified DEBs only where the installed version is below the floor, never a downgrade, then the floors re-checked | `not-managed` | `dpkg --compare-versions` against the floor |
+| `deb` | one APT transaction: verified DEBs only where the installed version is below the floor, never a downgrade, then the floors re-checked | `not-managed`, unless named with `install --component` | `dpkg --compare-versions` against the floor |
 | `app-archive` | verified zip or disk image into `dest`; an existing bundle is backed up first | `not-managed` | `CFBundleShortVersionString` of the bundle |
 | `external` | nothing | nothing | optional presence and floor |
 
@@ -119,6 +123,32 @@ component, and later updates with plain `apt`, then come from the vendor
 repository. `--check-only` fails while a source or its keyring is missing
 or differs. Back them up with `bootstrap.backupPaths` when a machine may
 already have them.
+
+The local APT bridge (`install.deb.githubRelease`) serves vendors that
+publish DEBs as GitHub release assets but run no APT repository. Before the
+transaction it writes, each only when it differs, the bridge script
+`/usr/local/lib/dotsteward/apt-bridge.sh`, one configuration per package in
+`/etc/dotsteward/apt-bridge.d/<package>.conf` (the release download URL and
+the asset of the machine's dpkg architecture), the hook
+`/etc/apt/apt.conf.d/60dotsteward-apt-bridge` and the trusted flat source
+`/etc/apt/sources.list.d/dotsteward-apt-bridge.sources` over the root-owned
+repository `/var/lib/dotsteward/apt-bridge`; the system `curl` joins the
+transaction. APT runs the script as root before every update
+(`APT::Update::Pre-Invoke`, which also covers the periodic
+`apt-daily.service` update): it reads the release's checksum file, and when
+the matching asset is new it downloads it, checks its SHA-256 and that its
+control fields name the package and the architecture, keeps it as the only
+version of the package and rewrites the index. A failure prints one line,
+keeps the repository and never fails the update. Later releases then arrive
+with plain `apt update && apt upgrade`; unattended upgrades leave them alone
+unless their configuration allows the origin `dotsteward`. `--check-only`
+fails while a bridge file is missing or differs, or `curl` is missing.
+
+An adopted machine takes in a new system-level component with
+`dotsteward install --profile PROFILE --component NAME`: the phase runs for
+the named components (preflight, deb transaction, their hooks) as in
+`fresh` mode, and `--check-only --component NAME` checks them by their
+method. Every other component stays not managed.
 
 ## Pins
 

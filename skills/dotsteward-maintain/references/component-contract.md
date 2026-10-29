@@ -22,7 +22,7 @@ Every component, a catalog one in the framework or a private one in `components/
 | Concern | Fields |
 | --- | --- |
 | Platforms and methods | `platforms`, `method` (use `lib.mkDefault` for the component's default), `supportedMethods.linux`, `supportedMethods.darwin` |
-| Installation | `install.nix.packages`; `install.official-binary` (`pin`, `asset` per platform, `member`, `dest`, `versionArgv`, `versionRegex`, `policy` `at-least` or `exact`, `verify`); `install.deb` (`pin`, `packageNames`, `architecture`, `verifyAfterInstall`, `apt`, `aptSources` with `name`, `uri`, `suites`, `components`, `architectures`, `keyUrl`, `keyFingerprint`); `install.app-archive` (`pin`, `appName`, `dest`); `install.external` (`command`, `versionArgv`, `minimum`). Only the block of the resolved method is read. |
+| Installation | `install.nix.packages`; `install.official-binary` (`pin`, `asset` per platform, `member`, `dest`, `versionArgv`, `versionRegex`, `policy` `at-least` or `exact`, `verify`); `install.deb` (`pin`, `packageNames`, `architecture`, `verifyAfterInstall`, `apt`, `aptSources` with `name`, `uri`, `suites`, `components`, `architectures`, `keyUrl`, `keyFingerprint`; `githubRelease` with `repository`, `assets` per dpkg architecture, `checksums`: the local APT bridge for DEBs published as GitHub release assets); `install.app-archive` (`pin`, `appName`, `dest`); `install.external` (`command`, `versionArgv`, `minimum`). Only the block of the resolved method is read. |
 | Pins | `pins.rules` (kinds such as `derive`, `download-pin`, `skills-lock-mirror`, `minimum-version`, `no-literal`), `pins.latest` (row `id` and `adapter`, for example `github-release`, `npm`, `pypi`, `apt-index`, `official-manifest`, `manual`), `pins.resolvedVersions`, `pins.flakeInputs` |
 | Settings | `settingsTargets.<name>` (`path` as a home path or per platform, `format` `json`, `toml` or `jsonc`, `createIfMissing`, `createMode`, `backup`, `reload`), `reloadHooks.<name>` (`command`, `timeout`, `env`, `unsetEnv`, `requireCommand`, `onSuccess`, `onFailure`) |
 | Checks | `probes` (`command`, `kind` `version`, `presence` or `features`, `argv`, `extract`, `expected` as `versions:<lock path>`, `needles`, `profiles`); `checks.commands` (commands E2E requires); `checks.e2e` (hook scripts with `phase` `early`, `main` or `late`); `checks.agents`; `checks.floors` (`command`, `argv`, `minimum`, `compare`) |
@@ -39,11 +39,11 @@ Every component, a catalog one in the framework or a private one in `components/
 | `nix` | package in `home.packages` | same | probes |
 | `official-binary` | verified download into `dest` (user level); `at-least` keeps a newer self-updated binary | same | version per policy |
 | `pypi` | own virtual environment (user level) from a hash-pinned requirements file, console scripts linked into `~/.local/bin` | same | exact version and links |
-| `deb` (Linux) | the vendor APT sources (pinned signing key), then one verified apt transaction in the system-install phase | not managed | `dpkg` floor, sources and keyrings |
+| `deb` (Linux) | the vendor APT sources (pinned signing key) and the local APT bridge, then one verified apt transaction in the system-install phase | not managed, unless named with `install --component` | `dpkg` floor, sources, keyrings and bridge files |
 | `app-archive` (macOS) | verified archive into `~/Applications` | not managed | bundle version |
 | `external` | nothing (the user installs it) | same | optional presence and floor |
 
-`dotsteward install --profile <profile> --check-only` checks every method of a profile without installing anything.
+`dotsteward install --profile <profile> --check-only` checks every method of a profile without installing anything. On an adopted machine, `dotsteward install --profile <profile> --component <name>` (repeatable) installs only the named system-level components (preflight, deb transaction, their hooks), for example a new `deb` component; it needs `sudo`, so the user runs it in a terminal.
 
 ## Hooks and their environment
 

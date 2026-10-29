@@ -149,9 +149,9 @@ url=http://downloads.example.invalid/latest
 asset=example-term-{version}.deb
 checksums=SHA256SUMS.txt
 EOF
-release 1.3.0 >/dev/null
 assert_exit 0 run_bridge
-assert_eq "dotsteward-apt-bridge: example-term: refusing a non-HTTPS URL: http://downloads.example.invalid/latest" "$DS_STDOUT"
+assert_eq "dotsteward-apt-bridge: example-app: cannot download SHA256SUMS.txt (curl exit 6); keeping the current package
+dotsteward-apt-bridge: example-term: refusing a non-HTTPS URL: http://downloads.example.invalid/latest" "$DS_STDOUT"
 assert_eq "example-app_1.3.0_amd64.deb" "$(pool)"
 
 # Without any configuration the repository is still a valid, empty one.

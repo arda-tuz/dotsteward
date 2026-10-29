@@ -131,6 +131,19 @@ let
     description = "OpenPGP fingerprint (40 upper-case hex digits)";
   };
 
+  githubRepository = types.strMatching "[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+" // {
+    description = "GitHub repository (owner/name)";
+  };
+
+  # A file name of a release asset; a template has exactly one {version}.
+  releaseAssetName = types.strMatching "[A-Za-z0-9][A-Za-z0-9._+~-]*" // {
+    description = "release asset name (letters, digits, dots, dashes, plus, tilde, underscore; no path)";
+  };
+
+  releaseAssetTemplate = types.strMatching "[A-Za-z0-9._+~-]*[{]version[}][A-Za-z0-9._+~-]*" // {
+    description = "release asset name with one {version} placeholder and no path";
+  };
+
   perPlatform =
     type:
     types.submodule {
@@ -218,6 +231,22 @@ let
     };
   };
 
+  # DEBs published as GitHub release assets, served by the local APT bridge.
+  githubReleaseSpec = types.submodule {
+    options = {
+      repository = option githubRepository "GitHub repository whose newest release carries the DEBs.";
+      assets = option (
+        types.addCheck (types.attrsOf releaseAssetTemplate) (assets: assets != { })
+        // {
+          description = "attribute set with at least one asset (dpkg architecture to asset name)";
+        }
+      ) "DEB asset name per dpkg architecture; {version} stands for the release version.";
+      checksums =
+        optionDefault releaseAssetName "SHA256SUMS.txt"
+          "Checksum file of the release (sha256sum format).";
+    };
+  };
+
   latestSpec = types.submodule {
     freeformType = freeform;
     options = {
@@ -282,6 +311,7 @@ let
       verifyAfterInstall = optionDefault types.bool true "Verify the floor after installing.";
       apt = list types.str "Plain apt packages in the same transaction.";
       aptSources = list aptSourceSpec "Vendor APT repositories written before the transaction.";
+      githubRelease = nullable githubReleaseSpec "GitHub release assets served by the local APT bridge; null: none.";
     };
     app-archive = {
       pin = option lockPath "Lock path of the archive.";
@@ -442,6 +472,7 @@ in
       ruleSpec
       latestSpec
       aptSourceSpec
+      githubReleaseSpec
       settingsTarget
       ;
     component = types.submodule componentModule;

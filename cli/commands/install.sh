@@ -8,6 +8,12 @@
 # --check-only checks every active component by its method instead (system-level
 # methods are not-managed in adopt mode) and runs only the forbid hooks.
 #
+# --component NAME (repeatable) limits the run to the named active components
+# and their hooks. In adopt mode it runs the phase for them as in fresh mode:
+# this is how an adopted machine takes in a new system-level component without
+# the rest of a fresh install; with --check-only they are checked by their
+# method.
+#
 # A real manifest carries every hook script as a Nix store path (the
 # mirror shows it as <store>/NAME). Without --generation, when a hook to
 # run is such a path, the fresh-mode phase builds the generation once the
@@ -28,7 +34,7 @@ source "$DOTSTEWARD_LIB/skills.sh"
 
 usage() {
   cat <<'EOF'
-Usage: dotsteward install --profile PROFILE [--check-only] [--json] [--generation PATH]
+Usage: dotsteward install --profile PROFILE [--component NAME]... [--check-only] [--json] [--generation PATH]
 
 Runs the system-install phase of PROFILE: in fresh mode the preflight gate,
 one apt transaction for the deb components (DEBs below their floor are
@@ -37,9 +43,13 @@ floors verified afterwards, then the systemInstall, postInstall and forbid
 hooks. When a hook to run is a Nix store path of the manifest mirror, the
 generation is built first (dotsteward rebuild --build-only, after the
 preflight gate) and its manifest is used. In adopt mode the phase is
-skipped.
+skipped, unless components are named.
 
   --profile PROFILE   a profile of the instance (required)
+  --component NAME    only this active component and its hooks (repeatable);
+                      in adopt mode the phase runs for the named components
+                      as in fresh mode, and --check-only checks them by their
+                      method
   --check-only        check every active component by its method, run only
                       the forbid hooks (store-path hooks from the active
                       generation); no change, no preflight
@@ -58,6 +68,7 @@ profile=''
 check_only=0
 json=0
 generation=''
+selected=()
 while (($#)); do
   case $1 in
     --profile)
@@ -67,6 +78,15 @@ while (($#)); do
       ;;
     --profile=*)
       profile=${1#--profile=}
+      shift
+      ;;
+    --component)
+      (($# >= 2)) || die "install: --component requires a value"
+      selected+=("$2")
+      shift 2
+      ;;
+    --component=*)
+      selected+=("${1#--component=}")
       shift
       ;;
     --check-only)
@@ -107,12 +127,38 @@ if ((json)); then
 fi
 
 # load_components: the components active in the profile, from the loaded
-# manifest. The list is read into a variable first, so a failure stops the
-# command.
+# manifest, limited to the --component names (in [components] order). The
+# list is read into a variable first, so a failure stops the command.
 load_components() {
-  local active_text
+  local active_text name wanted
+  local -a active=()
   active_text=$(methods_components "$profile")
-  mapfile -t components < <(grep -v '^$' <<<"$active_text" || true)
+  mapfile -t active < <(grep -v '^$' <<<"$active_text" || true)
+  if ((!${#selected[@]})); then
+    components=("${active[@]}")
+    return 0
+  fi
+  for wanted in "${selected[@]}"; do
+    [[ " ${active[*]} " == *" $wanted "* ]] ||
+      die "install: $wanted is not an active component of profile $profile"
+  done
+  components=()
+  for name in "${active[@]}"; do
+    [[ " ${selected[*]} " == *" $name "* ]] && components+=("$name")
+  done
+  return 0
+}
+
+# phase_hooks LIST: the hooks of LIST to run in the profile, limited to the
+# selected components.
+phase_hooks() {
+  local hooks_text
+  hooks_text=$(methods_hooks "$1" "$profile")
+  if ((${#selected[@]})); then
+    jq -c --args 'select(.component as $c | $ARGS.positional | index($c))' "${components[@]}" <<<"$hooks_text"
+  else
+    printf '%s\n' "$hooks_text"
+  fi
 }
 
 components=()
@@ -147,7 +193,7 @@ failure() {
 run_hooks() {
   local list=$1 hook_check_only=$2 hook hooks_text status component name
   local -a hooks=()
-  hooks_text=$(methods_hooks "$list" "$profile")
+  hooks_text=$(phase_hooks "$list")
   mapfile -t hooks < <(grep -v '^$' <<<"$hooks_text" || true)
   for hook in "${hooks[@]}"; do
     component=$(jq -r '.component' <<<"$hook")
@@ -175,7 +221,7 @@ validate_hooks() {
   local list hook hooks_text
   local -a hooks=()
   for list in "$@"; do
-    hooks_text=$(methods_hooks "$list" "$profile")
+    hooks_text=$(phase_hooks "$list")
     mapfile -t hooks < <(grep -v '^$' <<<"$hooks_text" || true)
     for hook in "${hooks[@]}"; do
       methods_hook_path "$hook" >/dev/null
@@ -189,7 +235,7 @@ validate_hooks() {
 first_store_hook() {
   local list hooks_text hook
   for list in "$@"; do
-    hooks_text=$(methods_hooks "$list" "$profile")
+    hooks_text=$(phase_hooks "$list")
     hook=$(jq -sc 'map(select(.script | startswith("<store>/"))) | first // empty' <<<"$hooks_text")
     if [[ -n $hook ]]; then
       printf '%s\n' "$hook"
@@ -220,7 +266,7 @@ delegated_detail() {
 }
 
 # --- adopt mode: one line, nothing else -----------------------------------
-if [[ $mode == adopt && $check_only == 0 ]]; then
+if [[ $mode == adopt && $check_only == 0 && ${#selected[@]} == 0 ]]; then
   skipped=()
   for name in "${components[@]}"; do
     method=$(methods_component_method "$name")
@@ -249,7 +295,11 @@ if ((check_only)); then
   # that run from the Nix store come from the active generation, resolved
   # before the first check.
   hooks_generation=''
-  if [[ $mode == fresh && -z $generation ]]; then
+  managed=()
+  if ((${#selected[@]})); then
+    managed=(--managed)
+  fi
+  if [[ ($mode == fresh || ${#selected[@]} -gt 0) && -z $generation ]]; then
     store_hook=$(first_store_hook forbid)
     if [[ -n $store_hook ]]; then
       hooks_generation=$(skills_active_generation)
@@ -260,14 +310,14 @@ if ((check_only)); then
   for name in "${components[@]}"; do
     method=$(methods_component_method "$name")
     status=0
-    methods_check "$name" "$profile" || status=$?
+    methods_check "$name" "$profile" "${managed[@]}" || status=$?
     if ((status != 0)); then
       failure "$name" "$method" "$METHODS_DETAIL"
     else
       report "$name" "$method" "$METHODS_STATUS" "$METHODS_DETAIL"
     fi
   done
-  if [[ $mode == fresh ]]; then
+  if [[ $mode == fresh || ${#selected[@]} -gt 0 ]]; then
     if [[ -n $hooks_generation ]]; then
       methods_manifest_load "$hooks_generation"
     fi
@@ -278,7 +328,11 @@ if ((check_only)); then
   exit 0
 fi
 
-# --- fresh mode -----------------------------------------------------------
+# --- fresh mode (and adopt mode with --component) -------------------------
+if [[ $mode == adopt ]]; then
+  joined=$(printf '%s, ' "${components[@]}")
+  log "$profile (adopt mode): installing the named components: ${joined%, }"
+fi
 for name in "${components[@]}"; do
   methods_validate "$name"
 done

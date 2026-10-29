@@ -51,8 +51,8 @@
 #                                    virtual environment
 #   methods_deb_transaction NAME...  the fresh-mode deb transaction of the
 #                                    given deb components (Linux): their
-#                                    vendor APT sources, then one apt
-#                                    transaction; sets
+#                                    vendor APT sources and the local APT
+#                                    bridge, then one apt transaction; sets
 #                                    METHODS_DEB_STATUS[name] and
 #                                    METHODS_DEB_DETAIL[name]
 #   app-archive dispatches to platform_app_archive_install NAME and
@@ -358,14 +358,17 @@ _methods_set() {
 
 # --- Checks ---------------------------------------------------------------
 
+# methods_check NAME PROFILE [--managed]: checks NAME by its method;
+# --managed checks a system-level method in adopt mode too (a component
+# named with `install --component`).
 methods_check() {
-  (($# == 2)) || die "usage: methods_check NAME PROFILE"
-  local name=$1 profile=$2 method mode
+  [[ $# == 2 || ($# == 3 && $3 == --managed) ]] || die "usage: methods_check NAME PROFILE [--managed]"
+  local name=$1 profile=$2 managed=${3:-} method mode
   method=$(methods_component_method "$name") || exit 1
   mode=${DS_PROFILE_MODE[$profile]:-}
   [[ -n $mode ]] || die "unknown profile: $profile"
   # Not managed whatever the platform offers.
-  if [[ $mode == adopt ]] && methods_is_system_level "$method"; then
+  if [[ $mode == adopt && -z $managed ]] && methods_is_system_level "$method"; then
     _methods_set not-managed "system-level method in adopt mode"
     return 0
   fi
@@ -742,7 +745,8 @@ methods_pypi_install() {
 
 # _methods_deb_block NAME: sets _deb_pin, _deb_names, _deb_arch,
 # _deb_verify, _deb_apt, _deb_sources (one JSON object per vendor APT
-# source) and, with a pin, _deb_entry and _deb_floor.
+# source), _deb_release (the githubRelease JSON object, or empty) and, with
+# a pin, _deb_entry and _deb_floor.
 _methods_deb_block() {
   local name=$1 component
   component=$(methods_component "$name") || exit 1
@@ -752,6 +756,7 @@ _methods_deb_block() {
   mapfile -t _deb_names < <(jq -r '(.install.packageNames // [])[]' <<<"$component")
   mapfile -t _deb_apt < <(jq -r '(.install.apt // [])[]' <<<"$component")
   mapfile -t _deb_sources < <(jq -c '(.install.aptSources // [])[]' <<<"$component")
+  _deb_release=$(jq -c '.install.githubRelease // empty' <<<"$component")
   _deb_entry=''
   _deb_floor=''
   if [[ -n $_deb_pin ]]; then
@@ -877,11 +882,105 @@ _methods_apt_source_check() {
   done
 }
 
+# --- Local APT bridge ------------------------------------------------------
+#
+# install.githubRelease of a deb component: the vendor publishes DEBs as
+# assets of GitHub releases but runs no APT repository. The DEB of the
+# newest release is served from a local flat repository that the bridge
+# script (cli/libexec/apt-bridge.sh) refreshes before every `apt update`,
+# so the package updates with plain `apt upgrade`. The bridge consists of
+# the script, one configuration per package, an APT::Update::Pre-Invoke
+# hook and a trusted file: source; all files are root-owned and mode 0644.
+# Paths outside <apt> are below DOTSTEWARD_SYSTEM_ROOT (default: /).
+
+# _methods_bridge_paths: sets _bridge_script, _bridge_conf_dir,
+# _bridge_repo, _bridge_hook and _bridge_source.
+_methods_bridge_paths() {
+  local root=${DOTSTEWARD_SYSTEM_ROOT:-} apt
+  apt=$(_methods_apt_dir)
+  _bridge_script=$root/usr/local/lib/dotsteward/apt-bridge.sh
+  _bridge_conf_dir=$root/etc/dotsteward/apt-bridge.d
+  _bridge_repo=$root/var/lib/dotsteward/apt-bridge
+  _bridge_hook=$apt/apt.conf.d/60dotsteward-apt-bridge
+  _bridge_source=$apt/sources.list.d/dotsteward-apt-bridge.sources
+}
+
+# The bridge script shipped with the framework.
+_methods_bridge_source_script() {
+  printf '%s\n' "$_DS_METHODS_LIB_DIR/../libexec/apt-bridge.sh"
+}
+
+_methods_bridge_hook_text() {
+  printf '%s\n' "// Written by dotsteward: refreshes the local APT bridge before every update." \
+    "APT::Update::Pre-Invoke { \"if [ -f $_bridge_script ]; then /bin/bash $_bridge_script $_bridge_conf_dir $_bridge_repo || true; fi\"; };"
+}
+
+_methods_bridge_source_text() {
+  printf '%s\n' "Types: deb" "URIs: file:$_bridge_repo" "Suites: ./" "Trusted: yes"
+}
+
+# _methods_bridge_plan NAME: for the component of the last _methods_deb_block,
+# sets _bridge_conf (its configuration path), _bridge_conf_text,
+# _bridge_label (repository and asset) and _bridge_paths.
+_methods_bridge_plan() {
+  local name=$1 arch asset
+  _methods_bridge_paths
+  ((${#_deb_names[@]})) || die "$name (deb): githubRelease needs packageNames (the first one is served)"
+  arch=$(dpkg --print-architecture) || die "$name (deb): cannot read the dpkg architecture"
+  asset=$(jq -r --arg arch "$arch" '.assets[$arch] // empty' <<<"$_deb_release")
+  [[ -n $asset ]] || die "$name (deb): githubRelease names no asset for architecture $arch"
+  _bridge_conf=$_bridge_conf_dir/${_deb_names[0]}.conf
+  _bridge_conf_text=$(jq -r --arg package "${_deb_names[0]}" --arg arch "$arch" --arg asset "$asset" '
+    "package=\($package)",
+    "architecture=\($arch)",
+    "url=https://github.com/\(.repository)/releases/latest/download",
+    "asset=\($asset)",
+    "checksums=\(.checksums // "SHA256SUMS.txt")"' <<<"$_deb_release")
+  _bridge_label="$(jq -r .repository <<<"$_deb_release"), $asset"
+}
+
+# _methods_bridge_differs TARGET TEXT|-: status 0 when TARGET is missing or
+# differs from TEXT (- compares with the framework's bridge script).
+_methods_bridge_differs() {
+  [[ -f $1 ]] || return 0
+  if [[ $2 == - ]]; then
+    [[ $(<"$1") != "$(<"$(_methods_bridge_source_script)")" ]]
+  else
+    [[ $(<"$1") != "$2" ]]
+  fi
+}
+
+# _methods_bridge_check NAME: the --check-only part of the bridge.
+_methods_bridge_check() {
+  local name=$1 target text i
+  [[ -n $_deb_release ]] || return 0
+  _methods_bridge_plan "$name"
+  local -a targets=("$_bridge_script" "$_bridge_conf" "$_bridge_hook" "$_bridge_source")
+  local -a texts=(- "$_bridge_conf_text" "$(_methods_bridge_hook_text)" "$(_methods_bridge_source_text)")
+  for i in "${!targets[@]}"; do
+    target=${targets[i]}
+    text=${texts[i]}
+    if [[ ! -f $target ]]; then
+      _methods_set failed "apt bridge file $target is missing"
+      return 1
+    fi
+    if _methods_bridge_differs "$target" "$text"; then
+      _methods_set failed "apt bridge file $target differs from the component"
+      return 1
+    fi
+  done
+  if ! dpkg_installed curl; then
+    _methods_set failed "apt package curl is not installed (the apt bridge runs it)"
+    return 1
+  fi
+}
+
 _methods_deb_check() {
   local name=$1 met package
   _methods_deb_requirements
   _methods_deb_block "$name"
   _methods_apt_source_check "$name" || return 1
+  _methods_bridge_check "$name" || return 1
   if [[ -n $_deb_pin ]] && ! met=$(_methods_deb_floor_met); then
     _methods_set failed "${_deb_names[0]} $_deb_floor or newer is not installed (found $(_methods_deb_found "$met"))"
     return 1
@@ -905,8 +1004,9 @@ methods_deb_transaction() {
   local -a names=("$@") apt_queue=() deb_names=() deb_urls=() deb_sizes=() deb_sha=() deb_files=()
   local -a deb_expected=() deb_arch=()
   local -a src_components=() src_json=() src_text=() src_key=()
-  local -A component_apt=() component_deb=() component_src=() src_seen=()
-  local source text
+  local -A component_apt=() component_deb=() component_src=() component_bridge=() src_seen=()
+  local -a bridge_components=() bridge_targets=() bridge_files=() bridge_texts=()
+  local source text bridged=0
   METHODS_DEB_STATUS=()
   METHODS_DEB_DETAIL=()
   ((${#names[@]})) || return 0
@@ -950,6 +1050,26 @@ methods_deb_transaction() {
       src_text+=("$text")
       component_src[$name]=1
     done
+    if [[ -n $_deb_release ]]; then
+      _methods_bridge_plan "$name"
+      if ((!bridged)) && _methods_bridge_differs "$_bridge_script" -; then
+        bridge_components+=("$name")
+        bridge_targets+=("$_bridge_script")
+        bridge_files+=(apt-bridge.sh)
+        bridge_texts+=(-)
+        component_bridge[$name]=$_bridge_label
+      fi
+      bridged=1
+      if _methods_bridge_differs "$_bridge_conf" "$_bridge_conf_text"; then
+        bridge_components+=("$name")
+        bridge_targets+=("$_bridge_conf")
+        bridge_files+=("${_deb_names[0]}.conf")
+        bridge_texts+=("$_bridge_conf_text")
+        component_bridge[$name]=$_bridge_label
+      fi
+      # The bridge script runs the system curl as root.
+      _deb_apt+=(curl)
+    fi
     for package in "${_deb_apt[@]}"; do
       dpkg_installed "$package" && continue
       component_apt[$name]+="${component_apt[$name]:+ }$package"
@@ -961,11 +1081,29 @@ methods_deb_transaction() {
     done
   done
 
+  # The shared hook and source of the bridge, once for every component.
+  if ((bridged)); then
+    text=$(_methods_bridge_hook_text)
+    if _methods_bridge_differs "$_bridge_hook" "$text"; then
+      bridge_components+=("")
+      bridge_targets+=("$_bridge_hook")
+      bridge_files+=(60dotsteward-apt-bridge)
+      bridge_texts+=("$text")
+    fi
+    text=$(_methods_bridge_source_text)
+    if _methods_bridge_differs "$_bridge_source" "$text"; then
+      bridge_components+=("")
+      bridge_targets+=("$_bridge_source")
+      bridge_files+=(dotsteward-apt-bridge.sources)
+      bridge_texts+=("$text")
+    fi
+  fi
+
   # Download and verify every signing key and DEB before the first sudo
-  # call, then the sources and one transaction. The subshell is the left
-  # operand of `||`, where bash ignores errexit, so every step checks its
-  # own status.
-  if ((${#apt_queue[@]} || ${#deb_names[@]} || ${#src_json[@]})); then
+  # call, then the sources, the bridge and one transaction. The subshell is
+  # the left operand of `||`, where bash ignores errexit, so every step
+  # checks its own status.
+  if ((${#apt_queue[@]} || ${#deb_names[@]} || ${#src_json[@]} || ${#bridge_targets[@]})); then
     tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotsteward-install.XXXXXX") ||
       die "cannot create a temporary directory for the deb transaction"
     (
@@ -1018,6 +1156,21 @@ methods_deb_transaction() {
           die "$name (deb): cannot write the apt source $_src_file"
         log "$name (deb): apt source $_src_name: $(sed -nE 's/^(URIs|Suites|Components): //p' <<<"${src_text[i]}" | paste -sd ' ')"
       done
+      for i in "${!bridge_targets[@]}"; do
+        file=$tmp_dir/${bridge_files[i]}
+        if [[ ${bridge_texts[i]} == - ]]; then
+          cp -- "$(_methods_bridge_source_script)" "$file" || die "cannot stage the apt bridge script"
+        else
+          printf '%s\n' "${bridge_texts[i]}" >"$file"
+        fi
+        sudo install -D -o root -g root -m 0644 "$file" "${bridge_targets[i]}" ||
+          die "${bridge_components[i]:-apt bridge}${bridge_components[i]:+ (deb)}: cannot write ${bridge_targets[i]}"
+      done
+      for name in "${names[@]}"; do
+        if [[ -n ${component_bridge[$name]:-} ]]; then
+          log "$name (deb): apt bridge: ${component_bridge[$name]}"
+        fi
+      done
       local listing=("${apt_queue[@]}" "${shown[@]}")
       if ((${#listing[@]})); then
         log "installing system packages: ${listing[*]}"
@@ -1033,6 +1186,7 @@ methods_deb_transaction() {
   # Verify the floors and the apt packages.
   for name in "${names[@]}"; do
     _methods_deb_block "$name"
+    [[ -z $_deb_release ]] || _deb_apt+=(curl)
     detail=''
     if [[ -n $_deb_pin ]]; then
       if met=$(_methods_deb_floor_met); then
@@ -1049,14 +1203,19 @@ methods_deb_transaction() {
           die "$name (deb): apt package $package is not installed after the transaction"
       done
     fi
-    if [[ -n ${component_deb[$name]:-} || -n ${component_apt[$name]:-} || -n ${component_src[$name]:-} ]]; then
+    if [[ -n ${component_deb[$name]:-} || -n ${component_apt[$name]:-} || -n ${component_src[$name]:-} ||
+      -n ${component_bridge[$name]:-} ]]; then
       METHODS_DEB_STATUS[$name]=installed
       if [[ -n $_deb_pin && -n ${component_apt[$name]:-} ]]; then
         detail+=", ${component_apt[$name]// /, }"
       elif [[ -z $_deb_pin && -n ${component_apt[$name]:-} ]]; then
         detail=${component_apt[$name]// /, }
       elif [[ -z $_deb_pin ]]; then
-        detail="apt sources; $(_methods_join "${_deb_apt[@]}")"
+        if [[ -n $_deb_release ]]; then
+          detail="apt bridge; $(_methods_join "${_deb_apt[@]}")"
+        else
+          detail="apt sources; $(_methods_join "${_deb_apt[@]}")"
+        fi
       fi
     else
       METHODS_DEB_STATUS[$name]=satisfied
