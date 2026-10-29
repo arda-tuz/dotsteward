@@ -42,7 +42,7 @@ declare -A method=(
   [aarch64-darwin]=app-archive
 )
 declare -A install=(
-  [x86_64-linux]='{"pin":"desktop_packages.vscode","packageNames":["code"],"architecture":"amd64","verifyAfterInstall":true,"apt":[],"aptSources":[]}'
+  [x86_64-linux]='{"pin":"desktop_packages.vscode","packageNames":["code"],"architecture":"amd64","verifyAfterInstall":true,"apt":[],"aptSources":[],"githubRelease":null}'
   [aarch64-darwin]='{"pin":"desktop_packages.vscode-darwin-arm64","appName":"Visual Studio Code.app","dest":"~/Applications"}'
 )
 declare -A settings_path=(
