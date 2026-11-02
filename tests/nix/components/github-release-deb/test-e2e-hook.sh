@@ -27,26 +27,27 @@ printf '%s:\n  Installed: 1.3.0-1\n  Version table:\n *** 1.3.0-1 500\n        5
 mkdir -p "$DS_SYSTEM_ROOT/usr/share/applications"
 : >"$DS_SYSTEM_ROOT/usr/share/applications/com.example.app.desktop"
 
+# Stand-ins start with the running bash: the Nix sandbox has no /usr/bin/env.
 cat >"$bin/dpkg-query" <<STUB
-#!/usr/bin/env bash
+#!$BASH
 case "\$1" in
   -W) version=\$(<"$state/version"); [[ -n \$version ]] || exit 1; printf '%s' "\$version" ;;
   -L) [[ -n \$(<"$state/version") ]] || exit 1; cat "$state/files" ;;
   *) exit 64 ;;
 esac
 STUB
-cat >"$bin/dpkg" <<'STUB'
-#!/usr/bin/env bash
+printf '#!%s\n' "$BASH" >"$bin/dpkg"
+cat >>"$bin/dpkg" <<'STUB'
 [[ $1 == --compare-versions && $3 == ge ]] || exit 64
 [[ $(printf '%s\n%s\n' "$4" "${2%-*}" | sort -V | head -n 1) == "$4" ]]
 STUB
 cat >"$bin/apt-cache" <<STUB
-#!/usr/bin/env bash
+#!$BASH
 [[ \$1 == policy ]] || exit 64
 cat "$state/policy"
 STUB
 cat >"$bin/$name-cli" <<STUB
-#!/usr/bin/env bash
+#!$BASH
 [[ \$1 == --version ]] || exit 64
 echo "$name 1.3.0"
 exit "\$(<"$state/cli")"
