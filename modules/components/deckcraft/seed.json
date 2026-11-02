@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "component": "deckcraft",
+  "flake_inputs": {},
+  "versions_lock": {
+    "desktop_packages": {
+      "deckcraft": {
+        "minimum_version": "0.14.1",
+        "url": "https://github.com/storytold/deckcraft/releases/download/v0.14.1/deckcraft-0.14.1-linux-x86_64.deb",
+        "size": 104861456,
+        "sha256": "d17ffd935f8ae3c8e9790648a00d4d019f11b52bf5db207ec6e4d466a108ec2f"
+      }
+    }
+  }
+}

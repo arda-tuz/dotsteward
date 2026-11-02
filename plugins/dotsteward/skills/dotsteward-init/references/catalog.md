@@ -17,6 +17,12 @@ table in `workstation.toml`; `init` writes that table from the chosen names
 and methods. Options (an `options` table) are not set by `init`: change them
 afterwards through the dotsteward-maintain skill of the instance.
 
+A component whose section has the line "Preselected for new instances on:"
+is part of the default choice when every system of the new instance
+(`--systems`) is in its list; the user may still deselect it. Every other
+component is offered unselected. A component that does not support a system
+of the instance cannot be enabled there.
+
 ## shell
 
 zsh as the login shell, with the starship prompt and the zsh-autosuggestions and zsh-syntax-highlighting plugins, installed by Home Manager.
@@ -107,3 +113,78 @@ options = { set_default_editor = true }
 | --- | --- | --- | --- |
 | Linux (x86_64) | `deb` | `external` | `desktop_packages.vscode` |
 | darwin (aarch64) | `app-archive` | `external` | `desktop_packages.vscode-darwin-arm64` |
+
+## pdfcraft
+
+PdfCraft, a PDF reader and editor, from the official DEB that each GitHub release of [storytold/pdfcraft](https://github.com/storytold/pdfcraft) carries, kept up to date through the local APT bridge with plain `apt update && apt upgrade`.
+
+```toml
+[components.pdfcraft]
+enable = true
+```
+
+Preselected for new instances on: `x86_64-linux`.
+
+| Platform | Default method | Also supported | Pin (`versions.lock.json`) |
+| --- | --- | --- | --- |
+| Linux (x86_64) | `deb` | none | `desktop_packages.pdfcraft` |
+
+## gridcraft
+
+GridCraft, a spreadsheet application, from the official DEB that each GitHub release of [storytold/gridcraft](https://github.com/storytold/gridcraft) carries, kept up to date through the local APT bridge with plain `apt update && apt upgrade`.
+
+```toml
+[components.gridcraft]
+enable = true
+```
+
+Preselected for new instances on: `x86_64-linux`.
+
+| Platform | Default method | Also supported | Pin (`versions.lock.json`) |
+| --- | --- | --- | --- |
+| Linux (x86_64) | `deb` | none | `desktop_packages.gridcraft` |
+
+## wordcraft
+
+WordCraft, a word processor, from the official DEB that each GitHub release of [storytold/wordcraft](https://github.com/storytold/wordcraft) carries, kept up to date through the local APT bridge with plain `apt update && apt upgrade`.
+
+```toml
+[components.wordcraft]
+enable = true
+```
+
+Preselected for new instances on: `x86_64-linux`.
+
+| Platform | Default method | Also supported | Pin (`versions.lock.json`) |
+| --- | --- | --- | --- |
+| Linux (x86_64) | `deb` | none | `desktop_packages.wordcraft` |
+
+## deckcraft
+
+DeckCraft, a presentation and slide show application, from the official DEB that each GitHub release of [storytold/deckcraft](https://github.com/storytold/deckcraft) carries, kept up to date through the local APT bridge with plain `apt update && apt upgrade`.
+
+```toml
+[components.deckcraft]
+enable = true
+```
+
+Preselected for new instances on: `x86_64-linux`.
+
+| Platform | Default method | Also supported | Pin (`versions.lock.json`) |
+| --- | --- | --- | --- |
+| Linux (x86_64) | `deb` | none | `desktop_packages.deckcraft` |
+
+## craft-anything
+
+Craft Anything, an application that explains how software works and helps build your own, from the official DEB that each GitHub release of [storytold/craft-anything](https://github.com/storytold/craft-anything) carries, kept up to date through the local APT bridge with plain `apt update && apt upgrade`.
+
+```toml
+[components.craft-anything]
+enable = true
+```
+
+Preselected for new instances on: `x86_64-linux`.
+
+| Platform | Default method | Also supported | Pin (`versions.lock.json`) |
+| --- | --- | --- | --- |
+| Linux (x86_64) | `deb` | none | `desktop_packages.craft-anything` |

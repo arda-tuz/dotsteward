@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "component": "gridcraft",
+  "flake_inputs": {},
+  "versions_lock": {
+    "desktop_packages": {
+      "gridcraft": {
+        "minimum_version": "0.15.0",
+        "url": "https://github.com/storytold/gridcraft/releases/download/v0.15.0/gridcraft-0.15.0-linux-x86_64.deb",
+        "size": 49904010,
+        "sha256": "3dc260c37363c7773ac190def4a1cf628723c1c1bb35a297e48745b5f0367578"
+      }
+    }
+  }
+}

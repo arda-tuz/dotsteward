@@ -1,7 +1,7 @@
 # Full darwin fixture instance
 
 The instance `dotsteward init` writes for a new user on a Mac with
-all six catalog components (`shell`, `herdr`, `claude-code`, `codex`,
+the six cross-platform catalog components (`shell`, `herdr`, `claude-code`, `codex`,
 `opencode-pi`, `vscode`) on `aarch64-darwin`, and two synthetic private
 components: `example-app` (method `nix`, a packaged and checked command) and
 `example-term` (method `official-binary` by default, which it supports only on

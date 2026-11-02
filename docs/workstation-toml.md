@@ -282,7 +282,8 @@ mode = "adopt"
 mode = "fresh"
 
 # Components: one [components.<name>] table each, with enable = true, for the
-# catalog (shell, herdr, claude-code, codex, opencode-pi, vscode) and for
+# catalog (shell, herdr, claude-code, codex, opencode-pi, vscode, pdfcraft,
+# gridcraft, wordcraft, deckcraft, craft-anything) and for
 # your own components in components/<name>/.
 [components]
 order = ["shell", "claude-code"]

@@ -84,7 +84,7 @@ The installer asks for sudo and for confirmation, so unless this shell has a ter
 
 ### 3.3 Ask the choices
 
-1. The components and their methods: present the table of `references/catalog.md` and let the user choose; the defaults are fine for most users.
+1. The components and their methods: present the table of `references/catalog.md` and let the user choose; the defaults are fine for most users. A component whose section says "Preselected for new instances on:" starts selected when every system of the instance (item 3; ask it first when it is not known yet) is in its list, and the user may deselect it; every other component starts unselected, and one that does not support a system of the instance is not offered.
 2. The repository: name (default `workstation`) and owner (`gh api user --jq .login`, or an organization the user names), and whether it is created on GitHub now or kept local.
 3. The systems (`x86_64-linux`, `aarch64-darwin` or both) and the directory of the checkout (default `~/<name>`).
 4. The remote, exactly as `git remote get-url origin` will print it, in the protocol `gh` uses for clones:

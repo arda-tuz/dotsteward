@@ -108,6 +108,11 @@ the evaluation with the supported list. The catalog on darwin:
 | `opencode-pi` | `official-binary` for OpenCode (`opencode-darwin-arm64.zip`); Pi from Nix | `external` |
 | `vscode` | `app-archive` (the official `darwin-arm64` archive) | `external` |
 
+`pdfcraft`, `gridcraft`, `wordcraft`, `deckcraft` and `craft-anything` are
+Linux only (the vendor DEB through the local APT bridge): an instance whose
+`nix.systems` holds a darwin system cannot enable them, and `dotsteward-init`
+preselects them only for Linux-only instances.
+
 Each component's `README.md` (`modules/components/<name>/README.md`) records
 its darwin pins, settings paths and what was verified for darwin.
 

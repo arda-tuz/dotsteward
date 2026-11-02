@@ -144,6 +144,15 @@ with plain `apt update && apt upgrade`; unattended upgrades leave them alone
 unless their configuration allows the origin `dotsteward`. `--check-only`
 fails while a bridge file is missing or differs, or `curl` is missing.
 
+A component that installs one such DEB can be written in a few lines with
+`modules/core/github-release-deb.nix`, which the catalog components
+`pdfcraft`, `gridcraft`, `wordcraft`, `deckcraft` and `craft-anything` use:
+it takes `name`, `repository` and `docs`, and declares the Linux-only `deb`
+method, the pin `desktop_packages.<name>`, the commands `<name>` and
+`<name>-cli`, the shared E2E hook `modules/core/github-release-deb-e2e.sh`
+and the pins declarations, for a package called like the component whose
+release asset is `<name>-{version}-linux-x86_64.deb`.
+
 An adopted machine takes in a new system-level component with
 `dotsteward install --profile PROFILE --component NAME`: the phase runs for
 the named components (preflight, deb transaction, their hooks) as in

@@ -8,8 +8,8 @@
 #
 # Usage: bash tests/vm/guest/clean-install.sh [--components LIST] [--dir DIR]
 #                                             [--no-rollback]
-#   --components LIST  comma-separated catalog components (default: all
-#                      six: shell,herdr,claude-code,codex,opencode-pi,vscode)
+#   --components LIST  comma-separated catalog components (default: the
+#                      six cross-platform ones: shell,herdr,claude-code,codex,opencode-pi,vscode)
 #   --dir DIR          instance directory (default ~/workstation)
 #   --no-rollback      keep the workstation (for manual inspection)
 #

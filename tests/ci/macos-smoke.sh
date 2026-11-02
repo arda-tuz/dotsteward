@@ -12,7 +12,7 @@
 #      a stock Mac; the pin is template/versions.lock.json beside it), then
 #      the Nix daemon profile is sourced;
 #   2. `dotsteward init` from this checkout (`nix run path:<checkout>#dotsteward`)
-#      into ~/workstation: nix.systems = aarch64-darwin, all six catalog
+#      into ~/workstation: nix.systems = aarch64-darwin, the six cross-platform catalog
 #      components with their darwin methods (shell and herdr nix; claude-code,
 #      codex and opencode-pi official-binary; vscode app-archive), the
 #      framework input path:<checkout> (a shallow checkout cannot be a

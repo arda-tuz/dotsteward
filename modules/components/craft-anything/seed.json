@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "component": "craft-anything",
+  "flake_inputs": {},
+  "versions_lock": {
+    "desktop_packages": {
+      "craft-anything": {
+        "minimum_version": "0.2.0",
+        "url": "https://github.com/storytold/craft-anything/releases/download/v0.2.0/craft-anything-0.2.0-linux-x86_64.deb",
+        "size": 67340548,
+        "sha256": "76b8060a73be63f0e78f16761f0f01f168e41628dbec8e80666d153ec73fd323"
+      }
+    }
+  }
+}

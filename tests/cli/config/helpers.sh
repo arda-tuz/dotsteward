@@ -5,7 +5,7 @@
 #   config_py ARG...          runs the Python exporter
 #                             (python3 -m dotsteward_cli.config) of the
 #                             framework under test
-#   config_catalog            the six public catalog names, comma-separated,
+#   config_catalog            six public catalog names, comma-separated,
 #                             as the Nix tests pass them (prelude.nix)
 #   make_framework DIR [NAME...]
 #                             copies cli/, schema/ and VERSION of the

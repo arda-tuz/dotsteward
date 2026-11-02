@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "component": "wordcraft",
+  "flake_inputs": {},
+  "versions_lock": {
+    "desktop_packages": {
+      "wordcraft": {
+        "minimum_version": "0.14.0",
+        "url": "https://github.com/storytold/wordcraft/releases/download/v0.14.0/wordcraft-0.14.0-linux-x86_64.deb",
+        "size": 111429240,
+        "sha256": "0e8f4ce3fc4662d71631125b9e02ae854658ef608c85ea6e304c9dc60e239641"
+      }
+    }
+  }
+}

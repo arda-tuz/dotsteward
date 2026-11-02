@@ -16,7 +16,11 @@
 #   - the enable block: the first ```toml block before the first level-2
 #     heading that holds the line "[components.<name>]";
 #   - the methods table: the first table of the section "## Methods", else
-#     "## Install", else "## What it installs".
+#     "## Install", else "## What it installs";
+#   - optionally, before the first level-2 heading, the preselection line
+#     "Preselected for new instances on: `SYSTEM`[, `SYSTEM`]." (systems
+#     x86_64-linux and aarch64-darwin): the component is part of the default
+#     choice of a new instance whose systems are all listed.
 #
 # A README without one of them is refused and nothing is written. Without
 # --check the file is written (atomically, mode 0644) when its bytes change.
@@ -95,9 +99,9 @@ done
 
 # component_section NAME README: prints the catalog section of NAME. Status
 # 2: the first line is not "# NAME"; 3: no summary paragraph; 4: no enable
-# block; 5: no methods table.
+# block; 5: no methods table; 6: a malformed or repeated preselection line.
 component_section() {
-  awk -v name="$1" '
+  awk -v name="$1" -v systems='`(x86_64-linux|aarch64-darwin)`' '
     function fence(s) { return s ~ /^[ \t]*(```|~~~)/ }
     { sub(/\r$/, "") }
     NR == 1 {
@@ -122,6 +126,11 @@ component_section() {
         next
       }
       if (lead_fence) { if (fence($0)) lead_fence = 0; next }
+      if (index($0, "Preselected") == 1) {
+        if (preselect != "" || $0 !~ ("^Preselected for new instances on: " systems "(, " systems ")*[.]$")) { status = 6; exit }
+        preselect = $0
+        next
+      }
       if ($0 ~ /^```toml[ \t]*$/) { block = $0; next }
       if (fence($0)) { lead_fence = 1; next }
     }
@@ -151,7 +160,8 @@ component_section() {
       if (table == "") table = tables["install"]
       if (table == "") table = tables["installs"]
       if (split(table, rows, "\n") < 3) exit 5
-      printf "## %s\n\n%s\n\n%s\n\n%s\n", name, summary, enable, table
+      if (preselect != "") printf "## %s\n\n%s\n\n%s\n\n%s\n\n%s\n", name, summary, enable, preselect, table
+      else printf "## %s\n\n%s\n\n%s\n\n%s\n", name, summary, enable, table
     }
   ' "$2"
 }
@@ -174,6 +184,12 @@ The TOML block of each component is its README's example of the component's
 table in \`workstation.toml\`; \`init\` writes that table from the chosen names
 and methods. Options (an \`options\` table) are not set by \`init\`: change them
 afterwards through the dotsteward-maintain skill of the instance.
+
+A component whose section has the line \"Preselected for new instances on:\"
+is part of the default choice when every system of the new instance
+(\`--systems\`) is in its list; the user may still deselect it. Every other
+component is offered unselected. A component that does not support a system
+of the instance cannot be enabled there.
 "
 for name in "${names[@]}"; do
   readme=$components_dir/$name/README.md
@@ -187,6 +203,7 @@ for name in "${names[@]}"; do
     3) die "$where: no summary paragraph after the heading" ;;
     4) die "$where: no \`\`\`toml block with [components.$name] before the first level-2 heading" ;;
     5) die "$where: no methods table under \"## Methods\", \"## Install\" or \"## What it installs\"" ;;
+    6) die "$where: the preselection line must be 'Preselected for new instances on: \`SYSTEM\`[, \`SYSTEM\`].' once, before the first level-2 heading" ;;
     *) die "$where: cannot be read (awk exited $status)" ;;
   esac
   document+=$'\n'$section$'\n'

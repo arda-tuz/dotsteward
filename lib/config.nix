@@ -65,6 +65,11 @@ let
     "codex"
     "opencode-pi"
     "vscode"
+    "pdfcraft"
+    "gridcraft"
+    "wordcraft"
+    "deckcraft"
+    "craft-anything"
   ];
 
   # Keys of the [profiles] table that are not profile tables.

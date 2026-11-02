@@ -80,6 +80,11 @@ To do the same by hand, follow the guide for your platform:
 | `herdr` | herdr |
 | `opencode-pi` | OpenCode and Pi |
 | `vscode` | VS Code |
+| `pdfcraft` | PdfCraft, a PDF reader and editor (Linux) |
+| `gridcraft` | GridCraft, a spreadsheet application (Linux) |
+| `wordcraft` | WordCraft, a word processor (Linux) |
+| `deckcraft` | DeckCraft, a presentation application (Linux) |
+| `craft-anything` | Craft Anything (Linux) |
 
 Anything else lives in your instance as a private component, written
 against the same contract. Details: [docs/catalog.md](docs/catalog.md).

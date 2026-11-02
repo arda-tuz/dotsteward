@@ -1,5 +1,5 @@
-# The full Linux fixture instance (tests/fixtures/instances/full): all six
-# catalog components (shell, herdr, claude-code, codex, opencode-pi, vscode)
+# The full Linux fixture instance (tests/fixtures/instances/full): the six
+# cross-platform catalog components (shell, herdr, claude-code, codex, opencode-pi, vscode)
 # and the two synthetic private components example-app and example-term,
 # built on x86_64-linux and probed.
 #

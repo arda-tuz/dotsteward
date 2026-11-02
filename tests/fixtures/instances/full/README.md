@@ -1,7 +1,7 @@
 # Full Linux fixture instance
 
-The instance `dotsteward init` writes for a new user with all six
-catalog components (`shell`, `herdr`, `claude-code`, `codex`, `opencode-pi`,
+The instance `dotsteward init` writes for a new user with the six
+cross-platform catalog components (`shell`, `herdr`, `claude-code`, `codex`, `opencode-pi`,
 `vscode`) on `x86_64-linux`, and two synthetic private components:
 `example-app` (method `nix`, a packaged and checked command) and
 `example-term` (method `official-binary`, active in the `workstation` profile

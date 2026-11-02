@@ -36,7 +36,8 @@ may change locally, its probes and end-to-end checks, its backup and
 rollback declarations, and its documentation.
 
 - The **catalog** is the set of components the framework ships: Claude
-  Code, Codex, herdr, zsh with starship, OpenCode and Pi, and VS Code (see
+  Code, Codex, herdr, zsh with starship, OpenCode and Pi, VS Code, and on
+  Linux PdfCraft, GridCraft, WordCraft, DeckCraft and Craft Anything (see
   [catalog.md](catalog.md)).
 - A **private component** lives in the instance under `components/<name>/`
   and uses exactly the same contract. Anything outside the catalog is a

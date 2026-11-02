@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "component": "pdfcraft",
+  "flake_inputs": {},
+  "versions_lock": {
+    "desktop_packages": {
+      "pdfcraft": {
+        "minimum_version": "0.17.0",
+        "url": "https://github.com/storytold/pdfcraft/releases/download/v0.17.0/pdfcraft-0.17.0-linux-x86_64.deb",
+        "size": 112416678,
+        "sha256": "5500ec5693f2e2ec73cdc6e2b7c2b4aa897149c0b2d7465a4ce40e665b41db46"
+      }
+    }
+  }
+}

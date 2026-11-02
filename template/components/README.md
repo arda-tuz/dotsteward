@@ -4,7 +4,8 @@ A component is one application or tool with everything that makes it
 reproducible: how it is installed on each platform, which versions are pinned,
 which settings files it owns, what is backed up and rolled back, and how its
 installation is checked. The framework ships the catalog components (`shell`,
-`herdr`, `claude-code`, `codex`, `opencode-pi`, `vscode`); anything else lives
+`herdr`, `claude-code`, `codex`, `opencode-pi`, `vscode`, `pdfcraft`,
+`gridcraft`, `wordcraft`, `deckcraft`, `craft-anything`); anything else lives
 here as a private component of this instance.
 
 Each private component is a directory `components/<name>/`:

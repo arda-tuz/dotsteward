@@ -58,7 +58,7 @@ FRAMEWORK_ROOT = Path(__file__).resolve().parents[3]
 SUPPORTED_VERSION = 1
 
 # The public catalog in its canonical order (default of components.order).
-CATALOG_ORDER = ("shell", "herdr", "claude-code", "codex", "opencode-pi", "vscode")
+CATALOG_ORDER = ("shell", "herdr", "claude-code", "codex", "opencode-pi", "vscode", "pdfcraft", "gridcraft", "wordcraft", "deckcraft", "craft-anything")
 
 # Keys of the [profiles] table that are not profile tables.
 PROFILE_KEYS = ("names", "default", "check", "bootstrap")

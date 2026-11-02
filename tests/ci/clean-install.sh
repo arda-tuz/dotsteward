@@ -12,7 +12,7 @@
 #      --install-nix-only, the path of `dotsteward-init` before an instance
 #      exists), with DOTSTEWARD_ASSUME_YES=1;
 #   2. `dotsteward init` from this checkout (`nix run path:<checkout>#dotsteward`)
-#      into ~/workstation: all six catalog components on their default
+#      into ~/workstation: the six cross-platform catalog components on their default
 #      Linux methods, the framework input path:<checkout> (a shallow
 #      checkout cannot be a git+file input) and a local bare repository as
 #      instance.remote, to which the instance is then pushed;
