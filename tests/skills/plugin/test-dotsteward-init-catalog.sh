@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2153 # DS_REPO_ROOT comes from tests/lib/harness.sh
+# shellcheck disable=SC2016 # literal Markdown code spans in single quotes
 # references/catalog.md of plugins/dotsteward/skills/dotsteward-init is
 # generated from the catalog READMEs by tools/gen-init-catalog.sh: the
 # committed file is current, lists every catalog component in the
@@ -105,3 +106,47 @@ cp "$DS_TEST_ROOT/herdr-README.md" "$readme"
 sed -i '/^\[components.herdr\]$/d' "$readme"
 assert_exit 1 bash "$generator" --root "$root"
 assert_contains "$DS_STDERR" "[components.herdr]" "a README without the enable block is refused"
+
+# Preselection: the line "Preselected for new instances on: `SYSTEM`[, ...]."
+# of a README reaches the component's section of the catalog; the five
+# components that install a vendor DEB from GitHub releases carry it for
+# x86_64-linux, the other catalog components do not, and the catalog says
+# when a preselected component starts selected.
+cp "$DS_TEST_ROOT/herdr-README.md" "$readme"
+assert_exit 0 bash "$generator" --root "$root"
+assert_contains "$(tr '\n' ' ' <"$catalog")" 'Preselected for new instances on:" is part of the default choice' \
+  "catalog.md explains preselection"
+# preselected_of CATALOG: the names of the sections that carry the line.
+preselected_of() {
+  awk '/^## / { name = substr($0, 4) } $0 == "Preselected for new instances on: `x86_64-linux`." { print name }' "$1" |
+    tr '\n' ' '
+}
+assert_eq "pdfcraft gridcraft wordcraft deckcraft craft-anything " "$(preselected_of "$catalog")" \
+  "the preselected components of the catalog"
+for name in pdfcraft gridcraft wordcraft deckcraft craft-anything; do
+  awk -v n="## $name" '$0 == n { open = 1; next } open && /^## / { exit } open' "$catalog" |
+    grep -qxF 'Preselected for new instances on: `x86_64-linux`.' ||
+    ds_fail "the catalog section of $name lacks its preselection line"
+done
+
+# The line on another README reaches its section; a malformed or repeated
+# line, or a system outside x86_64-linux and aarch64-darwin, is refused.
+readme=$root/modules/components/herdr/README.md
+awk '/^```toml/ { fence = 1 } { print } fence && /^```$/ && !done { print ""; print "Preselected for new instances on: `x86_64-linux`, `aarch64-darwin`."; done = 1 }' \
+  "$DS_TEST_ROOT/herdr-README.md" >"$readme"
+assert_exit 0 bash "$generator" --root "$root"
+awk '$0 == "## herdr" { open = 1; next } open && /^## / { exit } open' "$root/$catalog_path" |
+  grep -qxF 'Preselected for new instances on: `x86_64-linux`, `aarch64-darwin`.' ||
+  ds_fail "the preselection line of herdr does not reach its section"
+for bad in 'Preselected for new instances on: x86_64-linux.' \
+  'Preselected for new instances on: `riscv64-linux`.' \
+  'Preselected for new instances on: `x86_64-linux`'; do
+  awk -v bad="$bad" '/^```toml/ { fence = 1 } { print } fence && /^```$/ && !done { print ""; print bad; done = 1 }' \
+    "$DS_TEST_ROOT/herdr-README.md" >"$readme"
+  assert_exit 1 bash "$generator" --root "$root"
+  assert_contains "$DS_STDERR" "preselection line" "a malformed preselection line is refused: $bad"
+done
+awk '/^```toml/ { fence = 1 } { print } fence && /^```$/ && !done { print ""; print "Preselected for new instances on: `x86_64-linux`."; print "Preselected for new instances on: `x86_64-linux`."; done = 1 }' \
+  "$DS_TEST_ROOT/herdr-README.md" >"$readme"
+assert_exit 1 bash "$generator" --root "$root"
+assert_contains "$DS_STDERR" "preselection line" "a repeated preselection line is refused"

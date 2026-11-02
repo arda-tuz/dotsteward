@@ -62,4 +62,4 @@ instance_contract "$dir" x86_64-linux
 
 # The package's catalog is the framework's.
 assert_exit 2 "$cli" init --dir "$DS_TEST_ROOT/other" --remote "$init_remote" --components editor
-assert_contains "$DS_STDERR" "unknown component: editor (the catalog: shell, herdr, claude-code, codex, opencode-pi, vscode)"
+assert_contains "$DS_STDERR" "unknown component: editor (the catalog: shell, herdr, claude-code, codex, opencode-pi, vscode, pdfcraft, gridcraft, wordcraft, deckcraft, craft-anything)"

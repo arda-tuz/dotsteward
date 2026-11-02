@@ -1,0 +1,60 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-01-01T00:00:00+00:00",
+  "policy": {
+    "official_sources_only": true,
+    "persistent_agentic_updates": false,
+    "scheduled_repository_updates": false,
+    "native_application_updates": true,
+    "major_version_review_required": true
+  },
+  "nix": {
+    "version": "2.35.2",
+    "installer_url": "https://releases.example.invalid/nix/nix-2.35.2/install",
+    "installer_size": 4499,
+    "installer_sha256": "99d0ddf3c86a252730207c4cf7d2fafaca9f76d14bb98ef588307da33e264d84"
+  },
+  "flake_inputs": {
+    "nixpkgs": {
+      "reference": "github:NixOS/nixpkgs/774debe7a0d1b496e35677ad955a1011c6ff74f3",
+      "revision": "774debe7a0d1b496e35677ad955a1011c6ff74f3"
+    },
+    "home-manager": {
+      "reference": "github:nix-community/home-manager/db7d5e2332710f5abb088f6b5de927d7f9511b35",
+      "revision": "db7d5e2332710f5abb088f6b5de927d7f9511b35"
+    }
+  },
+  "nix_packages": {},
+  "desktop_packages": {
+    "pdfcraft": {
+      "minimum_version": "0.17.0",
+      "url": "https://github.com/storytold/pdfcraft/releases/download/v0.17.0/pdfcraft-0.17.0-linux-x86_64.deb",
+      "size": 112416678,
+      "sha256": "5500ec5693f2e2ec73cdc6e2b7c2b4aa897149c0b2d7465a4ce40e665b41db46"
+    },
+    "gridcraft": {
+      "minimum_version": "0.15.0",
+      "url": "https://github.com/storytold/gridcraft/releases/download/v0.15.0/gridcraft-0.15.0-linux-x86_64.deb",
+      "size": 49904010,
+      "sha256": "3dc260c37363c7773ac190def4a1cf628723c1c1bb35a297e48745b5f0367578"
+    },
+    "wordcraft": {
+      "minimum_version": "0.14.0",
+      "url": "https://github.com/storytold/wordcraft/releases/download/v0.14.0/wordcraft-0.14.0-linux-x86_64.deb",
+      "size": 111429240,
+      "sha256": "0e8f4ce3fc4662d71631125b9e02ae854658ef608c85ea6e304c9dc60e239641"
+    },
+    "deckcraft": {
+      "minimum_version": "0.14.1",
+      "url": "https://github.com/storytold/deckcraft/releases/download/v0.14.1/deckcraft-0.14.1-linux-x86_64.deb",
+      "size": 104861456,
+      "sha256": "d17ffd935f8ae3c8e9790648a00d4d019f11b52bf5db207ec6e4d466a108ec2f"
+    },
+    "craft-anything": {
+      "minimum_version": "0.2.0",
+      "url": "https://github.com/storytold/craft-anything/releases/download/v0.2.0/craft-anything-0.2.0-linux-x86_64.deb",
+      "size": 67340548,
+      "sha256": "76b8060a73be63f0e78f16761f0f01f168e41628dbec8e80666d153ec73fd323"
+    }
+  }
+}

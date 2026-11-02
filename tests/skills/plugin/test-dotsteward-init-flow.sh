@@ -335,3 +335,13 @@ for text in "vscode" "vendor's apt repository"; do
   assert_contains "$existing_flow" "$text" "section 4 names the VS Code repository question"
   assert_contains "$(<"$platform_ref")" "$text" "platform-prereqs.md names the VS Code repository question"
 done
+
+# The components question starts with the preselected components of the
+# catalog: a component whose catalog section says "Preselected for new
+# instances on:" starts selected only when every system of the instance is
+# in its list, the user may deselect it, and a component that does not
+# support a system of the instance is not offered.
+choices=$(subsection_of "$skill" "3.3")
+for text in "Preselected for new instances on:" "every system of the instance" "deselect" "not offered"; do
+  assert_contains "$choices" "$text" "3.3 describes the preselected components"
+done

@@ -151,7 +151,7 @@ refused 2 "unrecognized arguments: --bogus" -- "${ok[@]}" --bogus
 refused 2 "unrecognized arguments: extra" -- "${ok[@]}" extra
 refused 2 "--remote must be non-empty, without whitespace, quotes, backslashes or \$" -- --dir "$dir" --remote ""
 refused 2 "--remote must be non-empty" -- --dir "$dir" --remote "git@example.invalid:a b.git"
-refused 2 "unknown component: editor (the catalog: shell, herdr, claude-code, codex, opencode-pi, vscode)" -- \
+refused 2 "unknown component: editor (the catalog: shell, herdr, claude-code, codex, opencode-pi, vscode, pdfcraft, gridcraft, wordcraft, deckcraft, craft-anything)" -- \
   "${ok[@]}" --components shell,editor
 refused 2 "--components: shell given more than once" -- "${ok[@]}" --components shell,herdr,shell
 refused 2 "--method expects COMPONENT=VALUE, got 'codex'" -- "${ok[@]}" --components codex --method codex
