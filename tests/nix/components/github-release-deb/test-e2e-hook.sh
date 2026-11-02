@@ -41,10 +41,12 @@ cat >>"$bin/dpkg" <<'STUB'
 [[ $1 == --compare-versions && $3 == ge ]] || exit 64
 [[ $(printf '%s\n%s\n' "$4" "${2%-*}" | sort -V | head -n 1) == "$4" ]]
 STUB
+# apt-cache writes with the bash builtin, which takes SIGPIPE like apt-cache
+# does; some cat builds swallow a broken pipe.
 cat >"$bin/apt-cache" <<STUB
 #!$BASH
 [[ \$1 == policy ]] || exit 64
-cat "$state/policy"
+printf '%s\n' "\$(<"$state/policy")"
 STUB
 cat >"$bin/$name-cli" <<STUB
 #!$BASH
@@ -86,6 +88,18 @@ assert_exit 1 run_hook
 assert_contains "$DS_STDERR" "$name: $name-cli --version does not answer"
 
 printf '0\n' >"$state/cli"
+# A newer version waiting in the bridge puts the bridge line before more
+# output. The filler is larger than a pipe buffer, so a reader that stops at
+# the first match leaves apt-cache to die of SIGPIPE every time.
+{
+  printf '%s:\n  Installed: 1.3.0-1\n  Candidate: 1.4.0-1\n  Version table:\n     1.4.0-1 500\n' "$name"
+  printf '        500 file:/var/lib/dotsteward/apt-bridge ./ Packages\n'
+  printf ' *** 1.3.0-1 100\n        100 /var/lib/dpkg/status\n'
+  for ((i = 0; i < 4096; i++)); do printf '        %0120d\n' "$i"; done
+} >"$state/policy"
+assert_exit 0 run_hook
+assert_contains "$DS_STDOUT$DS_STDERR" "$name 1.3.0-1: floor 1.2.0, desktop entry, CLI and the local APT bridge"
+
 printf '%s:\n  Installed: 1.3.0-1\n        500 https://example.com/apt ./ Packages\n' "$name" >"$state/policy"
 assert_exit 1 run_hook
 assert_contains "$DS_STDERR" "$name: APT does not take the package from the local APT bridge"
