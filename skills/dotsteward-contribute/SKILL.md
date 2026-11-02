@@ -21,6 +21,7 @@ Change the framework that every dotsteward user shares, from this machine, as on
 - **Privacy findings are hard stops** in owner and fork mode alike: exit 4 means nothing is published until the findings are gone from the branch.
 - **Decisions stay with the user:** creating a fork, opening a pull request on someone else's upstream, a build-only trial, and aborting a run.
 - **No secrets or machine state** in the clone, in commits or in the report.
+- **Durable lessons live in versioned text, never in agent memory.** A lesson worth keeping for later runs goes where every agent on every machine reads it: a generic one into the framework skill as part of a run here, an instance-specific one into the instance overlay of the skill through `dotsteward-maintain`. Never record it in an agent's own memory store, which is per machine, unreviewed and invisible to the other agents; this applies to lessons about `dotsteward-contribute` itself too.
 
 ## 1. Start
 

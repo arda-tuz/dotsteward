@@ -32,6 +32,7 @@ On the gate, publish preconditions, decision ownership, secrets, force push and 
 - **No downloads for hashes.** Sizes and SHA-256 values come from the research report (GitHub asset digests, APT `SHA256` fields, official manifests, the Nix installer checksum). Download an archive only when no official digest exists.
 - **Read only what you change.** The research report is the inventory; use `git grep -n` for lookups. Read the `maintenance.md` of a component only when its rows change: catalog components ship it in the framework source (`modules/components/<name>/maintenance.md`, see `references/framework-upgrade.md` for the store path of the pinned release), private components in the instance (`components/<name>/maintenance.md`).
 - **Never touch the settings buffer.** Locally maintained application settings (`settings.buffer_dir`) are synced only by `dotsteward-maintain`; the update scope of the gate refuses any change there, and pending local settings never block an update.
+- **Durable lessons live in versioned text, never in agent memory.** A lesson worth keeping for later runs goes where every agent on every machine reads it: a generic one into the framework skill through `dotsteward-contribute`, an instance-specific one into the overlay of this skill through `dotsteward-maintain`. Never record it in an agent's own memory store, which is per machine, unreviewed and invisible to the other agents.
 - **Generated files are generated.** Never hand-edit `flake.lock`, the `.dotsteward/` mirrors or npm lockfiles; the commands in `references/sources-and-hashes.md` write them. Byte-protected files (`protected` in the context) keep their bytes.
 - **Shell pitfalls.** The user's shell may be zsh: quote globs, avoid `echo ====`, do not name a variable `path`. Repository scripts are bash; run them directly.
 
@@ -106,6 +107,8 @@ cd "$instance_path" && rm -rf -- "$work"
 ```
 
 The subject is exactly `commit.update_subject`; publish refuses any other. Publish checks that HEAD's tree is the validated tree and that the remote branch still equals the prepared base, pushes without force, verifies the remote OID and fast-forwards a clean canonical checkout. Do not amend. Local activation is a separate explicit request: then run `dotsteward rebuild --profile <profiles.current> --switch` and `dotsteward e2e --profile <profiles.current>` in the instance checkout.
+
+On a profile in `adopt` mode that rebuild never installs or upgrades system-level packages. When the update raised a `deb` floor above the installed version, or the new framework release adds a system-level requirement of a component, the machine reaches it through the vendor's own update channel (for example `apt upgrade`) or through `dotsteward install --profile <profiles.current> --component <name>` before the rebuild. That command needs `sudo`, so the user runs it in their own terminal; `--check-only` added to it shows which named components are below their floor.
 
 ## 6. Report
 

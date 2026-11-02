@@ -23,6 +23,7 @@ Maintain one system: this machine is the observed input, the instance checkout i
 - **No secrets or machine state in Git:** credentials, tokens, sessions, caches, histories, databases, sockets, logs, machine identifiers and project indexes stay out.
 - **Settings files only through the buffer.** Application settings files that the application writes itself are never linked or replaced. Only the entries of the settings buffer (`settings.buffer_dir` of the context) are synchronized, by `dotsteward settings` (`references/local-maintained-files.md`). This skill is the only one that writes the buffer; decisions on conflicts and deletions are always the user's.
 - **Framework files are read-only.** Never edit installed framework files (the skill links, the store paths, the framework input); framework changes go through `dotsteward-contribute`.
+- **Durable lessons live in versioned text, never in agent memory.** A lesson worth keeping for later runs (an ordering, a machine constraint, the user's preference about this workflow) goes where every agent on every machine reads it: a generic one into the framework skill through `dotsteward-contribute`, an instance-specific one into this skill's overlay as part of the transaction. Never record it in an agent's own memory store, which is per machine, unreviewed and invisible to the other agents.
 
 ## 1. Start
 
@@ -113,6 +114,7 @@ dotsteward update publish --scope maintain
 - Run the rebuild only when local activation is requested or clearly expected, and publish only when the user wants the remote updated.
 - If E2E fails, fix it, add a new commit (no amend), run the gate again, then E2E again. A failed check means no push.
 - If the rebuild warns that the login shell is still on a versioned Nix path, ask the user to run the same rebuild once in a terminal; moving the login shell needs `sudo`.
+- **Adopt-mode profiles do not install system-level components.** The rebuild of a profile in `adopt` mode never installs a component whose method is system-level (`deb` on Linux, `app-archive` on macOS). When the transaction adds one, ask the user to run `dotsteward install --profile "$profile" --component <name>` (repeatable) after the commit and before the rebuild; it needs `sudo`, so the user runs it in their own terminal. Without it the rebuild stops at the command probe with `required command not found: <command>`. The same command brings in a raised floor of an installed component, which the rebuild does not enforce; `dotsteward install --profile "$profile" --component <name> --check-only` confirms the result.
 - The publish step checks the validated tree, the remote base and the commit subjects, pushes without force and verifies the remote OID.
 
 ## 6. Report

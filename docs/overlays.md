@@ -46,6 +46,13 @@ An overlay may:
 - describe private components, their sources and their exact checks;
 - state limits of the user's machines (memory, disk, parallelism).
 
+The overlay is also where an agent writes a durable lesson about one
+instance (an ordering, a machine constraint, the user's preference about
+a workflow), through `dotsteward-maintain`; a generic lesson goes into the
+framework skill through `dotsteward-contribute`. Neither ever goes into an
+agent's own memory store, which is per machine, unreviewed and invisible to
+the other agents.
+
 An overlay cannot relax a skill. Every framework skill says so in the same
 words:
 
