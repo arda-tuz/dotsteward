@@ -39,7 +39,11 @@ done
 
 user_run "$name-cli" --version </dev/null >/dev/null 2>&1 || die "$name: $name-cli --version does not answer"
 
-apt-cache policy "$name" 2>/dev/null | grep -qF 'file:/var/lib/dotsteward/apt-bridge' ||
+# Read the whole policy first: a reader that stops at the first match (grep -q)
+# leaves apt-cache to die of SIGPIPE under pipefail when more output follows,
+# as it does while a newer version waits in the bridge.
+policy=$(apt-cache policy "$name" 2>/dev/null) || policy=""
+[[ $policy == *'file:/var/lib/dotsteward/apt-bridge'* ]] ||
   die "$name: APT does not take the package from the local APT bridge"
 
 log "$name $installed: floor $minimum, desktop entry, CLI and the local APT bridge"
