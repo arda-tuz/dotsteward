@@ -156,15 +156,22 @@ copies of `VERSION` (the plugin manifests, the marketplace and the
 tools/version.sh sync`, never by hand. `release` waits until `main`'s CI
 (the push runs of `ci.yml` and `privacy.yml`) is green on the merged
 commit, then tags it with that version; a missing, red or unfinished run
-releases nothing. The release workflow (`release.yml`) does the same
+releases nothing. A read of GitHub that fails during that wait (a dropped
+connection, an HTTP 5xx answer) is no CI result: it is made again after a
+pause that starts at `DOTSTEWARD_CONTRIBUTE_POLL_SECONDS` and doubles, and
+only reads that keep failing for `DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS`
+stop the step. The release workflow (`release.yml`) does the same
 without a run once `ci.yml` passed on `main`, or on a dispatch; when it
 cut the run's release first, `release` records that tag once `main`'s CI
 is green and creates no second one. It often does so while `release`
 still waits for that CI, so `release` reads the tag on `origin` again
 after the wait (and after a push that failed): a tag on the merged commit
 is the run's release, one on another commit stops the step with nothing
-changed. There is no changelog file; the GitHub release lists the commits
-since the last release under Features, Fixes and Other.
+changed. The other way round, a GitHub release that `release` created
+while the workflow was about to create it is the workflow's release when
+its tag names the workflow's commit. There is no changelog file; the
+GitHub release lists the commits since the last release under Features,
+Fixes and Other.
 
 ## Upgrade
 

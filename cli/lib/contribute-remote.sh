@@ -54,9 +54,14 @@
 #   outcome          completed (report) or aborted (abort)
 #
 # Environment (seconds, positive integers):
-#   DOTSTEWARD_CONTRIBUTE_POLL_SECONDS    polling interval for CI (default 15)
+#   DOTSTEWARD_CONTRIBUTE_POLL_SECONDS    polling interval for CI (default 15),
+#                                         and the first pause before a
+#                                         failed read of a CI run is made
+#                                         again (the pause doubles)
 #   DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS  how long CI may take to appear on a
-#                                         pushed commit (default 300)
+#                                         pushed commit, and how long the
+#                                         reads of a CI run may keep failing
+#                                         (default 300)
 #   DOTSTEWARD_CONTRIBUTE_CI_TIMEOUT_SECONDS
 #                                         how long CI may take to finish
 #                                         (default 7200)
@@ -575,16 +580,43 @@ _contribute_runs() {
     | "\(.id) \(.status) \(.conclusion // "none") \(.html_url // "")"' <<<"$answer"
 }
 
+# _contribute_ci_read WHAT COMMAND...: the output of COMMAND, a read of CI
+# runs on GitHub (WHAT names them in the warnings). A failed read is not a
+# CI result (the network was down for a moment, or GitHub answered HTTP
+# 5xx): it is made again after a pause that starts at
+# DOTSTEWARD_CONTRIBUTE_POLL_SECONDS and doubles, and status 1 (the
+# caller's red) follows only once the reads kept failing for
+# DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS.
+_contribute_ci_read() {
+  local what=$1 interval window start pause elapsed answer
+  shift
+  interval=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_POLL_SECONDS 15)
+  window=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS 300)
+  start=$SECONDS
+  pause=$interval
+  until answer=$("$@" </dev/null); do
+    elapsed=$((SECONDS - start))
+    ((elapsed < window)) || return 1
+    ((pause <= window - elapsed)) || pause=$((window - elapsed))
+    warn "cannot read $what; reading GitHub again in ${pause}s"
+    sleep "$pause"
+    pause=$((pause * 2))
+  done
+  printf '%s\n' "$answer"
+}
+
 # _contribute_wait_run REPO ID WHAT [STAKE]: waits for run ID to complete;
 # red unless it concluded with success (or was skipped). STAKE ends the red
-# message (default: nothing is published).
+# message (default: nothing is published). A failed read of the run is
+# made again (_contribute_ci_read).
 _contribute_wait_run() {
   local repo=$1 run=$2 what=$3 stake=${4:-nothing is published} interval timeout start answer status conclusion url
   interval=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_POLL_SECONDS 15)
   timeout=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_CI_TIMEOUT_SECONDS 7200)
   start=$SECONDS
   while :; do
-    answer=$(gh api "repos/$repo/actions/runs/$run" </dev/null) || _contribute_red "cannot read run $run of $what in $repo"
+    answer=$(_contribute_ci_read "run $run of $what in $repo" gh api "repos/$repo/actions/runs/$run") ||
+      _contribute_red "cannot read run $run of $what in $repo"
     read -r status conclusion url < <(jq -r '"\(.status) \(.conclusion // "none") \(.html_url // "")"' <<<"$answer")
     [[ $status != completed ]] || break
     ((SECONDS - start < timeout)) || _contribute_red "$what did not finish within ${timeout}s: $url; $stake"
@@ -727,6 +759,7 @@ contribute_main_ci_json() {
 # them) appears within DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS and concludes
 # with success within DOTSTEWARD_CONTRIBUTE_CI_TIMEOUT_SECONDS; red
 # otherwise: a release is cut only from a main commit whose CI is green.
+# A failed read of GitHub meanwhile is made again (_contribute_ci_read).
 # Skipped with a warning when GitHub Actions are disabled there (a fork
 # without CI).
 _contribute_wait_main_ci() {
@@ -741,7 +774,8 @@ _contribute_wait_main_ci() {
   appear=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS 300)
   start=$SECONDS
   while :; do
-    document=$(release_main_ci "$repo" "$sha" "${CONTRIBUTE_MAIN_WORKFLOWS[@]}") ||
+    document=$(_contribute_ci_read "the CI runs of ${sha:0:12} in $repo" \
+      release_main_ci "$repo" "$sha" "${CONTRIBUTE_MAIN_WORKFLOWS[@]}") ||
       _contribute_red "cannot list the CI runs of ${sha:0:12} in $repo; nothing is released"
     mapfile -t missing < <(jq -r '.runs[] | select(.status == "missing") | .workflow' <<<"$document")
     mapfile -t runs < <(jq -r '.runs[] | select(.status != "missing") | "\(.workflow) \(.id)"' <<<"$document")

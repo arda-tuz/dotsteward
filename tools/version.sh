@@ -38,7 +38,10 @@
 #          push runs of ci.yml and privacy.yml on main) is green. Then `gh
 #          release create vX.Y.Z --target REV` with the notes, and
 #          channels.yml and macos-smoke.yml dispatched on the tag (a tag
-#          made with a workflow's token starts no workflow).
+#          made with a workflow's token starts no workflow). A GitHub
+#          release of the tag that `dotsteward contribute release` created
+#          meanwhile is the release when its tag names REV (done, nothing
+#          dispatched); on another commit it is refused.
 #          RELEASE_WAIT_SECONDS (default 1800)
 #          bounds the wait for main's CI, RELEASE_POLL_SECONDS (default 15)
 #          is its polling interval.
@@ -245,18 +248,33 @@ cmd_release() {
   publish_release "$root" "$repo" "$tag" "$sha"
 }
 
+# release_commit REPO TAG: the commit that the tag of the GitHub release TAG
+# names in REPO; status 1 without that release, or when it cannot be read.
+release_commit() {
+  gh release view "$2" --repo "$1" --json tagName </dev/null >/dev/null 2>&1 || return 1
+  gh api "repos/$1/commits/refs/tags/$2" --jq .sha </dev/null
+}
+
 # publish_release ROOT REPO TAG SHA: the GitHub release TAG at SHA (the tag
 # is created there when missing) with the notes of the commits since the
 # release before it, then channels.yml and macos-smoke.yml dispatched on
-# the tag.
+# the tag. `dotsteward contribute release` cuts the same release once
+# main's CI is green, so it may create this GitHub release, on its own tag,
+# between the look for it in cmd_release and the create here, which then
+# fails: a release whose tag names SHA is that release, and nothing more is
+# done (the run's tag push started channels.yml and macos-smoke.yml).
 publish_release() {
-  local root=$1 repo=$2 tag=$3 sha=$4 notes base workflow
+  local root=$1 repo=$2 tag=$3 sha=$4 notes base workflow existing
   base=$(release_base_before "$root" "$sha" "$tag" "$(release_local_tags "$root")")
   notes=$(mktemp "${TMPDIR:-/tmp}/release-notes.XXXXXX")
   release_notes "$root" "$base" "$sha" >"$notes"
   if ! gh release create "$tag" --repo "$repo" --target "$sha" --title "$tag" --notes-file "$notes" </dev/null >/dev/null; then
     rm -f -- "$notes"
-    die "gh release create $tag failed"
+    existing=$(release_commit "$repo" "$tag") || die "gh release create $tag failed"
+    [[ $existing == "$sha" ]] ||
+      die "gh release create $tag failed: the release $tag exists, but its tag names ${existing:0:12}, not ${sha:0:12}"
+    say "the release $tag exists at ${sha:0:12}: it was created meanwhile"
+    return 0
   fi
   rm -f -- "$notes"
   say "released $tag at ${sha:0:12}: https://github.com/$repo/releases/tag/$tag"
