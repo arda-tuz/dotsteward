@@ -138,7 +138,12 @@ verify every plugin:
   never upgraded silently;
 - every required skill directory has a `SKILL.md`.
 
-`agents check` never installs anything.
+`agents check` never installs anything. It reads the plugin list again
+for a plugin that the list does not show, up to four times, after a pause
+of 2, 4, 8 and 16 seconds: Codex lists the plugins of a remote marketplace
+from a remote catalog request and, when that request fails (the network is
+down for a moment), only warns and lists them as missing. A plugin that is
+still missing after the last read fails the check.
 
 Codex refreshes configured Git marketplaces in the background when a
 session starts and then refreshes the cached copies of their installed

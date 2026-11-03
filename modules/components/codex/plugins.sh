@@ -28,7 +28,12 @@
 #     or an entry with minimum_version or version); a newer plugin passes,
 #     an older one fails and is never upgraded silently;
 #   - skills/<dir>/SKILL.md exists for every required skill directory.
-# The first problem ends the hook with exit status 1.
+# The first problem ends the hook with exit status 1. Codex lists the plugins
+# of a remote marketplace from a remote catalog request, and when that
+# request fails (the network is down for a moment) it only warns and lists
+# them as missing; so check mode reads the plugin list again for a plugin it
+# does not show, after each pause of relist_pauses, before it fails.
+# install mode adds a missing plugin as before.
 set -Eeuo pipefail
 
 [[ -n ${DOTSTEWARD_LIB:-} && -n ${DOTSTEWARD_INSTANCE:-} ]] || {
@@ -50,6 +55,9 @@ check_only=${DOTSTEWARD_CHECK_ONLY:-0}
 profile=${DOTSTEWARD_PROFILE:-$DS_PROFILES_DEFAULT}
 lock_name=${DS_PINS_VERSIONS_LOCK##*/}
 codex_root=${CODEX_HOME:-$HOME/.codex}
+# The pauses (seconds) before check mode reads the plugin list again for a
+# plugin it does not show: about half a minute in all.
+relist_pauses=(2 4 8 16)
 
 # json_object ARG...: the JSON object that `codex ARG...` prints.
 json_object() {
@@ -130,7 +138,7 @@ lock_minimum() {
 # ensure_plugin PLUGIN_JSON: installs (install mode) and verifies one entry.
 ensure_plugin() {
   local plugin=$1 spec name market repo entry version source_kind source_path dir manifest
-  local manifest_version minimum_at minimum skill
+  local manifest_version minimum_at minimum skill pause
   spec=$(jq -r '.spec // empty | strings' <<<"$plugin")
   [[ $spec =~ ^([A-Za-z0-9._-]+)@([A-Za-z0-9._-]+)$ ]] ||
     die "codex plugin spec must look like NAME@MARKETPLACE: ${spec:-none}"
@@ -142,6 +150,16 @@ ensure_plugin() {
 
   load_plugins
   entry=$(listed_entry "$spec")
+  if [[ -z $entry && $check_only == 1 ]]; then
+    for pause in "${relist_pauses[@]}"; do
+      warn "codex plugin $spec is not listed; reading the plugin list again in ${pause}s (a failed remote catalog request lists plugins as missing)"
+      sleep "$pause"
+      plugins_listed=''
+      load_plugins
+      entry=$(listed_entry "$spec")
+      [[ -z $entry ]] || break
+    done
+  fi
   if [[ -z $entry ]]; then
     [[ $check_only != 1 ]] ||
       die "codex plugin $spec is not installed and enabled; run 'dotsteward agents install --profile $profile'"

@@ -57,7 +57,11 @@ so a pin bump never downgrades a machine; it only raises the floor.
   the cache layout
   `${CODEX_HOME:-~/.codex}/plugins/cache/<marketplace>/<name>/<version>/.codex-plugin/plugin.json`.
   A change in any of them needs `plugins.sh`, the `codex` test stub and
-  `tests/nix/components/codex/test-plugins.sh` updated together.
+  `tests/nix/components/codex/test-plugins.sh` updated together. The
+  re-reads of check mode (`relist_pauses` in `plugins.sh`) rely on Codex
+  listing the plugins of a remote marketplace as missing, with a warning,
+  when its remote catalog request fails
+  (`tests/nix/components/codex/test-plugins-remote-catalog.sh`).
 - Tracked plugins: an instance refreshes a plugin when its `git-compare`
   row is a review: read the changed paths of the marketplace, then move
   `observed_marketplace_revision` of the `trackAt` entry to the reported
