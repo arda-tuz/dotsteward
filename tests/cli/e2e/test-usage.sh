@@ -4,7 +4,8 @@
 # of the instance, --expected-remote-base OID (40 lowercase hex digits, not
 # with --skip-repo-checks), --framework-override REF (or
 # DOTSTEWARD_FRAMEWORK_OVERRIDE), --generation PATH (a directory),
-# --keep-going, --json, --list and --skip-repo-checks. Usage errors exit 1
+# --jobs N (or DOTSTEWARD_E2E_JOBS; a positive integer), --keep-going,
+# --json, --list and --skip-repo-checks. Usage errors exit 1
 # before any check runs; --help names every flag. An instance that matches
 # its contract passes with the success line, and --json prints exactly one
 # document on standard output.
@@ -16,7 +17,7 @@ e2e() {
 }
 
 assert_exit 0 e2e --help
-for flag in --profile --expected-remote-base --framework-override --generation --keep-going --json \
+for flag in --profile --expected-remote-base --framework-override --generation --jobs --keep-going --json \
   --list --skip-repo-checks; do
   assert_contains "$DS_STDOUT" "$flag"
 done
@@ -51,6 +52,16 @@ assert_exit 1 e2e --profile workstation --generation "$DS_TEST_ROOT/missing"
 assert_contains "$DS_STDERR" "e2e: generation not found: $DS_TEST_ROOT/missing"
 assert_exit 1 e2e --profile workstation --framework-override ''
 assert_contains "$DS_STDERR" "e2e: --framework-override requires a value"
+assert_exit 1 e2e --profile workstation --jobs
+assert_contains "$DS_STDERR" "e2e: --jobs requires a value"
+assert_exit 1 e2e --profile workstation --jobs=
+assert_contains "$DS_STDERR" "e2e: --jobs requires a value"
+for jobs in 0 -1 03 1.5 two; do
+  assert_exit 1 e2e --profile workstation --jobs "$jobs"
+  assert_contains "$DS_STDERR" "e2e: invalid --jobs value: $jobs (expected a positive integer)"
+done
+assert_exit 1 env DOTSTEWARD_E2E_JOBS=0 "$agents_fw/cli/dotsteward" --instance "$agents_inst" e2e --profile workstation
+assert_contains "$DS_STDERR" "e2e: invalid DOTSTEWARD_E2E_JOBS value: 0 (expected a positive integer)"
 assert_exit 1 env USER='Not Safe' "$agents_fw/cli/dotsteward" --instance "$agents_inst" e2e --profile workstation
 assert_contains "$DS_STDERR" "unsafe user name"
 assert_eq "" "$(<"$e2e_hook_log")" "usage errors run no hook"

@@ -168,6 +168,7 @@ in
             script = root + "/hook.sh";
             phase = "late";
             profiles = [ "workstation" ];
+            parallel = true;
           }
         ];
         agents = [

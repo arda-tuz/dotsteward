@@ -16,15 +16,15 @@ assert_herdr_eq '[]' '(herdrOf (herdrInstance { }) "x86_64-linux").checks.e2e'
 
 # With it (a stand-in definition: the check only reads its enable flag and
 # its profiles), the hook is declared in the main phase for the profiles of
-# the shell component: every profile here.
+# the shell component (every profile here), parallel: it only reads.
 with_shell='herdrInstance { homeModules = [ { dotsteward.components.shell = { enable = true; method = "nix"; }; } ]; }'
 hooks=$(herdr_json "map (hook: hook // { script = baseNameOf (toString hook.script); }) (herdrOf ($with_shell) \"x86_64-linux\").checks.e2e")
-assert_eq '[{"name":"herdr-login-zsh","phase":"main","profiles":null,"script":"e2e-login-zsh.sh"}]' "$(jq -cS . <<<"$hooks")"
+assert_eq '[{"name":"herdr-login-zsh","parallel":true,"phase":"main","profiles":null,"script":"e2e-login-zsh.sh"}]' "$(jq -cS . <<<"$hooks")"
 # A shell component scoped to some profiles scopes the hook to the same
 # profiles: elsewhere the generation has no zsh login shell to check.
 scoped_shell='herdrInstance { homeModules = [ { dotsteward.components.shell = { enable = true; method = "nix"; profiles = [ "workstation" ]; }; } ]; }'
 scoped=$(herdr_json "map (hook: hook // { script = baseNameOf (toString hook.script); }) (herdrOf ($scoped_shell) \"x86_64-linux\").checks.e2e")
-assert_eq '[{"name":"herdr-login-zsh","phase":"main","profiles":["workstation"],"script":"e2e-login-zsh.sh"}]' "$(jq -cS . <<<"$scoped")"
+assert_eq '[{"name":"herdr-login-zsh","parallel":true,"phase":"main","profiles":["workstation"],"script":"e2e-login-zsh.sh"}]' "$(jq -cS . <<<"$scoped")"
 # The manifest lists it with the script copied into the store.
 script=$(nix_core_read_write=1 herdr_json "(manifestOf ($with_shell) \"aarch64-darwin\").checks.e2e" |
   jq -er '.[] | select(.component == "herdr" and .name == "herdr-login-zsh") | .script')

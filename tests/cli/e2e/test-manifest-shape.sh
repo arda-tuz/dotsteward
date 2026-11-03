@@ -6,6 +6,7 @@
 # check runs, with one setup finding (code error) whose path is the manifest
 # file. The same missing command in a well-formed entry fails with
 # missing-command, so a malformed section cannot turn a failure into a pass.
+# A hook's parallel field, when present, is a boolean (or null).
 # shellcheck source=tests/cli/e2e/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/e2e/helpers.sh"
 
@@ -32,6 +33,8 @@ malformed=(
   '.checks.e2e = [1]'
   '.checks.e2e[0].profiles = "workstation"'
   '.checks.e2e[0].script = 5'
+  '.checks.e2e[0].parallel = "true"'
+  '.checks.e2e[0].parallel = 1'
   '.checks = []'
   '.files = "x"'
   '.files = {"example": "x"}'
@@ -65,6 +68,14 @@ for filter in "${malformed[@]}"; do
   assert_contains "$DS_STDERR" "invalid manifest $agents_manifest"
   assert_exit 1 run_e2e --list --json
   assert_contains "$DS_STDERR" "invalid manifest $agents_manifest"
+done
+
+# A hook's parallel field is a boolean, absent or null.
+for parallel in true false null; do
+  cp -- "$original" "$agents_manifest"
+  manifest_edit ".checks.e2e[0].parallel = $parallel"
+  assert_exit 0 run_e2e --skip-repo-checks --json
+  assert_eq '{"result":"passed","findings":[]}' "$(jq -c . <<<"$DS_STDOUT")" "parallel: $parallel"
 done
 
 # Optional sections may be absent or null: nothing to check is not an error.

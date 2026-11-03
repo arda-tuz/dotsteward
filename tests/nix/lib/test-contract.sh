@@ -48,7 +48,7 @@ actual=$(nix_lib_json "let c = $full; hookName = h: { inherit (h) name phase pro
   deb = c.install.deb;
   app = c.install.app-archive;
   targets = c.settingsTargets;
-  e2e = map hookName c.checks.e2e;
+  e2e = map (h: hookName h // { inherit (h) parallel; }) c.checks.e2e;
   agents = map hookName c.checks.agents;
   floors = c.checks.floors;
   pre = map hookName c.hooks.preActivate;
@@ -76,7 +76,7 @@ check '{"command":["example-term","reload"],"env":{},"onFailure":"warn","onSucce
 check '{"command":["example-term","server","reload-config"],"env":{"HOME":"{home}"},"onFailure":"silent","onSuccess":"log","requireCommand":"example-term","timeout":15,"unsetEnv":["EXAMPLE_TERM_SOCKET"]}' '.reloadHooks["example-term-reload"]'
 check '{"argv":["--version"],"command":"example-term","env":{},"expected":"versions:agent_tools.example-term.version","extract":"prefix:example-term ","kind":"version","needles":[],"profiles":null}' '.probes[0]'
 check '{"argv":["--help"],"command":"example-term","env":{"EXAMPLE_TERM_OFFLINE":"1"},"expected":null,"extract":"first-line","kind":"features","needles":["--offline"],"profiles":null}' '.probes[1]'
-check '[{"name":"example-term-config","phase":"late","profiles":["main"],"script":"hook.sh"}]' .e2e
+check '[{"name":"example-term-config","parallel":true,"phase":"late","profiles":["main"],"script":"hook.sh"}]' .e2e
 check '[{"name":"example-term-agents","phase":"main","profiles":null,"script":"hook.sh"}]' .agents
 check '[{"argv":["--version"],"command":"example-term","compare":"semver","minimum":"agent_tools.example-term.minimum"}]' .floors
 check '[{"argv":["example-term","dump"],"name":"example-term-state","requireCommand":null}]' .snapshots
@@ -85,6 +85,11 @@ check '{"example_detector":{"argv":["example-term","detect"],"matchLine":"yes"}}
 check '{"~/.example-term/linked":{"targetPrefix":"../../.agents/skills/"}}' .links
 check '[{"force":false,"path":".example-term/AGENTS.md"},{"force":true,"path":".example-term/RULES.md"}]' .agentRulesTargets
 check '"hook.sh"' .docs
+
+# An E2E hook runs alone unless it says it may run in parallel; the other
+# hook lists have no parallel field.
+assert_nix_eq 'false' \
+  '(builtins.head (evalComponents [ { dotsteward.components.example-app = { method = "nix"; checks.e2e = [ { name = "x"; script = ./x.sh; } ]; }; } ]).example-app.checks.e2e).parallel'
 
 # The method has no default: mkInstance or the component must set it.
 assert_nix_fails '(evalComponents [ { dotsteward.components.example-app.enable = true; } ]).example-app.method' \
@@ -115,6 +120,8 @@ bad '{ probes = [ { command = "example-app"; kind = "version"; extract = "last-l
 bad '{ pins.rules = [ { kind = "guess"; } ]; }' pins.rules "kind"
 bad '{ pins.latest = [ { id = "x"; adapter = "scrape"; } ]; }' pins.latest "adapter"
 bad '{ checks.e2e = [ { name = "x"; script = ./x.sh; phase = "never"; } ]; }' checks.e2e "phase"
+bad '{ checks.e2e = [ { name = "x"; script = ./x.sh; parallel = "yes"; } ]; }' checks.e2e "parallel"
+bad '{ checks.agents = [ { name = "x"; script = ./x.sh; parallel = true; } ]; }' checks.agents "parallel' does not exist"
 bad '{ checks.floors = [ { command = "x"; argv = [ ]; minimum = "1"; compare = "lexical"; } ]; }' checks.floors "compare"
 bad '{ reloadHooks.r = { command = [ "x" ]; timeout = 1; onFailure = "explode"; }; }' reloadHooks.r.onFailure \
   "dotsteward.components.example-app.reloadHooks.r.onFailure"

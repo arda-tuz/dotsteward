@@ -11,7 +11,8 @@
 #     writes its own source and key, then apt-get update; a source that
 #     already maps the repository (any file, any format) is left alone;
 #   - E2E: reading only, an APT source maps the repository and APT takes
-#     code from it (apt-cache policy), with the command to run otherwise.
+#     code from it (apt-cache policy), with the command to run otherwise;
+#     so it runs in parallel with the hooks next to it.
 # The framework never writes, rewrites or removes the source itself. The
 # option is refused unless it is a boolean, and with another method on
 # Linux; without it nothing is declared.
@@ -29,10 +30,14 @@ hooks() {
 
 # --- The declaration -----------------------------------------------------------------------
 
-expected='[{"name":"apt-repository","phase":"main","profiles":null,"script":"apt-repository.sh"}]'
+# The E2E hook only reads, so it runs in parallel with the hooks next to it.
+declare -A expected=(
+  [checks.e2e]='[{"name":"apt-repository","parallel":true,"phase":"main","profiles":null,"script":"apt-repository.sh"}]'
+  [hooks.systemInstall]='[{"name":"apt-repository","phase":"main","profiles":null,"script":"apt-repository.sh"}]'
+)
 for list in checks.e2e hooks.systemInstall; do
   assert_eq '[]' "$(hooks "" x86_64-linux "$list")" "no $list without the option"
-  assert_eq "$expected" "$(hooks vendor-repository x86_64-linux "$list")" "$list with vendor_repository"
+  assert_eq "${expected[$list]}" "$(hooks vendor-repository x86_64-linux "$list")" "$list with vendor_repository"
   assert_eq '[]' "$(hooks vendor-repository aarch64-darwin "$list")" "no $list on darwin"
 done
 [[ -x $vscode_component/apt-repository.sh ]] || ds_fail "apt-repository.sh is not executable"

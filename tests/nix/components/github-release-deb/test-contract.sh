@@ -8,9 +8,10 @@
 # from the asset <name>-{version}-linux-x86_64.deb of the GitHub releases of
 # storytold/<name> (verified against SHA256SUMS.txt, served by the local
 # APT bridge), the pin desktop_packages.<name>, the commands <name> and
-# <name>-cli, the shared E2E hook on every profile, one download-pin rule
-# and one github-release latest row, the component README as its docs, and
-# no probe, hook, backup path or managed link.
+# <name>-cli, the shared E2E hook on every profile (parallel: it only
+# reads), one download-pin rule and one github-release latest row, the
+# component README as its docs, and no probe, hook, backup path or managed
+# link.
 # shellcheck source=tests/nix/components/github-release-deb/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/components/github-release-deb/helpers.sh"
 
@@ -30,7 +31,7 @@ all=$(craft_json 'let
 in lib.genAttrs names (name: let c = componentOf inst "x86_64-linux" name; in {
   entry = entryOf inst "x86_64-linux" name;
   commands = map (e: e.command) (of name m.checks.commands);
-  e2e = map (e: { inherit (e) name phase profiles; script = baseNameOf e.script; }) (of name m.checks.e2e);
+  e2e = map (e: { inherit (e) name phase profiles parallel; script = baseNameOf e.script; }) (of name m.checks.e2e);
   rules = of name m.pins.rules;
   latest = of name m.pins.latest;
   probes = of name m.probes;
@@ -53,7 +54,7 @@ for name in "${names[@]}"; do
     apt: [], aptSources: [], githubRelease: {repository: $r, assets: {amd64: $a}, checksums: "SHA256SUMS.txt"}}'
   expect "$facts" "commands" '.commands == [$n, ($n + "-cli")]'
   expect "$facts" "e2e hook" '(.e2e | length) == 1 and (.e2e[0] | .name == "package" and .phase == "main"
-    and .profiles == null and (.script | endswith("-github-release-deb-e2e.sh")))'
+    and .profiles == null and .parallel == true and (.script | endswith("-github-release-deb-e2e.sh")))'
   expect "$facts" "pins rules" '.rules == [{component: $n, kind: "download-pin",
     at: ("desktop_packages." + $n), version_field: "minimum_version",
     url_contains: ("https://github.com/" + $r + "/releases/download/v{.minimum_version}/" + $n + "-{.minimum_version}-linux-x86_64.deb")}]'

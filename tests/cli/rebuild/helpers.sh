@@ -45,6 +45,9 @@
 #                           build time); prints it with --print-out-paths.
 #                           DS_TEST_ROOT/build-exit makes the build fail
 #                           with that status.
+#   path-info PATH          prints PATH when it is a directory of the test
+#                           store not listed in DS_TEST_ROOT/invalid-paths;
+#                           fails like Nix otherwise
 #
 #   instance_commit MESSAGE  commits every change of the instance
 #   set_config TEXT          appends TEXT to workstation.toml and commits
@@ -276,6 +279,16 @@ case \${1:-} in
     out=\$($(printf %q "$rb_builder") home-manager-generation)
     if [[ " \$* " == *" --print-out-paths "* ]]; then
       printf '%s\n' "\$out"
+    fi
+    ;;
+  path-info)
+    path=\${!#}
+    if [[ \$path == $(printf %q "$rb_store")/* && -d \$path ]] &&
+      ! grep -qxF -- "\$path" $(printf %q "$DS_TEST_ROOT")/invalid-paths 2>/dev/null; then
+      printf '%s\n' "\$path"
+    else
+      printf "error: path '%s' is not valid\n" "\$path" >&2
+      exit 1
     fi
     ;;
   *) echo "nix override: unsupported: \$*" >&2; exit 1 ;;

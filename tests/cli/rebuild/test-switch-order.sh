@@ -4,8 +4,10 @@
 # preActivate hooks (scoped to the profile), previous-generation capture
 # (once; ABSENT when no Home Manager profile exists), activate, settings
 # apply with the generation's local-maintained-files, agents install (its
-# hooks run), login shell migrate, final lock assertion. A failing step
-# stops everything after it with its own status.
+# hooks run; its validation does not, since dotsteward e2e runs agents check
+# after the rebuild, so a checks.agents hook does not run and a missing
+# checks.commands command fails nothing), login shell migrate, final lock
+# assertion. A failing step stops everything after it with its own status.
 # shellcheck source=tests/cli/rebuild/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/rebuild/helpers.sh"
 
@@ -18,6 +20,14 @@ EOF
 recorder pre-activate | add_hook pre_activate example-app pre
 recorder pre-activate-fresh | add_hook pre_activate example-term pre-fresh '["fresh"]'
 recorder agents-install | add_hook agents_install example-app agents
+{
+  printf '#!%s\n' "$BASH"
+  recorder agents-check
+} >"$rb_inst/components/example-app/agents-check.sh"
+chmod 0755 "$rb_inst/components/example-app/agents-check.sh"
+manifest_edit '.checks.agents += [{component: "example-app", name: "agents-check", phase: "main", profiles: null,
+    script: "<instance>/components/example-app/agents-check.sh"}]
+  | .checks.commands += [{component: "example-app", command: "example-missing-command"}]'
 manifest_edit '.components = [
   { name: "example-term", source: "instance", method: "external", profiles: null, platforms: ["linux"],
     options: {}, modes: { workstation: "adopt", fresh: "fresh" }, supported_methods: { linux: ["external"], darwin: [] },
@@ -50,6 +60,7 @@ assert_calls \
   "sudo chsh -s $rb_zsh $USER" \
   "chsh -s $rb_zsh $USER"
 assert_contains "$DS_STDOUT" "[dotsteward] activating the Home Manager generation"
+assert_contains "$DS_STDOUT" "[dotsteward] agents install: the validation is left to dotsteward e2e (agents check)"
 assert_contains "$DS_STDOUT" "[dotsteward] rebuild finished: workstation"
 assert_eq "ABSENT" "$(<"$rb_current/previous-generation")"
 assert_file_mode "$rb_current/previous-generation" 600

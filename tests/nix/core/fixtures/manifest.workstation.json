@@ -131,7 +131,7 @@
       { "component": "example-app", "command": "example-app" }
     ],
     "e2e": [
-      { "component": "example-term", "name": "example-term-config", "phase": "late", "profiles": ["workstation"] }
+      { "component": "example-term", "name": "example-term-config", "phase": "late", "profiles": ["workstation"], "parallel": true }
     ],
     "agents": [
       { "component": "example-term", "name": "example-term-agents", "phase": "main", "profiles": null }

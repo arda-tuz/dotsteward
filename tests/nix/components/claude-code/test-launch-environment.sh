@@ -7,12 +7,15 @@
 # claude in a function that runs every command at each launch and passes the
 # value to that claude process only; the shell never exports it, and a value
 # already in the environment is kept. The E2E hook claude-login-zsh, declared
-# for the profiles of the shell component, checks in an interactive login zsh
+# for the profiles of the shell component and not parallel (claude writes
+# its own files and starts the MCP servers), checks in an interactive login zsh
 # that no launch variable is exported, that claude is that function and,
 # when every command prints a value, that Claude Code connects to each MCP
 # server the plugins name (plugin:NAME:SERVER); a command without a value
-# (no credential yet) is a hint, never a failure. Invalid entries fail the
-# evaluation with every problem listed.
+# (no credential yet) is a hint, never a failure. All of it runs in one
+# login shell, which stops at the first problem, also with the lib.sh of an
+# older CLI that lacks user_login_zsh. Invalid entries fail the evaluation
+# with every problem listed.
 # shellcheck source=tests/nix/components/claude-code/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/components/claude-code/helpers.sh"
 
@@ -67,7 +70,7 @@ assert_eq "$expected_zshrc" "$zshrc" "the rendered launch environment block"
 assert_inst_eq '75' "$(home "$(with_shell "$inst")").dotsteward.shell.zshrc.blocks.claude-code-launch-environment.order"
 
 hooks=$(inst_json "map (hook: hook // { script = baseNameOf (toString hook.script); }) $(home "$(with_shell "$inst")").dotsteward.components.claude-code.checks.e2e")
-assert_eq '[{"name":"claude-login-zsh","phase":"main","profiles":null,"script":"e2e-login-zsh.sh"}]' "$(jq -cS . <<<"$hooks")"
+assert_eq '[{"name":"claude-login-zsh","parallel":false,"phase":"main","profiles":null,"script":"e2e-login-zsh.sh"}]' "$(jq -cS . <<<"$hooks")"
 scoped=$(inst_json "map (hook: hook.profiles) $(home "$(with_shell "$inst" '[ "workstation" ]')").dotsteward.components.claude-code.checks.e2e")
 assert_eq '[["workstation"]]' "$(jq -c . <<<"$scoped")"
 [[ -x $component/e2e-login-zsh.sh ]] || ds_fail "e2e-login-zsh.sh is not executable"
@@ -100,7 +103,9 @@ printf '%s\n' "\$*" >>"$helper_calls"
 cat -- "$DS_TEST_ROOT/credential"
 EOF
 chmod 0755 "$bin/example-credential-helper"
-printf 'path=("$HOME/.nix-profile/bin" $path)\n' >"$HOME/.zprofile"
+# Every login shell leaves a line in logins.
+logins=$DS_TEST_ROOT/logins
+printf 'path=("$HOME/.nix-profile/bin" $path)\nprint -r -- login >>%q\n' "$logins" >"$HOME/.zprofile"
 printf '%s\n' "$zshrc" >"$HOME/.zshrc"
 ds_stub_set claude mcp-servers '{"plugin:example-plugin:example": "EXAMPLE_TOKEN"}'
 
@@ -118,15 +123,43 @@ run_hook() {
     "${@:2}" "$component/e2e-login-zsh.sh"
 }
 
+# login_count: the login shells started since logins was emptied.
+login_count() {
+  local count
+  count=$(wc -l <"$logins")
+  printf '%s\n' "$((count))"
+}
+
 # A credential: the value reaches claude, which connects; the login shell
-# itself never holds it.
+# itself never holds it. Every check runs in one login shell.
 fake_secret example-token- >"$DS_TEST_ROOT/credential"
+: >"$logins"
 run_hook 0
 assert_contains "$DS_STDOUT" "[dotsteward] claude-code: a login zsh passes EXAMPLE_TOKEN to claude only"
 assert_contains "$DS_STDOUT" "[dotsteward] claude-code: Claude Code connects to plugin:example-plugin:example"
+assert_eq 1 "$(login_count)" "one login shell for every check"
 assert_contains "$(<"$helper_calls")" "--print it's"
 assert_eq '' "$(zsh -lic 'claude --version >/dev/null; print -r -- "${EXAMPLE_TOKEN-}"' </dev/null 2>/dev/null | tail -n 1)" \
   "the shell keeps no value after a launch"
+
+# The hook runs with the library of the CLI that runs it, which can be older
+# than the hook: a contribute trial checks the generation of a candidate
+# framework with the CLI of the pinned release. With a lib.sh that predates
+# user_login_zsh, the hook checks the same in one login shell.
+older=$DS_TEST_ROOT/older-cli
+mkdir -p "$older/lib"
+ln -s "$DS_REPO_ROOT/cli/python" "$older/python"
+for file in "$DS_REPO_ROOT"/cli/lib/*.sh; do
+  sed '/^user_login_zsh() {$/,/^}$/d' "$file" >"$older/lib/${file##*/}"
+done
+if grep -q 'user_login_zsh()' "$older/lib/lib.sh"; then
+  ds_fail "the older lib.sh still defines user_login_zsh"
+fi
+: >"$logins"
+run_hook 0 DOTSTEWARD_LIB="$older/lib"
+assert_contains "$DS_STDOUT" "[dotsteward] claude-code: a login zsh passes EXAMPLE_TOKEN to claude only"
+assert_contains "$DS_STDOUT" "[dotsteward] claude-code: Claude Code connects to plugin:example-plugin:example"
+assert_eq 1 "$(login_count)" "one login shell with a lib.sh that predates user_login_zsh"
 
 # The caller's own EXAMPLE_TOKEN never reaches the login shell of the check.
 run_hook 0 EXAMPLE_TOKEN=from-caller
@@ -139,9 +172,11 @@ assert_eq '' "$(<"$helper_calls")" "the helper runs only without a value"
 
 # No credential yet: a hint, the servers are not checked.
 : >"$DS_TEST_ROOT/credential"
+: >"$logins"
 run_hook 0
 assert_contains "$DS_STDOUT" "[dotsteward] claude-code: example-credential-helper --print it's printed no value for EXAMPLE_TOKEN in a login zsh; the MCP servers are checked once it does"
 assert_not_contains "$DS_STDOUT" "connects to plugin:example-plugin:example"
+assert_eq 1 "$(login_count)" "one login shell for the hint"
 
 # A server that does not connect with the value fails the check.
 fake_secret example-token- >"$DS_TEST_ROOT/credential"
@@ -153,10 +188,14 @@ run_hook 1
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: Claude Code does not connect to plugin:example-plugin:example in a login zsh (status: unknown)"
 ds_stub_set claude mcp-servers '{"plugin:example-plugin:example": "EXAMPLE_TOKEN"}'
 
-# The login shell exports the variable itself: it fails.
+# The login shell exports the variable itself: it fails, and nothing after
+# that check runs.
 printf '%s\nexport EXAMPLE_TOKEN=exported\n' "$zshrc" >"$HOME/.zshrc"
+: >"$helper_calls"
 run_hook 1
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: a login zsh exports EXAMPLE_TOKEN; only the claude function of the claude-code component may pass it to claude"
+assert_not_contains "$DS_STDOUT" "passes EXAMPLE_TOKEN"
+assert_eq '' "$(<"$helper_calls")" "no launch command runs after a failed check"
 
 # claude is not wrapped: it fails.
 : >"$HOME/.zshrc"

@@ -6,6 +6,9 @@
 # versions.lock.json; compare: dpkg through dpkg --compare-versions, semver by
 # dotted parts), then the probe registry runs for the profile. With --generation
 # PATH the generation's home-path/bin goes first on PATH for the whole phase.
+# install --skip-validation (what rebuild --switch runs, since dotsteward e2e
+# runs agents check right after) does every step but this one, and says so;
+# check always validates.
 # shellcheck source=tests/agents/helpers.sh
 source "$DS_REPO_ROOT/tests/agents/helpers.sh"
 
@@ -88,3 +91,30 @@ PATH="$toolchain:$PATH" DOTSTEWARD_TOOLCHAIN_PATH="$toolchain" assert_exit 1 run
 assert_contains "$DS_STDERR" "required command not found: toolchain-command"
 assert_contains "$DS_STDERR" "required command not found: toolchain-floor"
 assert_contains "$DS_STDERR" "required command not found: toolchain-probe"
+
+# install --skip-validation: the steps before the validation run (the hooks
+# and the skill layout), the validation does not, so commands, floors,
+# probes and checks.agents hooks that would fail do not fail it.
+cat <<'SH' | add_hook agents_install example-app install-step
+printf 'install-step\n' >>"$DOTSTEWARD_STATE_ROOT/steps"
+SH
+cat <<'SH' | add_hook agents example-app agents-check
+printf 'agents-check\n' >>"$DOTSTEWARD_STATE_ROOT/steps"
+exit 1
+SH
+rm -rf -- "$HOME/.agents/skills"
+: >"$DOTSTEWARD_STATE_ROOT/steps"
+DOTSTEWARD_TOOLCHAIN_PATH="$toolchain" PATH="$toolchain:$PATH" assert_exit 0 run_agents install --skip-validation
+assert_eq install-step "$(<"$DOTSTEWARD_STATE_ROOT/steps")" "only the steps before the validation"
+[[ -d $HOME/.agents/skills ]] || ds_fail "install --skip-validation creates the skill layout"
+assert_contains "$DS_STDOUT" "[dotsteward] agents install: the validation is left to dotsteward e2e (agents check)"
+assert_contains "$DS_STDOUT" "[dotsteward] agent tools and skills installed (profile workstation)"
+assert_not_contains "$DS_STDERR" "required command not found"
+# Without it, and in check mode, the same validation fails.
+: >"$DOTSTEWARD_STATE_ROOT/steps"
+DOTSTEWARD_TOOLCHAIN_PATH="$toolchain" PATH="$toolchain:$PATH" assert_exit 1 run_agents install --keep-going
+assert_contains "$DS_STDERR" "required command not found: toolchain-command"
+assert_contains "$DS_STDERR" "component example-app hook agents-check failed (exit 1)"
+assert_eq $'install-step\nagents-check' "$(<"$DOTSTEWARD_STATE_ROOT/steps")"
+DOTSTEWARD_TOOLCHAIN_PATH="$toolchain" PATH="$toolchain:$PATH" assert_exit 1 run_agents check
+assert_contains "$DS_STDERR" "required command not found: toolchain-command"

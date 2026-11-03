@@ -1,10 +1,11 @@
 # CLI library (tests/cli/lib) and configuration reader (tests/cli/config):
-# the generic bash library, the Linux platform layer, the Python
-# workstation.toml reader and its DS_* exporter, and the Nix parity test,
-# which evaluates lib/config.nix with nix-instantiate against an isolated
-# store (as checks.nix-lib does), so the sandbox needs Nix and the nixpkgs
-# source. Then shellcheck over the library and its tests, a parse of the
-# Python package, and checks of the installed package's catalog.
+# the generic bash library (its login zsh helper with a real zsh), the
+# Linux platform layer, the Python workstation.toml reader and its DS_*
+# exporter, and the Nix parity test, which evaluates lib/config.nix with
+# nix-instantiate against an isolated store (as checks.nix-lib does), so
+# the sandbox needs Nix and the nixpkgs source. Then shellcheck over the
+# library and its tests, a parse of the Python package, and checks of the
+# installed package's catalog.
 {
   pkgs,
   dsLib,
@@ -30,6 +31,7 @@ cli.mkTestCheck {
   nativeBuildInputs = [
     pkgs.nix
     pkgs.shellcheck
+    pkgs.zsh
     testEnv
   ];
   postCheck = ''

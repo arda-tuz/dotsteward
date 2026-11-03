@@ -140,6 +140,7 @@
           script = ./hook.sh;
           phase = "late";
           profiles = [ "main" ];
+          parallel = true;
         }
       ];
       agents = [

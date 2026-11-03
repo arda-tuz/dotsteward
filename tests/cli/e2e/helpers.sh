@@ -22,10 +22,13 @@
 #
 #   commit_instance [MESSAGE]  commits every change of the instance (no push)
 #   publish_instance [MESSAGE] commits and pushes main to the bare remote
-#   add_e2e_hook COMPONENT NAME PHASE [PROFILES_JSON]
+#   add_e2e_hook COMPONENT NAME PHASE [PROFILES_JSON [PARALLEL]]
 #                              an E2E hook script (standard input) in
 #                              components/COMPONENT/NAME.sh, appended to the
-#                              manifest's checks.e2e
+#                              manifest's checks.e2e; PARALLEL (true or
+#                              false) sets its parallel field, which is
+#                              absent without it (a manifest of an older
+#                              framework)
 #   hook_log_script NAME       a hook body that appends "NAME" and the hook
 #                              environment to $e2e_hook_log
 #   activate_generation        makes agents_gen the active Home Manager
@@ -105,7 +108,7 @@ publish_instance() {
 }
 
 add_e2e_hook() {
-  local component=$1 name=$2 phase=$3 profiles=${4:-null}
+  local component=$1 name=$2 phase=$3 profiles=${4:-null} parallel=${5:-}
   local script=$agents_inst/components/$component/$name.sh
   mkdir -p "$(dirname "$script")"
   {
@@ -115,8 +118,10 @@ add_e2e_hook() {
   chmod 0755 "$script"
   manifest_edit '.checks.e2e += [$hook]' --argjson hook "$(jq -cn \
     --arg component "$component" --arg name "$name" --arg phase "$phase" --argjson profiles "$profiles" \
+    --arg parallel "$parallel" \
     '{ component: $component, name: $name, phase: $phase, profiles: $profiles,
-       script: ("<instance>/components/" + $component + "/" + $name + ".sh") }')"
+       script: ("<instance>/components/" + $component + "/" + $name + ".sh") }
+     + (if $parallel == "" then {} else { parallel: ($parallel | fromjson) } end)')"
 }
 
 hook_log_script() {

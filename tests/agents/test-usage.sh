@@ -2,7 +2,8 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # Arguments of `dotsteward agents`: install or check, a
 # required --profile of the instance, --generation PATH (a directory),
-# --keep-going and --json. Usage errors exit 1 before anything is written;
+# --keep-going, --json and, with install only, --skip-validation. Usage
+# errors exit 1 before anything is written;
 # --help names every flag and exits 0. An empty instance (no components, no
 # skills) passes in both modes.
 # shellcheck source=tests/agents/helpers.sh
@@ -13,7 +14,7 @@ agents() {
 }
 
 assert_exit 0 agents --help
-for flag in install check --profile --generation --keep-going --json; do
+for flag in install check --profile --generation --keep-going --json --skip-validation; do
   assert_contains "$DS_STDOUT" "$flag"
 done
 assert_exit 0 agents check --help
@@ -34,6 +35,8 @@ assert_exit 1 agents check --profile workstation --verbose
 assert_contains "$DS_STDERR" "unknown option: --verbose"
 assert_exit 1 agents check --profile workstation --generation "$DS_TEST_ROOT/missing"
 assert_contains "$DS_STDERR" "generation not found: $DS_TEST_ROOT/missing"
+assert_exit 1 agents check --profile workstation --skip-validation
+assert_contains "$DS_STDERR" "agents: --skip-validation applies to install only"
 assert_eq "$before" "$(home_state)" "usage errors write nothing"
 
 # An unsafe identity is refused before any write.

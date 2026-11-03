@@ -3,7 +3,8 @@
 # shellcheck disable=SC2016 # zsh startup lines with a literal $ are written on purpose
 # The codex E2E hook codex-login-path: the codex an interactive login zsh
 # (the shell a terminal opens) runs is the one the instance expects. The hook
-# is declared with the shell component, for its profiles. The expected
+# is declared with the shell component, for its profiles, and runs in
+# parallel with the hooks next to it (it only reads). The expected
 # location is options.expectedPath (a home or absolute path), else, with the
 # official-binary method, its install destination ~/.local/bin/codex:
 #   - the first codex on the login shell's PATH must be that file (a link to
@@ -41,9 +42,9 @@ hooks() {
 
 plain=$(codex_instance plain)
 assert_eq '[]' "$(hooks "$(codex_expr "$plain")")" "no hook without the shell component"
-assert_eq '[{"name":"codex-login-path","phase":"main","profiles":null,"script":"e2e-login-path.sh"}]' \
+assert_eq '[{"name":"codex-login-path","parallel":true,"phase":"main","profiles":null,"script":"e2e-login-path.sh"}]' \
   "$(hooks "$(with_shell "$plain")")"
-assert_eq '[{"name":"codex-login-path","phase":"main","profiles":["workstation"],"script":"e2e-login-path.sh"}]' \
+assert_eq '[{"name":"codex-login-path","parallel":true,"phase":"main","profiles":["workstation"],"script":"e2e-login-path.sh"}]' \
   "$(hooks "$(with_shell "$plain" '[ "workstation" ]')")"
 [[ -x $component/e2e-login-path.sh ]] || ds_fail "e2e-login-path.sh is not executable"
 
