@@ -6,10 +6,11 @@
 # is the release the commits are based on. A pending release (VERSION set
 # to the next version by a release commit) is cut only when main's CI of
 # that commit is green, as a tag on exactly that commit with the grouped
-# notes, and channels.yml is dispatched on the tag; no commit is made. A
-# VERSION that is not the next release, a red or unfinished CI and a major
-# release without --major are refused with nothing released; a release
-# that exists is left alone.
+# notes, and channels.yml and macos-smoke.yml are dispatched on the tag (a
+# tag made with the workflow's token starts no workflow); no commit is
+# made. A VERSION that is not the next release, a red or unfinished CI and
+# a major release without --major are refused with nothing released; a
+# release that exists is left alone.
 # shellcheck source=tests/contribute/remote/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/remote/helpers.sh"
 
@@ -65,10 +66,12 @@ assert_exit 0 release_ci
 assert_contains "$DS_STDOUT" "[version] main's CI is green on ${sha:0:12}"
 assert_contains "$DS_STDOUT" "[version] released v0.2.0 at ${sha:0:12}: https://github.com/$CT_UPSTREAM_SLUG/releases/tag/v0.2.0"
 assert_contains "$DS_STDOUT" "[version] dispatched channels.yml on v0.2.0"
+assert_contains "$DS_STDOUT" "[version] dispatched macos-smoke.yml on v0.2.0"
 assert_eq "$sha" "$(git -C "$ct_upstream_bare" rev-parse 'refs/tags/v0.2.0^{commit}')" "tag of the release"
 assert_eq "$sha" "$(git -C "$ct_upstream_bare" rev-parse refs/heads/main)" "main after the release: no commit"
 assert_call_count 1 gh "release create v0.2.0 --repo $CT_UPSTREAM_SLUG --target $sha --title v0.2.0 --notes-file *"
 assert_call_count 1 gh "workflow run channels.yml --repo $CT_UPSTREAM_SLUG --ref v0.2.0"
+assert_call_count 1 gh "workflow run macos-smoke.yml --repo $CT_UPSTREAM_SLUG --ref v0.2.0"
 notes=$(cat "$rt_hub/releases/${CT_UPSTREAM_SLUG//\//_}_v0.2.0.notes")
 assert_contains "$notes" "## Features"$'\n\n'"- cli: a feature ("
 assert_contains "$notes" "## Fixes"$'\n\n'"- cli: a fix without a release ("

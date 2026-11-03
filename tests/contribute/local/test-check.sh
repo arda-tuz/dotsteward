@@ -1,7 +1,9 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # `dotsteward contribute check`:
-#   --expect-fail PATH  the reproduction test must fail before the fix
+#   --expect-fail PATH  the reproduction test must fail before the fix; the
+#                       next step named is its commit (contribute commit
+#                       --test)
 #   (full gate)         a clean clone on the run's branch with commits after
 #                       upstream main; the generic tree scan, the commit
 #                       range scan with metadata rules and the denylist, and
@@ -55,6 +57,7 @@ expect_privacy_stop() {
 
 assert_exit 0 run_contribute check --expect-fail tests/example/test-feature.sh
 assert_contains "$DS_STDOUT" "[dotsteward] the test fails as expected: tests/example/test-feature.sh"
+assert_contains "$DS_STDOUT" "[dotsteward] next: commit the test alone: dotsteward contribute commit -m 'test(AREA): what the test expects' --test"
 assert_eq fix "$(field .step)" "step after the reproduction"
 assert_call_count 0 nix
 

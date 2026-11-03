@@ -32,23 +32,26 @@ assert_exit 0 push origin main
 assert_eq "$(git rev-parse main)" "$(remote_sha ../repo.git main)"
 
 # Commit rules: the trailers the harness would add, a personal address and a
-# local timezone are refused.
+# local timezone are refused. The commit hooks (commit-msg, pre-commit) of
+# the same directory would refuse most of these commits already, so they are
+# made with --no-verify, as a contributor who skips those hooks could: the
+# pre-push hook is the last line.
 pushed=$(git rev-parse main)
 printf 'a\n' >a.txt
 git add a.txt
-git commit -q -m "feat: a" -m "Co-Authored-By: Someone <noreply@example.com>"
+git commit -q --no-verify -m "feat: a" -m "Co-Authored-By: Someone <noreply@example.com>"
 coauthor=$(short_sha . HEAD)
 printf 'b\n' >b.txt
 git add b.txt
-git commit -q -m "feat: b" -m "Generated with [Claude Code](https://example.com)"
+git commit -q --no-verify -m "feat: b" -m "Generated with [Claude Code](https://example.com)"
 generated=$(short_sha . HEAD)
 printf 'c\n' >c.txt
 git add c.txt
-GIT_AUTHOR_EMAIL=dotsteward-test@example.invalid git commit -q -m "feat: c"
+GIT_AUTHOR_EMAIL=dotsteward-test@example.invalid git commit -q --no-verify -m "feat: c"
 foreign=$(short_sha . HEAD)
 printf 'd\n' >d.txt
 git add d.txt
-GIT_COMMITTER_DATE="1700000000 $(drill_offset)" git commit -q -m "feat: d"
+GIT_COMMITTER_DATE="1700000000 $(drill_offset)" git commit -q --no-verify -m "feat: d"
 local_date=$(short_sha . HEAD)
 assert_exit 1 push origin main
 output=$(finding_lines)

@@ -2,11 +2,13 @@
 # shellcheck disable=SC2153 # DS_REPO_ROOT comes from tests/lib/harness.sh
 # The flow of skills/dotsteward-contribute: the frontmatter text,
 # the reference set, the step order from the instance facts to the report,
-# the reproduction proven failing before the fix, the framework commit
-# identity, the release commit (VERSION), the stop rules (privacy hard stop,
-# back to check, recovery through abort), the build-only trial, resuming a
-# run from its state file, the hand-over of the personal part, and no
-# legacy script path (the CLI commands do that work).
+# the reproduction proven failing before the fix, the framework commits
+# through `dotsteward contribute commit`, the release commit (VERSION), the
+# stop rules (privacy hard stop, back to check, recovery through abort),
+# the build-only trial, resuming a run from its state file, promoting a
+# private component only with the user's explicit approval, the hand-over
+# of the personal part, and no legacy script path (the CLI commands do
+# that work).
 
 skill_dir=$DS_REPO_ROOT/skills/dotsteward-contribute
 skill=$skill_dir/SKILL.md
@@ -61,9 +63,9 @@ in_order "$skill" \
   "dotsteward contribute setup" \
   "dotsteward contribute start --slug" \
   "dotsteward contribute check --expect-fail" \
-  "TZ=UTC git commit" \
+  "dotsteward contribute commit" \
   "VERSION" \
-  "TZ=UTC git commit" \
+  "dotsteward contribute commit" \
   "dotsteward contribute check" \
   "dotsteward contribute trial" \
   "dotsteward contribute publish" \
@@ -71,7 +73,7 @@ in_order "$skill" \
   "dotsteward contribute upgrade --tag" \
   "dotsteward contribute report" \
   "dotsteward-maintain"
-for step in mode setup start check trial publish release upgrade report; do
+for step in mode setup start commit check trial publish release upgrade report; do
   assert_contains "$(fenced "$skill")" "dotsteward contribute $step" "SKILL.md runs contribute $step in a fenced block"
 done
 
@@ -83,16 +85,25 @@ grep -qi 'agree' "$skill" || ds_fail "SKILL.md does not ask the user before crea
 # shellcheck disable=SC2016 # literal jq text
 assert_contains "$(<"$skill")" '.clone' "the clone path comes from the mode document"
 
+# Promoting a private component into the catalog: start --promote, only
+# with the user's explicit approval.
+assert_contains "$(fenced "$skill")" "dotsteward contribute start --slug SLUG --promote NAME" "start can promote a component"
+grep -qi 'explicit approval' "$skill" || ds_fail "SKILL.md does not ask for the user's explicit approval of --promote"
+
 # Reproduction and fix: the test path is relative to the clone; the fix is
 # generic and never copies instance files.
 grep -qi 'relative to the clone' "$skill" || ds_fail "SKILL.md does not say the test path is relative to the clone"
 grep -qi 'never copy' "$skill" || ds_fail "SKILL.md does not forbid copying instance files"
 grep -q 'references/framework-change.md' "$skill" || ds_fail "SKILL.md does not link references/framework-change.md"
 
-# Framework commits: UTC dates, the noreply identity of setup, no
-# attribution trailers; the reference spells out the identity rules.
+# Framework commits: through `contribute commit` (UTC dates, the noreply
+# identity of setup), the reproduction marked with --test, no attribution
+# trailers; the reference spells out the identity rules.
 change_ref=$skill_dir/references/framework-change.md
-grep -q 'TZ=UTC git commit' "$change_ref" || ds_fail "framework-change.md does not commit with TZ=UTC"
+assert_contains "$(fenced "$skill")" "dotsteward contribute commit -m" "SKILL.md commits with contribute commit"
+assert_contains "$(fenced "$skill")" "--test" "SKILL.md marks the reproduction commit with --test"
+grep -q 'dotsteward contribute commit' "$change_ref" || ds_fail "framework-change.md does not commit with dotsteward contribute commit"
+grep -q 'UTC' "$change_ref" || ds_fail "framework-change.md does not name the UTC dates"
 grep -qi 'noreply' "$change_ref" || ds_fail "framework-change.md does not name the noreply identity"
 grep -qi 'trailer' "$change_ref" || ds_fail "framework-change.md does not rule out attribution trailers"
 

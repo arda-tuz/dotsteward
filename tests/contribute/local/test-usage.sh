@@ -19,9 +19,13 @@ assert_untouched() {
 for help in -h --help; do
   assert_exit 0 run_contribute "$help"
   assert_contains "$DS_STDOUT" "Usage: dotsteward [--instance DIR] contribute <step> [OPTION...]"
-  for step in mode setup start check trial publish release upgrade abort status; do
+  for step in mode setup start commit check trial publish release upgrade abort status; do
     assert_contains "$DS_STDOUT" "  $step"
   done
+  assert_contains "$DS_STDOUT" "  commit -m SUBJECT [-m PARAGRAPH...] [--test]"
+  assert_contains "$DS_STDOUT" "  start --slug SLUG [--promote NAME]"
+  assert_contains "$DS_STDOUT" "  status [--json] [--wait [--timeout SECONDS]]"
+  assert_contains "$DS_STDOUT" "3  still running (status --wait --timeout)"
   assert_contains "$DS_STDOUT" "4  privacy hard stop"
 done
 assert_untouched
@@ -46,7 +50,7 @@ assert_exit 1 run_contribute bogus
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: unknown contribute step: bogus"
 assert_untouched
 
-for step in mode setup start check status; do
+for step in mode setup start commit check status; do
   assert_exit 1 run_contribute "$step" --bogus
   assert_contains "$DS_STDERR" "[dotsteward] ERROR: unknown option: --bogus"
   assert_untouched
@@ -74,12 +78,29 @@ assert_exit 1 run_contribute check --expect-fail
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: --expect-fail requires a value"
 assert_untouched
 
+assert_exit 1 run_contribute commit
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: commit requires -m SUBJECT"
+assert_exit 1 run_contribute commit -m
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: -m requires a value"
+assert_untouched
+
+assert_exit 1 run_contribute status --timeout 5
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: --timeout needs --wait"
+for seconds in 0 -1 abc 1.5; do
+  assert_exit 1 run_contribute status --wait --timeout "$seconds"
+  assert_contains "$DS_STDERR" "[dotsteward] ERROR: --timeout must be a positive number of seconds"
+done
+assert_untouched
+
 # Without a run, the steps that need one say how to start it.
 for step in check status; do
   assert_exit 1 run_contribute "$step"
   assert_contains "$DS_STDERR" "no contribute run; start one with: dotsteward contribute start --slug SLUG"
   assert_untouched
 done
+assert_exit 1 run_contribute commit -m 'docs(example): notes'
+assert_contains "$DS_STDERR" "no contribute run; start one with: dotsteward contribute start --slug SLUG"
+assert_untouched
 assert_exit 1 run_contribute status --id 20260101T000000Z-missing
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: no contribute run with id 20260101T000000Z-missing"
 assert_exit 1 run_contribute status --id ../escape
