@@ -135,6 +135,30 @@ fw_static() {
   (cd "$dir" && ./cli/dotsteward static "$@")
 }
 
+# mini_framework DIR: the smallest tree `dotsteward static` checks in
+# framework mode: the privacy policy and allowlist, the allowed command
+# list and .gitignore of the framework under test, and nothing else. The
+# defect cases plant their files in it rather than in a copy of the whole
+# source, which every check would read whole (ShellCheck of every shell
+# file of the framework takes a minute).
+mini_framework() {
+  local dir=$1
+  mkdir -p "$dir/privacy" "$dir/tests/static"
+  cp "$DS_REPO_ROOT/privacy/policy.toml" "$DS_REPO_ROOT/privacy/allowlist.txt" "$dir/privacy/"
+  cp "$DS_REPO_ROOT/tests/static/allowed-commands.txt" "$dir/tests/static/"
+  cp "$DS_REPO_ROOT/.gitignore" "$dir/.gitignore"
+}
+
+# mini_static DIR [ARG...]: the static command of the framework under test,
+# run inside DIR with DIR as the framework source (the environment the
+# dispatcher gives every command), so it checks DIR in framework mode.
+mini_static() {
+  local dir=$1
+  shift
+  (cd "$dir" && DOTSTEWARD_FRAMEWORK_ROOT=$dir DOTSTEWARD_LIB=$DS_REPO_ROOT/cli/lib \
+    "$BASH" "$DS_REPO_ROOT/cli/commands/static.sh" "$@")
+}
+
 # Fragments of strings that break a contract when joined at run time.
 # shellcheck disable=SC2034 # read by the test files that source this file
 {

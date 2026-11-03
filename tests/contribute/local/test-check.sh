@@ -14,7 +14,9 @@
 #                       line, part of the contributor's public identity or
 #                       already in the content of upstream main outside the
 #                       allowlisted strings), then `nix flake check`
-#                       with the gate's parallelism. Any privacy finding is
+#                       with the framework check's own parallelism (derived
+#                       from the machine; the instance gate's configured 2
+#                       jobs and 3 cores do not apply). Any privacy finding is
 #                       exit 4 before Nix runs; findings are redacted; the
 #                       run records test_sha and tested_tree only on success;
 #                       the terms file is private and removed.
@@ -214,7 +216,9 @@ assert_exit 0 run_contribute check
 head_sha=$(git -C "$ct_clone" rev-parse HEAD)
 assert_contains "$DS_STDOUT" "[dotsteward] contribute check passed: ${head_sha:0:12}"
 assert_eq 3 "$(grep -c '^\[dotsteward\] scan clean:' <<<"$DS_STDOUT")" "clean scans"
-assert_call_count 1 nix "*flake check $ct_clone --no-update-lock-file --keep-going -L --max-jobs 2 --cores 3"
+# The harness machine (32768 MiB, 16 CPUs): 4 jobs of 4 cores.
+assert_contains "$DS_STDOUT" "[dotsteward] nix flake check in $ct_clone: 4 jobs, 4 cores each"
+assert_call_count 1 nix "*flake check $ct_clone --no-update-lock-file --keep-going -L --max-jobs 4 --cores 4"
 assert_eq "$head_sha" "$(field .test_sha)" "test_sha"
 assert_eq "$(git -C "$ct_clone" rev-parse 'HEAD^{tree}')" "$(field .tested_tree)" "tested_tree"
 assert_eq trial "$(field .step)" "step after the gate"
