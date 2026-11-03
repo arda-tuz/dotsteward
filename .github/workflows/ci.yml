@@ -93,10 +93,15 @@ jobs:
           persist-credentials: false
       - name: Install Nix
         run: bash tests/ci/install-nix.sh
+      # Every check runs as many test files at once as its build has cores,
+      # so the runner's 4 vCPUs take 2 builds of 2 cores: Nix's defaults
+      # (one build per vCPU, every vCPU each) would run 16 files at once.
       - name: nix flake check
-        run: nix flake check -L
+        run: nix flake check -L --max-jobs 2 --cores 2
       # The suites that need the host: the pre-push hook (a writable bare
       # remote), real Nix (tests/host) and the channel installer's
-      # stand-ins (tests/channels).
+      # stand-ins (tests/channels). One file at a time: a test of
+      # tests/host drives real Nix, whose evaluation and builds use every
+      # vCPU.
       - name: Host-level tests (outside the sandbox)
-        run: bash tests/run.sh tests/hooks tests/host tests/channels
+        run: bash tests/run.sh --jobs 1 tests/hooks tests/host tests/channels

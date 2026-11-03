@@ -159,9 +159,12 @@ commit, then tags it with that version; a missing, red or unfinished run
 releases nothing. The release workflow (`release.yml`) does the same
 without a run once `ci.yml` passed on `main`, or on a dispatch; when it
 cut the run's release first, `release` records that tag once `main`'s CI
-is green and creates no second one. There is no changelog file; the
-GitHub release lists the commits since the last release under Features,
-Fixes and Other.
+is green and creates no second one. It often does so while `release`
+still waits for that CI, so `release` reads the tag on `origin` again
+after the wait (and after a push that failed): a tag on the merged commit
+is the run's release, one on another commit stops the step with nothing
+changed. There is no changelog file; the GitHub release lists the commits
+since the last release under Features, Fixes and Other.
 
 ## Upgrade
 
@@ -229,6 +232,9 @@ A full trial switches your machine to the candidate framework
 upgrade, because a step is red, a privacy stop, red CI, your decision or
 a `report` that ends the run at publish, the recovery runs `rebuild --switch` and `e2e` without the override, so the
 machine and its framework skills return to the pinned release. Red steps
-recover on their own; `dotsteward contribute abort` recovers first and then
-ends the run. Abort never undoes what is already public: a merged commit
-stays, and an open pull request stays open until you close it.
+recover on their own, except `release`: its change is merged with the
+tested tree, so the machine keeps the trial framework, which is what
+`main` has, until the upgrade; `dotsteward contribute abort` recovers
+first and then ends the run. Abort never undoes what is already public: a
+merged commit stays, and an open pull request stays open until you close
+it.

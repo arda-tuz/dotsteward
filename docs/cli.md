@@ -312,9 +312,13 @@ Steps:
                           (the commits since the previous release under
                           Features, Fixes and Other) --verify-tag. A
                           release tag already on the merged commit (cut by
-                          release.yml first) is recorded as the run's
-                          release once main's CI is green, its GitHub
-                          release created when missing
+                          release.yml first, also while release waits for
+                          main's CI or before its push) is recorded as the
+                          run's release once main's CI is green, its
+                          GitHub release created when missing; a tag
+                          elsewhere is red with nothing changed. A red
+                          release keeps a trial switch (the change is
+                          merged with the tested tree): no recovery
   upgrade [--tag TAG | --main] [--carry] [--build-only]
                           the instance to the release: update prepare
                           --scope maintain, the dotsteward input of

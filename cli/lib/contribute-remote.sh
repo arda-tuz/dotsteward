@@ -261,11 +261,22 @@ contribute_recover_run() {
   _contribute_recover || true
 }
 
+# CT_KEEP_TRIAL: 1 in release, whose red outcomes keep a trial switch: the
+# change is merged with the tested tree, so the trial framework of the live
+# generation is what main has, and the upgrade (or the recovery of abort and
+# report, when they end the run) moves it on.
+CT_KEEP_TRIAL=0
+
 # _contribute_red MESSAGE: a red step: the message, the recovery after a
-# trial switch, exit 1.
+# trial switch (unless CT_KEEP_TRIAL), exit 1.
 _contribute_red() {
   printf '[dotsteward] ERROR: %s\n' "$1" >&2
-  _contribute_recover || true
+  if ((CT_KEEP_TRIAL)); then
+    [[ $(_contribute_get trial_switched) != true ]] ||
+      log "the live generation keeps the trial framework: the change is merged with the tested tree, so no recovery runs; run the step again once the cause is fixed, or end the run with abort or report, which return the machine to the pinned framework"
+  else
+    _contribute_recover || true
+  fi
   exit 1
 }
 
@@ -1023,6 +1034,17 @@ contribute_cmd_publish() {
 
 # --- release ------------------------------------------------------------------------
 
+# _contribute_origin_tag TAG MERGED: CT_ORIGIN_TAG, the commit of TAG on
+# origin (an annotated tag peeled), empty without that tag; red, with
+# nothing changed, when it names a commit other than MERGED.
+_contribute_origin_tag() {
+  local tag=$1 merged=$2
+  CT_ORIGIN_TAG=$(_contribute_remote_ref origin "refs/tags/$tag") ||
+    _contribute_red "cannot read the tags of origin; nothing is released"
+  [[ -z $CT_ORIGIN_TAG || $CT_ORIGIN_TAG == "$merged" ]] ||
+    _contribute_red "the tag $tag already exists on origin at ${CT_ORIGIN_TAG:0:12}, not at the merged commit ${merged:0:12}; nothing is released"
+}
+
 # _contribute_release_notes TAG COMMIT FILE: the grouped release notes
 # (release_notes) of the commits of COMMIT after the release before TAG,
 # written to FILE.
@@ -1064,6 +1086,8 @@ contribute_cmd_release() {
       ;;
     *) die "run $id is not published yet; next: $(_contribute_next_command "$CT_STEP")" ;;
   esac
+  # The change is merged: a red outcome from here on keeps a trial switch.
+  CT_KEEP_TRIAL=1
   local merged tag local_tag remote_tag notes
   merged=$(_contribute_get merged_sha)
   [[ -n $merged ]] || die "run $id has no merged commit; run: dotsteward contribute publish"
@@ -1105,33 +1129,47 @@ contribute_cmd_release() {
       tag=v${CT_RELEASE[1]}
     fi
   fi
-  # shellcheck disable=SC2016 # jq variables
-  _contribute_set '.tag = $tag' --arg tag "$tag"
 
+  # The tag on origin, read again once main's CI is green: the release
+  # workflow cuts the same release as soon as that CI passes, so it may
+  # cut it while this step waits, or between the read and the push. A tag
+  # on the merged commit is the run's release (no push, no second GitHub
+  # release); a tag elsewhere is red with nothing changed.
+  _contribute_origin_tag "$tag" "$merged"
+  remote_tag=$CT_ORIGIN_TAG
+  if [[ -z $remote_tag ]]; then
+    # A release is cut only from a main commit whose CI is green: the full
+    # check ran on main after the merge, not on the pull request. A tag
+    # already on origin (an interrupted release, or one the release
+    # workflow cut) was recorded after that wait.
+    _contribute_wait_main_ci "$merged"
+    _contribute_origin_tag "$tag" "$merged"
+    remote_tag=$CT_ORIGIN_TAG
+    [[ -z $remote_tag ]] ||
+      log "the release workflow cut $tag on ${merged:0:12} while this step waited for main's CI: it is the run's release"
+  fi
   local_tag=$(git -C "$CT_CLONE" rev-parse --verify --quiet "refs/tags/$tag^{commit}") || local_tag=""
-  remote_tag=$(_contribute_remote_ref origin "refs/tags/$tag") || _contribute_red "cannot read the tags of origin"
-  [[ -z $remote_tag || $remote_tag == "$merged" ]] ||
-    _contribute_red "the tag $tag already exists on origin at ${remote_tag:0:12}, not at the merged commit ${merged:0:12}"
-  # A release is cut only from a main commit whose CI is green: the full
-  # check ran on main after the merge, not on the pull request. A tag
-  # already on origin (an interrupted release, or one the release workflow
-  # cut) was recorded after that wait.
-  [[ -n $remote_tag ]] || _contribute_wait_main_ci "$merged"
-  if [[ -z $local_tag ]]; then
-    if [[ -n $remote_tag ]]; then
-      git_net 60 -C "$CT_CLONE" fetch --quiet origin "refs/tags/$tag:refs/tags/$tag" </dev/null ||
-        _contribute_red "cannot fetch the tag $tag"
-    else
+  [[ -z $local_tag || $local_tag == "$merged" ]] ||
+    _contribute_red "the local tag $tag points at ${local_tag:0:12}, not at the merged commit ${merged:0:12}; delete it in $CT_CLONE"
+  if [[ -z $remote_tag ]]; then
+    if [[ -z $local_tag ]]; then
       TZ=UTC git -C "$CT_CLONE" tag -a "$tag" -m "dotsteward $tag" "$merged" ||
         _contribute_red "cannot create the tag $tag"
     fi
-  elif [[ $local_tag != "$merged" ]]; then
-    _contribute_red "the local tag $tag points at ${local_tag:0:12}, not at the merged commit ${merged:0:12}; delete it in $CT_CLONE"
+    if git_net 180 -C "$CT_CLONE" push --quiet origin "refs/tags/$tag:refs/tags/$tag" </dev/null; then
+      log "tagged ${merged:0:12} as $tag on $CT_PUBLISH_SLUG"
+    else
+      _contribute_origin_tag "$tag" "$merged"
+      remote_tag=$CT_ORIGIN_TAG
+      [[ -n $remote_tag ]] || _contribute_red "pushing the tag $tag to origin failed"
+      log "the release workflow cut $tag on ${merged:0:12} first: it is the run's release"
+    fi
   fi
-  if [[ -z $remote_tag ]]; then
-    git_net 180 -C "$CT_CLONE" push --quiet origin "refs/tags/$tag:refs/tags/$tag" </dev/null ||
-      _contribute_red "pushing the tag $tag to origin failed"
-    log "tagged ${merged:0:12} as $tag on $CT_PUBLISH_SLUG"
+  if [[ -n $remote_tag ]]; then
+    # origin's tag replaces a local one on the same commit (the workflow's
+    # tag is a lightweight one), so later fetches of the tags agree.
+    git_net 60 -C "$CT_CLONE" fetch --quiet origin "+refs/tags/$tag:refs/tags/$tag" </dev/null ||
+      _contribute_red "cannot fetch the tag $tag"
   fi
   if [[ $CT_RUN_MODE == owner ]]; then
     if gh release view "$tag" -R "$CT_PUBLISH_SLUG" --json tagName </dev/null >/dev/null 2>&1; then
@@ -1139,15 +1177,19 @@ contribute_cmd_release() {
     else
       notes=$(mktemp "${TMPDIR:-/tmp}/dotsteward-notes.XXXXXX")
       _contribute_release_notes "$tag" "$merged" "$notes"
-      if ! gh release create "$tag" -R "$CT_PUBLISH_SLUG" --title "$tag" --notes-file "$notes" --verify-tag </dev/null >/dev/null; then
+      if gh release create "$tag" -R "$CT_PUBLISH_SLUG" --title "$tag" --notes-file "$notes" --verify-tag </dev/null >/dev/null; then
+        log "released $tag: https://github.com/$CT_PUBLISH_SLUG/releases/tag/$tag"
+      elif gh release view "$tag" -R "$CT_PUBLISH_SLUG" --json tagName </dev/null >/dev/null 2>&1; then
+        log "the release $tag exists: the release workflow created it meanwhile"
+      else
         rm -f -- "$notes"
         _contribute_red "gh release create $tag failed"
       fi
       rm -f -- "$notes"
-      log "released $tag: https://github.com/$CT_PUBLISH_SLUG/releases/tag/$tag"
     fi
   fi
-  _contribute_set '.step = "upgrade"'
+  # shellcheck disable=SC2016 # jq variables
+  _contribute_set '.tag = $tag | .step = "upgrade"' --arg tag "$tag"
   log "next: dotsteward contribute upgrade --tag $tag"
 }
 

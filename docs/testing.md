@@ -48,7 +48,9 @@ the results print in file order, each with its own output, and the summary
 and exit status are those of a run file after file. An interrupted run
 stops its test processes, whose own cleanup then runs. Every test file has
 its own temporary root, so files never share state; a check runs as many
-files at once as its build has cores (`nix flake check --cores N`).
+files at once as its build has cores (`nix flake check --cores N`), so
+`nix flake check --max-jobs J --cores C` runs up to J * C files at once.
+CI keeps that within the runner's vCPUs (`.github/workflows/ci.yml`).
 
 ## The harness
 
@@ -173,7 +175,7 @@ result, so:
 
 | Workflow | What it runs |
 | --- | --- |
-| `ci.yml` | lint on every event: shellcheck (one process per CPU), actionlint, Python syntax and the VM harness self-test (`tests/vm/selftest.sh`, no VM boots); the full check (`nix flake check -L` and the host-level tests: `tests/hooks`, `tests/host`, `tests/channels`) on every push to `main`, nightly, on a manual dispatch and for pull requests from forks, not on the pull requests and branches of the repository itself |
+| `ci.yml` | lint on every event: shellcheck (one process per CPU), actionlint, Python syntax and the VM harness self-test (`tests/vm/selftest.sh`, no VM boots); the full check (`nix flake check -L` with `--max-jobs` and `--cores` that run no more test files at once than the runner has vCPUs, and the host-level tests one file at a time: `tests/hooks`, `tests/host`, `tests/channels`) on every push to `main`, nightly, on a manual dispatch and for pull requests from forks, not on the pull requests and branches of the repository itself |
 | `privacy.yml` | the privacy scans ([privacy.md](privacy.md#where-scans-run)) |
 | `clean-install.yml` | a fresh Ubuntu runner set up end to end through `bootstrap.sh`, switched, checked, carried to a second home and rolled back |
 | `macos-smoke.yml` | a real Mac: stage 0, a new darwin instance, build, switch and end-to-end checks, and `nix flake check` of the darwin checks (`checks.aarch64-darwin`); on release tags (the release workflow dispatches it on the tags it makes), nightly and on demand |
