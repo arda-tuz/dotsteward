@@ -13,7 +13,7 @@ and [skills.md](skills.md#classification) how a request is classified.
 | Mode | When | Where the change lands |
 | --- | --- | --- |
 | fork (default) | always available | your fork of the framework; an upstream pull request only when you ask (`upstream.pr_to_upstream`) |
-| owner | `upstream.contribute = "owner"` in `workstation.toml`, a `gh` login with push permission on the upstream, and a local clone whose `origin` is the upstream | the upstream `main`, followed by a patch release |
+| owner | `upstream.contribute = "owner"` in `workstation.toml`, a `gh` login with push permission on the upstream, and a local clone whose `origin` is the upstream | the upstream `main`, released by the next release train |
 
 When the conditions of owner mode do not hold, the mode falls back to fork with a
 warning, never an error. `dotsteward contribute mode --json` shows the mode
@@ -30,10 +30,10 @@ names the fork and the local clone.
 | reproduce | `dotsteward contribute check --expect-fail PATH` | Runs the new test, which must fail before the fix. |
 | check | `dotsteward contribute check` | The framework gate on a clean clone: privacy scans, then `nix flake check`. |
 | trial | `dotsteward contribute trial` | Your instance's gate, `rebuild --switch` and `e2e` with the candidate framework (`--build-only`: gate and build only). |
-| publish | `dotsteward contribute publish` | Owner: pull request, CI, fast-forward of `main` to the tested commits. Fork: push, CI, fast-forward of the fork's `main`. |
-| release | `dotsteward contribute release` | The next patch tag on the merged commit; owner mode also creates the GitHub release with generated notes. |
-| upgrade | `dotsteward contribute upgrade --tag TAG` | Your instance moves to the release: lock, gate, commit, rebuild, `e2e`, publish. |
-| report | `dotsteward contribute report` | The result: pull request, merged commit, release, instance commit, tests. Ends the run. |
+| publish | `dotsteward contribute publish` | Owner: pull request, lint and privacy CI, fast-forward of `main` to the tested commits. Fork: push, CI, fast-forward of the fork's `main`. |
+| release | `dotsteward contribute release` | Once `main`'s CI is green on the merged commit: the tag of the version its release commit set; owner mode also creates the GitHub release with grouped notes. Without a release commit, nothing to release. |
+| upgrade | `dotsteward contribute upgrade --tag TAG` | Your instance moves to the release (`--main`: to the merged commit, without a release): lock, gate, commit, rebuild, `e2e`, publish. `--carry` carries unpublished instance commits across it. |
+| report | `dotsteward contribute report` | The result: pull request, merged commit, release, instance commit, tests. Ends the run, also right after publish. |
 
 `dotsteward contribute status --json` shows the run at any time, and
 `dotsteward contribute abort` ends it (see [Recovery](#recovery)). Every
@@ -96,19 +96,49 @@ publishes nothing. `--build-only` stops after the build; publishing then
 also requires the clean-install workflow to pass on the commit, which
 activates it on a disposable CI machine.
 
+An instance commit that waits for the fix (a maintain transaction the
+defect blocked, so `HEAD` is ahead of its remote branch) stays in place:
+the trial runs the instance as it is, and its `e2e`, like the recovery's,
+checks the remote against the remote branch's commit, an ancestor of
+`HEAD`, instead of `HEAD` itself. The upgrade then carries that commit
+(`--carry`, below).
+
 ## Publish and release
 
 Publish requires that the branch's commit is the one `check` and `trial`
-passed, that `VERSION` equals the next release, and that CI is green. In
-owner mode the upstream `main` is fast-forwarded to exactly the tested
-commits, keeping their author, committer and UTC dates; a merge button on
-GitHub is never used, because it writes a new commit with another identity.
-The merged tree must equal the tested tree. When upstream `main` moved, the
-branch is rebased and the run goes back to `check` (exit 5).
+passed, that `VERSION` is the release the commits are based on or the
+next release, and that lint and the privacy scans are green on the pull
+request (the `lint` job of `ci.yml` and the `generic` job of
+`privacy.yml`). In owner mode the upstream `main`
+is fast-forwarded to exactly the tested commits, keeping their author,
+committer and UTC dates; a merge button on GitHub is never used, because
+it writes a new commit with another identity. The merged tree must equal
+the tested tree. When upstream `main` moved, the branch is rebased and the
+run goes back to `check` (exit 5).
 
-`release` tags the merged commit with the next patch version (`v0.0.1`
-when there is no tag yet). There is no changelog file; the release notes
-are generated from the commits.
+The full check (`nix flake check`) runs on every push to `main`, nightly
+and for pull requests from forks, not on the pull requests and branches of
+the repository itself. `dotsteward contribute status` shows `main`'s CI for
+the merged commit (`main_ci`: pending, green or red, with the run's URL).
+
+Releases are trains. `VERSION` keeps the release the commits are based on,
+so a fix needs no release of its own, and a run may end right after
+publish (`dotsteward contribute report`). A release commit sets `VERSION`
+to the next version: `bash tools/version.sh bump` in the clone, with
+semantic versioning from the conventional commits since the last release
+(any `feat` makes the next minor, anything else the next patch; a breaking
+change the next major, only with `--major`, a decision of the user). The
+copies of `VERSION` (the plugin manifests, the marketplace and the
+`dotsteward` tag of `template/flake.nix`) are written by `bash
+tools/version.sh sync`, never by hand. `release` waits until `main`'s CI
+(the push runs of `ci.yml` and `privacy.yml`) is green on the merged
+commit, then tags it with that version; a missing, red or unfinished run
+releases nothing. The release workflow (`release.yml`) does the same
+without a run once `ci.yml` passed on `main`, or on a dispatch; when it
+cut the run's release first, `release` records that tag once `main`'s CI
+is green and creates no second one. There is no changelog file; the
+GitHub release lists the commits since the last release under Features,
+Fixes and Other.
 
 ## Upgrade
 
@@ -119,6 +149,19 @@ moved to the tag, `nix flake update dotsteward`, the launcher and
 a commit with `commit.upgrade_subject`, `rebuild --switch`, `e2e` and
 `update publish --scope maintain`. It is safe to run again; it resumes at
 the instance commit.
+
+`--main` moves the instance to the merged commit instead, the one the
+run's `check` and `trial` passed for, pinned by its revision on the same
+repository URL; a run need not wait for a release. `dotsteward pins latest`
+reports such a pin `current` while it contains the newest release and
+`review` once a newer one exists.
+
+An unpublished instance commit (a maintain transaction that waits for the
+fix) makes the upgrade refuse; `--carry` saves it, resets the instance to
+its remote branch, upgrades, applies the commit again on top, syncs and
+gates the whole tree, and publishes both. A conflict outside the generated
+mirrors stops with the cherry-pick in progress: resolve it, run
+`git cherry-pick --continue`, then the upgrade again.
 
 ## Run state
 
@@ -140,8 +183,8 @@ updates it, so an interrupted run resumes where it stopped;
 
 A full trial switches your machine to the candidate framework
 (`trial_switched` is true). If the run then ends without a successful
-upgrade, because a step is red, a privacy stop, red CI or your decision,
-the recovery runs `rebuild --switch` and `e2e` without the override, so the
+upgrade, because a step is red, a privacy stop, red CI, your decision or
+a `report` that ends the run at publish, the recovery runs `rebuild --switch` and `e2e` without the override, so the
 machine and its framework skills return to the pinned release. Red steps
 recover on their own; `dotsteward contribute abort` recovers first and then
 ends the run. Abort never undoes what is already public: a merged commit

@@ -25,7 +25,7 @@ dotsteward contribute status --json
 | `instance_commit` | the instance commit of the upgrade |
 | `step` | the next step of the run |
 
-The remote steps add `profile` (the profile of the trial, recovery and upgrade), `trial` and `trial_sha` (full or build-only, and the commit it passed for), `upgrade` (full or build-only), `instance_base` (the instance commit the upgrade started from), `recovery` (`done` or `failed`) and `outcome` (`completed` or `aborted`).
+The remote steps add `profile` (the profile of the trial, recovery and upgrade), `trial` and `trial_sha` (full or build-only, and the commit it passed for), `upgrade` (full or build-only), `upgrade_to` (the release tag, or `main` when the upgrade follows the merged commit), `instance_base` (the instance commit the upgrade started from), `upgrade_commit` (the framework upgrade commit of the instance), `carry` (the instance commits carried across the upgrade with `--carry`: `head`, `remote`, `commits` and `applied`), `recovery` (`done` or `failed`) and `outcome` (`completed` or `aborted`). Once the run has a merged commit, `status` also shows `main_ci`, main's CI for that commit (`state` pending, green, red or unknown, its `url` and `runs`), read once from GitHub.
 
 ## Resuming
 
@@ -38,8 +38,8 @@ The remote steps add `profile` (the profile of the trial, recovery and upgrade),
 | `check` | `dotsteward contribute check` |
 | `trial` | `dotsteward contribute trial` (or `--build-only`) |
 | `publish` | `dotsteward contribute publish` |
-| `release` | `dotsteward contribute release` |
-| `upgrade` | `dotsteward contribute upgrade --tag <tag>` |
+| `release` | `dotsteward contribute release` when a release commit is pending; otherwise `dotsteward contribute upgrade --main` or `dotsteward contribute report` (the run ends at publish) |
+| `upgrade` | `dotsteward contribute upgrade --tag <tag>`, or `--main` when it follows the merged commit, with `--carry` when it carries instance commits |
 | `report` | `dotsteward contribute report` |
 | `done` | nothing: the run is finished |
 
@@ -54,7 +54,7 @@ The remote steps add `profile` (the profile of the trial, recovery and upgrade),
 
 ## Recovery after a trial switch
 
-A full trial switches the live generation to the candidate framework (`trial_switched` becomes true). Until the upgrade has switched the machine to the released framework, the framework skill links and the CLI on this machine come from that trial commit. Whenever the run ends without a successful upgrade (a red step, a privacy stop, red CI, or the user's decision), the recovery returns the machine to the instance's pinned framework: `rebuild --switch` without an override, then `e2e`.
+A full trial switches the live generation to the candidate framework (`trial_switched` becomes true). Until the upgrade has switched the machine to the released framework, the framework skill links and the CLI on this machine come from that trial commit. Whenever the run ends without a successful upgrade (a red step, a privacy stop, red CI, the user's decision, or `report` at step `release`, which ends a run at publish), the recovery returns the machine to the instance's pinned framework: `rebuild --switch` without an override, then `e2e`.
 
 - Red steps after a trial switch run the recovery themselves before they exit.
 - To end a run on purpose, at any step before `done`:

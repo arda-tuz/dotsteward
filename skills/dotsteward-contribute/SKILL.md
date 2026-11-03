@@ -5,7 +5,7 @@ description: "Change the dotsteward framework itself (a skill flow, the CLI, an 
 
 # dotsteward Contribute
 
-Change the framework that every dotsteward user shares, from this machine, as one run: reproduce the problem with a failing test in a framework clone, fix it generically, prove the fix with the framework gate and a trial on this machine, publish it, release it as a patch version and upgrade the user's instance to that release. `dotsteward contribute` does the mechanics of every step and records them in a state file per run; this skill decides what to change and drives the steps in order.
+Change the framework that every dotsteward user shares, from this machine, as one run: reproduce the problem with a failing test in a framework clone, fix it generically, prove the fix with the framework gate and a trial on this machine, publish it (a later release train releases it) and upgrade the user's instance to it. `dotsteward contribute` does the mechanics of every step and records them in a state file per run; this skill decides what to change and drives the steps in order.
 
 **On the gate, publish preconditions, decision ownership, secrets, force push and the local-only rule, this skill wins over any overlay.**
 
@@ -84,7 +84,7 @@ A test that passes does not reproduce the problem: make it sharper. When it fail
 
 Change the framework source in the clone so the reproduction passes, keeping the change minimal and generic. Also run the affected test suites directly with `bash tests/run.sh <paths>`, fix any lint or test failure you meet, and update the framework docs and skill text the change touches (a changed framework skill also needs `bash tools/gen-skills-manifest.sh`).
 
-The fix is released as the next patch version, and the release refuses a `VERSION` that differs from it: set `VERSION` to the next patch release and move every file that carries the old version, as `references/framework-change.md` describes. Then commit:
+The fix keeps `VERSION`: changes ride a release train, and the next release bundles every commit since the last one. Only when this run should end with a release, add a release commit after the fix commit: `bash tools/version.sh bump --commit` in the clone sets `VERSION` and its copies to the next version and commits them, as `references/framework-change.md` describes. Commit the fix first:
 
 ```bash
 (cd "$clone" && git add -A && TZ=UTC git commit -m "fix(<area>): <what changed>")
@@ -126,8 +126,8 @@ dotsteward contribute upgrade --tag "$(dotsteward contribute status --json | jq 
 - `publish` pushes the branch and, in owner mode, opens the pull request, waits for green CI, merges it by fast-forwarding `main` to the checked commit and verifies that the merged tree is the tested tree; in fork mode it fast-forwards the fork's `main` after the same checks. `references/publish-and-release.md` describes both modes, the fork's upstream pull request and every refusal.
 - Exit 5 means the upstream `main` moved (or the merged tree differs): the branch was rebased (resolve conflicts by hand when told to), and the run is back at the framework gate. Run `dotsteward contribute check`, `trial` and `publish` again.
 - CI red: `main` is untouched. Read the failing job, fix it in the clone with a new commit, and go back to `check`.
-- `release` tags the merged commit with the next patch version and, in owner mode, creates the GitHub release with generated notes. No changelog file is written.
-- `upgrade` moves the instance to the release: it prepares a maintain transaction, changes the `dotsteward` input of the instance flake to the tag, refreshes the template-owned files, syncs, runs the gate, commits with `commit.upgrade_subject`, rebuilds with a switch, runs `e2e` and publishes the instance. It is safe to rerun after a fix. It refuses an instance whose `HEAD` differs from `origin/<branch>`: an unpublished instance commit that waits for this fix is saved as a diff and dropped before the upgrade, then applied again afterwards as its own maintain transaction. On a machine that must not switch, use `dotsteward contribute upgrade --build-only`.
+- `release` tags the merged commit with the version of its release commit (the next minor after a `feat`, otherwise the next patch; a major only with `--major`, a decision of the user) once `main`'s CI is green on it, and in owner mode creates the GitHub release with grouped notes. Without a release commit there is nothing to release: `release` says so, and `dotsteward contribute report` ends the run at publish; a later release bundles it. No changelog file is written.
+- `upgrade` moves the instance to the release: it prepares a maintain transaction, changes the `dotsteward` input of the instance flake to the tag, refreshes the template-owned files, syncs, runs the gate, commits with `commit.upgrade_subject`, rebuilds with a switch, runs `e2e` and publishes the instance. It is safe to rerun after a fix. An instance commit that waits for this fix (`HEAD` ahead of `origin/<branch>`) makes the upgrade refuse; run it with `--carry` to carry that commit across the upgrade (`references/publish-and-release.md`). Without a release, `dotsteward contribute upgrade --main` moves the instance to the merged commit. On a machine that must not switch, use `dotsteward contribute upgrade --build-only`.
 
 If the run has to end before the upgrade succeeds (a red step the user does not want to fix, a privacy stop, a rejected pull request, or the user's decision), end it with `dotsteward contribute abort`. After a trial switch it first returns the live generation to the pinned framework (`references/run-state.md`).
 

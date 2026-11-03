@@ -1,5 +1,13 @@
 name: ci
 
+# lint runs on every event. The full check (`nix flake check`) runs on
+# every push to main, nightly and on a manual dispatch, and for pull requests
+# from forks; pull requests and branch pushes of this repository run only
+# lint and the privacy scans (privacy.yml). `dotsteward contribute publish`
+# waits for lint and the privacy scans of the pull request head, and
+# `dotsteward contribute release` releases only a main commit whose push
+# runs of this workflow and privacy.yml are green.
+
 on:
   push:
     # Branches of the privacy drill (tests/ci/privacy-drill.sh) carry
@@ -7,13 +15,21 @@ on:
     branches-ignore:
       - "leak-test/**"
   pull_request:
+  schedule:
+    # Nightly, on the newest commit of main: drift of the locked inputs and
+    # of the runner image shows before the next release.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  # Superseded runs of other branches are cancelled; runs of main never are.
+  # Superseded runs of a branch or pull request are cancelled. Every run on
+  # main (a push, the nightly run or a dispatch) has a group of its own, so
+  # none is cancelled or replaced by a newer pending one: the release reads
+  # the result of exactly its commit.
+  group: ci-${{ github.ref == 'refs/heads/main' && format('main-{0}-{1}', github.event_name, github.sha) || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 defaults:
@@ -33,10 +49,13 @@ jobs:
           persist-credentials: false
       - name: Install Nix
         run: bash tests/ci/install-nix.sh
-      - name: shellcheck (pinned by flake.lock)
+      # One shellcheck per CPU, 50 files each. -x follows the sourced files
+      # (named by their `# shellcheck source=` directives) in every batch,
+      # as one shellcheck over all files does for the files it was given.
+      - name: shellcheck (pinned by flake.lock, in parallel)
         run: |
           git ls-files -z -- '*.sh' cli/dotsteward .githooks/pre-push |
-            xargs -0 nix run --inputs-from . nixpkgs#shellcheck --
+            nix shell --inputs-from . nixpkgs#shellcheck --command xargs -0 -r -P "$(nproc)" -n 50 shellcheck -x --
       - name: actionlint (pinned by flake.lock)
         run: nix shell --inputs-from . nixpkgs#actionlint nixpkgs#shellcheck --command actionlint
       # Fakes for QEMU and SSH: it never boots a virtual machine.
@@ -55,6 +74,14 @@ jobs:
           fi
 
   check:
+    # The full check: main (push, nightly, dispatch) and pull requests from
+    # forks, whose changes no framework gate of this repository has seen. A
+    # job skipped here reports success, so the required check stays
+    # satisfiable on pull requests of this repository.
+    if: >-
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:

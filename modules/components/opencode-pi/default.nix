@@ -20,7 +20,8 @@
 # Checks: the Pi probes (version against the skills lock mirror nix_tools.pi,
 # the --help flags the agents rely on) and three agents checks in probes/:
 # OpenCode runs, OpenCode's /skill API and Pi's RPC get_commands both list
-# every expected skill.
+# every expected skill by name, and every other SKILL.md of an expected name
+# in a root the agent reads (a shadow) is named in a warning.
 {
   config,
   lib,

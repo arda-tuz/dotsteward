@@ -63,9 +63,10 @@
 #                              or the activated revision is a commit after
 #                              BASE), the activated tree is the HEAD tree
 #                              and e2e.json records a passed run of that
-#                              tree and the activated generation, with the
-#                              repository checks; an activation of another
-#                              tree outside BASE..HEAD asks for nothing
+#                              tree, the activated generation and the
+#                              activated profile, with the repository
+#                              checks; an activation of another tree outside
+#                              BASE..HEAD asks for nothing
 
 # --- state ------------------------------------------------------------------------
 
@@ -310,14 +311,14 @@ txn_check_allowlist() {
 
 txn_require_verified_activation() {
   (($# == 1)) || die "usage: txn_require_verified_activation BASE"
-  local base=$1 root=$DS_INSTANCE_ROOT record revision activated generation profile tree e2e
+  local base=$1 root=$DS_INSTANCE_ROOT record revision activated generation profile name tree e2e other
   record=$(txn_json_object "$(txn_activation_file)")
   [[ -n $record ]] || return 0
   revision=$(jq -r '.revision // empty | strings' <<<"$record")
   activated=$(jq -r '.tree_oid // empty | strings' <<<"$record")
   generation=$(jq -r '.generation // empty | strings' <<<"$record")
   profile=$(jq -r '.profile // empty | strings' <<<"$record")
-  profile=${profile:-PROFILE}
+  name=${profile:-PROFILE}
   tree=$(git -C "$root" rev-parse 'HEAD^{tree}') || die "cannot read the tree of HEAD in $root"
   if [[ $activated != "$tree" ]]; then
     # Another tree is active: it concerns this transaction only when its
@@ -326,13 +327,19 @@ txn_require_verified_activation() {
     git -C "$root" cat-file -e "$revision^{commit}" 2>/dev/null || return 0
     git -C "$root" merge-base --is-ancestor "$base" "$revision" 2>/dev/null || return 0
     git -C "$root" merge-base --is-ancestor "$revision" HEAD 2>/dev/null || return 0
-    die "this transaction activated ${revision:0:12} on this machine (rebuild --switch), not the tree of HEAD; activate HEAD and run E2E for it first: dotsteward rebuild --profile $profile --switch, then dotsteward e2e --profile $profile --expected-remote-base $base"
+    die "this transaction activated ${revision:0:12} on this machine (rebuild --switch), not the tree of HEAD; activate HEAD and run E2E for it first: dotsteward rebuild --profile $name --switch, then dotsteward e2e --profile $name --expected-remote-base $base"
   fi
+  # The E2E run must have checked the activated profile too: a run of
+  # another profile ran the hooks of other components.
   e2e=$(txn_json_object "$(txn_e2e_file)")
-  if [[ -z $e2e ]] || ! jq -e --arg tree "$tree" --arg generation "$generation" '
+  if [[ -z $e2e ]] || ! jq -e --arg tree "$tree" --arg generation "$generation" --arg profile "$profile" '
     .result == "passed" and .tree_oid == $tree and .generation == $generation
-    and .repo_checks == true' <<<"$e2e" >/dev/null; then
-    die "the tree of HEAD is active on this machine (generation ${generation:-unknown}, rebuild --switch) but no passing E2E is recorded for this tree and generation; run 'dotsteward e2e --profile $profile --expected-remote-base $base' first"
+    and .profile == $profile and .repo_checks == true' <<<"$e2e" >/dev/null; then
+    other=""
+    if [[ -n $e2e ]]; then
+      other=$(jq -r --arg profile "$profile" '.profile // "" | strings | select(. != $profile)' <<<"$e2e")
+    fi
+    die "the tree of HEAD is active on this machine (generation ${generation:-unknown}, rebuild --switch) but no passing E2E is recorded for this tree and generation; run 'dotsteward e2e --profile $name --expected-remote-base $base' first${other:+ (the recorded E2E checked the profile $other, not $name)}"
   fi
 }
 

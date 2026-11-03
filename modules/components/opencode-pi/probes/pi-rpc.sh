@@ -5,14 +5,18 @@
 # prompt templates, and a fresh temporary PI_CODING_AGENT_DIR, so neither
 # the network nor the user's own Pi configuration (~/.pi/agent) takes part;
 # only Pi's own skill root ~/.pi/agent/skills, where the skills scoped to Pi
-# are linked, is linked into it. The directory is removed afterwards. The skill commands (source "skill",
-# named skill:<name>) are compared with the expected skills.
+# are linked, is linked into it. The directory is removed afterwards. The
+# skill commands (source "skill", named skill:<name>) are compared with the
+# expected skills by name; every other SKILL.md of an expected name directly
+# below ~/.agents/skills or ~/.pi/agent/skills is named in a warning
+# (skill-shadows.py).
 set -Eeuo pipefail
 
 # shellcheck source=modules/components/opencode-pi/probes/common.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 
 require_command pi
+require_command python3
 config_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotsteward-pi-config.XXXXXX") ||
   die "cannot create a temporary Pi configuration directory"
 responses=$(mktemp "${TMPDIR:-/tmp}/dotsteward-pi-rpc.XXXXXX") || {
@@ -40,4 +44,5 @@ actual=$(jq -cRn '[inputs | fromjson? | objects
   | [.[] | .data.commands[]? | objects | select(.source == "skill") | .name | strings | sub("^skill:"; "")]
   | unique' <"$responses" 2>/dev/null) ||
   die "Pi RPC answered no valid get_commands response"
+opencode_pi_shadows pi
 opencode_pi_compare pi Pi "$actual"

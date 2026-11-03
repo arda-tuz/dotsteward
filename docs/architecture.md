@@ -92,9 +92,9 @@ Safety rules of a skill (validation gate, publish preconditions, decision owners
 
 ## Contribution flow
 
-`dotsteward-contribute` defaults to **fork mode** for everyone: the change lands in your fork and the instance pins your fork. A pull request to the upstream repository is opened only when you ask. **Owner mode** (direct merge and patch release) requires both an instance setting and push permission on the upstream repository.
+`dotsteward-contribute` defaults to **fork mode** for everyone: the change lands in your fork and the instance pins your fork. A pull request to the upstream repository is opened only when you ask. **Owner mode** (direct merge and release) requires both an instance setting and push permission on the upstream repository.
 
-Steps: reproduce with a failing test, fix generically, run the framework gate and the privacy scans (including a scan for values of your own instance), try the change on your machine through a temporary framework override, publish, verify that the merged tree equals the tested tree, release, upgrade the instance. A privacy finding stops everything; nothing is published.
+Steps: reproduce with a failing test, fix generically, run the framework gate and the privacy scans (including a scan for values of your own instance), try the change on your machine through a temporary framework override, publish, verify that the merged tree equals the tested tree, release once `main`'s CI is green (when a release commit is pending), upgrade the instance (to the release, or to the merged commit until a release train releases it). A privacy finding stops everything; nothing is published.
 
 ## Privacy model
 
@@ -120,4 +120,4 @@ Bash commands run with Nix-provided GNU tools on both platforms, so their behavi
 
 ## Versioning
 
-`VERSION` is the single source of the release version: the Nix library and the CLI read it. Copies of it, which a release moves together with `VERSION`, are in the plugin manifests `plugins/dotsteward/.claude-plugin/plugin.json` and `plugins/dotsteward/.codex-plugin/plugin.json`, in the marketplace files `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` (every `version` key they have) and in the `dotsteward` tag of `template/flake.nix`. The contract test `tests/static/test-version-contract.sh` and the template tests keep every copy equal to `VERSION`. Releases are Git tags with generated release notes; there is no hand-written changelog.
+`VERSION` is the single source of the release version and its only hand-written copy: the Nix library and the CLI read it. Its copies are in the plugin manifests `plugins/dotsteward/.claude-plugin/plugin.json` and `plugins/dotsteward/.codex-plugin/plugin.json`, in the marketplace files `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` (every `version` key they have) and in the `dotsteward` tag of `template/flake.nix`; `tools/version.sh sync` writes them. The contract test `tests/static/test-version-contract.sh`, `tools/version.sh sync --check` and the template tests keep every copy equal to `VERSION`. `VERSION` changes only in a release commit (`tools/version.sh bump`): releases are trains with semantic versions from the conventional commits since the last release ([contribute.md](contribute.md)). A release is a Git tag on a `main` commit whose CI is green, with notes grouped from the commit subjects; there is no hand-written changelog.

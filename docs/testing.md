@@ -131,11 +131,12 @@ sandbox.
 
 | Workflow | What it runs |
 | --- | --- |
-| `ci.yml` | shellcheck, actionlint, Python syntax and the VM harness self-test (`tests/vm/selftest.sh`, no VM boots); `nix flake check -L`; the host-level tests (`tests/hooks`, `tests/host`, `tests/channels`) |
+| `ci.yml` | lint on every event: shellcheck (one process per CPU), actionlint, Python syntax and the VM harness self-test (`tests/vm/selftest.sh`, no VM boots); the full check (`nix flake check -L` and the host-level tests: `tests/hooks`, `tests/host`, `tests/channels`) on every push to `main`, nightly, on a manual dispatch and for pull requests from forks, not on the pull requests and branches of the repository itself |
 | `privacy.yml` | the privacy scans ([privacy.md](privacy.md#where-scans-run)) |
 | `clean-install.yml` | a fresh Ubuntu runner set up end to end through `bootstrap.sh`, switched, checked, carried to a second home and rolled back |
 | `macos-smoke.yml` | a real Mac: stage 0, a new darwin instance, build, switch and end-to-end checks; manual only |
-| `channels.yml` | the three distribution channels of `dotsteward-init` |
+| `channels.yml` | the three distribution channels of `dotsteward-init`, on every release tag (the release workflow dispatches it on the tags it makes) |
+| `release.yml` | the pending release of `main` (`tools/version.sh release`): once `ci.yml` passed there, or on a dispatch; tag only |
 
 ## Adding a test
 

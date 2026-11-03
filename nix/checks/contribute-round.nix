@@ -1,9 +1,11 @@
 # Contribute round (tests/contribute/round): the changes published through
 # `dotsteward contribute` itself, starting with `dotsteward version --json`,
-# plus the packaged CLI's JSON started with an empty environment, which must
+# the CI it waits for (the workflows' events and jobs) and the version tool
+# (tools/version.sh: the copies of VERSION, semantic versions, notes), plus
+# the packaged CLI's JSON started with an empty environment, which must
 # carry the baked source info: null for the CLI of the checks, which see the
 # framework without its commit (nix/outputs.nix), and the fixture commit
-# for a CLI built for it. Then shellcheck over the tests.
+# for a CLI built for it. Then shellcheck over the tests and the tool.
 {
   self,
   pkgs,
@@ -41,7 +43,7 @@ cli.mkTestCheck {
   paths = [ "tests/contribute/round" ];
   nativeBuildInputs = [ pkgs.shellcheck ];
   postCheck = ''
-    shellcheck -x tests/contribute/round/*.sh
+    shellcheck -x tests/contribute/round/*.sh tools/version.sh cli/lib/release.sh
     # check_json CLI EXPECTED: `version --json` of CLI, started with an empty
     # environment, is EXPECTED (compact, sorted keys).
     check_json() {

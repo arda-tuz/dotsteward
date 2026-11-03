@@ -5,7 +5,7 @@ What `dotsteward contribute publish`, `release` and `upgrade` do in each mode, w
 ## Preconditions of publish
 
 - The run passed `check` (the framework gate) and `trial` for the current commit of the branch: the clone is clean, on the run's branch, at the checked commit. A new commit after the gate means `check` and `trial` again.
-- `VERSION` of the checked commit equals the next release tag (`references/framework-change.md`), checked before anything is pushed and again before the merge.
+- `VERSION` of the checked commit is either the release its commits are based on (the run releases nothing) or exactly the next release, set by a release commit (`references/framework-change.md`); checked before anything is pushed and again before the merge, since a release cut meanwhile moves the next one.
 - `gh` is installed and logged in (`gh auth login` otherwise).
 - After a build-only trial, the `clean-install.yml` workflow must also be green on the checked commit; publish dispatches it on the branch when it has not run. If GitHub Actions are disabled on the target repository, run a full trial instead.
 
@@ -13,7 +13,7 @@ What `dotsteward contribute publish`, `release` and `upgrade` do in each mode, w
 
 1. Pushes `fix/<slug>` to the upstream (the pre-push hook scans the pushed commits and tree with the denylist).
 2. Opens the pull request, or reuses the open one of the branch.
-3. Waits for every CI check of the pull request to finish. Red CI: `main` is untouched; read the failing job (`gh run view --log-failed`), fix the cause in a new commit, then `check`, `trial` and `publish` again.
+3. Waits for the lint and privacy checks of the pull request head: the `lint` job of `ci.yml` and the `generic` scans of `privacy.yml`. The full check (`nix flake check`, the `check` job of `ci.yml`) is skipped on a pull request of the repository; it runs on `main` after the merge, and `release` waits for it. Red CI: `main` is untouched; read the failing job (`gh run view --log-failed`), fix the cause in a new commit, then `check`, `trial` and `publish` again.
 4. Requires the branch to be up to date with the upstream `main`. If `main` moved, publish rebases the branch onto it and exits 5: the run is back at `check` (the rebased commit has not been tested). A rebase conflict is left for you to resolve in the clone; then run `check`.
 5. Merges by pushing the checked commit to the upstream `main`, which fast-forwards the upstream `main` to exactly the commits that passed the gate, with their author, committer and UTC dates; GitHub then records the pull request as merged. Never merge the pull request on GitHub (squash, merge or rebase button): GitHub writes a new commit with the account's display name and local time, which the privacy scans refuse on `main`. If `main` moved at the last moment, the push no longer fast-forwards: publish rebases the branch as in step 4 and exits 5. A push the upstream refuses (for example a protected branch) is red and `main` is untouched.
 6. Verifies that the merged commit on `main` has exactly the tested tree. A pull request merged on GitHub by hand with other changes releases nothing: the branch is put on the merged `main`, publish exits 5, and the run goes back to `check`, which then checks the merged commit itself.
@@ -34,7 +34,15 @@ The release is then a tag on the fork, and the instance upgrades to the fork's t
 
 ## Release
 
-`dotsteward contribute release` creates the next patch tag (newest `v*` tag plus one, `v0.0.1` when there is none) as an annotated tag on the merged commit and pushes it. In owner mode it also creates the GitHub release with generated notes (`gh release create --generate-notes --verify-tag`). It refuses when `VERSION` of the merged commit is not that version, or when the tag already exists elsewhere. It is safe to rerun: an existing tag on the merged commit is kept.
+Releases are trains: a run does not need a release of its own, and a release bundles every commit since the last one. The release is the version `VERSION` of the merged commit names, which only a release commit sets (`references/framework-change.md`): semantic versioning from the conventional commits since the release the commits are based on, after the newest `v*` tag (any `feat` makes the next minor, anything else the next patch; from `0.0.0` without any tag). A breaking change makes the next major, which is cut only with `dotsteward contribute release --major`, after the user decided it.
+
+`dotsteward contribute release` creates that tag as an annotated tag on the merged commit and pushes it. In owner mode it also creates the GitHub release with grouped notes: the subjects of the commits since the previous release under Features, Fixes and Other (`gh release create --notes-file ... --verify-tag`). It refuses when `VERSION` of the merged commit is not the next release, or when the tag already exists elsewhere. It is safe to rerun: an existing tag on the merged commit is kept.
+
+Without a release commit (`VERSION` is still the release the commits are based on) there is nothing to release: `release` says so and changes nothing. End the run at publish with `dotsteward contribute report` (after a trial switch it first returns the machine to the pinned framework, as `abort` does); the next release bundles the change.
+
+The release workflow (`release.yml`) cuts the same release without a run: once `ci.yml` passed on `main`, it releases a pending release commit (tag only, `tools/version.sh release`), and it can be dispatched on `main` (with the `major` input for a major release). It makes no commit, so the tag always names a commit whose full CI is green; a release the workflow cut first is reused by `release`.
+
+A release is cut only from a `main` commit whose CI is green: before it tags, `release` waits for the push runs of `ci.yml` (lint and the full check) and `privacy.yml` on `main` for the merged commit, with the same limits as publish (`DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS` for the runs to appear, `DOTSTEWARD_CONTRIBUTE_CI_TIMEOUT_SECONDS` for them to finish). A missing, red or unfinished run releases nothing and keeps the run at `release`: read the failing job, and when the cause is a flaky runner, rerun the job on GitHub (`gh run rerun <id> --failed`); a defect needs a new run of this skill, since the merged commit stays on `main`. `dotsteward contribute status` shows that state at any time (`main_ci`). A fork without GitHub Actions has no CI to wait for; `release` warns and tags.
 
 ## Upgrade
 
@@ -46,4 +54,20 @@ The release is then a tag on the fork, and the instance upgrades to the fork's t
 4. the instance gate, then a commit with `commit.upgrade_subject` of the context,
 5. `rebuild --switch` and `e2e` (no override), then `update publish --scope maintain`.
 
-Once `flake.lock` pins the release, `sync`, the gate, the rebuild, `e2e` and the publish run through the instance launcher (`.dotsteward/cli.sh`), so the release's own CLI validates the upgraded instance. A red step leaves its changes uncommitted (or committed but unpublished) and says what to fix; run the same upgrade again afterwards, it resumes at the instance commit. On a machine that must not switch, `dotsteward contribute upgrade --build-only` rebuilds without switching and skips `e2e`; if a trial had switched the machine, switch it to the upgraded instance afterwards with `dotsteward rebuild --profile <profile> --switch` when the user wants that.
+Once `flake.lock` pins the release, `sync`, the gate, the rebuild, `e2e` and the publish run through the instance launcher (`.dotsteward/cli.sh`), so the release's own CLI validates the upgraded instance.
+
+Without a release, the instance can follow the merged commit itself, the one this run's `check` and `trial` passed for (release trains: the run need not wait for a release):
+
+```bash
+dotsteward contribute upgrade --main
+```
+
+It pins the `dotsteward` input to that commit on the same repository URL (`github:OWNER/REPO/<commit>`, or `?ref=refs/heads/main&rev=<commit>` for a `git+` URL), takes the template-owned files from it and commits with `commit.upgrade_subject` naming `main@<commit>`; everything else is the upgrade of a release. The `framework` row of `dotsteward pins latest` then reports `current` while that commit contains the newest release and `review` once a newer release exists, so `dotsteward-update` moves the instance to the release later.
+
+An instance commit that waits for this fix (a maintain transaction the framework defect blocked, so `HEAD` is ahead of `origin/<branch>`) stays in place through the trial, which runs the instance as it is: its `e2e` (and the recovery's) checks the remote against `origin/<branch>`, an ancestor of `HEAD`, instead of `HEAD` itself. The upgrade then refuses, naming `--carry`:
+
+```bash
+dotsteward contribute upgrade --tag <tag> --carry
+```
+
+`--carry` saves those commits (as `refs/dotsteward/carry/<run id>` and in the run state), resets the instance to `origin/<branch>`, runs the upgrade, applies the commits again on top of the upgrade commit (their messages and authors kept), then syncs (mirrors that changed are folded into the last carried commit) and runs the gate on the whole tree before `rebuild`, `e2e` and the publish, which ships the upgrade and the carried commits together: the maintain transaction continues on the upgraded framework. A conflict in the generated `.dotsteward` mirrors is resolved by the sync; any other conflict stops the upgrade with the cherry-pick in progress: resolve it in the instance, `git add` the files, run `git cherry-pick --continue` (until it is done), then run the upgrade again. `git cherry-pick --abort` starts the carry over; `abort` names the saved commits. `--carry` works with `--main` as well. A red step leaves its changes uncommitted (or committed but unpublished) and says what to fix; run the same upgrade again afterwards, it resumes at the instance commit. On a machine that must not switch, `dotsteward contribute upgrade --build-only` rebuilds without switching and skips `e2e`; if a trial had switched the machine, switch it to the upgraded instance afterwards with `dotsteward rebuild --profile <profile> --switch` when the user wants that.

@@ -23,8 +23,8 @@
 # - docs/architecture.md names every catalog component and, in its
 #   Versioning section, every file that carries a copy of VERSION (the
 #   plugin manifests, the marketplace files and the template's framework
-#   tag, which a release moves by hand) and the contract test that keeps
-#   them equal;
+#   tag, which tools/version.sh sync writes) and the contract test that
+#   keeps them equal;
 # - docs/testing.md names every suite directory below tests/ and every
 #   assertion of tests/lib/assert.sh.
 # shellcheck source=tests/static/helpers.sh

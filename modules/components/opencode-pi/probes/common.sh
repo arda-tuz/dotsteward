@@ -11,6 +11,11 @@
 #   opencode_pi_scoped_store
 #       prints the scoped skill store,
 #       ${XDG_DATA_HOME:-~/.local/share}/dotsteward/scoped-skills
+#   opencode_pi_shadows AGENT
+#       warns once per shadow of an expected skill of AGENT: a SKILL.md of
+#       that name in a root AGENT reads that is not the copy dotsteward
+#       installed, so the agent may list the name from either file
+#       (skill-shadows.py)
 #   opencode_pi_compare AGENT LABEL ACTUAL_JSON
 #       fails naming the expected skills of AGENT missing from ACTUAL_JSON
 #       (a JSON array of names), else logs that LABEL sees every expected
@@ -44,6 +49,13 @@ opencode_pi_expected_skills() {
 opencode_pi_scoped_store() {
   local data=${XDG_DATA_HOME:-$HOME/.local/share}
   printf '%s\n' "${data%/}/dotsteward/scoped-skills"
+}
+
+opencode_pi_shadows() {
+  local agent=$1 expected
+  expected=$(opencode_pi_expected_skills "$agent")
+  python3 -I "$(dirname -- "${BASH_SOURCE[0]}")/skill-shadows.py" "$agent" "$HOME" "$(opencode_pi_scoped_store)" "$expected" ||
+    die "cannot scan the skill roots of $agent for shadowed skills"
 }
 
 opencode_pi_compare() {

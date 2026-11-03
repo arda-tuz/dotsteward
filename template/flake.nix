@@ -15,7 +15,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     dotsteward = {
-      url = "github:arda-tuz/dotsteward/v1.1.16";
+      url = "github:arda-tuz/dotsteward/v1.2.0";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.home-manager.follows = "home-manager";
     };

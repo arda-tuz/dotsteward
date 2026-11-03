@@ -14,7 +14,8 @@
 
 The framework upgrade step runs when the `framework` row of `$work/latest.json` is `review`: the upstream of the instance's `dotsteward` flake input has a newer stable release than the tag the instance pins. The upstream is never configured separately; it is the original reference of the `dotsteward` node of `flake.lock` (`framework.upstream` in the context, `details.upstream` in the row).
 
-- `manual`: the input is not pinned to a release tag (or is a local path). Report it; do not move it.
+- A commit pin: the instance follows a commit of the framework's `main` (`dotsteward contribute upgrade --main` writes it, for a commit that passed a contribution's check and trial). `current` is the 12-digit commit and `details.rev` the full one; the row is `current` while that commit contains the newest release (`details.contains`) and `review` once a newer release exists. Move it to the newest release tag like a tag pin: the release holds the commit's change.
+- `manual`: the input is pinned neither to a release tag nor to a commit (a branch), or is a local path. Report it; do not move it.
 - `error`: retry `pins latest` once; if it persists, report it and leave the framework as it is.
 
 Run the step in the clone right after the research of section 1 of `SKILL.md`, before any other edit: a release can change the CLI, the catalog declarations, the lock rules and the gate, and every later step should already see the new release.
@@ -37,7 +38,11 @@ sort -V "$work/framework-tags.txt" | awk -v old="$old" -v new="$new" 'seen { pri
 while IFS= read -r tag; do timeout 60 gh release view "$tag" --repo "$repo"; done <"$work/framework-releases.txt"
 ```
 
-`repo` is the `OWNER/REPO` of a GitHub upstream (`github:OWNER/REPO`, or a `git+ssh` or `git+https` URL on github.com). An upstream elsewhere has no `gh` releases: list its tags with `timeout 60 git ls-remote --tags --refs <url>` and read the notes on the upstream's release page or as `git log <old>..<new>` in a temporary clone. When the old tag is no longer listed, read every release newer than it by version.
+`repo` is the `OWNER/REPO` of a GitHub upstream (`github:OWNER/REPO`, or a `git+ssh` or `git+https` URL on github.com). An upstream elsewhere has no `gh` releases: list its tags with `timeout 60 git ls-remote --tags --refs <url>` and read the notes on the upstream's release page or as `git log <old>..<new>` in a temporary clone. When the old tag is no longer listed, read every release newer than it by version. For a commit pin, `old` is that commit: read every release newer than the `VERSION` of the pinned commit (the release it is based on):
+
+```bash
+timeout 60 gh api "repos/$repo/contents/VERSION?ref=$(jq -r .details.rev <<<"$row")" --jq .content | base64 -d
+```
 
 Read every release between the pinned and the newest tag, not only the newest one: release notes name breaking changes and the instance changes a release needs. Show the user the notes that matter (breaking changes, new requirements, migrations) before you continue.
 
@@ -45,7 +50,7 @@ Stop the framework part of this run, keep the old tag and report why when a rele
 
 ## Move the tag
 
-Change only the tag of the `dotsteward` input in `flake.nix` (`github:OWNER/REPO/<tag>` or `?ref=refs/tags/<tag>`), from `$old` to `$new`; its `follows` lines stay as they are. Find the line first and edit just that reference:
+Change only the tag of the `dotsteward` input in `flake.nix` (`github:OWNER/REPO/<tag>` or `?ref=refs/tags/<tag>`), from `$old` to `$new`; its `follows` lines stay as they are. A commit pin becomes the tag the same way: `github:OWNER/REPO/<commit>` becomes `github:OWNER/REPO/<tag>`, and `?ref=refs/heads/main&rev=<commit>` becomes `?ref=refs/tags/<tag>` (the `rev` parameter goes). Find the line first and edit just that reference:
 
 ```bash
 git grep -n -F "$old" -- flake.nix

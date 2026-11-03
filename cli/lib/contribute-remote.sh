@@ -16,7 +16,13 @@
 #                            the dotsteward input URL URL moved to the
 #                            release tag TAG (github:owner/repo[/ref] or a
 #                            git+ URL with ?ref=refs/tags/TAG), on the
-#                            GitHub repository FORK (owner/repo) when given
+#                            GitHub repository FORK (owner/repo) when given;
+#                            _contribute_flake_url does the same for a
+#                            commit on main (github:owner/repo/<commit> or
+#                            ?ref=refs/heads/main&rev=<commit>)
+#   contribute_main_ci_json ID
+#                            main's CI for the merged commit of run ID as one
+#                            JSON object (for `contribute status`)
 #
 # The instance commands (gate, rebuild, e2e, update, sync) run with
 # DOTSTEWARD_FRAMEWORK_OVERRIDE removed from their environment, so a
@@ -35,8 +41,15 @@
 #   trial, trial_sha full or build-only, and the commit the trial passed for
 #                    (publish needs trial_sha = test_sha)
 #   upgrade          full or build-only
+#   upgrade_to       the release tag, or main: the upgrade follows the
+#                    merged commit on main (upgrade --main)
 #   instance_base    the instance commit the upgrade started from (the
 #                    remote branch at `update prepare`)
+#   upgrade_commit   the framework upgrade commit of the instance
+#   carry            the instance commits carried across the upgrade
+#                    (upgrade --carry): head (the saved HEAD, also kept as
+#                    refs/dotsteward/carry/<id> until the upgrade is done),
+#                    remote, commits (oldest first) and applied
 #   recovery         done or failed: the last recovery after a trial switch
 #   outcome          completed (report) or aborted (abort)
 #
@@ -55,8 +68,21 @@
 CONTRIBUTE_RESTART=5
 # The workflow that exercises a change with a real activation.
 CONTRIBUTE_CLEAN_INSTALL=clean-install.yml
+# The checks publish waits for on the pull request head, as WORKFLOW/JOB
+# (the workflow's name, the job's check name): lint of ci.yml and the
+# generic scans of privacy.yml. The full check (the check job of ci.yml)
+# runs on main after the merge, not on a pull request of the repository
+# itself; release waits for it.
+CONTRIBUTE_PUBLISH_CHECKS=(ci/lint privacy/generic)
+# The workflows whose push runs on main are main's CI for a commit (lint and
+# the full check, the privacy scans with the denylist): release needs them
+# green, status shows them.
+CONTRIBUTE_MAIN_WORKFLOWS=(ci.yml privacy.yml)
 
 export GH_PROMPT_DISABLED=1
+
+# shellcheck source=cli/lib/release.sh
+source "$lib_dir/release.sh"
 
 # --- run state ----------------------------------------------------------------------
 
@@ -91,7 +117,7 @@ _contribute_next_command() {
   case $1 in
     reproduce) printf 'dotsteward contribute check --expect-fail <test path>\n' ;;
     fix) printf 'dotsteward contribute check\n' ;;
-    upgrade) printf 'dotsteward contribute upgrade --tag %s\n' "$(_contribute_get tag)" ;;
+    upgrade) _contribute_upgrade_command ;;
     done) printf 'nothing (the run is finished)\n' ;;
     *) printf 'dotsteward contribute %s\n' "$1" ;;
   esac
@@ -158,6 +184,25 @@ _contribute_instance_dirty() {
   [[ -n $(git -C "$DS_INSTANCE_ROOT" status --porcelain --untracked-files=normal 2>/dev/null) ]]
 }
 
+# _contribute_waiting_base: CT_WAITING_BASE, origin/<branch> of the instance
+# (read now) when HEAD is ahead of it: instance commits that wait for this
+# run's fix (a maintain transaction the framework defect blocked; the
+# upgrade carries them with --carry), so e2e checks the remote against it
+# (--expected-remote-base) instead of HEAD. Empty when HEAD equals it, and
+# for any other state, which e2e reports itself.
+_contribute_waiting_base() {
+  local branch=${DS_INSTANCE_BRANCH:-main} head remote count
+  CT_WAITING_BASE=""
+  head=$(git -C "$DS_INSTANCE_ROOT" rev-parse --verify --quiet HEAD) || return 0
+  remote=$(git_net 60 -C "$DS_INSTANCE_ROOT" ls-remote origin "refs/heads/$branch" </dev/null |
+    awk -v ref="refs/heads/$branch" '$2 == ref { print $1; exit }') || return 0
+  [[ -n $remote && $remote != "$head" ]] || return 0
+  git -C "$DS_INSTANCE_ROOT" merge-base --is-ancestor "$remote" "$head" 2>/dev/null || return 0
+  count=$(git -C "$DS_INSTANCE_ROOT" rev-list --count "$remote..$head")
+  log "the instance has $count commit(s) that origin/$branch lacks (waiting for this fix): e2e checks origin/$branch at ${remote:0:12}, an ancestor of HEAD"
+  CT_WAITING_BASE=$remote
+}
+
 # --- recovery -----------------------------------------------------------------------
 
 # _contribute_recover: after a trial switch, switches the live generation
@@ -194,6 +239,9 @@ _contribute_recover() {
   commit=$(_contribute_get instance_commit)
   if [[ $(_contribute_get step) == upgrade && -n $base && -n $commit ]]; then
     e2e+=(--expected-remote-base "$base")
+  else
+    _contribute_waiting_base
+    [[ -z $CT_WAITING_BASE ]] || e2e+=(--expected-remote-base "$CT_WAITING_BASE")
   fi
   if ! _contribute_instance "${e2e[@]}"; then
     _contribute_set '.recovery = "failed"'
@@ -274,7 +322,10 @@ contribute_cmd_trial() {
     _contribute_set '.trial_switched = true'
     _contribute_instance rebuild --profile "$profile" --switch --framework-override "$ref" ||
       _contribute_red "trial: rebuild --switch failed with the framework at ${CT_TEST_SHA:0:12}; nothing is published"
-    _contribute_instance e2e --profile "$profile" --framework-override "$ref" ||
+    local -a remote_base=()
+    _contribute_waiting_base
+    [[ -z $CT_WAITING_BASE ]] || remote_base=(--expected-remote-base "$CT_WAITING_BASE")
+    _contribute_instance e2e --profile "$profile" "${remote_base[@]}" --framework-override "$ref" ||
       _contribute_red "trial: e2e failed with the framework at ${CT_TEST_SHA:0:12}; nothing is published"
   fi
   # shellcheck disable=SC2016 # jq variables
@@ -440,41 +491,84 @@ _contribute_verify_tree() {
   log "verified: ${commit:0:12} on $remote/main has the tested tree ${CT_TESTED_TREE:0:12}"
 }
 
-# _contribute_require_version COMMIT: VERSION at COMMIT equals the release
-# this run will tag (the recorded tag, else the next patch tag), checked
-# before main is touched; red otherwise.
+# _contribute_release_tags: the stable release tags of origin (and, in fork
+# mode, of the upstream) as "TAG COMMIT" lines, annotated tags peeled; the
+# commits need not be in the clone.
+_contribute_release_tags() {
+  local remote answer sha name
+  local -a remotes=(origin)
+  [[ $CT_RUN_MODE != fork ]] || remotes+=(upstream)
+  for remote in "${remotes[@]}"; do
+    answer=$(git_net 60 -C "$CT_CLONE" ls-remote --tags "$remote" 'refs/tags/v*') ||
+      die "cannot list the tags of $remote"
+    # Peeled lines (TAG^{}) first, so they win over the tag objects.
+    while IFS=$'\t' read -r sha name; do
+      [[ -n ${sha:-} ]] || continue
+      name=${name#refs/tags/}
+      if [[ $name == *'^{}' ]]; then
+        printf '%s %s\n' "${name%'^{}'}" "$sha"
+      fi
+    done <<<"$answer"
+    while IFS=$'\t' read -r sha name; do
+      [[ -n ${sha:-} && $name != *'^{}' ]] || continue
+      printf '%s %s\n' "${name#refs/tags/}" "$sha"
+    done <<<"$answer"
+  done
+}
+
+# _contribute_release_state COMMIT: CT_RELEASE (release_state of COMMIT
+# with the remotes' release tags: STATE VERSION BASE NEXT MAJOR KIND
+# BASE_COMMIT) as an array; red when VERSION at COMMIT is missing.
+_contribute_release_state() {
+  local commit=$1 line tags
+  tags=$(_contribute_release_tags)
+  line=$(release_state "$CT_CLONE" "$commit" "$tags") ||
+    _contribute_red "VERSION at ${commit:0:12} is missing or not X.Y.Z; nothing is published"
+  read -ra CT_RELEASE <<<"$line"
+}
+
+# _contribute_require_version COMMIT: VERSION at COMMIT is either the
+# release the commits are based on (the run releases nothing; release
+# trains: a later release bundles it) or exactly the next release
+# (tools/version.sh bump: a release commit); checked before main is
+# touched and again before the merge (a release cut meanwhile moves the
+# next one); red otherwise.
 _contribute_require_version() {
-  local commit=$1 tag version
-  tag=$(_contribute_get tag)
-  [[ -n $tag ]] || tag=$(_contribute_next_tag)
-  version=$(git -C "$CT_CLONE" show "$commit:VERSION" 2>/dev/null) ||
-    _contribute_red "${commit:0:12} has no VERSION file; nothing is published"
-  version=${version//[[:space:]]/}
-  [[ v$version == "$tag" ]] ||
-    _contribute_red "VERSION is $version at ${commit:0:12}, but the next release is $tag: set VERSION to ${tag#v} in the fix, then run: dotsteward contribute check; nothing is published"
+  local commit=$1
+  _contribute_release_state "$commit"
+  case ${CT_RELEASE[0]} in
+    none | pending) return 0 ;;
+  esac
+  if [[ ${CT_RELEASE[3]} == - ]]; then
+    _contribute_red "VERSION is ${CT_RELEASE[1]} at ${commit:0:12}, but the commits since v${CT_RELEASE[2]} hold a breaking change: keep VERSION ${CT_RELEASE[2]} (no release in this run), or set the next major with tools/version.sh bump --major once the user decided it; then run: dotsteward contribute check; nothing is published"
+  fi
+  _contribute_red "VERSION is ${CT_RELEASE[1]} at ${commit:0:12}, but it must stay ${CT_RELEASE[2]} (no release in this run) or be the next release ${CT_RELEASE[3]} (a release commit: tools/version.sh bump); fix it, then run: dotsteward contribute check; nothing is published"
 }
 
 # --- publish: CI ----------------------------------------------------------------------
 
-# _contribute_runs REPO SHA WORKFLOW EVENT: the workflow runs of commit SHA
-# in REPO, newest first, as "id status conclusion url" lines; WORKFLOW (a
-# file name) and EVENT narrow them when not empty. The REST API also finds
-# runs of a workflow that is not on the default branch yet.
+# _contribute_runs REPO SHA WORKFLOW EVENT [BRANCH]: the workflow runs of
+# commit SHA in REPO, newest first, as "id status conclusion url" lines;
+# WORKFLOW (a file name), EVENT and BRANCH narrow them when not empty. The
+# REST API also finds runs of a workflow that is not on the default branch
+# yet.
 _contribute_runs() {
-  local repo=$1 sha=$2 workflow=$3 event=$4 answer
+  local repo=$1 sha=$2 workflow=$3 event=$4 branch=${5:-} answer
   answer=$(gh api -X GET "repos/$repo/actions/runs" -f head_sha="$sha" -F per_page=100 </dev/null) || return 1
-  jq -r --arg workflow "$workflow" --arg event "$event" '
+  jq -r --arg workflow "$workflow" --arg event "$event" --arg branch "$branch" '
     [.workflow_runs[]?
       | select($workflow == "" or ((.path // "") | split("@")[0]) == ".github/workflows/" + $workflow)
-      | select($event == "" or .event == $event)]
+      | select($event == "" or .event == $event)
+      | select($branch == "" or .head_branch == $branch)]
     | sort_by(.created_at, .id) | reverse | .[]
     | "\(.id) \(.status) \(.conclusion // "none") \(.html_url // "")"' <<<"$answer"
 }
 
-# _contribute_wait_run REPO ID WHAT: waits for run ID to complete; red unless
-# it concluded with success (or was skipped).
+# _contribute_wait_run REPO ID WHAT [STAKE]: waits for run ID to complete;
+# red unless it concluded with success (or was skipped). STAKE ends the red
+# message (default: nothing is published).
 _contribute_wait_run() {
-  local repo=$1 run=$2 what=$3 interval timeout start answer status conclusion url
+  local repo=$1 run=$2 what=$3 stake=${4:-nothing is published} interval timeout start answer status conclusion url
   interval=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_POLL_SECONDS 15)
   timeout=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_CI_TIMEOUT_SECONDS 7200)
   start=$SECONDS
@@ -482,61 +576,174 @@ _contribute_wait_run() {
     answer=$(gh api "repos/$repo/actions/runs/$run" </dev/null) || _contribute_red "cannot read run $run of $what in $repo"
     read -r status conclusion url < <(jq -r '"\(.status) \(.conclusion // "none") \(.html_url // "")"' <<<"$answer")
     [[ $status != completed ]] || break
-    ((SECONDS - start < timeout)) || _contribute_red "$what did not finish within ${timeout}s: $url"
+    ((SECONDS - start < timeout)) || _contribute_red "$what did not finish within ${timeout}s: $url; $stake"
     sleep "$interval"
   done
   case $conclusion in
     success | skipped | neutral) log "$what: $conclusion ($url)" ;;
-    *) _contribute_red "$what concluded with $conclusion: $url; nothing is published" ;;
+    *) _contribute_red "$what concluded with $conclusion: $url; $stake" ;;
   esac
 }
 
-# _contribute_wait_pr_checks PR: the checks of the pushed commit appear on
-# the pull request and all pass (gh pr checks --watch). Right after a push
-# GitHub may still answer for the previous head, with its old checks, and
-# then report the new head before any of its checks is registered; both
-# count as not appeared yet.
+# _contribute_pr_checks PR FIELDS: the checks of PR as "WORKFLOW/NAME[=BUCKET]"
+# lines (FIELDS: name,workflow or name,workflow,bucket); status 1 when they
+# cannot be read.
+_contribute_pr_checks() {
+  local pr=$1 fields=$2
+  gh pr checks "$pr" --json "$fields" \
+    --jq '.[] | "\(.workflow // "")/\(.name // "")\(if .bucket then "=\(.bucket)" else "" end)"' </dev/null 2>/dev/null
+}
+
+# _contribute_publish_state LINES: the state of the CONTRIBUTE_PUBLISH_CHECKS
+# among the check lines LINES (_contribute_pr_checks): "missing NAME..." when
+# one has no check yet, "fail NAME..." when one failed or was cancelled,
+# "pending" while one runs, else "pass". Every other check is ignored.
+_contribute_publish_state() {
+  local lines=$1 check line bucket seen
+  local -a missing=() failed=()
+  local pending=0
+  for check in "${CONTRIBUTE_PUBLISH_CHECKS[@]}"; do
+    seen=0
+    while IFS= read -r line; do
+      [[ ${line%%=*} == "$check" ]] || continue
+      seen=1
+      bucket=${line#*=}
+      [[ $line == *=* ]] || bucket=""
+      case $bucket in
+        fail | cancel) failed+=("${check#*/}") ;;
+        pending) pending=1 ;;
+      esac
+    done <<<"$lines"
+    ((seen)) || missing+=("${check#*/}")
+  done
+  if ((${#missing[@]})); then
+    printf 'missing %s\n' "${missing[*]}"
+  elif ((${#failed[@]})); then
+    printf 'fail %s\n' "${failed[*]}"
+  elif ((pending)); then
+    printf 'pending\n'
+  else
+    printf 'pass\n'
+  fi
+}
+
+# _contribute_wait_pr_checks PR: the publish checks (CONTRIBUTE_PUBLISH_CHECKS:
+# lint and the generic privacy scans) of the pushed commit appear on the pull
+# request and pass. Other checks are not waited for: the full check runs on
+# main after the merge and gates the release. Right after a push GitHub may
+# still answer for the previous head, with its old checks, and then report
+# the new head before any of its checks is registered; both count as not
+# appeared yet.
 _contribute_wait_pr_checks() {
-  local pr=$1 interval appear timeout start count head
+  local pr=$1 interval appear timeout start head lines state names
+  names="${CONTRIBUTE_PUBLISH_CHECKS[*]#*/}"
   interval=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_POLL_SECONDS 15)
   appear=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS 300)
   timeout=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_CI_TIMEOUT_SECONDS 7200)
   start=$SECONDS
   while :; do
-    count=0
+    state=missing
     head=$(gh pr view "$pr" --json headRefOid --jq .headRefOid </dev/null 2>/dev/null) || head=''
-    if [[ $head == "$CT_TEST_SHA" ]]; then
-      count=$(gh pr checks "$pr" --json name --jq length </dev/null 2>/dev/null) || count=0
-      [[ $count =~ ^[0-9]+$ ]] || count=0
+    if [[ $head == "$CT_TEST_SHA" ]] && lines=$(_contribute_pr_checks "$pr" name,workflow); then
+      state=$(_contribute_publish_state "$lines")
     fi
-    ((count == 0)) || break
+    [[ $state == missing* ]] || break
     ((SECONDS - start < appear)) ||
-      _contribute_red "no CI check appeared on $pr within ${appear}s; publishing needs green CI, main is untouched"
+      _contribute_red "the CI checks ${names// / and } did not appear on $pr within ${appear}s; publishing needs them green, main is untouched"
     sleep "$interval"
   done
-  # The checks are read until none is pending. A failed read (GitHub
-  # answers HTTP 502 at times) is not a CI result and is read again; only
-  # answers that keep failing stop the wait.
-  log "waiting for the CI checks of $pr"
-  local buckets failures=0 limit=10
+  # The checks are read until none of the publish checks is pending. A
+  # failed read (GitHub answers HTTP 502 at times) is not a CI result and is
+  # read again; only answers that keep failing stop the wait.
+  log "waiting for the CI checks ${names// / and } of $pr (the full check runs on main after the merge)"
+  local failures=0 limit=10
   start=$SECONDS
   while :; do
-    if buckets=$(gh pr checks "$pr" --json bucket --jq '[.[].bucket] | join(" ")' </dev/null 2>/dev/null); then
+    if lines=$(_contribute_pr_checks "$pr" name,workflow,bucket); then
       failures=0
-      case " $buckets " in
-        *" fail "* | *" cancel "*) _contribute_red "CI is not green on $pr; main is untouched" ;;
+      state=$(_contribute_publish_state "$lines")
+      case $state in
+        fail*)
+          state=${state#fail }
+          _contribute_red "CI is not green on $pr (${state// / and } failed); main is untouched"
+          ;;
+        pass) break ;;
       esac
-      [[ " $buckets " == *" pending "* ]] || break
     else
       failures=$((failures + 1))
       ((failures < limit)) ||
         _contribute_red "cannot read the CI checks of $pr ($failures failed answers in a row); main is untouched"
     fi
     ((SECONDS - start < timeout)) ||
-      _contribute_red "the CI checks of $pr did not finish within ${timeout}s; main is untouched"
+      _contribute_red "the CI checks ${names// / and } of $pr did not finish within ${timeout}s; main is untouched"
     sleep "$interval"
   done
-  log "CI is green on $pr"
+  log "CI is green on $pr: ${names// / and } passed"
+}
+
+# --- main's CI ------------------------------------------------------------------------
+
+# contribute_main_ci_json ID: main's CI for the merged commit of run ID
+# (release_main_ci of CONTRIBUTE_MAIN_WORKFLOWS: {sha, state, url, runs}),
+# read once; {sha, state: "unknown", url: null, reason, runs: []} when it
+# cannot be read (no merged commit, gh missing or logged out, no answer).
+# Never fails and never waits.
+contribute_main_ci_json() {
+  local id=$1 answer errors sha
+  errors=$(mktemp "${TMPDIR:-/tmp}/dotsteward-main-ci.XXXXXX")
+  if answer=$(
+    exec 2>"$errors"
+    _contribute_load_run "$id"
+    sha=$(_contribute_get merged_sha)
+    [[ -n $sha ]] || die "the run has no merged commit"
+    _contribute_require_gh
+    _contribute_remote_facts >/dev/null
+    release_main_ci "$CT_PUBLISH_SLUG" "$sha" "${CONTRIBUTE_MAIN_WORKFLOWS[@]}" ||
+      die "cannot list the CI runs of $CT_PUBLISH_SLUG"
+  ) && [[ -n $answer ]]; then
+    printf '%s\n' "$answer"
+  else
+    sha=$(contribute_state_get "$id" merged_sha 2>/dev/null) || sha=null
+    jq -cn --arg sha "$sha" --arg reason "$(sed -n 's/^\[dotsteward\] ERROR: //p' "$errors" | tail -n 1)" \
+      '{sha: (if $sha == "null" then null else $sha end), state: "unknown", url: null,
+        reason: (if $reason == "" then "main CI could not be read" else $reason end), runs: []}'
+  fi
+  rm -f -- "$errors"
+}
+
+# _contribute_wait_main_ci SHA: main's CI for SHA (the push runs of
+# CONTRIBUTE_MAIN_WORKFLOWS on main of CT_PUBLISH_SLUG, the full check among
+# them) appears within DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS and concludes
+# with success within DOTSTEWARD_CONTRIBUTE_CI_TIMEOUT_SECONDS; red
+# otherwise: a release is cut only from a main commit whose CI is green.
+# Skipped with a warning when GitHub Actions are disabled there (a fork
+# without CI).
+_contribute_wait_main_ci() {
+  local sha=$1 repo=$CT_PUBLISH_SLUG enabled interval appear start document line
+  local -a missing=() runs=()
+  enabled=$(gh api "repos/$repo/actions/permissions" </dev/null 2>/dev/null | jq -r '.enabled') || enabled=""
+  if [[ $enabled == false ]]; then
+    warn "GitHub Actions are disabled on $repo, so main has no CI; releasing on the framework gate and the trial"
+    return 0
+  fi
+  interval=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_POLL_SECONDS 15)
+  appear=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS 300)
+  start=$SECONDS
+  while :; do
+    document=$(release_main_ci "$repo" "$sha" "${CONTRIBUTE_MAIN_WORKFLOWS[@]}") ||
+      _contribute_red "cannot list the CI runs of ${sha:0:12} in $repo; nothing is released"
+    mapfile -t missing < <(jq -r '.runs[] | select(.status == "missing") | .workflow' <<<"$document")
+    mapfile -t runs < <(jq -r '.runs[] | select(.status != "missing") | "\(.workflow) \(.id)"' <<<"$document")
+    ((${#missing[@]})) || break
+    ((SECONDS - start < appear)) ||
+      _contribute_red "no run of ${missing[*]} appeared on main of $repo for ${sha:0:12} within ${appear}s; a release needs main's CI green on its commit, nothing is released"
+    sleep "$interval"
+  done
+  log "waiting for main's CI on ${sha:0:12} (${CONTRIBUTE_MAIN_WORKFLOWS[*]})"
+  for line in "${runs[@]}"; do
+    _contribute_wait_run "$repo" "${line#* }" "${line%% *} on main at ${sha:0:12}" "nothing is released"
+  done
+  log "main's CI is green on ${sha:0:12}"
 }
 
 # _contribute_clean_install REPO: the clean-install workflow concluded with
@@ -805,40 +1012,33 @@ contribute_cmd_publish() {
   else
     _contribute_publish_fork "$to_upstream"
   fi
-  log "next: dotsteward contribute release"
+  _contribute_release_state "$(_contribute_get merged_sha)"
+  if [[ ${CT_RELEASE[0]} == none ]]; then
+    log "no release is pending (VERSION is still ${CT_RELEASE[2]}): the next release bundles this run"
+    log "next: dotsteward contribute upgrade --main (the instance follows the merged commit), or dotsteward contribute report"
+  else
+    log "next: dotsteward contribute release"
+  fi
 }
 
 # --- release ------------------------------------------------------------------------
 
-# _contribute_next_tag: v<X.Y.Z+1> from the newest stable v* tag of origin
-# (and, in fork mode, of the upstream); v0.0.1 when there is none.
-_contribute_next_tag() {
-  local remote answer newest name
-  local -a versions=()
-  local -a remotes=(origin)
-  [[ $CT_RUN_MODE != fork ]] || remotes+=(upstream)
-  for remote in "${remotes[@]}"; do
-    answer=$(git_net 60 -C "$CT_CLONE" ls-remote --tags --refs "$remote" 'refs/tags/v*') ||
-      die "cannot list the tags of $remote"
-    while read -r _ name; do
-      name=${name#refs/tags/v}
-      if [[ $name =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-        versions+=("$name")
-      fi
-    done <<<"$answer"
-  done
-  if ((${#versions[@]} == 0)); then
-    printf 'v0.0.1\n'
-    return 0
-  fi
-  newest=$(printf '%s\n' "${versions[@]}" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)
-  printf 'v%s.%s.%s\n' "${newest%%.*}" "$(cut -d. -f2 <<<"$newest")" "$((${newest##*.} + 1))"
+# _contribute_release_notes TAG COMMIT FILE: the grouped release notes
+# (release_notes) of the commits of COMMIT after the release before TAG,
+# written to FILE.
+_contribute_release_notes() {
+  local tag=$1 commit=$2 file=$3 tags base text
+  tags=$(_contribute_release_tags)
+  base=$(release_base_before "$CT_CLONE" "$commit" "$tag" "$tags")
+  text=$(release_notes "$CT_CLONE" "$base" "$commit") || _contribute_red "cannot write the release notes of $tag"
+  printf '%s\n' "$text" >"$file"
 }
 
 contribute_cmd_release() {
-  local id=""
+  local id="" major=0
   while (($#)); do
     case $1 in
+      --major) major=1 ;;
       --id)
         need_value "$1" "$#" "${2:-}"
         id=$2
@@ -864,7 +1064,7 @@ contribute_cmd_release() {
       ;;
     *) die "run $id is not published yet; next: $(_contribute_next_command "$CT_STEP")" ;;
   esac
-  local merged tag version local_tag remote_tag
+  local merged tag local_tag remote_tag notes
   merged=$(_contribute_get merged_sha)
   [[ -n $merged ]] || die "run $id has no merged commit; run: dotsteward contribute publish"
   contribute_is_clone "$CT_CLONE" || die "the clone $CT_CLONE of run $id is missing"
@@ -873,13 +1073,38 @@ contribute_cmd_release() {
   git -C "$CT_CLONE" cat-file -e "$merged^{commit}" 2>/dev/null || contribute_fetch_main "$CT_CLONE" origin
   git -C "$CT_CLONE" cat-file -e "$merged^{commit}" 2>/dev/null || die "the merged commit ${merged:0:12} is not in $CT_CLONE"
 
+  # The release is the one VERSION of the merged commit names: a release
+  # commit set it to the next version (release trains). A merged commit
+  # whose VERSION is still its base release has nothing to release here,
+  # unless that release is the merged commit itself: the release workflow
+  # (release.yml) cuts a pending release by itself once main's CI is green,
+  # possibly before this step, and its tag is then the run's release.
   tag=$(_contribute_get tag)
-  [[ -n $tag ]] || tag=$(_contribute_next_tag)
-  version=$(git -C "$CT_CLONE" show "$merged:VERSION" 2>/dev/null) ||
-    die "the merged commit ${merged:0:12} has no VERSION file"
-  version=${version//[[:space:]]/}
-  [[ v$version == "$tag" ]] ||
-    _contribute_red "VERSION is $version at the merged commit ${merged:0:12}, but the next release is $tag: the fix must set VERSION to ${tag#v} (VERSION equals the released tag); nothing is released"
+  if [[ -z $tag ]]; then
+    _contribute_release_state "$merged"
+    case ${CT_RELEASE[0]} in
+      none)
+        [[ ${CT_RELEASE[6]} == "$merged" ]] ||
+          die "no release is pending at the merged commit ${merged:0:12}: VERSION is still ${CT_RELEASE[2]}, the release it is based on, so the next release bundles it (release trains); follow it with: dotsteward contribute upgrade --main, or end the run with: dotsteward contribute report"
+        tag=v${CT_RELEASE[2]}
+        log "the merged commit ${merged:0:12} carries its release tag $tag already (cut by the release workflow or by hand)"
+        # Recorded only once main's CI is green on it, as for a tag this
+        # step cuts itself.
+        _contribute_wait_main_ci "$merged"
+        ;;
+      mismatch)
+        if [[ ${CT_RELEASE[3]} == - ]]; then
+          _contribute_red "VERSION is ${CT_RELEASE[1]} at the merged commit ${merged:0:12}, but the commits since v${CT_RELEASE[2]} hold a breaking change, which needs the next major release (tools/version.sh bump --major, a decision of the user); nothing is released"
+        fi
+        _contribute_red "VERSION is ${CT_RELEASE[1]} at the merged commit ${merged:0:12}, but the next release is v${CT_RELEASE[3]} (after v${CT_RELEASE[2]}, as the commits decide): set it with tools/version.sh bump in a release commit; nothing is released"
+        ;;
+    esac
+    if [[ -z $tag ]]; then
+      ((CT_RELEASE[4] == 0 || major)) ||
+        die "v${CT_RELEASE[1]} is a major release: cut it only with dotsteward contribute release --major, a decision of the user; nothing is released"
+      tag=v${CT_RELEASE[1]}
+    fi
+  fi
   # shellcheck disable=SC2016 # jq variables
   _contribute_set '.tag = $tag' --arg tag "$tag"
 
@@ -887,6 +1112,11 @@ contribute_cmd_release() {
   remote_tag=$(_contribute_remote_ref origin "refs/tags/$tag") || _contribute_red "cannot read the tags of origin"
   [[ -z $remote_tag || $remote_tag == "$merged" ]] ||
     _contribute_red "the tag $tag already exists on origin at ${remote_tag:0:12}, not at the merged commit ${merged:0:12}"
+  # A release is cut only from a main commit whose CI is green: the full
+  # check ran on main after the merge, not on the pull request. A tag
+  # already on origin (an interrupted release, or one the release workflow
+  # cut) was recorded after that wait.
+  [[ -n $remote_tag ]] || _contribute_wait_main_ci "$merged"
   if [[ -z $local_tag ]]; then
     if [[ -n $remote_tag ]]; then
       git_net 60 -C "$CT_CLONE" fetch --quiet origin "refs/tags/$tag:refs/tags/$tag" </dev/null ||
@@ -907,8 +1137,13 @@ contribute_cmd_release() {
     if gh release view "$tag" -R "$CT_PUBLISH_SLUG" --json tagName </dev/null >/dev/null 2>&1; then
       log "the release $tag exists"
     else
-      gh release create "$tag" -R "$CT_PUBLISH_SLUG" --title "$tag" --generate-notes --verify-tag </dev/null >/dev/null ||
+      notes=$(mktemp "${TMPDIR:-/tmp}/dotsteward-notes.XXXXXX")
+      _contribute_release_notes "$tag" "$merged" "$notes"
+      if ! gh release create "$tag" -R "$CT_PUBLISH_SLUG" --title "$tag" --notes-file "$notes" --verify-tag </dev/null >/dev/null; then
+        rm -f -- "$notes"
         _contribute_red "gh release create $tag failed"
+      fi
+      rm -f -- "$notes"
       log "released $tag: https://github.com/$CT_PUBLISH_SLUG/releases/tag/$tag"
     fi
   fi
@@ -933,8 +1168,12 @@ _contribute_url_query_without_ref() {
   printf '%s\n' "${out#&}"
 }
 
-contribute_flake_url_for_tag() {
-  local url=$1 tag=$2 fork=${3:-} rest query="" path base host
+# _contribute_flake_url URL KIND VALUE [FORK]: the dotsteward input URL URL
+# moved to the release tag VALUE (KIND tag) or to the commit VALUE on main
+# (KIND rev), on the GitHub repository FORK (owner/repo) when given; status
+# 1 for a URL of another form.
+_contribute_flake_url() {
+  local url=$1 kind=$2 value=$3 fork=${4:-} rest query="" path base host
   case $url in
     github:*)
       rest=${url#github:}
@@ -946,7 +1185,8 @@ contribute_flake_url_for_tag() {
       path=${BASH_REMATCH[1]}
       [[ -z $fork ]] || path=$fork
       query=$(_contribute_url_query_without_ref "$query")
-      printf 'github:%s/%s%s\n' "$path" "$tag" "${query:+?$query}"
+      # A tag or a 40-digit commit in the path: Nix reads the commit as rev.
+      printf 'github:%s/%s%s\n' "$path" "$value" "${query:+?$query}"
       ;;
     git+*://*)
       base=${url%%\?*}
@@ -963,12 +1203,21 @@ contribute_flake_url_for_tag() {
         fi
       fi
       query=$(_contribute_url_query_without_ref "$query")
-      # Always the full tag ref: Nix reads a git+ ref without refs/ as a
-      # branch (refs/heads/<ref>), whatever the url had before.
-      printf '%s?%sref=refs/tags/%s\n' "$base" "${query:+$query&}" "$tag"
+      # Always the full ref: Nix reads a git+ ref without refs/ as a branch
+      # (refs/heads/<ref>), whatever the url had before. A commit is fetched
+      # from main, where publish put it.
+      if [[ $kind == tag ]]; then
+        printf '%s?%sref=refs/tags/%s\n' "$base" "${query:+$query&}" "$value"
+      else
+        printf '%s?%sref=refs/heads/main&rev=%s\n' "$base" "${query:+$query&}" "$value"
+      fi
       ;;
     *) return 1 ;;
   esac
+}
+
+contribute_flake_url_for_tag() {
+  _contribute_flake_url "$1" tag "$2" "${3:-}"
 }
 
 # _contribute_flake_url_line FILE: "LINE<TAB>URL" of the dotsteward input's
@@ -1009,16 +1258,19 @@ _contribute_flake_url_line() {
     }' "$1"
 }
 
-# _contribute_set_framework_url TAG FORK: the dotsteward input of the
-# instance flake.nix moved to TAG (on FORK when not empty).
+# _contribute_set_framework_url KIND VALUE FORK: the dotsteward input of the
+# instance flake.nix moved to the tag VALUE (KIND tag) or the commit VALUE
+# on main (KIND rev), on FORK when not empty.
 _contribute_set_framework_url() {
-  local tag=$1 fork=$2 flake=$DS_INSTANCE_ROOT/flake.nix found line url new tmp
+  local kind=$1 value=$2 fork=$3 flake=$DS_INSTANCE_ROOT/flake.nix found line url new tmp target
+  target="the tag $value"
+  [[ $kind == tag ]] || target="the commit $value of main"
   [[ -f $flake ]] || _contribute_red "the instance has no flake.nix"
   found=$(_contribute_flake_url_line "$flake") ||
-    _contribute_red "cannot find the one url of the dotsteward input in $flake; set it to the tag $tag by hand and run upgrade again"
+    _contribute_red "cannot find the one url of the dotsteward input in $flake; set it to $target by hand and run upgrade again"
   line=${found%%$'\t'*}
   url=${found#*$'\t'}
-  new=$(contribute_flake_url_for_tag "$url" "$tag" "$fork") ||
+  new=$(_contribute_flake_url "$url" "$kind" "$value" "$fork") ||
     _contribute_red "unsupported dotsteward input url in flake.nix: $url"
   if [[ $new == "$url" ]]; then
     log "flake.nix already uses $new"
@@ -1038,35 +1290,42 @@ _contribute_set_framework_url() {
   log "flake.nix: dotsteward $url -> $new"
 }
 
-# _contribute_verify_lock TAG COMMIT: the instance flake.lock locks the
-# dotsteward input at COMMIT, from the reference TAG.
+# _contribute_verify_lock KIND VALUE COMMIT LABEL: the instance flake.lock
+# locks the dotsteward input at COMMIT, from the reference VALUE: the tag
+# (KIND tag) or that commit itself (KIND rev).
 _contribute_verify_lock() {
-  local tag=$1 commit=$2 answer ref rev
+  local kind=$1 value=$2 commit=$3 label=$4 answer ref rev original
   answer=$(jq -r '
     .nodes[.root].inputs.dotsteward as $name
     | if ($name | type) != "string" then empty else .nodes[$name] end
-    | "\(.original.ref // "")|\(.locked.rev // "")"' "$DS_INSTANCE_ROOT/flake.lock" 2>/dev/null) || answer=""
-  ref=${answer%%|*}
-  rev=${answer#*|}
-  [[ ${ref#refs/tags/} == "$tag" && $rev == "$commit" ]] ||
-    _contribute_red "flake.lock locks dotsteward ${ref:-without a ref} at ${rev:-no revision}, not $tag at ${commit:0:12}; the upgrade stops before any commit"
-  log "flake.lock: dotsteward $tag at ${commit:0:12}"
+    | "\(.original.ref // "")|\(.original.rev // "")|\(.locked.rev // "")"' "$DS_INSTANCE_ROOT/flake.lock" 2>/dev/null) ||
+    answer=""
+  IFS='|' read -r ref original rev <<<"$answer"
+  if [[ $kind == tag ]]; then
+    [[ ${ref#refs/tags/} == "$value" && $rev == "$commit" ]] ||
+      _contribute_red "flake.lock locks dotsteward ${ref:-without a ref} at ${rev:-no revision}, not $label at ${commit:0:12}; the upgrade stops before any commit"
+  else
+    [[ $original == "$value" && $rev == "$commit" ]] ||
+      _contribute_red "flake.lock locks dotsteward ${original:-${ref:-without a revision}} at ${rev:-no revision}, not $label; the upgrade stops before any commit"
+  fi
+  log "flake.lock: dotsteward $label at ${commit:0:12}"
 }
 
-# _contribute_refresh_template TAG: bootstrap.sh and .dotsteward/cli.sh of
-# the instance from template/ of the release (the files `dotsteward static`
-# keeps byte-identical to the pinned framework's).
+# _contribute_refresh_template REV LABEL: bootstrap.sh and .dotsteward/cli.sh
+# of the instance from template/ of the framework at REV (the release tag
+# or the commit on main; LABEL in messages), the files `dotsteward static`
+# keeps byte-identical to the pinned framework's.
 _contribute_refresh_template() {
-  local tag=$1 path mode target tmp
+  local rev=$1 label=$2 path mode target tmp
   for path in bootstrap.sh .dotsteward/cli.sh; do
-    mode=$(git -C "$CT_CLONE" ls-tree "$tag" -- "template/$path" | awk '{print $1}')
+    mode=$(git -C "$CT_CLONE" ls-tree "$rev" -- "template/$path" | awk '{print $1}')
     [[ -n $mode ]] || continue
     target=$DS_INSTANCE_ROOT/$path
     mkdir -p -- "$(dirname -- "$target")"
     tmp=$(mktemp "$(dirname -- "$target")/.refresh.XXXXXX")
-    git -C "$CT_CLONE" show "$tag:template/$path" >"$tmp" || {
+    git -C "$CT_CLONE" show "$rev:template/$path" >"$tmp" || {
       rm -f -- "$tmp"
-      _contribute_red "cannot read template/$path of $tag"
+      _contribute_red "cannot read template/$path of $label"
     }
     if [[ $mode == 100755 ]]; then chmod 0755 "$tmp"; else chmod 0644 "$tmp"; fi
     if [[ -f $target ]] && cmp -s -- "$tmp" "$target"; then
@@ -1074,12 +1333,164 @@ _contribute_refresh_template() {
       continue
     fi
     mv -f -- "$tmp" "$target"
-    log "refreshed $path from template/$path of $tag"
+    log "refreshed $path from template/$path of $label"
   done
 }
 
+# --- upgrade: carried instance commits ----------------------------------------------
+
+# The generated mirrors of the instance (`dotsteward sync` writes them; keep
+# identical to mirror_name_pattern of cli/commands/sync.sh).
+CONTRIBUTE_MIRROR_PATH='^\.dotsteward/(manifest\.[A-Za-z0-9_-]+\.json|stage0\.[a-z]+\.env)$'
+
+# _contribute_carry_ref: the ref that keeps the carried instance commits of
+# the run reachable while the instance is reset.
+_contribute_carry_ref() {
+  printf 'refs/dotsteward/carry/%s\n' "$CT_RUN_ID"
+}
+
+# _contribute_upgrade_command: the command that continues the upgrade.
+_contribute_upgrade_command() {
+  local command="dotsteward contribute upgrade"
+  if [[ $(_contribute_get upgrade_to) == main ]]; then
+    command+=" --main"
+  else
+    command+=" --tag $(_contribute_get tag)"
+  fi
+  [[ -z $(_contribute_get carry) ]] || command+=" --carry"
+  printf '%s\n' "$command"
+}
+
+# _contribute_carry_prepare CARRY(0|1): the instance HEAD equals
+# origin/<branch> (fetched now) before the upgrade starts. Instance commits
+# that origin lacks (a maintain transaction that waits for this fix) are
+# refused, naming --carry; with CARRY=1 they are saved (state carry: head,
+# remote and the commits oldest first, kept reachable by
+# refs/dotsteward/carry/<run id>) and the instance is reset to
+# origin/<branch>, so the upgrade starts from the published instance and
+# applies them again on top of its commit.
+_contribute_carry_prepare() {
+  local carry=$1 branch=$DS_INSTANCE_BRANCH head remote count commits
+  head=$(git -C "$DS_INSTANCE_ROOT" rev-parse HEAD)
+  git_net 60 -C "$DS_INSTANCE_ROOT" fetch --quiet origin "$branch" </dev/null ||
+    die "could not fetch origin/$branch of the instance within 60 s"
+  remote=$(git -C "$DS_INSTANCE_ROOT" rev-parse --verify --quiet "refs/remotes/origin/$branch^{commit}") ||
+    die "origin/$branch of the instance is missing after the fetch"
+  [[ $head != "$remote" ]] || return 0
+  count=$(git -C "$DS_INSTANCE_ROOT" rev-list --count "$remote..$head")
+  if ((carry == 0)); then
+    ((count > 0)) ||
+      die "the instance HEAD ${head:0:12} is behind origin/$branch (${remote:0:12}); run 'git pull --ff-only' in $DS_INSTANCE_ROOT first"
+    die "the instance HEAD ${head:0:12} differs from origin/$branch (${remote:0:12}): $count unpublished commit(s) that origin lacks; publish or remove them first, or carry them across the upgrade with: $(_contribute_upgrade_command) --carry"
+  fi
+  if ((count == 0)); then
+    git -C "$DS_INSTANCE_ROOT" merge --quiet --ff-only "$remote" ||
+      die "cannot fast-forward the instance to origin/$branch"
+    log "the instance was behind origin/$branch: fast-forwarded to ${remote:0:12}, nothing to carry"
+    return 0
+  fi
+  (($(git -C "$DS_INSTANCE_ROOT" rev-list --count --merges "$remote..$head") == 0)) ||
+    die "the unpublished instance commits include a merge; --carry carries a line of commits only: rebase them onto origin/$branch first"
+  commits=$(git -C "$DS_INSTANCE_ROOT" rev-list --reverse "$remote..$head" | jq -Rsc 'split("\n") | map(select(length > 0))')
+  git -C "$DS_INSTANCE_ROOT" update-ref "$(_contribute_carry_ref)" "$head" ||
+    die "cannot save the carried commits as $(_contribute_carry_ref)"
+  # shellcheck disable=SC2016 # jq variables
+  _contribute_set '.carry = {head: $head, remote: $remote, commits: $commits, applied: false}' \
+    --arg head "$head" --arg remote "$remote" --argjson commits "$commits"
+  git -C "$DS_INSTANCE_ROOT" reset --quiet --hard "$remote" ||
+    die "cannot reset the instance to origin/$branch; the carried commits are saved as $(_contribute_carry_ref)"
+  log "carrying $count unpublished instance commit(s) across the upgrade: saved as $(_contribute_carry_ref) (${head:0:12}); the upgrade starts from origin/$branch (${remote:0:12})"
+}
+
+# _contribute_carry_conflicts: the conflicted paths of the instance, one per
+# line.
+_contribute_carry_conflicts() {
+  git -C "$DS_INSTANCE_ROOT" diff --name-only --diff-filter=U
+}
+
+# _contribute_carry_apply UPGRADE_COMMIT: the carried commits applied again
+# on top of the upgrade commit (git cherry-pick, TZ=UTC; their messages and
+# authors kept). A conflict in the generated mirrors only is resolved with
+# the upgrade's mirrors, which sync regenerates next (a commit left empty by
+# that is dropped); any other conflict stops the upgrade with the
+# cherry-pick in progress, to be resolved by hand and continued with `git
+# cherry-pick --continue` before the upgrade runs again. A HEAD above the
+# upgrade commit with no cherry-pick in progress holds them.
+_contribute_carry_apply() {
+  local upgrade_commit=$1 head path paths count guard=0
+  local -a commits=() real=()
+  if git -C "$DS_INSTANCE_ROOT" rev-parse --verify --quiet CHERRY_PICK_HEAD >/dev/null ||
+    [[ -d $(git -C "$DS_INSTANCE_ROOT" rev-parse --absolute-git-dir)/sequencer ]]; then
+    die "carrying the instance commits stopped on a conflict in $DS_INSTANCE_ROOT: resolve it, git add the files and run 'git cherry-pick --continue' there (repeat until it is done; 'git cherry-pick --abort' starts the carry over), then run: $(_contribute_upgrade_command)"
+  fi
+  [[ $(contribute_state_read "$CT_RUN_ID" | jq -r '.carry.applied // false') != true ]] || return 0
+  head=$(git -C "$DS_INSTANCE_ROOT" rev-parse HEAD)
+  if [[ $head != "$upgrade_commit" ]]; then
+    git -C "$DS_INSTANCE_ROOT" merge-base --is-ancestor "$upgrade_commit" "$head" ||
+      die "the instance moved off the upgrade commit ${upgrade_commit:0:12} (HEAD ${head:0:12}); restore it, or end the run with: dotsteward contribute abort"
+    log "the carried commits are on top of the upgrade commit (${head:0:12})"
+  else
+    mapfile -t commits < <(contribute_state_read "$CT_RUN_ID" | jq -r '.carry.commits[]')
+    count=${#commits[@]}
+    if ((count)); then
+      log "carrying ${count} instance commit(s) onto the upgrade commit ${upgrade_commit:0:12}"
+      if ! (cd -- "$DS_INSTANCE_ROOT" && TZ=UTC git cherry-pick "${commits[@]}") </dev/null >/dev/null 2>&1; then
+        git -C "$DS_INSTANCE_ROOT" rev-parse --verify --quiet CHERRY_PICK_HEAD >/dev/null ||
+          die "git cherry-pick of the carried commits failed in $DS_INSTANCE_ROOT; they stay saved as $(_contribute_carry_ref)"
+        while git -C "$DS_INSTANCE_ROOT" rev-parse --verify --quiet CHERRY_PICK_HEAD >/dev/null; do
+          ((++guard <= 2 * count + 2)) ||
+            die "carrying the instance commits does not finish in $DS_INSTANCE_ROOT; finish the cherry-pick by hand ('git cherry-pick --continue', or --abort to start over), then run: $(_contribute_upgrade_command)"
+          paths=$(_contribute_carry_conflicts)
+          real=()
+          while IFS= read -r path; do
+            [[ -z $path || $path =~ $CONTRIBUTE_MIRROR_PATH ]] || real+=("$path")
+          done <<<"$paths"
+          if ((${#real[@]})) || { [[ -z $paths ]] && ! git -C "$DS_INSTANCE_ROOT" diff --cached --quiet; }; then
+            die "carrying the instance commit $(git -C "$DS_INSTANCE_ROOT" rev-parse --short=12 CHERRY_PICK_HEAD) conflicts with the upgrade in ${real[*]:-the instance}: resolve it in $DS_INSTANCE_ROOT, git add the files and run 'git cherry-pick --continue' (repeat until it is done; 'git cherry-pick --abort' starts the carry over), then run: $(_contribute_upgrade_command)"
+          fi
+          # Only generated mirrors conflict: the upgrade's stay, sync
+          # regenerates them from the carried changes next.
+          while IFS= read -r path; do
+            [[ -n $path ]] || continue
+            git -C "$DS_INSTANCE_ROOT" checkout --quiet HEAD -- "$path" 2>/dev/null ||
+              git -C "$DS_INSTANCE_ROOT" rm --quiet -f -- "$path"
+          done <<<"$paths"
+          # A commit left empty (its change is in the upgrade already) is
+          # dropped; any other one continues the sequence.
+          if git -C "$DS_INSTANCE_ROOT" diff --cached --quiet; then
+            (cd -- "$DS_INSTANCE_ROOT" && TZ=UTC git cherry-pick --skip) </dev/null >/dev/null 2>&1 || true
+          else
+            (cd -- "$DS_INSTANCE_ROOT" && TZ=UTC GIT_EDITOR=true git cherry-pick --continue) </dev/null >/dev/null 2>&1 || true
+          fi
+        done
+        [[ ! -d $(git -C "$DS_INSTANCE_ROOT" rev-parse --absolute-git-dir)/sequencer ]] ||
+          die "carrying the instance commits stopped in $DS_INSTANCE_ROOT: finish the cherry-pick by hand ('git cherry-pick --continue', or --abort to start over), then run: $(_contribute_upgrade_command)"
+      fi
+    fi
+  fi
+  _contribute_set '.carry.applied = true'
+}
+
+# _contribute_carry_finish: after the carried commits: sync (their mirrors
+# from the upgraded framework, folded into the last carried commit when
+# they changed) and the gate of the whole tree, which publish needs.
+_contribute_carry_finish() {
+  _contribute_pinned sync ||
+    _contribute_red "upgrade: dotsteward sync failed on the carried commits; fix them, then run: $(_contribute_upgrade_command)"
+  git -C "$DS_INSTANCE_ROOT" add -A
+  if ! git -C "$DS_INSTANCE_ROOT" diff --cached --quiet; then
+    (cd -- "$DS_INSTANCE_ROOT" && TZ=UTC git commit --quiet --amend --no-edit) </dev/null ||
+      _contribute_red "upgrade: cannot fold the synced mirrors into the last carried commit"
+    log "folded the synced mirrors into the last carried commit"
+  fi
+  _contribute_pinned gate --scope maintain ||
+    _contribute_red "upgrade: the gate failed on the carried commits; fix them (a new commit or an amend), then run: $(_contribute_upgrade_command)"
+}
+
+# --- upgrade ------------------------------------------------------------------------
+
 contribute_cmd_upgrade() {
-  local id="" tag_option="" build_only=0
+  local id="" tag_option="" build_only=0 main=0 carry=0
   while (($#)); do
     case $1 in
       --tag)
@@ -1087,6 +1498,8 @@ contribute_cmd_upgrade() {
         tag_option=$2
         shift
         ;;
+      --main) main=1 ;;
+      --carry) carry=1 ;;
       --build-only) build_only=1 ;;
       --id)
         need_value "$1" "$#" "${2:-}"
@@ -1102,42 +1515,80 @@ contribute_cmd_upgrade() {
     esac
     shift
   done
+  [[ -z $tag_option ]] || ((main == 0)) || die "--tag and --main exclude each other"
   contribute_load_config
   id=$(contribute_run_id "$id")
   _contribute_load_run "$id"
   case $CT_STEP in
-    upgrade) ;;
+    upgrade | release) ;;
     report | done)
       log "run $id already upgraded the instance: $(_contribute_get instance_commit)"
       return 0
       ;;
-    *) die "run $id is not released yet; next: $(_contribute_next_command "$CT_STEP")" ;;
+    *) die "run $id is not published yet; next: $(_contribute_next_command "$CT_STEP")" ;;
   esac
-  local tag merged commit
+  local tag merged commit recorded label version kind rev
   tag=$(_contribute_get tag)
   merged=$(_contribute_get merged_sha)
-  [[ -n $tag && -n $merged ]] || die "run $id has no release tag; run: dotsteward contribute release"
-  [[ -z $tag_option || $tag_option == "$tag" ]] || die "--tag $tag_option is not the release of run $id ($tag)"
+  recorded=$(_contribute_get upgrade_to)
+  if [[ $recorded == main ]]; then
+    [[ -z $tag_option ]] || die "the upgrade of run $id follows its merged commit on main; run: $(_contribute_upgrade_command)"
+    main=1
+  elif [[ -n $recorded ]] && ((main)); then
+    die "the upgrade of run $id moves the instance to $recorded; run: $(_contribute_upgrade_command)"
+  fi
+  [[ -n $(_contribute_get carry) ]] || [[ -z $(_contribute_get instance_base) ]] || ((carry == 0)) ||
+    die "the upgrade of run $id started without --carry; run: $(_contribute_upgrade_command)"
+  [[ -z $(_contribute_get carry) ]] || carry=1
   contribute_is_clone "$CT_CLONE" || die "the clone $CT_CLONE of run $id is missing"
-  commit=$(git -C "$CT_CLONE" rev-parse --verify --quiet "refs/tags/$tag^{commit}") ||
-    die "the tag $tag is missing in $CT_CLONE"
-  [[ $commit == "$merged" ]] || die "the tag $tag points at ${commit:0:12}, not at the merged commit ${merged:0:12}"
+  if ((main)); then
+    # K4: the instance may follow the main commit that this run's check and
+    # trial passed for (publish verified that main has its tree).
+    [[ -n $merged ]] || die "run $id has no merged commit; run: dotsteward contribute publish"
+    [[ -n $CT_TEST_SHA && $(_contribute_get trial_sha) == "$CT_TEST_SHA" ]] ||
+      die "the trial of run $id did not pass for its checked commit; the instance follows only a commit that passed check and trial"
+    git -C "$CT_CLONE" cat-file -e "$merged^{commit}" 2>/dev/null || contribute_fetch_main "$CT_CLONE" origin
+    [[ $(git -C "$CT_CLONE" rev-parse --verify --quiet "$merged^{tree}") == "$CT_TESTED_TREE" ]] ||
+      die "the merged commit ${merged:0:12} does not have the tested tree ${CT_TESTED_TREE:0:12}; the instance follows only a commit that passed check and trial"
+    commit=$merged
+    kind=rev
+    rev=$merged
+    label="main@${merged:0:12}"
+    version=$label
+  else
+    [[ $CT_STEP == upgrade && -n $tag ]] ||
+      die "run $id is not released; run: dotsteward contribute release (a release commit), or follow its merged commit with: dotsteward contribute upgrade --main"
+    [[ -n $merged ]] || die "run $id has no release tag; run: dotsteward contribute release"
+    [[ -z $tag_option || $tag_option == "$tag" ]] || die "--tag $tag_option is not the release of run $id ($tag)"
+    commit=$(git -C "$CT_CLONE" rev-parse --verify --quiet "refs/tags/$tag^{commit}") ||
+      die "the tag $tag is missing in $CT_CLONE"
+    [[ $commit == "$merged" ]] || die "the tag $tag points at ${commit:0:12}, not at the merged commit ${merged:0:12}"
+    kind=tag
+    rev=$tag
+    label=$tag
+    version=${tag#v}
+  fi
   contribute_is_clone "$DS_INSTANCE_ROOT" || die "the instance $DS_INSTANCE_ROOT is not the top of a git clone"
 
-  local profile fork="" base head instance_commit subject kind=full
-  ((build_only == 0)) || kind=build-only
+  local profile fork="" base head instance_commit upgrade_commit subject upgrade=full
+  ((build_only == 0)) || upgrade=build-only
   profile=$(_contribute_profile)
   if [[ $CT_RUN_MODE == fork ]]; then
     _contribute_remote_facts
     fork=$CT_FORK_SLUG
   fi
   instance_commit=$(_contribute_get instance_commit)
+  upgrade_commit=$(_contribute_get upgrade_commit)
   base=$(_contribute_get instance_base)
-  if [[ -z $instance_commit ]]; then
+  if [[ -z $instance_commit && -z $upgrade_commit ]]; then
     head=$(git -C "$DS_INSTANCE_ROOT" rev-parse HEAD)
     if [[ -z $base ]]; then
       ! _contribute_instance_dirty ||
         die "the instance $DS_INSTANCE_ROOT has uncommitted changes; commit or remove them before the upgrade"
+      _contribute_carry_prepare "$carry"
+      [[ -n $(_contribute_get carry) ]] || carry=0
+      # shellcheck disable=SC2016 # jq variables
+      _contribute_set '.upgrade_to = $to' --arg to "$(if ((main)); then printf main; else printf '%s' "$tag"; fi)"
     else
       [[ $head == "$base" ]] ||
         die "the instance moved since the upgrade started (HEAD ${head:0:12}, started at ${base:0:12}); restore it or start the upgrade over"
@@ -1149,24 +1600,33 @@ contribute_cmd_upgrade() {
       # shellcheck disable=SC2016 # jq variables
       _contribute_set '.instance_base = $base' --arg base "$base"
     fi
-    _contribute_set_framework_url "$tag" "$fork"
+    _contribute_set_framework_url "$kind" "$(if [[ $kind == tag ]]; then printf '%s' "$tag"; else printf '%s' "$merged"; fi)" "$fork"
     log "nix flake update dotsteward"
     nix_cmd flake update dotsteward --flake "$DS_INSTANCE_ROOT" </dev/null ||
       _contribute_red "upgrade: nix flake update dotsteward failed; the changes stay uncommitted, run upgrade again"
-    _contribute_verify_lock "$tag" "$commit"
-    _contribute_refresh_template "$tag"
+    _contribute_verify_lock "$kind" "$(if [[ $kind == tag ]]; then printf '%s' "$tag"; else printf '%s' "$merged"; fi)" "$commit" "$label"
+    _contribute_refresh_template "$rev" "$label"
     _contribute_pinned sync ||
       _contribute_red "upgrade: dotsteward sync failed; the changes stay uncommitted, run upgrade again"
     git -C "$DS_INSTANCE_ROOT" add -A
     _contribute_pinned gate --scope maintain ||
       _contribute_red "upgrade: the gate failed on the upgraded instance; the changes stay uncommitted (staged), nothing is published"
     if git -C "$DS_INSTANCE_ROOT" diff --cached --quiet; then
-      log "the instance already uses $tag"
+      log "the instance already uses $label"
     else
-      subject=${DS_COMMIT_UPGRADE_SUBJECT//\{version\}/${tag#v}}
+      subject=${DS_COMMIT_UPGRADE_SUBJECT//\{version\}/$version}
       git -C "$DS_INSTANCE_ROOT" commit --quiet -m "$subject" </dev/null ||
         _contribute_red "upgrade: git commit failed in the instance"
       log "committed: $subject"
+    fi
+    upgrade_commit=$(git -C "$DS_INSTANCE_ROOT" rev-parse HEAD)
+    # shellcheck disable=SC2016 # jq variables
+    _contribute_set '.upgrade_commit = $commit' --arg commit "$upgrade_commit"
+  fi
+  if [[ -z $instance_commit ]]; then
+    if ((carry)); then
+      _contribute_carry_apply "$upgrade_commit"
+      _contribute_carry_finish
     fi
     instance_commit=$(git -C "$DS_INSTANCE_ROOT" rev-parse HEAD)
     # shellcheck disable=SC2016 # jq variables
@@ -1192,17 +1652,20 @@ contribute_cmd_upgrade() {
     fi
   fi
   if [[ $instance_commit == "$base" ]]; then
-    log "nothing to publish: the instance's published commit ${base:0:12} already uses $tag"
+    log "nothing to publish: the instance's published commit ${base:0:12} already uses $label"
   else
     _contribute_pinned update publish --scope maintain --expected-base "$base" ||
       _contribute_red "upgrade: update publish failed; run upgrade again once it is fixed"
+  fi
+  if [[ -n $(_contribute_get carry) ]]; then
+    git -C "$DS_INSTANCE_ROOT" update-ref -d "$(_contribute_carry_ref)" 2>/dev/null || true
   fi
   if ((build_only)) && [[ $(_contribute_get trial_switched) == true ]]; then
     warn "the live generation still uses the trial framework (a build-only upgrade does not switch); switch to the upgraded instance with: dotsteward rebuild --profile $profile --switch"
   fi
   # shellcheck disable=SC2016 # jq variables
-  _contribute_set '.upgrade = $kind | .step = "report"' --arg kind "$kind"
-  log "upgraded the instance to $tag (${instance_commit:0:12}, $kind)"
+  _contribute_set '.upgrade = $kind | .step = "report"' --arg kind "$upgrade"
+  log "upgraded the instance to $label (${instance_commit:0:12}, $upgrade)"
   log "next: dotsteward contribute report"
 }
 
@@ -1230,6 +1693,11 @@ contribute_cmd_abort() {
   id=$(contribute_run_id "$id")
   _contribute_load_run "$id"
   [[ $CT_STEP != "done" ]] || die "run $id is already finished"
+  local carried
+  carried=$(contribute_state_read "$CT_RUN_ID" | jq -r 'if .carry and .instance_commit == null then .carry.head else empty end')
+  if [[ -n $carried ]]; then
+    log "the instance commits carried across the upgrade stay saved as $(_contribute_carry_ref) (${carried:0:12}); get them back with: git -C $DS_INSTANCE_ROOT reset --hard ${carried:0:12}"
+  fi
   _contribute_recover || die "abort stopped: the recovery did not finish; run abort again once the problem is fixed"
   _contribute_set '.step = "done" | .outcome = "aborted"'
   log "aborted run $id at step $CT_STEP"
@@ -1269,6 +1737,13 @@ contribute_cmd_report() {
   _contribute_load_run "$id"
   case $CT_STEP in
     report) _contribute_set '.step = "done" | .outcome = "completed"' ;;
+    release)
+      # Release trains: a run may end once it is published; a later release
+      # bundles it. After a trial switch the machine first returns to the
+      # instance's pinned framework, as abort does.
+      _contribute_recover || die "report stopped: the recovery did not finish; run report again once the problem is fixed"
+      _contribute_set '.step = "done" | .outcome = "completed"'
+      ;;
     done) ;;
     *) die "run $id has no report yet; next: $(_contribute_next_command "$CT_STEP")" ;;
   esac

@@ -108,4 +108,7 @@ and the newest tag is read first. Then the tag in `flake.nix` moves,
 `.dotsteward/cli.sh` are refreshed from the new release's `template/`,
 `dotsteward sync` runs, and the same single gate decides. A red gate leaves
 the instance on the old release. Framework skills move only with this step:
-they are never entries of the skills lock.
+they are never entries of the skills lock. An instance that follows a
+commit of the framework's `main` (`dotsteward contribute upgrade --main`)
+is `current` while that commit contains the newest release and `review`
+once a newer release exists; the upgrade then moves it to that release.

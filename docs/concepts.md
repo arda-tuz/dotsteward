@@ -116,7 +116,7 @@ scan), the pins check, `nix flake check` and the CLI probes of a built
 generation; a passed tree is remembered, so an unchanged tree is not proven
 twice. When the transaction also activated its tree on the machine
 (`rebuild --switch`), `update publish` requires a passing `dotsteward e2e`
-of that tree and generation, so a red E2E publishes nothing.
+of that tree, generation and profile, so a red E2E publishes nothing.
 
 A transaction has a **scope**: `update` (only pinned versions may change,
 within an allowlist of paths) or `maintain` (any change, with conventional

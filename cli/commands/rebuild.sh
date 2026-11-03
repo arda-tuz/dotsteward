@@ -24,9 +24,9 @@
 #      activation record <state>/current/activation.json (generation,
 #      profile, revision and tree of HEAD, root, framework override,
 #      activated_at; update publish then requires a passing E2E of that
-#      tree and generation), the generation's local-maintained-files apply,
-#      agents install, login shell migrate, and the check that the instance
-#      flake.lock is unchanged
+#      tree, generation and profile), the generation's
+#      local-maintained-files apply, agents install, login shell migrate,
+#      and the check that the instance flake.lock is unchanged
 # A framework override (--framework-override REF or
 # DOTSTEWARD_FRAMEWORK_OVERRIDE; the flag wins) builds with
 # --override-input <host_input>/dotsteward REF and the instance checkout's

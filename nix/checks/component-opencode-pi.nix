@@ -3,13 +3,14 @@
 # on x86_64-linux and aarch64-darwin, added to home.packages wherever the
 # component is active), the seed with the pins engine and the README
 # verification record, and the agents checks (Pi probes, OpenCode /skill
-# API, Pi RPC) end to end through the CLI against the stubs; then shellcheck
-# over the hooks and the tests, and ruff over the /skill API probe. The
-# tests evaluate Home Manager configurations and instances with
-# nix-instantiate against an isolated store, so the sandbox needs Nix itself
-# and the nixpkgs and home-manager sources; a setup hook exports their
-# paths. Building the Pi package itself is checks.<system>.pi of every
-# instance that enables the component (package.nix sets check = true).
+# API, Pi RPC, shadowed skills) end to end through the CLI against the stubs;
+# then shellcheck over the hooks and the tests, and ruff over the Python
+# probes (the /skill API probe and the shadow scan). The tests evaluate Home
+# Manager configurations and instances with nix-instantiate against an
+# isolated store, so the sandbox needs Nix itself and the nixpkgs and
+# home-manager sources; a setup hook exports their paths. Building the Pi
+# package itself is checks.<system>.pi of every instance that enables the
+# component (package.nix sets check = true).
 {
   self,
   pkgs,
@@ -39,8 +40,8 @@ cli.mkTestCheck {
   ];
   postCheck = ''
     shellcheck -x modules/components/opencode-pi/probes/*.sh tests/nix/components/opencode-pi/*.sh
-    probe=modules/components/opencode-pi/probes/opencode-skill-api.py
-    ruff check --no-cache --quiet --line-length 120 --select E,F,W,B,UP,SIM,RUF "$probe"
-    ruff format --no-cache --quiet --check --line-length 120 "$probe"
+    probes=(modules/components/opencode-pi/probes/*.py)
+    ruff check --no-cache --quiet --line-length 120 --select E,F,W,B,UP,SIM,RUF "''${probes[@]}"
+    ruff format --no-cache --quiet --check --line-length 120 "''${probes[@]}"
   '';
 }

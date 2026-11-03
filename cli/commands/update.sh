@@ -38,11 +38,11 @@
 #   machine (<state>/current/activation.json of rebuild --switch: its tree
 #   is the HEAD tree, or its revision a commit after the base), that tree
 #   is the HEAD tree and <state>/update/e2e.json records a passed E2E run
-#   of it and of the activated generation, with the repository checks
-#   (publishing without an activation needs no E2E record); the commit
-#   subjects (update scope: the last one is
-#   exactly commit.update_subject; maintain scope: every one after the base
-#   is a conventional commit); a fresh fetch (60 s) finds origin/<branch>
+#   of it, of the activated generation and of the activated profile, with
+#   the repository checks (publishing without an activation needs no E2E
+#   record); the commit subjects (update scope: the last one is exactly
+#   commit.update_subject; maintain scope: every one after the base is a
+#   conventional commit); a fresh fetch (60 s) finds origin/<branch>
 #   still at the base; HEAD is pushed to <branch> without force (180 s) and
 #   the remote branch is verified to be HEAD (60 s). When the fetch finds
 #   the remote branch already at HEAD, the commit is already published:

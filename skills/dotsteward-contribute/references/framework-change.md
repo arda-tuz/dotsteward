@@ -34,25 +34,28 @@ Nix checks are files too: `nix/checks/<name>.nix`, discovered by name; most wrap
 
 ## The release version
 
-Every fix is released as the next patch version, and `VERSION` is part of the fix: `publish` and `release` refuse a `VERSION` that differs from the tag they are about to create.
+`VERSION` holds the release the commits are based on, and changes only in a release commit. A fix or a feature keeps it: the next release bundles every commit since the last one (release trains). `publish` refuses a `VERSION` that is neither that base release nor exactly the next one.
 
-1. Find the newest release tag of the publish target; in fork mode list both `origin` and `upstream` and take the newest:
+When the run should end with a release (the user asks for one, or the change must reach other users now), add a release commit after the fix commit:
 
-   ```bash
-   git -C "$clone" ls-remote --tags --refs origin 'refs/tags/v*' | sed 's|.*refs/tags/v||' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1
-   ```
-
-2. The next release is that version with the patch number plus one; with no tag at all it is `v0.0.1`.
-3. Write the new version (without the `v`) into `VERSION`, then find every other file that carries the old version and move it too, for example the `dotsteward` tag of `template/flake.nix` and the plugin manifests:
+1. Fetch the release tags of the publish target, so the clone sees the newest release (in fork mode fetch the `upstream` remote as well):
 
    ```bash
-   git -C "$clone" grep -n -F "$(git -C "$clone" show HEAD:VERSION)"
+   git -C "$clone" fetch --quiet --tags origin
    ```
 
-   The framework gate (`nix flake check` in `check`) fails when a file that must follow `VERSION` was missed.
+2. Let the tool write the next version into `VERSION` and every copy of it (the plugin manifests, the marketplace and the `dotsteward` tag of `template/flake.nix`) and commit exactly those files as the release commit, `chore(release): X.Y.Z` with UTC dates:
+
+   ```bash
+   (cd "$clone" && bash tools/version.sh bump --commit)
+   ```
+
+   The next version follows semantic versioning from the conventional commits since the release the branch is based on, after the newest release tag: any `feat` makes the next minor, anything else the next patch; without any tag the history counts from `0.0.0`. A breaking change (`type!:` or a `BREAKING CHANGE:` footer) makes the next major, which only the user decides: the tool refuses it without `bash tools/version.sh bump --major --commit`, and the release then needs `dotsteward contribute release --major`.
+
+The copies of `VERSION` are never edited by hand: `bash tools/version.sh sync` writes them, and the framework gate fails on a stale one.
 
 ## Commits
 
-- Two commits on the run's branch: `test(<area>): ...` with the reproduction (it fails), then `fix(<area>): ...` or `feat(<area>): ...` with the change and the `VERSION` bump (it passes). Further fixes after a red gate, trial or CI are new commits; nothing is amended after `check` passed.
+- Two commits on the run's branch: `test(<area>): ...` with the reproduction (it fails), then `fix(<area>): ...` or `feat(<area>): ...` with the change (it passes), plus the `chore(release): X.Y.Z` release commit when the run ends with a release. Further fixes after a red gate, trial or CI are new commits; nothing is amended after `check` passed.
 - The identity is the one `dotsteward contribute setup` set in the clone: the GitHub login and its noreply address (`<id>+<login>@users.noreply.github.com`). Dates are UTC: always commit with `TZ=UTC git commit`.
 - Commit messages carry no attribution trailers: no co-author lines, no agent session links, no generated-by lines. The pre-push hook, CI and the framework gate refuse them.

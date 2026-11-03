@@ -1,27 +1,22 @@
 #!/usr/bin/env python3
 """The OpenCode /skill API probe of the opencode-pi component.
 
-Usage: opencode-skill-api.py HOME [SCOPED_STORE]
+Usage: opencode-skill-api.py
 
 Starts `opencode serve --pure` on a free loopback port, waits up to 20
 seconds for GET /skill, and prints the sorted JSON array of the names of the
-skills OpenCode lists from the canonical root HOME/.agents/skills (outside
-any .system subtree). OpenCode also reads other roots such as
-HOME/.claude/skills, whose entries link into the canonical root, and lists a
-name found in several roots once, from whichever root it loaded last; a
-listed location therefore counts when it resolves to a SKILL.md of the
-canonical root. A location that resolves to a SKILL.md of SCOPED_STORE
-(the store of skills scoped to some agents, linked from
-HOME/.config/opencode/skills) counts too. The server is always stopped (SIGTERM, then SIGKILL after 5
-seconds). On failure it prints "OpenCode skill catalog could not be
-verified: <reason>" and the tail of the server output to standard error and
-exits 1. Proxies are bypassed: the server is local.
+skills OpenCode lists. OpenCode reads several skill roots and lists a name
+found in more than one SKILL.md once, from whichever root it loaded last,
+so a name counts whatever location OpenCode chose; skill-shadows.py names
+the other files of an expected name. The server is always stopped (SIGTERM,
+then SIGKILL after 5 seconds). On failure it prints "OpenCode skill catalog
+could not be verified: <reason>" and the tail of the server output to
+standard error and exits 1. Proxies are bypassed: the server is local.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import socket
 import subprocess
 import sys
@@ -66,46 +61,17 @@ def stop(server: subprocess.Popen[str]) -> None:
         server.wait()
 
 
-def canonical_skills(root: str) -> set[str]:
-    """The resolved paths of the SKILL.md files below root, outside .system,
-    through directory links (each resolved directory is visited once)."""
-    found: set[str] = set()
-    seen: set[str] = set()
-    for directory, subdirectories, files in os.walk(root, followlinks=True):
-        real = os.path.realpath(directory)
-        if real in seen:
-            subdirectories[:] = []
-            continue
-        seen.add(real)
-        subdirectories[:] = [name for name in subdirectories if name != ".system"]
-        if "SKILL.md" in files:
-            found.add(os.path.realpath(os.path.join(directory, "SKILL.md")))
-    return found
-
-
-def shared_names(skills: object, home: str, store: str | None) -> list[str]:
+def listed_names(skills: object) -> list[str]:
+    """The sorted names of the skills of a GET /skill answer."""
     if not isinstance(skills, list):
         raise RuntimeError("GET /skill did not answer a list")
-    canonical = canonical_skills(os.path.join(home, ".agents", "skills"))
-    if store is not None and os.path.isdir(store):
-        canonical |= canonical_skills(store)
-    names = {
-        item["name"]
-        for item in skills
-        if isinstance(item, dict)
-        and isinstance(item.get("name"), str)
-        and isinstance(item.get("location"), str)
-        and os.path.realpath(item["location"]) in canonical
-    }
-    return sorted(names)
+    return sorted({item["name"] for item in skills if isinstance(item, dict) and isinstance(item.get("name"), str)})
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) not in (2, 3):
-        print("usage: opencode-skill-api.py HOME [SCOPED_STORE]", file=sys.stderr)
+    if len(argv) != 1:
+        print("usage: opencode-skill-api.py", file=sys.stderr)
         return 2
-    home = argv[1]
-    store = argv[2] if len(argv) == 3 else None
     port = free_port()
     with tempfile.TemporaryFile(mode="w+t") as log:
         server = subprocess.Popen(
@@ -116,7 +82,7 @@ def main(argv: list[str]) -> int:
             text=True,
         )
         try:
-            names = shared_names(fetch_skills(port, server), home, store)
+            names = listed_names(fetch_skills(port, server))
         except Exception as error:  # every failure is reported the same way
             stop(server)
             log.seek(0)

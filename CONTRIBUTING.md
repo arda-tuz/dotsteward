@@ -60,7 +60,10 @@ scanner, the denylist and the CI checks.
   discovered by `nix/outputs.nix` ([docs/component-contract.md](docs/component-contract.md)).
 - Generated files are regenerated, never edited by hand: `docs/cli.md`,
   `docs/catalog.md` and `docs/components/` by `tools/gen-docs.sh`,
-  `skills/manifest.json` by `tools/gen-skills-manifest.sh`.
+  `skills/manifest.json` by `tools/gen-skills-manifest.sh`, the copies of
+  `VERSION` (plugin manifests, marketplace, `template/flake.nix`) by
+  `tools/version.sh sync`. `VERSION` changes only in a release commit
+  (`tools/version.sh bump`, see [docs/contribute.md](docs/contribute.md)).
 
 ## Tests
 

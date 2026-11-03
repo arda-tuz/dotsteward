@@ -61,30 +61,54 @@
 #                           --framework-override git+file://<clone>?rev=<the
 #                           checked commit>; --build-only: gate and rebuild
 #                           --build-only (no switch, no e2e). Red: nothing is
-#                           published and a trial switch is recovered
+#                           published and a trial switch is recovered. An
+#                           instance HEAD ahead of origin (commits that wait
+#                           for the fix): e2e, and the recovery's, checks
+#                           the remote against origin's commit
+#                           (--expected-remote-base)
 #   publish [--pr-to-upstream]
 #                           owner: push fix/SLUG, open (or reuse) the pull
-#                           request, wait for its checks (a build-only trial
-#                           also needs clean-install.yml green on the
-#                           commit, dispatched on the branch when missing),
+#                           request, wait for its lint and privacy checks
+#                           only (lint of ci.yml, generic of privacy.yml;
+#                           the full check runs on main after the merge; a
+#                           build-only trial also needs clean-install.yml
+#                           green on the commit, dispatched on the branch
+#                           when missing),
 #                           merge by fast-forwarding main to the checked
 #                           commit (never a merge made by GitHub) and
 #                           verify the merged tree is the tested tree; fork:
 #                           push, the fork's CI, fast-forward the fork's
 #                           main, an upstream pull request only with
 #                           upstream.pr_to_upstream or --pr-to-upstream.
-#                           VERSION of the checked commit must equal the
-#                           next release before anything is pushed and
-#                           again before the merge. Upstream main moved: the
+#                           VERSION of the checked commit must be the
+#                           release its commits are based on (the run
+#                           releases nothing: release trains) or exactly the
+#                           next release (a release commit, tools/version.sh
+#                           bump), before anything is pushed and again
+#                           before the merge. Upstream main moved: the
 #                           branch is rebased and the run goes back to check
 #                           (exit 5); so does a tree mismatch after the
 #                           merge, with the branch on the merged main
-#   release                 the next patch tag (newest v* tag + 1, v0.0.1
-#                           without one; VERSION of the merged commit must
-#                           equal it) as an annotated tag on the merged
-#                           commit, pushed; owner: gh release create
-#                           --generate-notes --verify-tag
-#   upgrade [--tag TAG] [--build-only]
+#   release [--major]       the release that VERSION of the merged commit
+#                           names, when it is the next one: after the newest
+#                           v* tag, as the conventional commits since the
+#                           release they are based on decide (any feat: the
+#                           next minor, else the next patch; from 0.0.0
+#                           without a tag; a breaking change: the next
+#                           major, cut only with --major). Nothing pending
+#                           (VERSION still the base release) is refused:
+#                           report ends the run at publish. An annotated
+#                           tag on the merged commit, pushed once main's CI
+#                           (ci.yml with the full check, privacy.yml) is
+#                           green on that commit, waited for as publish
+#                           waits; owner: gh release create --notes-file
+#                           (the commits since the previous release under
+#                           Features, Fixes and Other) --verify-tag. A
+#                           release tag already on the merged commit (cut by
+#                           release.yml first) is recorded as the run's
+#                           release once main's CI is green, its GitHub
+#                           release created when missing
+#   upgrade [--tag TAG | --main] [--carry] [--build-only]
 #                           the instance to the release: update prepare
 #                           --scope maintain, the dotsteward input of
 #                           flake.nix, nix flake update dotsteward,
@@ -93,13 +117,30 @@
 #                           commit.upgrade_subject ({version}: TAG without
 #                           v), rebuild --switch and e2e (--build-only:
 #                           rebuild --build-only), update publish --scope
-#                           maintain; re-runnable
+#                           maintain; re-runnable. --main (right after
+#                           publish too): the merged commit instead, the
+#                           one check and trial passed for, pinned by its
+#                           revision on the same repository URL
+#                           ({version}: main@<12-digit commit>). An instance
+#                           whose HEAD has commits that origin lacks is
+#                           refused; --carry saves them, resets the instance
+#                           to origin, upgrades, applies them again on top
+#                           (a conflict outside the generated mirrors stops
+#                           with the cherry-pick in progress: resolve it,
+#                           git cherry-pick --continue, then upgrade again),
+#                           syncs and gates the whole tree, and publishes
+#                           them with the upgrade
 #   abort                   ends the run; after a trial switch it first runs
 #                           the recovery: rebuild --switch and e2e without
 #                           an override, back to the pinned framework
 #   report [--json]         the run's result (pull request, merged commit,
-#                           release, instance commit, tests); ends the run
-#   status [--json]         the run's state (--json: the state document)
+#                           release, instance commit, tests); ends the run,
+#                           also at step release (a run that ends at
+#                           publish), after the recovery of a trial switch
+#   status [--json]         the run's state (--json: the state document);
+#                           once merged_sha is set also main_ci, main's CI
+#                           for the merged commit read now: {sha, state
+#                           (pending, green, red or unknown), url, runs}
 # Options of the steps that use a run (check, status and the remote steps):
 #   --id ID                 that run instead of the current one
 #
@@ -107,11 +148,12 @@
 # directory), id = <UTC timestamp>-<slug>, with the fields id, slug, mode,
 # clone, branch, base_sha, test_sha, tested_tree, trial_switched, pr,
 # merged_sha, tag, instance_commit and step, plus profile, trial, trial_sha,
-# upgrade, instance_base, recovery and outcome from the remote steps (see
-# cli/lib/contribute-remote.sh); <state root>/contribute/current
-# holds the current run's id. step is the next step of the run: reproduce,
-# fix, check, trial, publish, release, upgrade, report or done; every step
-# reads and updates the file, so an interrupted run resumes at step.
+# upgrade, upgrade_to, instance_base, upgrade_commit, carry, recovery and
+# outcome from the remote steps (see cli/lib/contribute-remote.sh);
+# <state root>/contribute/current holds the current run's id. step is the
+# next step of the run: reproduce, fix, check, trial, publish, release,
+# upgrade, report or done; every step reads and updates the file, so an
+# interrupted run resumes at step.
 #
 # Privacy: the denylist is ~/.config/dotsteward/denylist.txt, the file the
 # pre-push hook reads; check needs it in both modes. Findings are always
@@ -294,13 +336,20 @@ contribute_cmd_status() {
   id=$(contribute_run_id "$id")
   local document
   document=$(contribute_state_read "$id")
+  # Once the run has a merged commit: main's CI for it, read now
+  # (cli/lib/contribute-remote.sh).
+  if [[ -n $(jq -r '.merged_sha // empty' <<<"$document") ]] && declare -F contribute_main_ci_json >/dev/null; then
+    document=$(jq -c --argjson ci "$(contribute_main_ci_json "$id")" '. + {main_ci: $ci}' <<<"$document")
+  fi
   if ((json)); then
     jq --indent 2 . <<<"$document"
     return 0
   fi
   log "contribute run $id"
   jq -r 'to_entries[] | select(.key != "id")
-    | "  \(.key): \(.value | if type == "string" then . else tojson end)"' <<<"$document"
+    | if .key == "main_ci" then
+        "  main_ci: \(.value.state)\(if .value.url then " \(.value.url)" else "" end)\(if .value.reason then " (\(.value.reason))" else "" end)"
+      else "  \(.key): \(.value | if type == "string" then . else tojson end)" end' <<<"$document"
 }
 
 # --- dispatch -----------------------------------------------------------------------
