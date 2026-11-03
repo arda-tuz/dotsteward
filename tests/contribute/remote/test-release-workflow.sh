@@ -33,13 +33,24 @@ land() {
   git -C "$work" push -q origin HEAD:main
 }
 
-# release_ci [ARG...]: the workflow's step on upstream main, freshly fetched
+# checkout_main: the workflow's checkout of upstream main, freshly fetched
 # with its tags as actions/checkout does.
-release_ci() {
+checkout_main() {
   git -C "$checkout" fetch -q --tags origin main
   git -C "$checkout" checkout -q --detach FETCH_HEAD
+}
+
+# cut_release [ARG...]: the workflow's step on its checkout as it is.
+cut_release() {
   "$DS_REPO_ROOT/tools/version.sh" release --root "$checkout" --repo "$CT_UPSTREAM_SLUG" \
     --rev "$(git -C "$checkout" rev-parse HEAD)" "$@"
+}
+
+# release_ci [ARG...]: the workflow's step on upstream main, freshly checked
+# out.
+release_ci() {
+  checkout_main
+  cut_release "$@"
 }
 
 releases() {
@@ -148,3 +159,40 @@ assert_contains "$DS_STDOUT" "[version] released v1.0.1 at ${sha:0:12}"
 assert_eq "$sha" "$(git -C "$ct_upstream_bare" rev-parse 'refs/tags/v1.0.1^{commit}')" "the tag is kept"
 assert_eq "## Fixes"$'\n\n'"- cli: a fourth fix ($(git -C "$checkout" log -1 --format=%h HEAD^))"$'\n\n'"## Other"$'\n\n'"- release: 1.0.1 ($(git -C "$checkout" log -1 --format=%h HEAD))" \
   "$(cat "$rt_hub/releases/${CT_UPSTREAM_SLUG//\//_}_v1.0.1.notes")" "notes since the release before"
+
+# --- a GitHub release that `dotsteward contribute release` created meanwhile --------------------
+
+# A run's `dotsteward contribute release` cuts the same release once main's
+# CI is green: it pushes its tag (an annotated one) and creates the GitHub
+# release, here after the workflow's checkout and between the workflow's
+# look for the release and its own create, which then fails as GitHub does.
+# A release whose tag names the workflow's commit is the release: the
+# workflow is green, creates no second release and dispatches nothing (the
+# run's tag push started channels.yml and macos-smoke.yml).
+land "fix(cli): a fifth fix"
+land "chore(release): 1.0.2" 1.0.2
+sha=$(git -C "$ct_upstream_bare" rev-parse refs/heads/main)
+checkout_main
+git -C "$ct_upstream_bare" tag -a v1.0.2 -m "dotsteward v1.0.2" "$sha"
+hub_knob release-race true
+reset_calls
+assert_exit 0 cut_release
+assert_contains "$DS_STDOUT" "[version] the release v1.0.2 exists at ${sha:0:12}: it was created meanwhile"
+assert_not_contains "$DS_STDOUT" "[version] released v1.0.2"
+assert_call_count 1 gh "release create v1.0.2 --repo $CT_UPSTREAM_SLUG --target $sha *"
+assert_call_count 0 gh 'workflow run *'
+assert_eq tag "$(git -C "$ct_upstream_bare" cat-file -t refs/tags/v1.0.2)" "the run's tag stays"
+[[ ! -e $rt_hub/knobs/release-race ]] || ds_fail "the workflow did not try to create the release"
+
+# The same race with the run's tag on another commit: red, nothing more.
+land "fix(cli): a sixth fix"
+land "chore(release): 1.0.3" 1.0.3
+sha=$(git -C "$ct_upstream_bare" rev-parse refs/heads/main)
+other=$(git -C "$ct_upstream_bare" rev-parse "$sha^")
+checkout_main
+git -C "$ct_upstream_bare" tag -a v1.0.3 -m "dotsteward v1.0.3" "$other"
+hub_knob release-race true
+reset_calls
+assert_exit 1 cut_release
+assert_contains "$DS_STDERR" "[version] ERROR: gh release create v1.0.3 failed: the release v1.0.3 exists, but its tag names ${other:0:12}, not ${sha:0:12}"
+assert_call_count 0 gh 'workflow run *'

@@ -31,8 +31,15 @@
 #                  create --target: a lightweight tag on COMMIT (default:
 #                  the commit of that run) and its GitHub release (once)
 #   release-race   any value: the next `release create` finds the GitHub
-#                  release that the release workflow created just before,
-#                  and fails as GitHub does (once)
+#                  release that the other side created just before (the
+#                  release workflow, or `dotsteward contribute release` for
+#                  the workflow's `tools/version.sh release`), and fails as
+#                  GitHub does (once)
+#   runs-flaky     a count: the next that many listings of workflow runs
+#                  (api -X GET repos/R/actions/runs) fail as gh does while
+#                  the network is down (it cannot connect to GitHub)
+#   run-flaky      a count: the next that many reads of a workflow run by id
+#                  (api repos/R/actions/runs/ID) fail the same way
 #   clean-install  conclusion of a dispatched clean-install.yml run
 #                  (default success)
 #   ci-moves-main  a file name: while the checks run (at the green
@@ -54,7 +61,8 @@
 # Supported commands (--jq/-q FILTER is applied to the JSON answer):
 #   auth status; api user; config get git_protocol; api repos/R;
 #   api repos/R/actions/permissions; api -X GET repos/R/actions/runs
-#   -f head_sha=S ...; api repos/R/actions/runs/ID; workflow run W -R R
+#   -f head_sha=S ...; api repos/R/actions/runs/ID; api repos/R/commits/REF
+#   (the commit REF names, a tag peeled, as {sha}); workflow run W -R R
 #   --ref B; pr list -R R --head B ...; pr create -R R --base main --head
 #   [OWNER:]B --title T --body B; pr view URL; pr checks URL --json FIELDS
 #   (name, workflow, event, bucket); pr merge URL --squash --match-head-commit SHA (a merge
@@ -257,6 +265,11 @@ consume() {
 }
 stale_head=1111111111111111111111111111111111111111
 
+# network_down: fails as gh does when it cannot connect to GitHub.
+network_down() {
+  fail $'error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com'
+}
+
 case "${1:-} ${2:-}" in
   "auth status")
     [[ $(knob logged-out false) != true ]] || fail "You are not logged into any GitHub hosts. To log in, run: gh auth login"
@@ -272,6 +285,9 @@ case "${1:-} ${2:-}" in
     path=$4
     [[ $path =~ ^repos/([^/]+/[^/]+)/actions/runs$ ]] || fail "fake gh: unsupported: $*"
     repo=${BASH_REMATCH[1]}
+    if consume runs-flaky; then
+      network_down
+    fi
     sha=""
     for ((i = 0; i < ${#args[@]}; i++)); do
       if [[ ${args[i]} == -f && ${args[i + 1]} == head_sha=* ]]; then
@@ -290,6 +306,11 @@ case "${1:-} ${2:-}" in
       jq -n --argjson enabled "$(knob actions true)" '{enabled: $enabled}' | answer
     elif [[ $path =~ ^repos/([^/]+/[^/]+)/actions/runs/([0-9]+)$ ]]; then
       file=$hub/runs/${BASH_REMATCH[2]}.json
+      # A failed read changes nothing: no pending read is counted down and
+      # no release workflow runs.
+      if consume run-flaky; then
+        network_down
+      fi
       [[ -f $file ]] || fail "gh: Not Found (HTTP 404)"
       if [[ $(jq -r '.synthetic // ""' "$file") == main ]]; then
         # main's CI concludes once main-ci-pending ran out.
@@ -302,6 +323,12 @@ case "${1:-} ${2:-}" in
       else
         answer <"$file"
       fi
+    elif [[ $path =~ ^repos/([^/]+/[^/]+)/commits/(.+)$ ]]; then
+      ref=${BASH_REMATCH[2]}
+      bare=$(bare_of "${BASH_REMATCH[1]}") || fail "gh: Not Found (HTTP 404)"
+      commit=$(git -C "$bare" rev-parse --verify --quiet "$ref^{commit}") ||
+        fail "gh: No commit found for SHA: $ref (HTTP 422)"
+      jq -n --arg sha "$commit" '{sha: $sha}' | answer
     elif [[ $path =~ ^repos/([^/]+/[^/]+)$ ]]; then
       bare_of "${BASH_REMATCH[1]}" >/dev/null || fail "gh: Not Found (HTTP 404)"
       jq -n --arg slug "${BASH_REMATCH[1]}" --argjson push "$(knob push true)" \

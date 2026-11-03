@@ -29,7 +29,10 @@
 #   codex_hermetic_path     drops every PATH directory that holds a codex or
 #                           local-maintained-files command of the host, then
 #                           puts DS_TEST_ROOT/tools first: a stand-in for the
-#                           local-maintained-files alias core requires
+#                           local-maintained-files alias core requires, and
+#                           a sleep that only appends its argument to
+#                           DS_TEST_ROOT/tools/sleep.log, so the pauses of
+#                           the plugins hook cost no time
 #   codex_home_state        a listing of HOME (paths, types, modes and file
 #                           digests) for no-change comparisons
 
@@ -113,7 +116,13 @@ codex_hermetic_path() {
   done
   mkdir -p "$tools"
   printf '#!%s\nexit 0\n' "$BASH" >"$tools/local-maintained-files"
-  chmod 0755 "$tools/local-maintained-files"
+  {
+    printf '#!%s\n' "$BASH"
+    printf 'log=%q\n' "$tools/sleep.log"
+    # shellcheck disable=SC2016 # a line of the stand-in
+    printf '%s\n' 'printf "%s\n" "$*" >>"$log"'
+  } >"$tools/sleep"
+  chmod 0755 "$tools/local-maintained-files" "$tools/sleep"
   PATH="$tools:${kept[*]}"
   export PATH
   hash -r
