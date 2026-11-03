@@ -75,7 +75,7 @@ leaves it in place: it is user data, not a Home Manager link.
 - Probe: `herdr --version` must run (presence).
 - E2E: `herdr` is a required command, and when the `shell` component is
   enabled, the hook `herdr-login-zsh` checks that an interactive login zsh
-  finds `herdr` on `PATH`.
+  finds `herdr` on `PATH`. It only reads, so it is declared parallel.
 
 ## Pins
 

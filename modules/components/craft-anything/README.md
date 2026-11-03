@@ -28,7 +28,7 @@ The pin holds `minimum_version`, `url`, `size` and `sha256`; the URL is the asse
 | Check | What it verifies |
 | --- | --- |
 | commands | `craft-anything` and `craft-anything-cli` are on `PATH` |
-| E2E `package` (every profile) | the installed `craft-anything` is at least `minimum_version`, the package ships its desktop entry, `craft-anything-cli --version` answers, and `apt-cache policy craft-anything` shows the local APT bridge |
+| E2E `package` (every profile, parallel) | the installed `craft-anything` is at least `minimum_version`, the package ships its desktop entry, `craft-anything-cli --version` answers, and `apt-cache policy craft-anything` shows the local APT bridge |
 
 ## Verification (catalog facts)
 

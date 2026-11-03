@@ -6,7 +6,16 @@
 #   1. guards: flags, profile, identity, a host-flake-safe checkout that is
 #      the root of a clean git repository (untracked files refused: Nix does
 #      not see them), the instance flake.lock; nothing is written before
-#   2. host overrides in <state>/host-overrides: profile.nix (the runtime
+#   2. the hand-off: when <state>/update/generation.json (written by a
+#      passing `dotsteward gate`; a private regular file of the user) names
+#      the tree of HEAD, PROFILE, the primary system, the runtime $USER and
+#      $HOME, the same framework override and this checkout, and its
+#      generation is a store path itself (no path inside or outside one)
+#      that `nix path-info` knows and that has an activate script, that
+#      generation is used as built: no evaluation, no build, and the host
+#      overrides are left as they are; otherwise steps 2a and 3 run as
+#      without the record
+#  2a. host overrides in <state>/host-overrides: profile.nix (the runtime
 #      $USER and $HOME), flake.nix (input [compat] host_input of
 #      type git+file:, the committed tree that the gate builds as well,
 #      without the .git directory, with shallow=1 for a shallow clone, and
@@ -16,8 +25,8 @@
 #      inventory.json changed, the last run used a framework override or
 #      flake.nix changed
 #   3. inventory.json, the build (never updating a lock file), the records
-#      <state>/current/last-built-activation and <state>/current/profile;
-#      --build-only stops here
+#      <state>/current/last-built-activation and <state>/current/profile
+#      (written for a reused generation too); --build-only stops here
 #   4. preActivate hooks of the built generation's manifest, the previous
 #      generation capture (once; ABSENT when no Home Manager generation
 #      exists), adoption of the manifest's adopt paths, activate, the
@@ -25,8 +34,11 @@
 #      profile, revision and tree of HEAD, root, framework override,
 #      activated_at; update publish then requires a passing E2E of that
 #      tree, generation and profile), the generation's
-#      local-maintained-files apply, agents install, login shell migrate,
-#      and the check that the instance flake.lock is unchanged
+#      local-maintained-files apply, agents install --skip-validation (the
+#      agent tools are checked by `dotsteward e2e`, which follows the
+#      rebuild in every transaction, so their validation runs once), login
+#      shell migrate, and the check that the instance flake.lock is
+#      unchanged
 # A framework override (--framework-override REF or
 # DOTSTEWARD_FRAMEWORK_OVERRIDE; the flag wins) builds with
 # --override-input <host_input>/dotsteward REF and the instance checkout's
@@ -49,11 +61,15 @@ Usage: dotsteward rebuild --profile PROFILE --switch|--build-only
                           [--framework-override REF]
 
 Builds the Home Manager generation of PROFILE for the running user and home
-through the machine's host flake (<state>/host-overrides). --build-only
+through the machine's host flake (<state>/host-overrides), or reuses the
+generation a passing gate built for the same tree, profile, user, home
+and framework override (<state>/update/generation.json). --build-only
 stops after the build and changes nothing outside the state directory.
 --switch then runs the preActivate hooks, adopts the declared files,
 activates the generation, applies the tracked settings, installs the agent
-tools and moves a versioned login shell to the stable path.
+tools and moves a versioned login shell to the stable path. The agent
+tools are installed without their validation: `dotsteward e2e` checks
+them, so run it after the rebuild.
 
   --profile PROFILE          a profile of the instance (required)
   --switch                   activate the built generation
@@ -187,27 +203,61 @@ write_private() {
   chmod 0600 -- "$1"
 }
 
-# --- Host overrides and the host input lock -------------------------------
+# --- The hand-off from the gate --------------------------------------------
 
 state=$(state_root)
 override_dir=$state/host-overrides
 current_state_dir=$state/current
+store_dir=${NIX_STORE_DIR:-/nix/store}
+
+# reusable_generation: the generation the gate recorded for exactly this
+# rebuild, else nothing (see the header).
+reusable_generation() {
+  local file record tree generation name
+  file=$(txn_generation_file)
+  txn_private_file "$file" || return 0
+  record=$(txn_json_object "$file")
+  [[ -n $record ]] || return 0
+  tree=$(git -C "$repo_path" rev-parse "$canonical_revision^{tree}") || return 0
+  generation=$(jq -r --arg tree "$tree" --arg profile "$profile" --arg system "$DS_NIX_PRIMARY_SYSTEM" \
+    --arg user "$USER" --arg home "$HOME" --arg override "$framework_override" --arg root "$repo_path" '
+    select(.schema_version == "1.0" and .tree_oid == $tree and .profile == $profile and .system == $system
+      and .username == $user and .home == $home and .root == $root
+      and .framework_override == (if $override == "" then null else $override end))
+    | .generation | strings' <<<"$record") || return 0
+  name=${generation#"$store_dir"/}
+  [[ $generation == "$store_dir"/* && $name =~ ^[0-9a-z]{32}-[^/]+$ ]] || return 0
+  [[ -d $generation && ! -L $generation && -x $generation/activate ]] || return 0
+  nix_cmd path-info -- "$generation" >/dev/null 2>&1 || return 0
+  printf '%s\n' "$generation"
+}
+
 ensure_private_dir "$state" || die "cannot create the state directory: $state"
-ensure_private_dir "$override_dir" || die "cannot create the host overrides directory: $override_dir"
 ensure_private_dir "$current_state_dir" || die "cannot create the state directory: $current_state_dir"
+activation_path=$(reusable_generation)
 
-inventory=$override_dir/inventory.json
-host_lock=$override_dir/flake.lock
-previous_revision=''
-previous_repo=''
-previous_override=''
-if [[ -f $inventory ]] && jq -e . "$inventory" >/dev/null 2>&1; then
-  previous_revision=$(jq -r '.canonical_revision // empty' "$inventory")
-  previous_repo=$(jq -r '.canonical_repo // empty' "$inventory")
-  previous_override=$(jq -r '.framework_override // empty' "$inventory")
-fi
+# --- Host overrides and the host input lock -------------------------------
 
-write_private "$override_dir/profile.nix" <<EOF
+# build_generation: steps 2a and 3 (the host overrides, the host input
+# lock, inventory.json and the build); sets activation_path.
+build_generation() {
+  local inventory host_lock previous_revision previous_repo previous_override host_flake
+  local host_flake_changed
+  local -a build_args=()
+  ensure_private_dir "$override_dir" || die "cannot create the host overrides directory: $override_dir"
+
+  inventory=$override_dir/inventory.json
+  host_lock=$override_dir/flake.lock
+  previous_revision=''
+  previous_repo=''
+  previous_override=''
+  if [[ -f $inventory ]] && jq -e . "$inventory" >/dev/null 2>&1; then
+    previous_revision=$(jq -r '.canonical_revision // empty' "$inventory")
+    previous_repo=$(jq -r '.canonical_repo // empty' "$inventory")
+    previous_override=$(jq -r '.framework_override // empty' "$inventory")
+  fi
+
+  write_private "$override_dir/profile.nix" <<EOF
 {
   username = "$USER";
   homeDirectory = "$HOME";
@@ -215,8 +265,8 @@ write_private "$override_dir/profile.nix" <<EOF
 }
 EOF
 
-host_flake=$(
-  cat <<EOF
+  host_flake=$(
+    cat <<EOF
 {
   inputs.$host_input.url = "$instance_url${instance_query:+?$instance_query}";
 
@@ -229,67 +279,74 @@ host_flake=$(
     };
 }
 EOF
-)
-# A changed host flake (another input, or the path: input of an older
-# release) needs a new lock even at the same revision.
-host_flake_changed=0
-if [[ ! -f $override_dir/flake.nix || $(<"$override_dir/flake.nix") != "$host_flake" ]]; then
-  host_flake_changed=1
-fi
-printf '%s\n' "$host_flake" | write_private "$override_dir/flake.nix"
-
-if [[ -n $framework_override ]]; then
-  log "framework override $framework_override: the host input lock is not refreshed"
-else
-  if [[ -f $host_lock ]]; then
-    if [[ $previous_revision != "$canonical_revision" || $previous_repo != "$repo_path" || -n $previous_override ]]; then
-      log "instance source changed; refreshing the host input lock"
-      nix_cmd flake update "$host_input" --flake "$override_dir"
-    elif ((host_flake_changed)); then
-      log "host flake changed; refreshing the host input lock"
-      nix_cmd flake update "$host_input" --flake "$override_dir"
-    else
-      log "instance source unchanged; keeping the host input lock"
-    fi
-  else
-    log "creating the host input lock"
-    nix_cmd flake lock "$override_dir"
-  fi
-  [[ -f $host_lock ]] || die "the host input lock was not written: $host_lock"
-  chmod 0600 -- "$host_lock"
-fi
-
-jq -n \
-  --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  --arg username "$USER" \
-  --arg home "$HOME" \
-  --arg profile "$profile" \
-  --arg repo "$repo_path" \
-  --arg revision "$canonical_revision" \
-  --arg override "$framework_override" \
-  '{schema_version: "1.0", generated_at: $generated_at, username: $username, home: $home,
-    profile: $profile, canonical_repo: $repo, canonical_revision: $revision,
-    tracked_repo_mutation: false,
-    framework_override: (if $override == "" then null else $override end)}' |
-  write_private "$inventory"
-assert_instance_lock_unchanged
-
-# --- Build and records ----------------------------------------------------
-
-build_args=("$override_dir#homeConfigurations.current.activationPackage" --no-link)
-if [[ -n $framework_override ]]; then
-  build_args+=(
-    --override-input "$host_input" "$instance_url?rev=$canonical_revision${instance_query:+&$instance_query}"
-    --override-input "$host_input/dotsteward" "$framework_override"
-    --no-write-lock-file
   )
-else
-  build_args+=(--no-update-lock-file)
-fi
-build_args+=(--print-out-paths)
+  # A changed host flake (another input, or the path: input of an older
+  # release) needs a new lock even at the same revision.
+  host_flake_changed=0
+  if [[ ! -f $override_dir/flake.nix || $(<"$override_dir/flake.nix") != "$host_flake" ]]; then
+    host_flake_changed=1
+  fi
+  printf '%s\n' "$host_flake" | write_private "$override_dir/flake.nix"
 
-log "building the Home Manager activation package"
-activation_path=$(nix_cmd build "${build_args[@]}")
+  if [[ -n $framework_override ]]; then
+    log "framework override $framework_override: the host input lock is not refreshed"
+  else
+    if [[ -f $host_lock ]]; then
+      if [[ $previous_revision != "$canonical_revision" || $previous_repo != "$repo_path" || -n $previous_override ]]; then
+        log "instance source changed; refreshing the host input lock"
+        nix_cmd flake update "$host_input" --flake "$override_dir"
+      elif ((host_flake_changed)); then
+        log "host flake changed; refreshing the host input lock"
+        nix_cmd flake update "$host_input" --flake "$override_dir"
+      else
+        log "instance source unchanged; keeping the host input lock"
+      fi
+    else
+      log "creating the host input lock"
+      nix_cmd flake lock "$override_dir"
+    fi
+    [[ -f $host_lock ]] || die "the host input lock was not written: $host_lock"
+    chmod 0600 -- "$host_lock"
+  fi
+
+  jq -n \
+    --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg username "$USER" \
+    --arg home "$HOME" \
+    --arg profile "$profile" \
+    --arg repo "$repo_path" \
+    --arg revision "$canonical_revision" \
+    --arg override "$framework_override" \
+    '{schema_version: "1.0", generated_at: $generated_at, username: $username, home: $home,
+      profile: $profile, canonical_repo: $repo, canonical_revision: $revision,
+      tracked_repo_mutation: false,
+      framework_override: (if $override == "" then null else $override end)}' |
+    write_private "$inventory"
+  assert_instance_lock_unchanged
+
+  # --- Build and records ----------------------------------------------------
+
+  build_args=("$override_dir#homeConfigurations.current.activationPackage" --no-link)
+  if [[ -n $framework_override ]]; then
+    build_args+=(
+      --override-input "$host_input" "$instance_url?rev=$canonical_revision${instance_query:+&$instance_query}"
+      --override-input "$host_input/dotsteward" "$framework_override"
+      --no-write-lock-file
+    )
+  else
+    build_args+=(--no-update-lock-file)
+  fi
+  build_args+=(--print-out-paths)
+
+  log "building the Home Manager activation package"
+  activation_path=$(nix_cmd build "${build_args[@]}")
+}
+
+if [[ -n $activation_path ]]; then
+  log "reusing the generation the gate built for this tree: $activation_path"
+else
+  build_generation
+fi
 [[ -x $activation_path/activate ]] || die "activation script not found: $activation_path/activate"
 printf '%s\n' "$activation_path" | write_private "$current_state_dir/last-built-activation"
 printf '%s\n' "$profile" | write_private "$current_state_dir/profile"
@@ -302,7 +359,6 @@ fi
 # --- Switch ---------------------------------------------------------------
 
 methods_manifest_load "$activation_path"
-store_dir=${NIX_STORE_DIR:-/nix/store}
 
 # preActivate hooks: a failing hook ends the rebuild with its status. The
 # hooks keep the command's standard input (a hook may ask for a
@@ -397,7 +453,7 @@ else
 fi
 
 cli=$DOTSTEWARD_FRAMEWORK_ROOT/cli/dotsteward
-"$cli" --instance "$repo_path" agents install --profile "$profile" --generation "$activation_path"
+"$cli" --instance "$repo_path" agents install --profile "$profile" --generation "$activation_path" --skip-validation
 "$cli" --instance "$repo_path" login-shell migrate --profile "$profile" --generation "$activation_path"
 assert_instance_lock_unchanged
 log "rebuild finished: $profile"

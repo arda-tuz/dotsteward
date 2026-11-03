@@ -18,6 +18,11 @@
 #      and sets DS_PRIVACY_FINDINGS, DS_PRIVACY_FILES, DS_PRIVACY_COMMITS,
 #      DS_PRIVACY_EXEMPTED and DS_PRIVACY_STALE_EXEMPTIONS.
 #
+# Scan cache (instances, outside the sandbox): ds_privacy_cache_enable FILE
+# PREFIX [SALT] (end of step 1) answers the content of unchanged files below
+# PREFIX from FILE, and ds_privacy_cache_store (after step 3) rewrites FILE;
+# see "scan cache" below.
+#
 # Exemptions (instances): ds_privacy_add_exemption PATH RULE SHA256 (step 1)
 # silences the findings of RULE, a generic secret rule or forbidden-path, on
 # the working tree file PATH while its collected content has SHA256; they
@@ -803,7 +808,11 @@ ds_privacy_begin() {
   declare -gA _DS_U_KIND=() _DS_U_LABEL=() _DS_U_PATH=() _DS_U_PATHNO=()
   declare -gA _DS_PATH_SEQ=() _DS_PATHNO_OF=() _DS_SEEN_PATH=() _DS_SEEN_BLOB=() _DS_REDACT_PATH=()
   declare -gA _DS_META_EMAIL1=() _DS_META_EMAIL2=() _DS_META_TZ1=() _DS_META_TZ2=()
+  declare -gA _DS_CACHE_HIT=()
+  _DS_CACHE_BROKEN=0
+  _DS_CACHE_ELIGIBLE=0
   DS_PRIVACY_FILES=0
+  DS_PRIVACY_CACHED=0
   DS_PRIVACY_COMMITS=0
   DS_PRIVACY_FINDINGS=0
   DS_PRIVACY_EXEMPTED=0
@@ -856,13 +865,22 @@ _ds_privacy_find() {
 
 # ds_privacy_collect_tree ROOT GIT: git-visible files (tracked and untracked,
 # not ignored) when GIT is 1, otherwise every file below ROOT outside .git
-# directories. Symlinks are scanned as their link text, never followed.
+# directories. Symlinks are scanned as their link text, never followed. With
+# the scan cache enabled, a cache-eligible file whose content digest the
+# cache lists gets its path entry only (counted in DS_PRIVACY_FILES and
+# DS_PRIVACY_CACHED); every other file is scanned as usual.
 ds_privacy_collect_tree() {
   local root=$1 path full target
   if [[ $2 == 1 ]]; then
     _ds_privacy_list files 1 _ds_privacy_git -C "$root" ls-files -z -co --exclude-standard || return 1
   else
     _ds_privacy_list files 1 _ds_privacy_find "$root" || return 1
+  fi
+  _DS_CACHE_ROOT=$root
+  if [[ -n $DS_PRIVACY_CACHE_FILE ]] && ! _ds_privacy_cache_prepare "$root"; then
+    # Without the digests nothing is answered from the cache or stored in it.
+    _DS_CACHE_HIT=()
+    _DS_CACHE_BROKEN=1
   fi
   for path in "${_DS_PRIVACY_ITEMS[@]}"; do
     path=${path#./}
@@ -874,6 +892,11 @@ ds_privacy_collect_tree() {
       printf '%s\n' "$target" >"$_DS_PRIVACY_WORK/u/$_DS_SEQ" || return 1
     elif [[ -f $full ]]; then
       _ds_privacy_add_path "$path" "$path"
+      if [[ -n ${_DS_CACHE_HIT[$path]:-} ]]; then
+        DS_PRIVACY_FILES=$((DS_PRIVACY_FILES + 1))
+        DS_PRIVACY_CACHED=$((DS_PRIVACY_CACHED + 1))
+        continue
+      fi
       _ds_privacy_new_unit file "$path" "$path"
       ln -s -- "$full" "$_DS_PRIVACY_WORK/u/$_DS_SEQ" || return 1
     fi
@@ -1061,6 +1084,249 @@ ds_privacy_collect_range() {
     seen_tag[$sha]=1
     _ds_privacy_add_object "$dir" tag "$sha" || return 1
   done
+}
+
+# --- scan cache ----------------------------------------------------------------
+# ds_privacy_cache_enable FILE PREFIX [SALT], called after every rule, term
+# table and exemption is loaded: FILE (an absolute path) lists the content
+# digests of the cache-eligible files an earlier scan with the same cache key
+# found nothing in. A file is eligible when it is a regular file of a tree
+# scan below the repository-relative directory PREFIX, no file rule selects
+# it, it is not the scanner's own file and no non-ASCII exception covers it:
+# every rule that applies to its content then depends on the content alone.
+# The cache key is the sha256 of the cache format, this file's bytes (the
+# scanner and its rules), the grep and bash versions, the policy flags and
+# allow lists, the allowlist, forbidden paths, file rules, term tables
+# (the denylist), exemptions and SALT, so a changed rule, term or exemption
+# never reuses an answer. FILE holds the header, the key and one digest per
+# line, never a path, a term or a match. It is ignored whole, never trusted,
+# unless it and its directory are owned by the user and writable by nobody
+# else, it is no symbolic link, and its header, its key and every line are
+# exact. Without a key (a tool failed) the cache stays off.
+#
+# ds_privacy_cache_store, after ds_privacy_report returned 0, rewrites FILE
+# atomically (mode 0600, directory 0700) with the digests of this scan's
+# eligible files that yielded no finding, an exempted one included: the
+# answered ones, and the scanned ones whose digest and status after the
+# scan are still the ones taken before it. Returns 1 when it could not
+# write; the scan's result stands either way.
+#
+# DS_PRIVACY_CACHE_FILE is FILE while the cache is on, else empty.
+
+_DS_PRIVACY_CACHE_HEADER='dotsteward privacy scan cache 1'
+
+# _ds_privacy_cache_fields VALUE...: one "<length>:<value>" line per VALUE,
+# so the key text is unambiguous.
+_ds_privacy_cache_fields() {
+  local value
+  for value in "$@"; do
+    printf '%s:%s\n' "${#value}" "$value"
+  done
+}
+
+# _ds_privacy_cache_key SALT: prints the cache key. The key text holds the
+# terms; it only ever goes to sha256sum.
+_ds_privacy_cache_key() {
+  local salt=$1 scanner versions i digest
+  scanner=$(sha256sum <"$_DS_PRIVACY_SOURCE") || return 1
+  versions=$(LC_ALL=C grep --version) || return 1
+  digest=$(
+    {
+      _ds_privacy_cache_fields "$_DS_PRIVACY_CACHE_HEADER" "${scanner%% *}" "${versions%%$'\n'*}" "$BASH_VERSION" \
+        "$_DS_PRIVACY_GLOB_MODE" "${DS_PRIVACY_GENERIC_SECRETS:-}" "${DS_PRIVACY_HOME_PATHS:-}" \
+        "${DS_PRIVACY_EMAILS:-}" "${DS_PRIVACY_PRIVATE_IPV4:-}" "${DS_PRIVACY_NON_ASCII:-}" \
+        "${DS_PRIVACY_COMMIT_EMAIL:-}"
+      printf 'home-users\n'
+      _ds_privacy_cache_fields ${DS_PRIVACY_HOME_ALLOW_USERS[@]+"${DS_PRIVACY_HOME_ALLOW_USERS[@]}"}
+      printf 'home-paths\n'
+      _ds_privacy_cache_fields ${DS_PRIVACY_HOME_ALLOW_PATHS[@]+"${DS_PRIVACY_HOME_ALLOW_PATHS[@]}"}
+      printf 'email-domains\n'
+      _ds_privacy_cache_fields ${DS_PRIVACY_EMAIL_ALLOW_DOMAINS[@]+"${DS_PRIVACY_EMAIL_ALLOW_DOMAINS[@]}"}
+      printf 'email-exact\n'
+      _ds_privacy_cache_fields ${DS_PRIVACY_EMAIL_ALLOW_EXACT[@]+"${DS_PRIVACY_EMAIL_ALLOW_EXACT[@]}"}
+      printf 'non-ascii-except\n'
+      _ds_privacy_cache_fields ${DS_PRIVACY_NON_ASCII_EXCEPT[@]+"${DS_PRIVACY_NON_ASCII_EXCEPT[@]}"}
+      printf 'forbidden\n'
+      _ds_privacy_cache_fields ${DS_PRIVACY_FORBIDDEN_PATHS[@]+"${DS_PRIVACY_FORBIDDEN_PATHS[@]}"}
+      printf 'allowlist\n'
+      _ds_privacy_cache_fields "${_DS_PRIVACY_ALLOW[@]}"
+      printf 'file-rules\n'
+      for i in "${!_DS_FILE_RULE_PATTERN[@]}"; do
+        _ds_privacy_cache_fields "${_DS_FILE_RULE_MESSAGE[i]}" "${_DS_FILE_RULE_PATTERN[i]}" "${_DS_FILE_RULE_GLOBS[i]}"
+      done
+      printf 'terms\n'
+      for i in "${!_DS_TERM_RULE[@]}"; do
+        _ds_privacy_cache_fields "${_DS_TERM_RULE[i]}" "${_DS_TERM_MODE[i]}" "${_DS_TERM_VALUE[i]}"
+      done
+      printf 'exemptions\n'
+      for i in "${!_DS_EXEMPT_PATH[@]}"; do
+        _ds_privacy_cache_fields "${_DS_EXEMPT_PATH[i]}" "${_DS_EXEMPT_RULE[i]}" "${_DS_EXEMPT_SHA[i]}"
+      done
+      printf 'salt\n'
+      _ds_privacy_cache_fields "$salt"
+    } | sha256sum
+  ) || return 1
+  printf '%s\n' "${digest%% *}"
+}
+
+# _ds_privacy_private_path PATH: PATH exists, is no symbolic link, belongs to
+# the user and neither its group nor others may write it.
+_ds_privacy_private_path() {
+  local mode
+  [[ -e $1 && ! -L $1 && -O $1 ]] || return 1
+  mode=$(stat -c %a -- "$1" 2>/dev/null) || return 1
+  [[ $mode =~ ^[0-7]+$ ]] || return 1
+  (((8#$mode & 8#022) == 0))
+}
+
+ds_privacy_cache_enable() {
+  local file=${1:-} prefix=${2:-} salt=${3:-} i glob key line
+  local -a globs=() lines=()
+  DS_PRIVACY_CACHE_FILE=""
+  _DS_CACHE_KEY=""
+  declare -gA _DS_CACHE_SET=()
+  declare -ga _DS_CACHE_RULE_ERES=() _DS_CACHE_EXCEPT_ERES=()
+  if [[ $file != /* || -z $prefix || $prefix == /* ]]; then
+    _ds_privacy_error "usage: ds_privacy_cache_enable FILE PREFIX [SALT] (an absolute FILE, a relative PREFIX)"
+    return 1
+  fi
+  [[ $prefix == */ ]] || prefix+=/
+  for i in "${!_DS_FILE_RULE_GLOBS[@]}"; do
+    mapfile -t globs <<<"${_DS_FILE_RULE_GLOBS[i]}"
+    for glob in "${globs[@]}"; do
+      _DS_CACHE_RULE_ERES+=("$(_ds_privacy_glob_ere "$glob")")
+    done
+  done
+  if ((${DS_PRIVACY_NON_ASCII:-0})); then
+    _ds_privacy_compile_globs _DS_CACHE_EXCEPT_ERES ${DS_PRIVACY_NON_ASCII_EXCEPT[@]+"${DS_PRIVACY_NON_ASCII_EXCEPT[@]}"}
+  fi
+  key=$(_ds_privacy_cache_key "$salt" 2>/dev/null) || key=""
+  [[ $key =~ ^[0-9a-f]{64}$ ]] || return 0
+  _DS_CACHE_KEY=$key
+  _DS_CACHE_PREFIX=$prefix
+  DS_PRIVACY_CACHE_FILE=$file
+
+  # Any doubt about the file leaves the set empty.
+  _ds_privacy_private_path "${file%/*}" || return 0
+  [[ -f $file ]] && _ds_privacy_private_path "$file" || return 0
+  mapfile -t lines <"$file" 2>/dev/null || return 0
+  ((${#lines[@]} >= 2)) || return 0
+  [[ ${lines[0]} == "$_DS_PRIVACY_CACHE_HEADER" && ${lines[1]} == "key $key" ]] || return 0
+  for line in "${lines[@]:2}"; do
+    if [[ ! $line =~ ^[0-9a-f]{64}$ ]]; then
+      _DS_CACHE_SET=()
+      return 0
+    fi
+    _DS_CACHE_SET[$line]=1
+  done
+}
+
+# _ds_privacy_cache_prepare ROOT: lists the cache-eligible files of
+# _DS_PRIVACY_ITEMS (cache-eligible, NUL-separated), takes their digests
+# (cache-digests) and status lines (cache-status: inode, size, modification
+# and change times in nanoseconds) in one pass each, before anything is
+# scanned, and fills _DS_CACHE_HIT (path -> digest) with the files whose
+# digest the cache lists. The lists stay in files: the main shell parses
+# them only when the cache has entries, since a larger shell forks slower
+# for the rest of the scan.
+_ds_privacy_cache_prepare() {
+  local root=$1 path line count=0 i work=$_DS_PRIVACY_WORK
+  local -a eligible=() digests=()
+  for path in "${_DS_PRIVACY_ITEMS[@]}"; do
+    path=${path#./}
+    [[ $path == "$_DS_CACHE_PREFIX"* && $path != "$_DS_PRIVACY_SELF" ]] || continue
+    [[ -f $root/$path && ! -L $root/$path ]] || continue
+    ! _ds_privacy_glob_match "$path" _DS_CACHE_RULE_ERES || continue
+    ! _ds_privacy_glob_match "$path" _DS_CACHE_EXCEPT_ERES || continue
+    printf '%s\0' "$path"
+    count=$((count + 1))
+  done >"$work/cache-eligible" || return 1
+  _DS_CACHE_ELIGIBLE=$count
+  ((count)) || return 0
+  (cd "$root" && LC_ALL=C xargs -0 sha256sum -- <"$work/cache-eligible") >"$work/cache-digests" 2>/dev/null ||
+    return 1
+  (cd "$root" && LC_ALL=C xargs -0 stat -c '%i %s %.9Y %.9Z' -- <"$work/cache-eligible") >"$work/cache-status" \
+    2>/dev/null || return 1
+  ((${#_DS_CACHE_SET[@]})) || return 0
+  mapfile -d '' -t eligible <"$work/cache-eligible"
+  mapfile -t digests <"$work/cache-digests"
+  ((${#eligible[@]} == count && ${#digests[@]} == count)) || return 1
+  for ((i = 0; i < count; i++)); do
+    # sha256sum starts the line with a backslash when it escapes the name.
+    line=${digests[i]#\\}
+    [[ -n ${_DS_CACHE_SET[${line:0:64}]:-} ]] || continue
+    _DS_CACHE_HIT[${eligible[i]}]=${line:0:64}
+  done
+}
+
+ds_privacy_cache_store() {
+  [[ -n $DS_PRIVACY_CACHE_FILE ]] || return 0
+  ((!_DS_CACHE_BROKEN)) || return 1
+  local file=$DS_PRIVACY_CACHE_FILE dir=${DS_PRIVACY_CACHE_FILE%/*} work=$_DS_PRIVACY_WORK
+  local temporary seq rest i line digest count=${_DS_CACHE_ELIGIBLE:-0}
+  local -A dirty=() clean=() seq_of=()
+  local -a eligible=() digests=() status=() candidates=() lines=() again=()
+  [[ -f $work/findings ]] || return 1
+  # Every eligible file answered and every entry used: the cache is exact.
+  if ((count && ${#_DS_CACHE_HIT[@]} == count && ${#_DS_CACHE_SET[@]} == count)) && [[ -f $file && ! -L $file ]]; then
+    return 0
+  fi
+  if ((count)); then
+    while IFS=$'\037' read -r seq rest; do
+      dirty[$seq]=1
+    done <"$work/findings"
+    for seq in "${_DS_CONTENT[@]}"; do
+      seq_of[${_DS_U_PATH[$seq]}]=$seq
+    done
+    mapfile -d '' -t eligible <"$work/cache-eligible"
+    mapfile -t digests <"$work/cache-digests"
+    mapfile -t status <"$work/cache-status"
+    ((${#eligible[@]} == count && ${#digests[@]} == count && ${#status[@]} == count)) || return 1
+    # A scanned file counts only when its digest and status after the scan
+    # are the ones taken before it: its content did not change meanwhile.
+    for ((i = 0; i < count; i++)); do
+      line=${digests[i]#\\}
+      digest=${line:0:64}
+      [[ $digest =~ ^[0-9a-f]{64}$ ]] || return 1
+      if [[ -n ${_DS_CACHE_HIT[${eligible[i]}]:-} ]]; then
+        clean[$digest]=1
+        continue
+      fi
+      seq=${seq_of[${eligible[i]}]:-}
+      [[ -n $seq && -z ${dirty[$seq]:-} ]] || continue
+      candidates+=("$i")
+      printf '%s\0' "${eligible[i]}"
+    done >"$work/cache-again" || return 1
+  fi
+  if ((${#candidates[@]})); then
+    (cd "$_DS_CACHE_ROOT" && LC_ALL=C xargs -0 sha256sum -- <"$work/cache-again") >"$work/cache-again-digests" \
+      2>/dev/null || return 1
+    (cd "$_DS_CACHE_ROOT" && LC_ALL=C xargs -0 stat -c '%i %s %.9Y %.9Z' -- <"$work/cache-again") \
+      >"$work/cache-again-status" 2>/dev/null || return 1
+    mapfile -t lines <"$work/cache-again-digests"
+    mapfile -t again <"$work/cache-again-status"
+    ((${#lines[@]} == ${#candidates[@]} && ${#again[@]} == ${#candidates[@]})) || return 1
+    for i in "${!candidates[@]}"; do
+      line=${digests[candidates[i]]#\\}
+      digest=${line:0:64}
+      line=${lines[i]#\\}
+      [[ ${line:0:64} == "$digest" && ${again[i]} == "${status[candidates[i]]}" ]] || continue
+      clean[$digest]=1
+    done
+  fi
+  { mkdir -p -- "$dir" && chmod 0700 -- "$dir"; } 2>/dev/null || return 1
+  _ds_privacy_private_path "$dir" || return 1
+  [[ ! -d $file || -L $file ]] || return 1
+  temporary=$(mktemp "$dir/.scan-cache.XXXXXX" 2>/dev/null) || return 1
+  if ! {
+    printf '%s\nkey %s\n' "$_DS_PRIVACY_CACHE_HEADER" "$_DS_CACHE_KEY"
+    for digest in "${!clean[@]}"; do
+      printf '%s\n' "$digest"
+    done | LC_ALL=C sort
+  } >"$temporary" || ! chmod 0600 -- "$temporary" || ! mv -f -- "$temporary" "$file"; then
+    rm -f -- "$temporary"
+    return 1
+  fi
 }
 
 # --- matching ----------------------------------------------------------------
@@ -1384,6 +1650,10 @@ ds_privacy_report() {
       [[ ${_DS_U_KIND[$seq]} == file && -n ${exempt_named[${_DS_U_PATH[$seq]}]:-} ]] || continue
       _DS_EXEMPT_DIGEST[${_DS_U_PATH[$seq]}]=$(sha256sum <"$_DS_PRIVACY_WORK/u/$seq" | cut -d ' ' -f 1)
     done
+    # A file answered from the scan cache yields no finding at its digest.
+    for path in "${!_DS_CACHE_HIT[@]}"; do
+      [[ -z ${exempt_named[$path]:-} ]] || _DS_EXEMPT_DIGEST[$path]=${_DS_CACHE_HIT[$path]}
+    done
   fi
 
   # Text units: grep lists the files with at least one line and no NUL byte.
@@ -1502,3 +1772,13 @@ _DS_TERM_VALUE=()
 _DS_PRIVACY_ALLOW=()
 _DS_PRIVACY_ALLOW_LINE=()
 _DS_PRIVACY_ALLOW_IDENTITY=()
+# The scan cache starts off; its key covers this file's bytes.
+_DS_PRIVACY_SOURCE=${BASH_SOURCE[0]}
+DS_PRIVACY_CACHE_FILE=""
+_DS_CACHE_KEY=""
+_DS_CACHE_PREFIX=""
+_DS_CACHE_BROKEN=0
+_DS_CACHE_ROOT=""
+_DS_CACHE_ELIGIBLE=0
+declare -gA _DS_CACHE_SET=() _DS_CACHE_HIT=()
+declare -ga _DS_CACHE_RULE_ERES=() _DS_CACHE_EXCEPT_ERES=()

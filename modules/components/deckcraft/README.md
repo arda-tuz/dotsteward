@@ -28,7 +28,7 @@ The pin holds `minimum_version`, `url`, `size` and `sha256`; the URL is the asse
 | Check | What it verifies |
 | --- | --- |
 | commands | `deckcraft` and `deckcraft-cli` are on `PATH` |
-| E2E `package` (every profile) | the installed `deckcraft` is at least `minimum_version`, the package ships its desktop entry, `deckcraft-cli --version` answers, and `apt-cache policy deckcraft` shows the local APT bridge |
+| E2E `package` (every profile, parallel) | the installed `deckcraft` is at least `minimum_version`, the package ships its desktop entry, `deckcraft-cli --version` answers, and `apt-cache policy deckcraft` shows the local APT bridge |
 
 ## Verification (catalog facts)
 

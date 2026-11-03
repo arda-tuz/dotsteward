@@ -112,7 +112,7 @@
             "additionalProperties": false
           }
         },
-        "e2e": { "$ref": "#/$defs/hooks" },
+        "e2e": { "$ref": "#/$defs/e2eHooks" },
         "agents": { "$ref": "#/$defs/hooks" },
         "floors": {
           "type": "array",
@@ -338,6 +338,22 @@
           "profiles": { "$ref": "#/$defs/profiles" }
         },
         "required": ["component", "name", "script", "phase", "profiles"],
+        "additionalProperties": false
+      }
+    },
+    "e2eHooks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "component": { "$ref": "#/$defs/name" },
+          "name": { "type": "string" },
+          "script": { "type": "string", "description": "Store path in a generation; <instance>/..., <dotsteward>/... or <store>/<name> in a mirror." },
+          "phase": { "enum": ["early", "main", "late"] },
+          "profiles": { "$ref": "#/$defs/profiles" },
+          "parallel": { "type": "boolean", "description": "The hook may run at the same time as the other parallel hooks of its phase." }
+        },
+        "required": ["component", "name", "script", "phase", "profiles", "parallel"],
         "additionalProperties": false
       }
     },

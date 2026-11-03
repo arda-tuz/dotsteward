@@ -158,6 +158,8 @@ in
       commands = [ "example-term" ];
       # Scripts in this directory, run with the hook environment, for
       # example { name = "config"; script = ./e2e-config.sh; phase = "main"; }.
+      # parallel = true lets a hook that only reads run at the same time as
+      # the other parallel hooks of its phase.
       e2e = [ ];
       agents = [ ];
       # Minimum versions of commands the user installs (external method).

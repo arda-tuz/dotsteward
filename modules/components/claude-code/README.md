@@ -267,8 +267,11 @@ another way (an editor extension, a desktop launcher) does not get the
 value.
 
 A launch environment or `mcpServers` add the E2E check `claude-login-zsh`
-(`e2e-login-zsh.sh`, main phase, for the profiles of the shell component).
-In an interactive login zsh it checks that:
+(`e2e-login-zsh.sh`, main phase, for the profiles of the shell component;
+not parallel, since `claude` writes its own files and starts the MCP
+servers).
+In one interactive login zsh, which stops at the first problem, it checks
+that:
 
 - no launch variable is set in the shell (the check ignores the values of
   its own caller);

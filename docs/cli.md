@@ -47,6 +47,7 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | `DOTSTEWARD_MIN_FREE_GB` | The free space the gate requires in `/nix/store`, instead of `gate.min_free_gib`. |
 | `DOTSTEWARD_CACHE_URL` | The binary cache the gate probes, instead of `gate.cache_url`. |
 | `DOTSTEWARD_FRAMEWORK_OVERRIDE` | The framework flake reference of `--framework-override`. |
+| `DOTSTEWARD_E2E_JOBS` | How many parallel E2E hooks `dotsteward e2e` runs at a time, like `--jobs` (default 3). |
 | `DOTSTEWARD_APT_UPDATE_TIMEOUT` | Seconds one `apt-get update` may take before it is stopped and tried once more (default 600). |
 | `DOTSTEWARD_ASSUME_YES` | `1` answers installer and package manager confirmations; meant for CI runners only. |
 | `DOTSTEWARD_CLI` | A CLI that `.dotsteward/cli.sh` runs instead of building the pinned one. |
@@ -85,6 +86,7 @@ Install or check the agent tools, the skill layout and the agents checks of a pr
 ```text
 Usage: dotsteward agents install|check --profile PROFILE [--generation PATH]
                                         [--keep-going] [--json]
+                                        [--skip-validation]
 
 install makes the agent tools and the skill layout of PROFILE match the
 instance: official-binary and pypi components, the canonical skill root
@@ -104,6 +106,10 @@ difference.
   --json              print { "result": "passed|failed", "findings": [ {
                       "step", "path", "code", "message" } ] } on standard
                       output; logs go to standard error
+  --skip-validation   install only: leave out the validation (commands,
+                      floors, probes, checks.agents hooks), which `agents
+                      check` (run by dotsteward e2e) does; rebuild --switch
+                      installs this way
 
 Exit status: 0 done or verified, 1 refusal or failed check, or the status
 of a failed command.
@@ -436,7 +442,8 @@ Verify this machine against the instance: the end-to-end checks of a profile.
 ```text
 Usage: dotsteward e2e --profile PROFILE [--expected-remote-base OID]
                       [--framework-override REF] [--generation PATH]
-                      [--keep-going] [--json] [--list] [--skip-repo-checks]
+                      [--jobs N] [--keep-going] [--json] [--list]
+                      [--skip-repo-checks]
 
 Verifies that this machine matches the instance for PROFILE after a
 rebuild: commands, component E2E hooks, managed links, agent rules, files,
@@ -454,6 +461,10 @@ and its remote, and the framework skills of the generation.
                              its framework skills and its home-path/bin
                              first on PATH; default: the active generation,
                              else the instance's manifest mirror
+  --jobs N                   run at most N parallel hooks (parallel: true in
+                             the manifest) at a time (default:
+                             DOTSTEWARD_E2E_JOBS, else 3); 1 runs every hook
+                             alone, in the foreground
   --keep-going               run every check and record each failure
   --json                     print { "result": "passed|failed", "findings":
                              [ { "step", "path", "code", "message" } ] } on
@@ -500,8 +511,9 @@ steps, each with its output in <state>/update/validate.log:
                workstation.toml sets none; see `dotsteward context --json`)
   cli-probes   nix build checks.<primary system>.home, then dotsteward
                probes --generation <built path>
-and records <state>/update/validation.json. Every Nix call keeps the lock
-file as it is (--no-update-lock-file).
+and records <state>/update/validation.json and the hand-off
+<state>/update/generation.json. Every Nix call keeps the lock file as it
+is (--no-update-lock-file).
 
 Options:
   --scope S          update (default): every path changed since the base
@@ -536,6 +548,16 @@ validation.json (schema_version "1.1"): result, tree_oid, base_oid, scope,
 nix_version, gate_version, framework_override (or null), denylist_sha256
 (or null), root, validated_at, total_seconds, step_seconds (preflight,
 static, pins, flake-check, cli-probes), log.
+
+generation.json (schema_version "1.0"), the hand-off to `dotsteward
+rebuild`: tree_oid, profile (profiles.check), system (the primary
+system), username and home (the check identity: identity.username and
+identity.home, identity.darwin_home on darwin), generation (the store path
+the cli-probes step built and probed), framework_override (or null), root
+and recorded_at. rebuild activates that generation instead of evaluating
+and building again when the tree of HEAD, its profile and system, $USER,
+$HOME, its framework override and its checkout are the same; a memo
+answer and a failed run keep the previous record.
 
 Output: one "ok" line per step, then one JSON line {result, tree_oid,
 scope, total_seconds, step_seconds}; a memo answer prints {result,
@@ -755,11 +777,15 @@ Usage: dotsteward rebuild --profile PROFILE --switch|--build-only
                           [--framework-override REF]
 
 Builds the Home Manager generation of PROFILE for the running user and home
-through the machine's host flake (<state>/host-overrides). --build-only
+through the machine's host flake (<state>/host-overrides), or reuses the
+generation a passing gate built for the same tree, profile, user, home
+and framework override (<state>/update/generation.json). --build-only
 stops after the build and changes nothing outside the state directory.
 --switch then runs the preActivate hooks, adopts the declared files,
 activates the generation, applies the tracked settings, installs the agent
-tools and moves a versioned login shell to the stable path.
+tools and moves a versioned login shell to the stable path. The agent
+tools are installed without their validation: `dotsteward e2e` checks
+them, so run it after the rebuild.
 
   --profile PROFILE          a profile of the instance (required)
   --switch                   activate the built generation
@@ -1017,7 +1043,14 @@ Instance checks, in this order:
   privacy        the privacy scan with the instance policy: generic secret
                  rules, [privacy] forbidden_paths and file_rules, the
                  digest-bound [privacy] exemptions, and the
-                 [privacy] denylist outside the sandbox
+                 [privacy] denylist outside the sandbox; there, in a git
+                 work tree, a vendored file (below skills.vendor_dir, no
+                 file rule selects it) whose content an earlier scan found
+                 nothing in is answered from <state root>/privacy/
+                 scan-cache (content digests under a key of the scanner,
+                 its rules, the denylist, the exemptions and the
+                 instance root; its path is still scanned), and the clean
+                 line counts the answers
   scripts        every [gate] static script exists and is executable; when
                  every selected check passed they run in order from the
                  instance root (shell scripts with bash, other scripts

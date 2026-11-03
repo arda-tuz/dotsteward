@@ -162,12 +162,21 @@ let
 
   # --- Records ----------------------------------------------------------------
 
-  hookSpec = types.submodule {
-    options = {
-      name = option types.str "Hook name (unique within the component and list).";
-      script = option types.path "Executable in the component directory; runs with the hook environment.";
-      profiles = nullable (types.listOf types.str) "Profiles where the hook runs; null: every profile.";
-      phase = optionDefault (types.enum hookPhases) "main" "E2E phase (checks.e2e only).";
+  hookOptions = {
+    name = option types.str "Hook name (unique within the component and list).";
+    script = option types.path "Executable in the component directory; runs with the hook environment.";
+    profiles = nullable (types.listOf types.str) "Profiles where the hook runs; null: every profile.";
+    phase = optionDefault (types.enum hookPhases) "main" "E2E phase (checks.e2e only).";
+  };
+
+  hookSpec = types.submodule { options = hookOptions; };
+
+  # An E2E hook (checks.e2e): a hook that may run in parallel.
+  e2eHookSpec = types.submodule {
+    options = hookOptions // {
+      parallel =
+        optionDefault types.bool false
+          "Run at the same time as the other parallel hooks of the phase: the hook only reads (no shared file written, no server on a fixed port, no GPU) and may be stopped with SIGTERM.";
     };
   };
 
@@ -357,7 +366,7 @@ let
       probes = list probeSpec "CLI probes.";
       checks = submoduleOption {
         commands = list types.str "Commands E2E requires.";
-        e2e = list hookSpec "E2E hooks.";
+        e2e = list e2eHookSpec "E2E hooks.";
         agents = list hookSpec "agents check discovery steps.";
         floors = list (types.submodule {
           options = {
@@ -467,6 +476,7 @@ in
       httpsUrl
       perPlatformPath
       hookSpec
+      e2eHookSpec
       reloadSpec
       probeSpec
       ruleSpec

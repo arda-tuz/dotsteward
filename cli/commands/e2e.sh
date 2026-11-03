@@ -41,18 +41,38 @@
 # Every run after the configuration loaded (not --list) records its result
 # in <state root>/update/e2e.json (mode 0600, written atomically), keyed by
 # the tree of the instance checkout's HEAD and the verified generation:
-# schema_version "1.0", result (passed only when every check passed),
-# tree_oid and head_oid (null outside a git work tree), generation (null
-# without one), profile, framework_override, repo_checks (false with
-# --skip-repo-checks), findings (their number), root, recorded_at.
-# `dotsteward update publish` requires a passed record of an activated
-# tree.
+# schema_version "1.0", result (passed only when every check passed, so
+# never for a run a signal ended), tree_oid and head_oid (null outside a
+# git work tree), generation (null without one), profile,
+# framework_override, repo_checks (false with --skip-repo-checks), findings
+# (their number), root, recorded_at. `dotsteward update publish` requires
+# a passed record of an activated tree.
 # Hooks run for the components active in the profile, in [components]
 # order, then declaration order, when their profiles include the profile,
 # with the hook environment and DOTSTEWARD_CHECK_ONLY=1. A check
 # with nothing to verify is not listed and does not run: no commands, no
 # managed links, no agent rules source or targets, no files, no settings
 # buffer, no login shell; --skip-repo-checks drops step 9.
+#
+# Parallel hooks: consecutive hooks of one phase whose manifest entry says
+# parallel: true run at the same time, at most --jobs N at a time (else
+# DOTSTEWARD_E2E_JOBS, else 3); every other check, hook or not, runs alone
+# after everything before it and before everything after it, so the phases
+# stay barriers. A parallel hook runs in a session of its own (no
+# controlling terminal, its own process group) with standard input from
+# /dev/null; its standard output and error go to files of the run (one
+# file when both streams of the run are the same file, which keeps their
+# order) and its findings to a file of its own. Each hook is reported in
+# plan order once it and every hook before it ended: its output, its
+# findings, then its failure exactly as for a hook that runs alone, so the
+# output, the findings, the exit status and the record are those of
+# --jobs 1. Fail-fast: once a hook failed no further hook starts, and the
+# report of the first failure ends the run. At the end of the run, also
+# one a signal ended, the hooks still running get SIGTERM (their process
+# groups; SIGKILL 10 seconds later) and are reaped before the record is
+# written. With --jobs 1 every hook runs alone as before, in the
+# foreground; parallel hooks need bash 5.1 or newer (with an older bash
+# they run alone, with a warning) and python3, which starts the session.
 #
 # Findings are { step (the check id, or setup), path, code, message }.
 # Without --keep-going the first finding ends the run; with it every check
@@ -94,7 +114,8 @@ usage() {
   cat <<'EOF'
 Usage: dotsteward e2e --profile PROFILE [--expected-remote-base OID]
                       [--framework-override REF] [--generation PATH]
-                      [--keep-going] [--json] [--list] [--skip-repo-checks]
+                      [--jobs N] [--keep-going] [--json] [--list]
+                      [--skip-repo-checks]
 
 Verifies that this machine matches the instance for PROFILE after a
 rebuild: commands, component E2E hooks, managed links, agent rules, files,
@@ -112,6 +133,10 @@ and its remote, and the framework skills of the generation.
                              its framework skills and its home-path/bin
                              first on PATH; default: the active generation,
                              else the instance's manifest mirror
+  --jobs N                   run at most N parallel hooks (parallel: true in
+                             the manifest) at a time (default:
+                             DOTSTEWARD_E2E_JOBS, else 3); 1 runs every hook
+                             alone, in the foreground
   --keep-going               run every check and record each failure
   --json                     print { "result": "passed|failed", "findings":
                              [ { "step", "path", "code", "message" } ] } on
@@ -131,6 +156,8 @@ profile=''
 expected_base=''
 framework_override=${DOTSTEWARD_FRAMEWORK_OVERRIDE:-}
 generation=''
+hook_jobs=${DOTSTEWARD_E2E_JOBS:-3}
+hook_jobs_source=DOTSTEWARD_E2E_JOBS
 keep_going=0
 json=0
 list=0
@@ -145,23 +172,25 @@ _e2e_value() {
 
 while (($#)); do
   case $1 in
-    --profile | --expected-remote-base | --framework-override | --generation)
+    --profile | --expected-remote-base | --framework-override | --generation | --jobs)
       _e2e_value "$1" "$#" "${2:-}"
       case $1 in
         --profile) profile=$2 ;;
         --expected-remote-base) expected_base=$2 ;;
         --framework-override) framework_override=$2 ;;
         --generation) generation=$2 ;;
+        --jobs) hook_jobs=$2 hook_jobs_source=--jobs ;;
       esac
       shift 2
       ;;
-    --profile=* | --expected-remote-base=* | --framework-override=* | --generation=*)
+    --profile=* | --expected-remote-base=* | --framework-override=* | --generation=* | --jobs=*)
       _e2e_value "${1%%=*}" 2 "${1#*=}"
       case $1 in
         --profile=*) profile=${1#*=} ;;
         --expected-remote-base=*) expected_base=${1#*=} ;;
         --framework-override=*) framework_override=${1#*=} ;;
         --generation=*) generation=${1#*=} ;;
+        --jobs=*) hook_jobs=${1#*=} hook_jobs_source=--jobs ;;
       esac
       shift
       ;;
@@ -178,6 +207,8 @@ while (($#)); do
   esac
 done
 [[ -n $profile ]] || die "e2e: --profile is required"
+[[ $hook_jobs =~ ^[1-9][0-9]*$ ]] ||
+  die "e2e: invalid $hook_jobs_source value: $hook_jobs (expected a positive integer)"
 if [[ -n $expected_base ]]; then
   [[ $expected_base =~ ^[0-9a-f]{40}$ ]] || die "e2e: invalid --expected-remote-base OID: $expected_base"
   ((!skip_repo)) || die "e2e: --expected-remote-base cannot be combined with --skip-repo-checks"
@@ -198,6 +229,46 @@ SKILLS_STEP=setup
 failed=0
 # Set once the configuration is loaded: from then on the run is recorded.
 record_ready=0
+# Set when the run reached its end: a run a signal ended did not pass.
+finished=0
+# The parallel hooks that have not been reaped: PID -> index in their group.
+declare -A e2e_running=()
+
+# _e2e_stop_hooks: stops the parallel hooks that still run, SIGTERM to the
+# process group of each (its session) and SIGKILL to those that still run
+# 10 seconds later, and reaps them.
+_e2e_stop_hooks() {
+  local pid timer done_pid
+  local -a pending=()
+  ((${#e2e_running[@]})) || return 0
+  for pid in "${!e2e_running[@]}"; do
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM -- "$pid" 2>/dev/null || true
+  done
+  sleep 10 &
+  timer=$!
+  while ((${#e2e_running[@]})); do
+    pending=("${!e2e_running[@]}")
+    [[ -z $timer ]] || pending+=("$timer")
+    done_pid=''
+    wait -n -p done_pid "${pending[@]}" 2>/dev/null || true
+    [[ -n ${done_pid:-} ]] || break
+    if [[ $done_pid == "$timer" ]]; then
+      timer=''
+      for pid in "${!e2e_running[@]}"; do
+        kill -KILL -- "-$pid" 2>/dev/null || kill -KILL -- "$pid" 2>/dev/null || true
+      done
+      continue
+    fi
+    unset "e2e_running[$done_pid]"
+    # Whatever the hook left running in its session.
+    kill -KILL -- "-$done_pid" 2>/dev/null || true
+  done
+  if [[ -n $timer ]]; then
+    kill -TERM -- "$timer" 2>/dev/null || true
+    wait "$timer" 2>/dev/null || true
+  fi
+  e2e_running=()
+}
 
 # _e2e_write_result STATUS: the result of the run in the E2E record. Runs
 # in a subshell of the exit trap: a failure to write it is a finding there.
@@ -227,6 +298,12 @@ _e2e_write_result() {
 
 _e2e_exit() {
   local status=$?
+  _e2e_stop_hooks
+  # A signal can end the run with status 0 here (bash exits with the
+  # signal's status afterwards): it is a failed run.
+  if ((status == 0 && !finished && !list)); then
+    status=1
+  fi
   if ((record_ready && !list)); then
     (_e2e_write_result "$status") || status=1
   fi
@@ -358,7 +435,7 @@ _e2e_manifest_shape() {
     def hooks: type == "array" and all(.[]; type == "object"
       and (.component | type) == "string" and (.name | type) == "string"
       and (.script | type) == "string" and (.phase | optional(type == "string"))
-      and (.profiles | optional(string_list)));
+      and (.profiles | optional(string_list)) and (.parallel | optional(type == "boolean")));
     (.components | type == "array" and all(.[]; type == "object"
       and (.name | type) == "string" and (.modes | optional(type == "object"))
       and (.platforms | optional(string_list))))
@@ -445,12 +522,14 @@ _e2e_plan() {
   printf 'core:framework-skills\tframework-skills\t\n'
 }
 
+# _e2e_plan_hooks PHASE: the plan rows of the hooks of PHASE, kind hook, or
+# parallel-hook for a hook whose entry says parallel: true.
 _e2e_plan_hooks() {
-  local hook id
+  local hook id_kind
   while IFS= read -r hook; do
     [[ -n $hook ]] || continue
-    id=$(jq -r '"\(.component):\(.name)"' <<<"$hook")
-    printf '%s\thook\t%s\n' "$id" "$hook"
+    id_kind=$(jq -r '"\(.component):\(.name)\t\(if .parallel == true then "parallel-hook" else "hook" end)"' <<<"$hook")
+    printf '%s\t%s\n' "$id_kind" "$hook"
   done < <(_e2e_hooks "$1")
 }
 
@@ -481,12 +560,25 @@ if ((list)); then
 fi
 
 # Every hook script resolves before any check runs.
+parallel_hooks=0
 for row in "${plan[@]}"; do
   IFS=$'\t' read -r _ kind argument <<<"$row"
-  if [[ $kind == hook ]]; then
-    methods_hook_path "$argument" >/dev/null
-  fi
+  case $kind in
+    hook) methods_hook_path "$argument" >/dev/null ;;
+    parallel-hook)
+      methods_hook_path "$argument" >/dev/null
+      parallel_hooks=1
+      ;;
+  esac
 done
+if ((hook_jobs > 1 && parallel_hooks)); then
+  if ((BASH_VERSINFO[0] < 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] < 1))); then
+    warn "e2e: parallel hooks need bash 5.1 or newer (this is bash $BASH_VERSION); they run one at a time"
+    hook_jobs=1
+  else
+    require_command python3
+  fi
+fi
 
 if [[ -n $framework_override ]]; then
   log "framework override: $framework_override"
@@ -875,6 +967,112 @@ _e2e_framework_skills() {
   ((unit_failed == 0)) || exit 1
 }
 
+# --- Parallel hooks -------------------------------------------------------
+
+# Whether the run's standard output and error are the same file: a parallel
+# hook's two streams then go to one file, which keeps their order.
+one_stream=0
+if [[ /dev/fd/1 -ef /dev/fd/2 ]]; then
+  one_stream=1
+fi
+group_count=0
+
+# _e2e_hook_start DIR INDEX ID HOOK: starts the parallel hook HOOK (check id
+# ID, INDEX in its group) in the background; its output and findings go to
+# DIR.
+_e2e_hook_start() {
+  local dir=$1 index=$2 id=$3 hook=$4 component name
+  component=$(jq -r '.component' <<<"$hook")
+  name=$(jq -r '.name' <<<"$hook")
+  mkdir -p -- "$dir"
+  : >"$dir/findings.jsonl"
+  (
+    SKILLS_STEP=$id
+    SKILLS_DIE_CODE='hook-failed'
+    SKILLS_DIE_PATH=$component/$name
+    # shellcheck disable=SC2030 # the hook's own findings file, in its subshell only
+    SKILLS_FINDINGS_FILE=$dir/findings.jsonl
+    if ((one_stream)); then
+      exec >"$dir/output" 2>&1
+    else
+      exec >"$dir/output" 2>"$dir/error"
+    fi
+    methods_exec_hook "$hook" "$profile" 1
+  ) </dev/null &
+  e2e_running[$!]=$index
+}
+
+# _e2e_hook_report DIR ID HOOK STATUS: reports a parallel hook that ended
+# with STATUS as _e2e_unit and _e2e_hook report a hook that runs alone: its
+# output, its findings, then its failure.
+_e2e_hook_report() {
+  local dir=$1 id=$2 hook=$3 status=$4 component name
+  if [[ -f $dir/output ]]; then
+    cat -- "$dir/output"
+  fi
+  if ((!one_stream)) && [[ -f $dir/error ]]; then
+    cat -- "$dir/error" >&2
+  fi
+  # shellcheck disable=SC2031 # the run's findings file; the subshell had its own
+  cat -- "$dir/findings.jsonl" >>"$SKILLS_FINDINGS_FILE"
+  ((status != 0)) || return 0
+  # A hook that could not start reported its own finding.
+  if [[ ! -s $dir/findings.jsonl ]]; then
+    component=$(jq -r '.component' <<<"$hook")
+    name=$(jq -r '.name' <<<"$hook")
+    SKILLS_STEP=$id skills_finding hook-failed "$component/$name" "component $component hook $name failed (exit $status)"
+  fi
+  ((keep_going)) || exit 1
+  failed=1
+}
+
+# _e2e_hook_group ROW...: runs the parallel hooks of the plan rows ROW...
+# (consecutive, of one phase), at most hook_jobs at a time, and reports
+# each one in plan order once it and every hook before it ended. Without
+# --keep-going no hook starts after one failed.
+_e2e_hook_group() {
+  local -a rows=("$@") dirs=()
+  local -A ended=()
+  local count=$# next=0 report=0 stop=0 status pid id hook i
+  group_count=$((group_count + 1))
+  for ((i = 0; i < count; i++)); do
+    dirs[i]=$work_dir/hooks/$group_count/$i
+  done
+  while ((report < count)); do
+    while ((!stop && next < count && ${#e2e_running[@]} < hook_jobs)); do
+      IFS=$'\t' read -r id _ hook <<<"${rows[next]}"
+      _e2e_hook_start "${dirs[next]}" "$next" "$id" "$hook"
+      next=$((next + 1))
+    done
+    if [[ -n ${ended[$report]:-} ]]; then
+      IFS=$'\t' read -r id _ hook <<<"${rows[report]}"
+      _e2e_hook_report "${dirs[report]}" "$id" "$hook" "${ended[$report]}"
+      report=$((report + 1))
+      continue
+    fi
+    pid=''
+    status=0
+    wait -n -p pid "${!e2e_running[@]}" || status=$?
+    [[ -n ${pid:-} && -n ${e2e_running[$pid]:-} ]] || die "e2e: lost track of the parallel hooks"
+    ended[${e2e_running[$pid]}]=$status
+    unset "e2e_running[$pid]"
+    if ((status != 0 && !keep_going)); then
+      stop=1
+    fi
+  done
+}
+
+# The rows of consecutive parallel hooks of one phase, run together once
+# the next row is of another kind or phase.
+hook_group=()
+hook_group_phase=''
+
+_e2e_run_group() {
+  ((${#hook_group[@]})) || return 0
+  _e2e_hook_group "${hook_group[@]}"
+  hook_group=()
+}
+
 # --- Run ------------------------------------------------------------------
 
 is_work_tree=0
@@ -884,9 +1082,17 @@ fi
 
 for row in "${plan[@]}"; do
   IFS=$'\t' read -r id kind argument <<<"$row"
+  if [[ $kind == parallel-hook ]] && ((hook_jobs > 1)); then
+    row_phase=$(jq -r '.phase // "main"' <<<"$argument")
+    [[ $row_phase == "$hook_group_phase" ]] || _e2e_run_group
+    hook_group_phase=$row_phase
+    hook_group+=("$row")
+    continue
+  fi
+  _e2e_run_group
   case $kind in
     commands) _e2e_unit "$id" _e2e_commands ;;
-    hook) _e2e_unit "$id" _e2e_hook "$argument" ;;
+    hook | parallel-hook) _e2e_unit "$id" _e2e_hook "$argument" ;;
     managed-links) _e2e_unit "$id" _e2e_managed_links ;;
     agent-rules) _e2e_unit "$id" _e2e_agent_rules "$argument" ;;
     files) _e2e_unit "$id" _e2e_files ;;
@@ -905,7 +1111,9 @@ for row in "${plan[@]}"; do
     *) die "e2e: unknown check kind: $kind" ;;
   esac
 done
+_e2e_run_group
 
+finished=1
 if ((failed)); then
   printf '[dotsteward] ERROR: e2e failed: %s findings\n' "$(_e2e_findings_count)" >&2
   exit 1

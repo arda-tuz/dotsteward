@@ -219,7 +219,7 @@ Probes run in the gate on the check profile's generation and in
 | `probes.*.profiles` | null or list of profile names | Profiles where the probe runs. |
 | `checks` | attribute set | Check contributions. |
 | `checks.commands` | list of strings | Commands the end-to-end checks require on `PATH`. |
-| `checks.e2e` | list of hooks | End-to-end hook scripts. |
+| `checks.e2e` | list of E2E hooks | End-to-end hook scripts. |
 | `checks.agents` | list of hooks | Discovery steps of `dotsteward agents check`. |
 | `checks.floors` | list of floors | Minimum versions of installed commands. |
 | `checks.floors.*.command` | string | The command whose version is checked. |
@@ -229,7 +229,8 @@ Probes run in the gate on the check profile's generation and in
 
 ## Hooks
 
-A hook is `{ name; script; profiles ? null; phase ? "main"; }`:
+A hook is `{ name; script; profiles ? null; phase ? "main"; }`; an E2E
+hook (`checks.e2e`) also takes `parallel ? false`:
 
 | Field | Meaning |
 | --- | --- |
@@ -237,6 +238,7 @@ A hook is `{ name; script; profiles ? null; phase ? "main"; }`:
 | `script` | An executable in the component directory (`./check.sh`); it is copied into the Nix store. |
 | `profiles` | Profiles where the hook runs; `null` means every profile. |
 | `phase` | `early`, `main` or `late`; the order of the end-to-end checks (`checks.e2e` only). |
+| `parallel` | `true`: the hook may run at the same time as the other parallel hooks of its phase (`checks.e2e` only). |
 
 | Option | When the hooks run |
 | --- | --- |
@@ -259,6 +261,20 @@ shell helpers), `DOTSTEWARD_INSTANCE`, `DOTSTEWARD_STATE_ROOT`,
 `dotsteward component run <name> <hook>` runs one hook by hand with the
 same environment.
 
+`dotsteward e2e` runs consecutive parallel hooks of one phase at the same
+time, at most `--jobs N` at once (default 3, or `DOTSTEWARD_E2E_JOBS`);
+every other hook and check runs alone, and the phases stay barriers.
+Declare a hook parallel only when it reads and nothing else: it writes no
+file that another hook or check reads or writes, starts no server on a
+fixed port, does not use the GPU and can be stopped with `SIGTERM`
+(reading the APT or dpkg state and starting the user's login shell are
+fine). A parallel hook runs in a session of its own, without a
+controlling terminal and with standard input from `/dev/null`; its output
+is shown once it and every hook before it ended, in plan order, so the
+output, the findings and the exit status are those of `--jobs 1`, which
+runs every hook alone. When a hook fails, no further hook starts and the
+parallel hooks still running get `SIGTERM`.
+
 The packaged CLI puts its own toolchain (bash, coreutils, jq, git, Python
 and a few more) first on `PATH` and names those directories in
 `DOTSTEWARD_TOOLCHAIN_PATH`; hooks inherit both, so the helpers of
@@ -269,6 +285,21 @@ environment, such as a login shell and what its startup files put on
 the user's `PATH` without the toolchain, so a tool the user lacks is never
 answered by the CLI's copy. The commands, version floors and probes of
 `checks` are always looked up that way.
+
+Each login shell takes a while (its startup files run), so a hook starts
+at most one: `user_login_zsh SCRIPT [ARG...]` of `lib.sh` runs the zsh code
+`SCRIPT` in one interactive login zsh started with `user_run` and standard
+input from `/dev/null`, prints only what `SCRIPT` prints (not what the
+startup files print before it) and returns its exit status, so a hook
+asks for every answer in one `SCRIPT`, for example
+`user_login_zsh 'whence -p example-app; example-app --version'`.
+
+`DOTSTEWARD_LIB` is the library of the CLI that runs the hook, which can
+be older than the hook: a contribute trial checks the generation of a
+candidate framework with the CLI of the pinned release. A catalog hook that
+uses a helper its own release adds to `lib.sh` therefore defines it when
+`declare -F` does not find it, as the claude-code E2E hook does for
+`user_login_zsh`.
 
 ## Machine safety
 

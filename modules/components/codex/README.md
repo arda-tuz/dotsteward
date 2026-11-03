@@ -53,10 +53,10 @@ missing or older binary with the rebuild hint and change nothing.
 ## The codex a login shell runs
 
 With the `shell` component, the E2E hook `codex-login-path` (for the
-profiles of the shell component) asks an interactive login zsh, the shell a
-terminal opens, for every `codex` on its `PATH`. The expected one is
-`options.expectedPath`, else, with `official-binary`, its destination
-`~/.local/bin/codex`:
+profiles of the shell component, parallel: it only reads) asks an
+interactive login zsh, the shell a terminal opens, for every `codex` on its
+`PATH`. The expected one is `options.expectedPath`, else, with
+`official-binary`, its destination `~/.local/bin/codex`:
 
 ```toml
 [components.codex]

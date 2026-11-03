@@ -15,7 +15,10 @@
 #   4. sweep             dangling links into the managed skill roots
 #   5. agentsMigrate hooks, 6. agentsPost hooks
 #   7. validation        checks.commands, checks.floors, the probe registry,
-#                        then the checks.agents hooks
+#                        then the checks.agents hooks; install
+#                        --skip-validation leaves it out (rebuild --switch,
+#                        which dotsteward e2e follows: its agents check
+#                        validates once per transaction)
 # Hooks run in both modes (DOTSTEWARD_CHECK_ONLY tells them which) in
 # [components] order, then declaration order, for the components active in
 # the profile. The skill layout engine is cli/lib/skills.sh, the method
@@ -64,6 +67,7 @@ usage() {
   cat <<'EOF'
 Usage: dotsteward agents install|check --profile PROFILE [--generation PATH]
                                         [--keep-going] [--json]
+                                        [--skip-validation]
 
 install makes the agent tools and the skill layout of PROFILE match the
 instance: official-binary and pypi components, the canonical skill root
@@ -83,6 +87,10 @@ difference.
   --json              print { "result": "passed|failed", "findings": [ {
                       "step", "path", "code", "message" } ] } on standard
                       output; logs go to standard error
+  --skip-validation   install only: leave out the validation (commands,
+                      floors, probes, checks.agents hooks), which `agents
+                      check` (run by dotsteward e2e) does; rebuild --switch
+                      installs this way
 
 Exit status: 0 done or verified, 1 refusal or failed check, or the status
 of a failed command.
@@ -94,6 +102,7 @@ profile=''
 generation=''
 keep_going=0
 json=0
+skip_validation=0
 while (($#)); do
   case $1 in
     install | check)
@@ -128,6 +137,10 @@ while (($#)); do
       json=1
       shift
       ;;
+    --skip-validation)
+      skip_validation=1
+      shift
+      ;;
     -h | --help)
       usage
       exit 0
@@ -138,6 +151,8 @@ while (($#)); do
 done
 [[ -n $mode ]] || die "agents: install or check is required"
 [[ -n $profile ]] || die "agents: --profile is required"
+[[ $mode == install || $skip_validation == 0 ]] ||
+  die "agents: --skip-validation applies to install only (check always validates)"
 if [[ -n $generation ]]; then
   [[ -d $generation ]] || die "agents: generation not found: $generation"
   generation=$(cd -P -- "$generation" && pwd)
@@ -465,16 +480,21 @@ fi
 _agents_run_hooks agents_migrate agents-migrate
 _agents_run_hooks agents_post agents-post
 
-# 7. Validation, with a built generation's commands first on PATH.
-probe_prefix=''
-if [[ -n $explicit_generation ]]; then
-  probe_prefix=$generation/home-path/bin
-  export PATH="$probe_prefix:$PATH"
+# 7. Validation, with a built generation's commands first on PATH; install
+# --skip-validation leaves it to the agents check of dotsteward e2e.
+if ((skip_validation)); then
+  log "agents install: the validation is left to dotsteward e2e (agents check)"
+else
+  probe_prefix=''
+  if [[ -n $explicit_generation ]]; then
+    probe_prefix=$generation/home-path/bin
+    export PATH="$probe_prefix:$PATH"
+  fi
+  _agents_unit commands _agents_commands
+  _agents_unit floors _agents_floors
+  _agents_unit probes _agents_probes
+  _agents_run_hooks agents agents-checks
 fi
-_agents_unit commands _agents_commands
-_agents_unit floors _agents_floors
-_agents_unit probes _agents_probes
-_agents_run_hooks agents agents-checks
 
 if ((failed)); then
   printf '[dotsteward] ERROR: agents %s failed: %s findings\n' "$mode" "$(_agents_findings_count)" >&2

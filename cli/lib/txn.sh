@@ -13,7 +13,13 @@
 #   txn_state_dir, txn_candidate_file (candidate.json, written by prepare),
 #   txn_validation_file (validation.json, written by a passing gate),
 #   txn_e2e_file (e2e.json, the result of the last `dotsteward e2e` run),
-#   txn_log_file (validate.log), txn_lock_file (validate.lock)
+#   txn_log_file (validate.log), txn_lock_file (validate.lock),
+#   txn_generation_file        generation.json, written by a passing gate:
+#                              the generation its cli-probes step built
+#                              (tree_oid, profile, system, username, home,
+#                              generation, framework_override, root,
+#                              recorded_at); rebuild reuses it for exactly
+#                              that tree, profile, identity and override
 #   txn_activation_file        <state root>/current/activation.json, written
 #                              by rebuild --switch when it activated a
 #                              generation (generation, profile, revision,
@@ -25,6 +31,9 @@
 #                              mode 0600, then mv -f)
 #   txn_json_object FILE       prints FILE as compact JSON when it holds a
 #                              JSON object; prints nothing otherwise
+#   txn_private_file FILE      true when FILE is a regular file, no symbolic
+#                              link, owned by the user and writable by
+#                              nobody else
 # Guards (each refusal is a die, exit 1):
 #   txn_valid_scope SCOPE      update or maintain
 #   txn_require_clone          the instance root is the top of a git work
@@ -94,6 +103,10 @@ txn_log_file() {
   printf '%s/validate.log\n' "$(txn_state_dir)"
 }
 
+txn_generation_file() {
+  printf '%s/generation.json\n' "$(txn_state_dir)"
+}
+
 txn_lock_file() {
   printf '%s/validate.lock\n' "$(txn_state_dir)"
 }
@@ -117,6 +130,14 @@ txn_json_object() {
   (($# == 1)) || die "usage: txn_json_object FILE"
   [[ -f $1 && -r $1 ]] || return 0
   jq -c 'select(type == "object")' "$1" 2>/dev/null || true
+}
+
+txn_private_file() {
+  (($# == 1)) || die "usage: txn_private_file FILE"
+  local mode
+  [[ -f $1 && ! -L $1 && -O $1 ]] || return 1
+  mode=$(stat -c %a -- "$1" 2>/dev/null) || return 1
+  [[ $mode =~ ^[0-7]+$ ]] && (((8#$mode & 8#022) == 0))
 }
 
 # --- guards -------------------------------------------------------------------------

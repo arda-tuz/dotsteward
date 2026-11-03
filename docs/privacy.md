@@ -99,7 +99,15 @@ finding and exits 1 when there is at least one, 0 when the scan is clean.
   pull request and push; the denylist, stored as a repository secret, only
   on pushes to `main` and manual runs, never for pull requests from forks.
 - **The gate** of an instance runs the instance policy over the instance
-  tree before every publish.
+  tree before every publish. The denylist is read only outside the Nix
+  sandbox and never enters the Nix store. There, the content of an
+  unchanged vendored skill file is answered from the scan cache,
+  `<state root>/privacy/scan-cache`: the content digests of the files an
+  earlier scan found nothing in, valid only under the same key (the
+  scanner and its rules, the denylist, the exemptions and the instance
+  root). The cache never holds a path, a term or a match; a file with a
+  finding, an exempted one included, is scanned every time, and a cache
+  that is corrupt, foreign or writable by others is ignored.
 - **`dotsteward contribute check`** runs the tree, range and instance-leak
   scans before anything leaves your machine; any finding stops the run
   with exit status 4.

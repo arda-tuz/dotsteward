@@ -28,7 +28,7 @@ The pin holds `minimum_version`, `url`, `size` and `sha256`; the URL is the asse
 | Check | What it verifies |
 | --- | --- |
 | commands | `wordcraft` and `wordcraft-cli` are on `PATH` |
-| E2E `package` (every profile) | the installed `wordcraft` is at least `minimum_version`, the package ships its desktop entry, `wordcraft-cli --version` answers, and `apt-cache policy wordcraft` shows the local APT bridge |
+| E2E `package` (every profile, parallel) | the installed `wordcraft` is at least `minimum_version`, the package ships its desktop entry, `wordcraft-cli --version` answers, and `apt-cache policy wordcraft` shows the local APT bridge |
 
 ## Verification (catalog facts)
 

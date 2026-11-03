@@ -27,8 +27,9 @@
 #                workstation.toml sets none; see `dotsteward context --json`)
 #   cli-probes   nix build checks.<primary system>.home, then dotsteward
 #                probes --generation <built path>
-# and records <state>/update/validation.json. Every Nix call keeps the lock
-# file as it is (--no-update-lock-file).
+# and records <state>/update/validation.json and the hand-off
+# <state>/update/generation.json. Every Nix call keeps the lock file as it
+# is (--no-update-lock-file).
 #
 # Options:
 #   --scope S          update (default): every path changed since the base
@@ -63,6 +64,16 @@
 # nix_version, gate_version, framework_override (or null), denylist_sha256
 # (or null), root, validated_at, total_seconds, step_seconds (preflight,
 # static, pins, flake-check, cli-probes), log.
+#
+# generation.json (schema_version "1.0"), the hand-off to `dotsteward
+# rebuild`: tree_oid, profile (profiles.check), system (the primary
+# system), username and home (the check identity: identity.username and
+# identity.home, identity.darwin_home on darwin), generation (the store path
+# the cli-probes step built and probed), framework_override (or null), root
+# and recorded_at. rebuild activates that generation instead of evaluating
+# and building again when the tree of HEAD, its profile and system, $USER,
+# $HOME, its framework override and its checkout are the same; a memo
+# answer and a failed run keep the previous record.
 #
 # Output: one "ok" line per step, then one JSON line {result, tree_oid,
 # scope, total_seconds, step_seconds}; a memo answer prints {result,
@@ -164,6 +175,7 @@ if [[ -n $DS_PRIVACY_DENYLIST && -f $DS_PRIVACY_DENYLIST && -r $DS_PRIVACY_DENYL
 fi
 
 validation_file=$(txn_validation_file)
+generation_file=$(txn_generation_file)
 log_file=$(txn_log_file)
 
 # --- memo -------------------------------------------------------------------------
@@ -190,6 +202,9 @@ fi
 
 (umask 077 && : >"$log_file") || die "cannot write the log: $log_file"
 chmod 0600 -- "$log_file"
+# The cli-probes step runs in a subshell; it leaves the built path here.
+built_note=$(mktemp "$(txn_state_dir)/.built-generation.XXXXXX") || die "cannot write in $(txn_state_dir)"
+trap 'rm -f -- "$built_note"' EXIT
 
 if [[ -n $override ]]; then
   export DOTSTEWARD_FRAMEWORK_OVERRIDE=$override
@@ -243,6 +258,7 @@ step_cli_probes() {
   [[ -n $generation ]] || die "the candidate build printed no output path"
   [[ -d $generation/home-path/bin ]] || die "candidate profile bin directory missing: $generation/home-path/bin"
   "$dotsteward" --instance "$root" probes --generation "$generation"
+  printf '%s\n' "$generation" >"$built_note"
 }
 
 declare -A step_seconds=()
@@ -311,6 +327,18 @@ jq -n --argjson key "$memo_key" --arg base "$base" --arg scope "$scope" --arg ro
     step_seconds: $steps,
     log: $log
   }' | txn_write_private "$validation_file"
+
+# The hand-off: the generation of the check profile and identity.
+built_generation=$(<"$built_note")
+[[ -n $built_generation ]] || die "the cli-probes step recorded no generation"
+check_home=$DS_IDENTITY_HOME
+[[ $DS_NIX_PRIMARY_SYSTEM != *-darwin ]] || check_home=$DS_IDENTITY_DARWIN_HOME
+jq -n --arg tree "$tree_oid" --arg profile "$DS_PROFILES_CHECK" --arg system "$DS_NIX_PRIMARY_SYSTEM" \
+  --arg username "$DS_IDENTITY_USERNAME" --arg home "$check_home" --arg generation "$built_generation" \
+  --argjson key "$memo_key" --arg root "$root" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{
+    schema_version: "1.0", tree_oid: $tree, profile: $profile, system: $system, username: $username,
+    home: $home, generation: $generation, framework_override: $key.framework_override, root: $root,
+    recorded_at: $at}' | txn_write_private "$generation_file"
 
 log "candidate validated; nothing committed or pushed"
 jq -c '{result, tree_oid, scope, total_seconds, step_seconds}' "$validation_file"

@@ -75,6 +75,20 @@
 #                                    runs a hook with the hook environment
 #                                    and the given arguments; returns its
 #                                    exit status
+#   methods_exec_hook HOOK_JSON PROFILE CHECK_ONLY [ARG...]
+#                                    replaces the calling shell (a
+#                                    background subshell) with the hook run
+#                                    as methods_run_hook runs it, in a
+#                                    session of its own: no controlling
+#                                    terminal, standard input from
+#                                    /dev/null, a process group whose ID is
+#                                    the subshell's PID. That process waits
+#                                    for the hook and exits with its status
+#                                    (128+N when signal N ended it); it
+#                                    outlives SIGTERM, SIGINT and SIGHUP,
+#                                    which reach the hook through the group.
+#                                    Returns only when the hook cannot
+#                                    start (die).
 
 _DS_METHODS_LIB_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 
@@ -1274,21 +1288,61 @@ methods_hook_path() {
   printf '%s\n' "$path"
 }
 
+# _methods_hook_env HOOK_JSON PROFILE CHECK_ONLY: sets the caller's array
+# _methods_env to the env(1) command line of the hook environment.
+_methods_hook_env() {
+  local hook=$1 profile=$2 check_only=$3 component
+  component=$(jq -r '.component' <<<"$hook")
+  _methods_env=(env DOTSTEWARD_LIB="$_DS_METHODS_LIB_DIR"
+    DOTSTEWARD_INSTANCE="$DS_INSTANCE_ROOT"
+    DOTSTEWARD_STATE_ROOT="$(state_root)"
+    DOTSTEWARD_PROFILE="$profile"
+    DOTSTEWARD_PROFILE_MODE="${DS_PROFILE_MODE[$profile]}"
+    DOTSTEWARD_PLATFORM="$DS_RUNTIME_PLATFORM"
+    DOTSTEWARD_COMPONENT="$component"
+    DOTSTEWARD_CHECK_ONLY="$check_only"
+    DOTSTEWARD_ASSUME_YES="${DOTSTEWARD_ASSUME_YES:-0}")
+}
+
 methods_run_hook() {
   (($# >= 3)) || die "usage: methods_run_hook HOOK_JSON PROFILE CHECK_ONLY [ARG...]"
-  local hook=$1 profile=$2 check_only=$3 path component status=0
+  local hook=$1 profile=$2 check_only=$3 path status=0
+  local -a _methods_env=()
   shift 3
   path=$(methods_hook_path "$hook") || exit 1
-  component=$(jq -r '.component' <<<"$hook")
-  env DOTSTEWARD_LIB="$_DS_METHODS_LIB_DIR" \
-    DOTSTEWARD_INSTANCE="$DS_INSTANCE_ROOT" \
-    DOTSTEWARD_STATE_ROOT="$(state_root)" \
-    DOTSTEWARD_PROFILE="$profile" \
-    DOTSTEWARD_PROFILE_MODE="${DS_PROFILE_MODE[$profile]}" \
-    DOTSTEWARD_PLATFORM="$DS_RUNTIME_PLATFORM" \
-    DOTSTEWARD_COMPONENT="$component" \
-    DOTSTEWARD_CHECK_ONLY="$check_only" \
-    DOTSTEWARD_ASSUME_YES="${DOTSTEWARD_ASSUME_YES:-0}" \
-    "$path" "$@" || status=$?
+  _methods_hook_env "$hook" "$profile" "$check_only"
+  "${_methods_env[@]}" "$path" "$@" || status=$?
   return "$status"
+}
+
+# The process methods_exec_hook leaves in place of the shell: it starts a
+# session, runs the hook (ARGV) as its child with the signal dispositions
+# of a command bash starts (Python ignores SIGPIPE and SIGXFSZ, and bash
+# ignores SIGINT and SIGQUIT in background subshells), and exits with the
+# hook's status.
+_METHODS_SESSION_PY='import os, signal, sys
+os.setsid()
+child = os.fork()
+if child == 0:
+    for name in ("SIGINT", "SIGQUIT", "SIGPIPE", "SIGXFSZ"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), signal.SIG_DFL)
+    try:
+        os.execv(sys.argv[1], sys.argv[1:])
+    except OSError as error:
+        print(f"[dotsteward] ERROR: cannot run {sys.argv[1]}: {error.strerror}", file=sys.stderr)
+    os._exit(126)
+for name in ("SIGHUP", "SIGINT", "SIGTERM"):
+    signal.signal(getattr(signal, name), lambda *_: None)
+_, status = os.waitpid(child, 0)
+os._exit(128 + os.WTERMSIG(status) if os.WIFSIGNALED(status) else os.WEXITSTATUS(status))'
+
+methods_exec_hook() {
+  (($# >= 3)) || die "usage: methods_exec_hook HOOK_JSON PROFILE CHECK_ONLY [ARG...]"
+  local hook=$1 profile=$2 check_only=$3 path
+  local -a _methods_env=()
+  shift 3
+  path=$(methods_hook_path "$hook") || exit 1
+  _methods_hook_env "$hook" "$profile" "$check_only"
+  exec "${_methods_env[@]}" python3 -I -S -c "$_METHODS_SESSION_PY" "$path" "$@" </dev/null
 }

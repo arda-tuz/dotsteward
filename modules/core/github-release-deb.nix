@@ -57,12 +57,14 @@ in
         name
         "${name}-cli"
       ];
+      # It only reads, so it runs in parallel with the hooks next to it.
       e2e = [
         {
           name = "package";
           script = ./github-release-deb-e2e.sh;
           phase = "main";
           profiles = null;
+          parallel = true;
         }
       ];
     };

@@ -28,7 +28,7 @@ The pin holds `minimum_version`, `url`, `size` and `sha256`; the URL is the asse
 | Check | What it verifies |
 | --- | --- |
 | commands | `gridcraft` and `gridcraft-cli` are on `PATH` |
-| E2E `package` (every profile) | the installed `gridcraft` is at least `minimum_version`, the package ships its desktop entry, `gridcraft-cli --version` answers, and `apt-cache policy gridcraft` shows the local APT bridge |
+| E2E `package` (every profile, parallel) | the installed `gridcraft` is at least `minimum_version`, the package ships its desktop entry, `gridcraft-cli --version` answers, and `apt-cache policy gridcraft` shows the local APT bridge |
 
 ## Verification (catalog facts)
 

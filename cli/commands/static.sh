@@ -34,7 +34,14 @@
 #   privacy        the privacy scan with the instance policy: generic secret
 #                  rules, [privacy] forbidden_paths and file_rules, the
 #                  digest-bound [privacy] exemptions, and the
-#                  [privacy] denylist outside the sandbox
+#                  [privacy] denylist outside the sandbox; there, in a git
+#                  work tree, a vendored file (below skills.vendor_dir, no
+#                  file rule selects it) whose content an earlier scan found
+#                  nothing in is answered from <state root>/privacy/
+#                  scan-cache (content digests under a key of the scanner,
+#                  its rules, the denylist, the exemptions and the
+#                  instance root; its path is still scanned), and the clean
+#                  line counts the answers
 #   scripts        every [gate] static script exists and is executable; when
 #                  every selected check passed they run in order from the
 #                  instance root (shell scripts with bash, other scripts
@@ -580,7 +587,7 @@ check_overlays() {
 # and returns 1 on findings or errors.
 run_privacy() (
   trap - ERR
-  local rule message pattern shown denylist noun
+  local rule message pattern shown denylist noun cache
   local -a globs=()
   if [[ $target == framework ]]; then
     ds_privacy_load_policy "$root/privacy/policy.toml" || exit 1
@@ -611,18 +618,29 @@ run_privacy() (
       fi
       ds_privacy_load_terms denylist "$denylist" || exit 1
     fi
+    # Outside the sandbox the unchanged vendored skills are answered from
+    # the scan cache of the state root (the sandbox has neither).
+    if ((!sandbox && git_context)) && [[ -n ${DS_SKILLS_VENDOR_DIR%/} ]]; then
+      cache=$(state_root)/privacy/scan-cache
+      ds_privacy_cache_enable "$cache" "${DS_SKILLS_VENDOR_DIR%/}/" "$root" || exit 1
+    fi
   fi
   trap ds_privacy_end EXIT
   ds_privacy_begin || exit 1
   ds_privacy_collect_tree "$root" "$git_context" || exit 1
   ds_privacy_report 1 0 || exit 1
+  ds_privacy_cache_store || warn "static privacy: the scan cache was not written: $DS_PRIVACY_CACHE_FILE"
   if ((DS_PRIVACY_EXEMPTED)); then
     noun=findings
     ((DS_PRIVACY_EXEMPTED != 1)) || noun=finding
     log "$DS_PRIVACY_EXEMPTED $noun exempted by [privacy] exemptions"
   fi
   if ((DS_PRIVACY_FINDINGS == 0 && DS_PRIVACY_STALE_EXEMPTIONS == 0)); then
-    log "scan clean: $DS_PRIVACY_FILES files, $DS_PRIVACY_COMMITS commits"
+    if [[ -n $DS_PRIVACY_CACHE_FILE ]]; then
+      log "scan clean: $DS_PRIVACY_FILES files ($DS_PRIVACY_CACHED from the scan cache), $DS_PRIVACY_COMMITS commits"
+    else
+      log "scan clean: $DS_PRIVACY_FILES files, $DS_PRIVACY_COMMITS commits"
+    fi
     exit 0
   fi
   if ((DS_PRIVACY_FINDINGS == 0)); then

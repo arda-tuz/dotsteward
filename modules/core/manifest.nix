@@ -70,6 +70,9 @@ let
     script = "${spec.script}";
   };
 
+  # An E2E hook also says whether it may run in parallel.
+  e2eHook = spec: hook spec // { inherit (spec) parallel; };
+
   hookLists = {
     pre_activate = "preActivate";
     system_install = "systemInstall";
@@ -137,7 +140,7 @@ let
           inherit command;
         }) ds.core.commands
         ++ tagged (component: map (command: { inherit command; }) component.checks.commands);
-      e2e = tagged (component: map hook component.checks.e2e);
+      e2e = tagged (component: map e2eHook component.checks.e2e);
       agents = tagged (component: map hook component.checks.agents);
       floors = tagged (component: component.checks.floors);
     };

@@ -220,7 +220,16 @@ in
     };
 
     hooks.systemInstall = repositoryHooks;
-    checks.e2e = map (hook: hook // { phase = "main"; }) repositoryHooks;
+    # In E2E (DOTSTEWARD_CHECK_ONLY=1) the hook only reads, so it runs in
+    # parallel with the hooks next to it.
+    checks.e2e = map (
+      hook:
+      hook
+      // {
+        phase = "main";
+        parallel = true;
+      }
+    ) repositoryHooks;
 
     docs = ./README.md;
   };

@@ -73,7 +73,8 @@ A component module receives the usual Home Manager arguments (`config`,
    such a file from the Nix store.
 5. **Declare checks**: a probe per command (version, presence or
    features), `checks.commands`, and end-to-end hooks for behaviour a
-   probe cannot see.
+   probe cannot see; mark a hook `parallel = true;` when it only reads
+   ([component-contract.md](component-contract.md#hooks)).
 6. **Declare machine safety**: every file the component may replace goes
    into `bootstrap.backupPaths`, `rebuild.adoptPaths` or
    `rollback.managedLinks`, so a rollback restores the machine.
@@ -142,7 +143,13 @@ end-to-end check:
     probes = [ { command = "example-term"; kind = "presence"; } ];
     checks = {
       commands = [ "example-term" ];
-      e2e = [ { name = "example-term-smoke"; script = ./e2e-smoke.sh; } ];
+      e2e = [
+        {
+          name = "example-term-smoke";
+          script = ./e2e-smoke.sh;
+          parallel = true;
+        }
+      ];
     };
     bootstrap.backupPaths = [ "~/.config/example-term/config.toml" ];
     gate.updatePaths = [ "components/example-term/[^/]+" ];
@@ -168,7 +175,9 @@ A new instance carries a fuller annotated example in
   `home.nix` and `components/**/*.nix`.
 - Nix sees only tracked files: `git add -A` before any Nix command.
 - Hook scripts are idempotent and change nothing when
-  `DOTSTEWARD_CHECK_ONLY=1`.
+  `DOTSTEWARD_CHECK_ONLY=1`. An E2E hook that writes a shared file,
+  starts a server on a fixed port or uses the GPU stays serial (no
+  `parallel`).
 - No secrets, account data, caches or machine identifiers in the
   repository; settings keys that look like credentials are refused.
 - Catalog components additionally keep framework text generic: English,

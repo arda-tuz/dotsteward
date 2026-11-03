@@ -13,7 +13,8 @@
 # Messages:      log, warn, die                     ([dotsteward] prefix)
 # Requirements:  require_command, require_profile, require_safe_identity,
 #                current_platform
-# User's PATH:   user_path, user_run COMMAND [ARG...]
+# User's PATH:   user_path, user_run COMMAND [ARG...],
+#                user_login_zsh SCRIPT [ARG...]
 # Files:         timestamp_utc, ensure_private_dir DIR, sha256_file FILE,
 #                directory_sha256 DIR, install_asset SRC DEST MODE SHA256,
 #                forbid_paths GLOB DIR...
@@ -83,6 +84,26 @@ user_run() {
   local search
   search=$(user_path)
   PATH=$search "$@"
+}
+
+# user_login_zsh SCRIPT [ARG...]: runs the zsh code SCRIPT, with ARG... as
+# its positional parameters, in an interactive login zsh, the shell a
+# terminal opens, started with user_run and standard input from /dev/null.
+# Prints what SCRIPT prints on standard output, without what the startup
+# files print before it, and returns SCRIPT's exit status; standard error
+# is the caller's. Each call starts one login shell, which takes a while:
+# a check that needs several answers asks for all of them in one SCRIPT.
+user_login_zsh() {
+  local script=$1 marker output status=0
+  shift
+  marker=dotsteward-login-zsh-$$-$RANDOM$RANDOM
+  output=$(user_run zsh -l -i -c "print -r -- $marker; $script" zsh "$@" </dev/null) || status=$?
+  if [[ $output == *"$marker"* ]]; then
+    output=${output#*"$marker"}
+    output=${output#$'\n'}
+    [[ -z $output ]] || printf '%s\n' "$output"
+  fi
+  return "$status"
 }
 
 # current_platform: linux or darwin.

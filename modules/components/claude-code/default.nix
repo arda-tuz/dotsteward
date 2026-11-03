@@ -501,7 +501,8 @@ in
     };
 
     # The E2E hook runs in an interactive login zsh, so it exists only with
-    # the shell component, for its profiles.
+    # the shell component, for its profiles. It runs claude, which writes
+    # its own files and starts the MCP servers, so it is not parallel.
     checks.e2e = lib.optional (shell.enable && (launchList != [ ] || hasServers)) {
       name = "claude-login-zsh";
       script = ./e2e-login-zsh.sh;

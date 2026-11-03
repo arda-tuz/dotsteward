@@ -94,10 +94,12 @@ in
 
     checks = {
       commands = [ "herdr" ];
+      # It only reads, so it runs in parallel with the hooks next to it.
       e2e = lib.optional shell.enable {
         name = "herdr-login-zsh";
         script = ./e2e-login-zsh.sh;
         phase = "main";
+        parallel = true;
         inherit (shell) profiles;
       };
     };

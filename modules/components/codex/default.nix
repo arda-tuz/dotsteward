@@ -341,10 +341,12 @@ in
       script = toString ./plugins.sh;
     };
 
+    # It only reads, so it runs in parallel with the hooks next to it.
     checks.e2e = lib.optional shell.enable {
       name = "codex-login-path";
       script = ./e2e-login-path.sh;
       phase = "main";
+      parallel = true;
       inherit (shell) profiles;
     };
 
