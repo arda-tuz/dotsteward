@@ -94,10 +94,10 @@ jobs:
       - name: Install Nix
         run: bash tests/ci/install-nix.sh
       # Every check runs as many test files at once as its build has cores,
-      # so the runner's 4 vCPUs take 2 builds of 2 cores: Nix's defaults
+      # so the runner's 4 vCPUs take 4 builds of 1 core: Nix's defaults
       # (one build per vCPU, every vCPU each) would run 16 files at once.
       - name: nix flake check
-        run: nix flake check -L --max-jobs 2 --cores 2
+        run: nix flake check -L --max-jobs 4 --cores 1
       # The suites that need the host: the pre-push hook (a writable bare
       # remote), real Nix (tests/host) and the channel installer's
       # stand-ins (tests/channels). One file at a time: a test of
