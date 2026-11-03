@@ -50,6 +50,29 @@ missing or older binary with the rebuild hint and change nothing.
 
 `external` declares no pins.
 
+## The codex a login shell runs
+
+With the `shell` component, the E2E hook `codex-login-path` (for the
+profiles of the shell component) asks an interactive login zsh, the shell a
+terminal opens, for every `codex` on its `PATH`. The expected one is
+`options.expectedPath`, else, with `official-binary`, its destination
+`~/.local/bin/codex`:
+
+```toml
+[components.codex]
+enable = true
+method = "external"
+options = { expectedPath = "~/.local/bin/codex" }
+```
+
+| Option | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `expectedPath` | home path (`~/...`) or absolute path | none | the `codex` the first `PATH` entry must provide: the hook fails when it is not an executable file, when `codex` is not on `PATH`, or when another copy comes first (a link to the expected file counts as that file), and names that copy |
+
+Without an expected location (`external` without `expectedPath`) the hook
+only warns when more than one `codex` is on `PATH`, naming the one that
+runs first.
+
 ## Agent rules, settings and backups
 
 - Agent rules: `~/.codex/AGENTS.md` links the instance's shared agent rules
@@ -99,8 +122,10 @@ agents phase, before validation). `dotsteward agents install` first runs
 `codex plugin marketplace add OWNER/REPO` for each `marketplace` that
 `codex plugin marketplace list --json` does not list under the spec's
 marketplace name, then `codex plugin add SPEC` for each plugin that
-`codex plugin list --json` does not show installed and enabled. Both
-`agents install` and `agents check` then verify every plugin:
+`codex plugin list --json` does not show installed and enabled. The hook
+reads each of the two lists once for all entries, and again only after a
+command that changed it. Both `agents install` and `agents check` then
+verify every plugin:
 
 - the marketplace an entry names is listed under the spec's marketplace
   name, as a Git marketplace from `https://github.com/OWNER/REPO` (a

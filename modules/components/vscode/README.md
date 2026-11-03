@@ -19,7 +19,7 @@ options = { set_default_editor = true }
 
 Choose a method with `method = "..."` or `method_by_platform = { linux = "...", darwin = "..." }` in `[components.vscode]`.
 
-- `deb` (Linux): the official DEB of package `code` (architecture `amd64`), downloaded from the pinned URL and verified by size and SHA-256 before anything is installed. In a `fresh` profile, `dotsteward install` adds it to the single apt transaction only when the installed `code` is older than `minimum_version`; a newer installed version is kept, never downgraded. The package's installer asks whether to add the vendor's apt repository; dotsteward never answers that question for you and never removes that repository, so VS Code keeps updating itself through it. `--check-only` compares the installed version with `minimum_version` (`dpkg --compare-versions`). In an `adopt` profile VS Code is not managed.
+- `deb` (Linux): the official DEB of package `code` (architecture `amd64`), downloaded from the pinned URL and verified by size and SHA-256 before anything is installed. In a `fresh` profile, `dotsteward install` adds it to the single apt transaction only when the installed `code` is older than `minimum_version`; a newer installed version is kept, never downgraded. The package's installer asks whether to add the vendor's apt repository (`https://packages.microsoft.com/repos/code`) and owns its source and key; dotsteward never answers that question for you unless `vendor_repository = true` asks it to (see Options), and never writes, rewrites or removes that repository's source, so VS Code keeps updating itself through it. `--check-only` compares the installed version with `minimum_version` (`dpkg --compare-versions`). In an `adopt` profile VS Code is not managed.
 - `app-archive` (darwin): the official arm64 archive, a zip whose root is the bundle `Visual Studio Code.app`, verified by size and SHA-256 and installed as `~/Applications/Visual Studio Code.app` (an existing bundle is backed up first). The installed version is the `CFBundleShortVersionString` of `Visual Studio Code.app/Contents/Info.plist`; it must be at least `minimum_version`, and a newer bundle (VS Code updates itself on macOS) is kept. The bundle's command line launcher, `Contents/Resources/app/bin/code`, is put on `PATH` through Home Manager's session variables, so `code` works in your shells. In an `adopt` profile VS Code is not managed.
 - `external`: you install VS Code yourself; dotsteward expects `code` on `PATH` and installs nothing.
 
@@ -40,10 +40,11 @@ The settings engine reads JSONC but writes plain JSON: when your `settings.json`
 | Option | Type | Default | Effect |
 | --- | --- | --- | --- |
 | `set_default_editor` | boolean | `false` | `true` sets exactly `EDITOR = "code"`, `VISUAL = "code"` and `GIT_EDITOR = "code --wait"` (Home Manager `home.sessionVariables`) in every profile where the component is active. `GIT_EDITOR` uses `code --wait`, so Git waits until you close the editor tab. |
+| `vendor_repository` | boolean | `false` | Linux, `deb` method only: VS Code updates with plain `apt upgrade` from the vendor's apt repository. `dotsteward install` (in a `fresh` profile, or with `--component vscode` on an adopted machine) has the code package's own installer add the repository when no apt source maps it yet: it answers the installer's repository question with yes, runs the package's configuration again (`dpkg-reconfigure`) and then `apt-get update`. A source that maps the repository already, in any file, is left as it is. The E2E hook `apt-repository` then checks that an apt source maps the repository and that APT takes `code` from it, and names the command to run otherwise. |
 
 Any other option, or a value that is not a boolean, fails the evaluation with a message naming it.
 
-The component adds no probe, E2E command, hook, backup path or managed link: the application owns its files, and the settings target is backed up by the settings engine.
+The component adds no probe, E2E command, backup path or managed link, and no hook unless `vendor_repository` is set: the application owns its files, and the settings target is backed up by the settings engine.
 
 ## Verification (catalog facts)
 

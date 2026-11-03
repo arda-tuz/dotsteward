@@ -36,14 +36,15 @@ always uses the user who runs it.
 | `./rebuild.sh --profile P --switch` | Build the generation of profile P and activate it. |
 | `./rebuild.sh --profile P --build-only` | Build it without activating. |
 | `./rollback.sh --latest --dry-run` | Show what a rollback would undo; `--apply` undoes it. |
-| `./update.sh prepare --official-sources-only` | Start a maintenance transaction from `origin`. |
-| `./update.sh validate` | Prove the changed tree: static checks, pins, `nix flake check`, probes. |
-| `./update.sh publish` | Push the proven tree. |
-| `./update.sh status` | Show the records of the current transaction. |
+| `./.dotsteward/cli.sh update prepare --official-sources-only` | Start a maintenance transaction from `origin`. |
+| `./.dotsteward/cli.sh gate` | Prove the changed tree: static checks, pins, `nix flake check`, probes. |
+| `./.dotsteward/cli.sh update publish` | Push the proven tree. |
+| `./.dotsteward/cli.sh update status` | Show the records of the current transaction. |
 
-Every wrapper runs the dotsteward command line interface pinned by
-`flake.lock`, through `.dotsteward/cli.sh`; `./update.sh -h` lists its
-options. With the coding agent skills below you rarely need them directly.
+`.dotsteward/cli.sh` runs the dotsteward command line interface pinned by
+`flake.lock`, and the wrappers `rebuild.sh` and `rollback.sh` run it for
+you; `./.dotsteward/cli.sh <command> --help` lists the options of a
+command. With the coding agent skills below you rarely need them directly.
 
 ## Changing the workstation
 
@@ -74,7 +75,7 @@ Every change goes through one gate (`dotsteward gate`) before it is published.
 | `local-maintained-files/` | Settings carried across machines inside files the applications also rewrite. |
 | `tests/` | Your own static checks, run by the gate. |
 | `.dotsteward/` | Framework-owned: the launcher and generated mirrors (`dotsteward sync` writes them). |
-| `bootstrap.sh`, `rebuild.sh`, `rollback.sh`, `update.sh` | Entry points; `bootstrap.sh` is framework-owned. |
+| `bootstrap.sh`, `rebuild.sh`, `rollback.sh` | Entry points; `bootstrap.sh` is framework-owned. |
 
 `bootstrap.sh` and `.dotsteward/cli.sh` stay byte-identical to the pinned
 framework release, and the `.dotsteward/` mirrors are generated: never edit

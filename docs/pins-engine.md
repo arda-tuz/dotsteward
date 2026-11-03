@@ -112,7 +112,7 @@ declarations.
 | `nix-release` | the newest stable Nix release and its published installer checksum |
 | `channel-head` | the head of a release channel branch (nixpkgs, Home Manager); a newer series is `review` |
 | `git-compare` | changes of watched paths in a repository since the pinned commit |
-| `skill-source` | changes of a vendored skill upstream (`release_bound`: since the newest release tag) |
+| `skill-source` | changes of a vendored skill upstream (`release_bound`: since the newest release tag); when GitHub truncates the compare's file list (300 files), the tree of the skill's `source_path` at both commits decides |
 | `local-apt` | the candidate of this machine's APT configuration (with `--all`) |
 | `manual` | no automatic source; the row reminds you to look |
 | `follows` | a version derived from another pin (with `--all`) |

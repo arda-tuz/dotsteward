@@ -26,7 +26,7 @@ it.
   `local-maintained-files/` with `dotsteward settings`, never linked by Home
   Manager.
 - Nix sees only tracked files: run `git add -A` before any Nix command.
-- Validate the final tree once with `dotsteward gate` (`./update.sh validate`)
+- Validate the final tree once with `dotsteward gate` (`./.dotsteward/cli.sh gate`)
   before every push, the first push of a new instance included: after
   `dotsteward init`, run `dotsteward gate --scope maintain`, then
   `git push -u origin main`; afterwards publish with

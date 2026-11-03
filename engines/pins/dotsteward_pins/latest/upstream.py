@@ -30,6 +30,7 @@ COMMAND_TIMEOUT = 60
 USER_AGENT = "dotsteward-pins/1.0"
 GITHUB = "https://github.com"
 _GITHUB_REFERENCE = re.compile(r"github:(?P<owner>[^/]+)/(?P<repo>[^/?#]+)(?:[/?#].*)?")
+_HEX40 = re.compile(r"[0-9a-f]{40}")
 _GITHUB_URL = re.compile(
     r"(?:https://|git\+https://|ssh://git@|git@)github\.com[/:](?P<owner>[^/]+)/(?P<repo>[^/?#]+?)(?:\.git)?/?(?:[?#].*)?"
 )
@@ -149,6 +150,22 @@ class Upstream:
         """``gh api PATH`` as JSON (RuntimeError, ValueError or OSError on
         failure)."""
         return json.loads(self.run_text(["gh", "api", path]))
+
+    def tree_sha(self, repo: str, revision: str, path: str) -> str | None:
+        """The tree object of the directory PATH ("" for the root) at the
+        commit REVISION of a GitHub repository (``gh api
+        repos/<repo>/git/trees/<revision>:<path>``), or None when the
+        revision has no directory there (HTTP 404, or 422 for a file)."""
+        try:
+            data = self.gh_json(f"repos/{repo}/git/trees/{revision}:{urllib.parse.quote(path)}")
+        except RuntimeError as error:
+            if "(HTTP 404)" in str(error) or "(HTTP 422)" in str(error):
+                return None
+            raise
+        sha = data.get("sha") if isinstance(data, dict) else None
+        if not isinstance(sha, str) or not _HEX40.fullmatch(sha):
+            raise UpstreamError(f"the tree of {repo} {revision[:12]}:{path or '.'} has no tree object id")
+        return sha
 
     # -- git --
 

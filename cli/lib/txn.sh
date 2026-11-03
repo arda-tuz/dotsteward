@@ -1,7 +1,9 @@
 # shellcheck shell=bash
-# Maintenance transaction helpers shared by `dotsteward gate` and
-# `dotsteward update prepare|publish|status` (prepare records a base, the
-# gate proves a tree, publish ships a commit whose tree is the proven tree).
+# Maintenance transaction helpers shared by `dotsteward gate`, `dotsteward
+# e2e`, `dotsteward rebuild` and `dotsteward update prepare|publish|status`
+# (prepare records a base, the gate proves a tree, rebuild --switch
+# activates it and e2e verifies the machine, publish ships a commit whose
+# tree is the proven tree).
 #
 # Source after lib.sh and config.sh, then call config_load; every function
 # works on the loaded instance (DS_INSTANCE_ROOT, DS_INSTANCE_BRANCH,
@@ -10,7 +12,13 @@
 # State files (all below <state root>/update, directory 0700, files 0600):
 #   txn_state_dir, txn_candidate_file (candidate.json, written by prepare),
 #   txn_validation_file (validation.json, written by a passing gate),
+#   txn_e2e_file (e2e.json, the result of the last `dotsteward e2e` run),
 #   txn_log_file (validate.log), txn_lock_file (validate.lock)
+#   txn_activation_file        <state root>/current/activation.json, written
+#                              by rebuild --switch when it activated a
+#                              generation (generation, profile, revision,
+#                              tree_oid, root, framework_override,
+#                              activated_at)
 #   txn_ensure_state_dir       creates the private state directory
 #   txn_write_private FILE     writes standard input to FILE atomically
 #                              (a temporary file in the same directory,
@@ -48,6 +56,16 @@
 #                              the settings buffer
 #   txn_working_tree_oid       the tree `git add -A && git write-tree` would
 #                              write, computed in a throw-away index
+# Activation:
+#   txn_require_verified_activation BASE
+#                              when the transaction activated a tree on this
+#                              machine (the activated tree is the HEAD tree,
+#                              or the activated revision is a commit after
+#                              BASE), the activated tree is the HEAD tree
+#                              and e2e.json records a passed run of that
+#                              tree and the activated generation, with the
+#                              repository checks; an activation of another
+#                              tree outside BASE..HEAD asks for nothing
 
 # --- state ------------------------------------------------------------------------
 
@@ -61,6 +79,14 @@ txn_candidate_file() {
 
 txn_validation_file() {
   printf '%s/validation.json\n' "$(txn_state_dir)"
+}
+
+txn_e2e_file() {
+  printf '%s/e2e.json\n' "$(txn_state_dir)"
+}
+
+txn_activation_file() {
+  printf '%s/current/activation.json\n' "$(state_root)"
 }
 
 txn_log_file() {
@@ -279,6 +305,36 @@ txn_check_allowlist() {
 }
 
 # --- candidate tree -----------------------------------------------------------------
+
+# --- activation ---------------------------------------------------------------------
+
+txn_require_verified_activation() {
+  (($# == 1)) || die "usage: txn_require_verified_activation BASE"
+  local base=$1 root=$DS_INSTANCE_ROOT record revision activated generation profile tree e2e
+  record=$(txn_json_object "$(txn_activation_file)")
+  [[ -n $record ]] || return 0
+  revision=$(jq -r '.revision // empty | strings' <<<"$record")
+  activated=$(jq -r '.tree_oid // empty | strings' <<<"$record")
+  generation=$(jq -r '.generation // empty | strings' <<<"$record")
+  profile=$(jq -r '.profile // empty | strings' <<<"$record")
+  profile=${profile:-PROFILE}
+  tree=$(git -C "$root" rev-parse 'HEAD^{tree}') || die "cannot read the tree of HEAD in $root"
+  if [[ $activated != "$tree" ]]; then
+    # Another tree is active: it concerns this transaction only when its
+    # revision is a commit after the base.
+    [[ -n $revision && $revision != "$base" ]] || return 0
+    git -C "$root" cat-file -e "$revision^{commit}" 2>/dev/null || return 0
+    git -C "$root" merge-base --is-ancestor "$base" "$revision" 2>/dev/null || return 0
+    git -C "$root" merge-base --is-ancestor "$revision" HEAD 2>/dev/null || return 0
+    die "this transaction activated ${revision:0:12} on this machine (rebuild --switch), not the tree of HEAD; activate HEAD and run E2E for it first: dotsteward rebuild --profile $profile --switch, then dotsteward e2e --profile $profile --expected-remote-base $base"
+  fi
+  e2e=$(txn_json_object "$(txn_e2e_file)")
+  if [[ -z $e2e ]] || ! jq -e --arg tree "$tree" --arg generation "$generation" '
+    .result == "passed" and .tree_oid == $tree and .generation == $generation
+    and .repo_checks == true' <<<"$e2e" >/dev/null; then
+    die "the tree of HEAD is active on this machine (generation ${generation:-unknown}, rebuild --switch) but no passing E2E is recorded for this tree and generation; run 'dotsteward e2e --profile $profile --expected-remote-base $base' first"
+  fi
+}
 
 txn_working_tree_oid() {
   local temporary oid status=0

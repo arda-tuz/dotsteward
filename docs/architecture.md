@@ -18,7 +18,7 @@ The framework never contains user data. Identity (username, home directory, repo
 ## Concepts
 
 - **Component**: one unit of the workstation, for example "Claude Code" or "zsh + starship". A component is a Home Manager module that fills the `dotsteward.components.<name>` contract: install method per platform, pinned versions and their official sources, settings files the user may edit locally, checks and probes, backup and rollback declarations, and documentation.
-- **Catalog**: the components shipped by the framework: Claude Code, Codex, herdr, zsh + starship, OpenCode and Pi, VS Code (see [catalog.md](catalog.md)).
+- **Catalog**: the components shipped by the framework, one directory each under `modules/components/`: `claude-code` (Claude Code), `codex` (Codex), `herdr`, `shell` (zsh + starship), `opencode-pi` (OpenCode and Pi), `vscode` (VS Code), and on Linux `pdfcraft`, `gridcraft`, `wordcraft`, `deckcraft` and `craft-anything` (see [catalog.md](catalog.md)).
 - **Private component**: a component written in your instance under `components/<name>/`, using exactly the same contract as the catalog. Anything outside the catalog is a private component.
 - **Profile**: a named way to apply the instance. Each profile has a mode:
   - `fresh`: a new machine; system-level installs, system packages and desktop-level hooks run.
@@ -120,4 +120,4 @@ Bash commands run with Nix-provided GNU tools on both platforms, so their behavi
 
 ## Versioning
 
-A single `VERSION` file feeds the Nix library, the CLI, the plugin manifests and the marketplace files; a contract test keeps them equal. Releases are Git tags with generated release notes; there is no hand-written changelog.
+`VERSION` is the single source of the release version: the Nix library and the CLI read it. Copies of it, which a release moves together with `VERSION`, are in the plugin manifests `plugins/dotsteward/.claude-plugin/plugin.json` and `plugins/dotsteward/.codex-plugin/plugin.json`, in the marketplace files `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` (every `version` key they have) and in the `dotsteward` tag of `template/flake.nix`. The contract test `tests/static/test-version-contract.sh` and the template tests keep every copy equal to `VERSION`. Releases are Git tags with generated release notes; there is no hand-written changelog.

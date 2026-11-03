@@ -10,14 +10,14 @@
     {
       "name": "dotsteward-maintain",
       "directory": "dotsteward-maintain",
-      "skill_sha256": "a6a119c258433ae4855873945482a0b0b219b84465ea847912df5ec0e7497fca",
-      "directory_sha256": "6365a282c6734738d0def3fdc12ceb242a8e4afcf52ec1d8397ef63d53efaae9"
+      "skill_sha256": "a9a161d67d780be97e7ac813007fa5ccdb079201b3abe45fdb298ac256bf0789",
+      "directory_sha256": "69a69262d7187db5b8c52a778873af940c342cfed87f83820c611d477041177c"
     },
     {
       "name": "dotsteward-update",
       "directory": "dotsteward-update",
-      "skill_sha256": "b15d9dcc6b8826426f749daa8871e69365e3002caa9cb979a5435aefe740fea7",
-      "directory_sha256": "ca3b89fcad97d8cc317e56ab03966280cfd4b6c587398de04697a640248ffbc0"
+      "skill_sha256": "9a130aa5dbd207c0f8c8e599a77040392e257b7921054ae063adb874f4d53945",
+      "directory_sha256": "39318e8fbe872c8c1f004bc4e81e5c36192503680afd53ba2cb6c5db5b2e734c"
     }
   ]
 }

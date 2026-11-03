@@ -29,7 +29,14 @@
 # install) and verifies every listed one (both modes). Codex refreshes
 # configured Git marketplaces itself. Each trackAt entry (source and observed_marketplace_revision)
 # adds a git-compare review row of the marketplace for its watched paths,
-# with every method (lib/plugin-tracking.nix). Invalid options fail the
+# with every method (lib/plugin-tracking.nix).
+#   expectedPath = "~/.local/bin/codex"           # optional: the codex a login
+#                                                 # shell must run first
+# With the shell component the E2E hook codex-login-path (e2e-login-path.sh,
+# for the profiles of the shell component) checks that the first codex on
+# the PATH of an interactive login zsh is the expected one: expectedPath,
+# else the official-binary destination ~/.local/bin/codex; without either
+# it reports more than one codex on PATH. Invalid options fail the
 # evaluation with every problem listed.
 {
   config,
@@ -57,6 +64,14 @@ let
   inherit (dotsteward) cfg system;
   dsLib = dotsteward.lib;
   component = config.dotsteward.components.${name};
+
+  # The login path check needs the zsh of the shell component, so it runs
+  # only where that component is active: its profiles scope the hook.
+  shell =
+    config.dotsteward.components.shell or {
+      enable = false;
+      profiles = null;
+    };
 
   platform = dsLib.platform.platformOf system;
 
@@ -101,7 +116,11 @@ let
   pluginList = if isList plugins then plugins else [ ];
   tracking = dsLib.pluginTracking { inherit pins; };
 
-  knownOptions = [ "plugins" ];
+  knownOptions = [
+    "plugins"
+    "expectedPath"
+  ];
+  expectedPath = componentOptions.expectedPath or null;
   knownPluginKeys = [
     "spec"
     "marketplace"
@@ -221,6 +240,9 @@ let
     map (key: "unknown option ${key} (known: ${lib.concatStringsSep ", " knownOptions})") (
       filter (key: !elem key knownOptions) (attrNames componentOptions)
     )
+    ++ lib.optional (
+      expectedPath != null && !(isString expectedPath && match "(~/|/).+" expectedPath != null)
+    ) "options.expectedPath must be a home path (~/...) or an absolute path, got ${toJSON expectedPath}"
     ++ (
       if !isList plugins then
         [ "options.plugins must be a list of tables" ]
@@ -317,6 +339,13 @@ in
     hooks.agentsPost = lib.optional (pluginList != [ ]) {
       name = "plugins";
       script = toString ./plugins.sh;
+    };
+
+    checks.e2e = lib.optional shell.enable {
+      name = "codex-login-path";
+      script = ./e2e-login-path.sh;
+      phase = "main";
+      inherit (shell) profiles;
     };
 
     docs = ./README.md;

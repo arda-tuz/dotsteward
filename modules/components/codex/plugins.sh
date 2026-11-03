@@ -13,8 +13,10 @@
 # OWNER/REPO` for an entry's marketplace that `codex plugin marketplace list
 # --json` does not list under the spec's marketplace name, then `codex plugin
 # add SPEC` for a plugin that `codex plugin list --json` does not show
-# installed and enabled. Codex refreshes configured Git marketplaces and
-# their plugins itself. Both modes then verify every plugin:
+# installed and enabled. Each list is read once per run for every entry and
+# again only after a command that changes it (marketplace add, plugin add).
+# Codex refreshes configured Git marketplaces and their plugins itself. Both
+# modes then verify every plugin:
 #   - the marketplace an entry names is listed under the spec's marketplace
 #     name, from https://github.com/OWNER/REPO (a trailing .git and letter
 #     case aside);
@@ -49,38 +51,58 @@ profile=${DOTSTEWARD_PROFILE:-$DS_PROFILES_DEFAULT}
 lock_name=${DS_PINS_VERSIONS_LOCK##*/}
 codex_root=${CODEX_HOME:-$HOME/.codex}
 
-# listed_entry SPEC: the `codex plugin list --json` entry of SPEC when it is
-# installed and enabled, else nothing.
-listed_entry() {
+# json_object ARG...: the JSON object that `codex ARG...` prints.
+json_object() {
   local list
-  list=$(codex plugin list --json) || die "codex plugin list --json failed"
-  jq -e 'type == "object"' >/dev/null 2>&1 <<<"$list" ||
-    die "codex plugin list --json printed no JSON object"
-  jq -c --arg spec "$1" \
-    'first((.installed // [])[] | select(.pluginId == $spec and .installed == true and .enabled == true)) // empty' \
-    <<<"$list"
+  list=$(codex "$@") || die "codex $* failed"
+  jq -e 'type == "object"' >/dev/null 2>&1 <<<"$list" || die "codex $* printed no JSON object"
+  printf '%s\n' "$list"
 }
 
-# listed_marketplace NAME: the `codex plugin marketplace list --json` entry
-# named NAME, else nothing.
+# The two lists of the codex CLI, read once for every entry: empty until the
+# first read, and emptied by the commands that change them, so the next
+# lookup reads the list as it is after the change.
+plugins_listed=''
+marketplaces=''
+
+# load_plugins, load_marketplaces: read a list unless it is current. They
+# run in the hook's own shell, never in a command substitution, so the list
+# they read stays for the next lookup.
+load_plugins() {
+  [[ -n $plugins_listed ]] || plugins_listed=$(json_object plugin list --json)
+}
+
+load_marketplaces() {
+  [[ -n $marketplaces ]] || marketplaces=$(json_object plugin marketplace list --json)
+}
+
+# listed_entry SPEC: the plugin list entry of SPEC when it is installed and
+# enabled, else nothing (after load_plugins).
+listed_entry() {
+  jq -c --arg spec "$1" \
+    'first((.installed // [])[] | select(.pluginId == $spec and .installed == true and .enabled == true)) // empty' \
+    <<<"$plugins_listed"
+}
+
+# listed_marketplace NAME: the marketplace list entry named NAME, else
+# nothing (after load_marketplaces).
 listed_marketplace() {
-  local list
-  list=$(codex plugin marketplace list --json) || die "codex plugin marketplace list --json failed"
-  jq -e 'type == "object"' >/dev/null 2>&1 <<<"$list" ||
-    die "codex plugin marketplace list --json printed no JSON object"
-  jq -c --arg name "$1" 'first((.marketplaces // [])[] | select(.name == $name)) // empty' <<<"$list"
+  jq -c --arg name "$1" 'first((.marketplaces // [])[] | select(.name == $name)) // empty' <<<"$marketplaces"
 }
 
 # ensure_marketplace NAME REPO: adds (install mode) and verifies one GitHub
 # marketplace.
 ensure_marketplace() {
   local market=$1 repo=$2 entry source normalized
+  load_marketplaces
   entry=$(listed_marketplace "$market")
   if [[ -z $entry ]]; then
     [[ $check_only != 1 ]] ||
       die "codex marketplace $market ($repo) is not added; run 'dotsteward agents install --profile $profile'"
     log "codex marketplace $market: adding $repo with codex plugin marketplace add"
+    marketplaces=''
     codex plugin marketplace add "$repo" || die "codex plugin marketplace add $repo failed"
+    load_marketplaces
     entry=$(listed_marketplace "$market")
     [[ -n $entry ]] || die "codex plugin marketplace add $repo did not add the marketplace $market"
   fi
@@ -118,12 +140,15 @@ ensure_plugin() {
   repo=$(jq -r '.marketplace // empty | strings' <<<"$plugin")
   [[ -z $repo ]] || ensure_marketplace "$market" "$repo"
 
+  load_plugins
   entry=$(listed_entry "$spec")
   if [[ -z $entry ]]; then
     [[ $check_only != 1 ]] ||
       die "codex plugin $spec is not installed and enabled; run 'dotsteward agents install --profile $profile'"
     log "codex plugin $spec: installing with codex plugin add"
+    plugins_listed=''
     codex plugin add "$spec" || die "codex plugin add $spec failed"
+    load_plugins
     entry=$(listed_entry "$spec")
     [[ -n $entry ]] || die "codex plugin $spec is still not installed and enabled after codex plugin add"
   fi

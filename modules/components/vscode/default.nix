@@ -27,6 +27,15 @@
 #                                GIT_EDITOR = "code --wait" in every profile
 #                                where the component is active (default:
 #                                false, nothing is set)
+#   vendor_repository = true     (Linux, deb method) VS Code updates with
+#                                plain `apt upgrade` from the vendor's APT
+#                                repository, which the code package's own
+#                                installer adds and owns: the hook
+#                                apt-repository.sh, as a systemInstall hook,
+#                                has the installer add it when no APT source
+#                                maps it, and, as an E2E hook, verifies that
+#                                APT takes code from it (default: false, the
+#                                installer asks the user and nothing checks)
 # Invalid options fail the evaluation with every problem listed.
 {
   config,
@@ -94,8 +103,13 @@ let
   # --- options ------------------------------------------------------------------
 
   componentOptions = component.options;
-  knownOptions = [ "set_default_editor" ];
+  knownOptions = [
+    "set_default_editor"
+    "vendor_repository"
+  ];
   setDefaultEditor = componentOptions.set_default_editor or false;
+  vendorRepository = componentOptions.vendor_repository or false;
+  linuxMethod = methodOn "linux";
 
   optionProblems =
     map (key: "unknown option ${key} (known: ${lib.concatStringsSep ", " knownOptions})") (
@@ -103,7 +117,22 @@ let
     )
     ++ lib.optional (
       !isBool setDefaultEditor
-    ) "options.set_default_editor must be true or false, got ${toJSON setDefaultEditor}";
+    ) "options.set_default_editor must be true or false, got ${toJSON setDefaultEditor}"
+    ++ lib.optional (
+      !isBool vendorRepository
+    ) "options.vendor_repository must be true or false, got ${toJSON vendorRepository}"
+    ++
+      lib.optional (vendorRepository == true && linuxMethod != releases.linux.method)
+        "options.vendor_repository needs the deb method on Linux (the code package's installer adds the repository), got ${linuxMethod}";
+
+  # The vendor repository hook, on Linux with the deb method only.
+  repositoryHooks =
+    lib.optional
+      (vendorRepository == true && platform == "linux" && component.method == releases.linux.method)
+      {
+        name = "apt-repository";
+        script = ./apt-repository.sh;
+      };
 
   active = helpers.isActive profile platform component;
 
@@ -189,6 +218,9 @@ in
       format = "jsonc";
       createIfMissing = true;
     };
+
+    hooks.systemInstall = repositoryHooks;
+    checks.e2e = map (hook: hook // { phase = "main"; }) repositoryHooks;
 
     docs = ./README.md;
   };

@@ -115,7 +115,7 @@ edit the help text in `cli/commands/` and run `tools/gen-docs.sh`.
 
 | Where | How to run a command |
 | --- | --- |
-| In an instance | `./.dotsteward/cli.sh <command>`: the CLI pinned by the instance's `flake.lock`, built once per lock and cached. The wrappers `./rebuild.sh`, `./rollback.sh` and `./update.sh` call it for you. |
+| In an instance | `./.dotsteward/cli.sh <command>`: the CLI pinned by the instance's `flake.lock`, built once per lock and cached. The wrappers `./rebuild.sh` and `./rollback.sh` call it for you. |
 | Anywhere with Nix | `nix run github:arda-tuz/dotsteward -- <command>`: the newest release. Inside an instance prefer the pinned launcher. |
 | In a framework checkout | `./cli/dotsteward <command>` |
 

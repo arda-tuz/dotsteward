@@ -40,7 +40,8 @@ Read this first, then only the files it points to for the components you change.
 | `tests/` | instance static scripts listed in `[gate] static` | this skill |
 | `.dotsteward/manifest.<system>.json`, `.dotsteward/stage0.<platform>.env` | generated mirrors of the evaluated manifest | `dotsteward sync` only |
 | `.dotsteward/cli.sh`, `bootstrap.sh` | framework launcher and stage-0, byte-identical to the pinned framework's template | framework upgrades only |
-| `rebuild.sh`, `rollback.sh`, `update.sh` | thin wrappers around the CLI | framework template |
+| `rebuild.sh`, `rollback.sh` | thin wrappers around the CLI | framework template |
+| `update.sh` (older instances only) | a retired wrapper of `update` and `gate`; new instances do not have it, and nothing needs it | remove it in a maintain transaction when the user agrees |
 | `README.md`, `AGENTS.md` | instance documentation (policy, not version numbers) | this skill |
 
 ## Facts from the context

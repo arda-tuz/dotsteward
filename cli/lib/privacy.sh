@@ -1317,14 +1317,19 @@ _ds_privacy_location() {
 # ds_privacy_add_exemption PATH RULE SHA256: see the header. Refuses a rule
 # that cannot be exempted and a digest that is not 64 lowercase hex digits.
 ds_privacy_add_exemption() {
-  local path=$1 rule=$2 sha=$3 number i
+  local path=$1 rule=$2 sha=$3 number i candidate known=0
   local -a allowed=()
   number=$((${#_DS_EXEMPT_PATH[@]} + 1))
   for ((i = 0; i < ${#_DS_PRIVACY_SECRET_RULES[@]}; i += 2)); do
     allowed+=("${_DS_PRIVACY_SECRET_RULES[i]}")
   done
   allowed+=(forbidden-path)
-  if ! printf '%s\n' "${allowed[@]}" | grep -qxF -e "$rule"; then
+  # A membership test in bash, never `printf | grep -q`: a grep that exits
+  # at the first match leaves the writer to die of SIGPIPE under pipefail.
+  for candidate in "${allowed[@]}"; do
+    [[ $candidate != "$rule" ]] || known=1
+  done
+  if ((!known)); then
     _ds_privacy_error "privacy exemption $number: rule $rule cannot be exempted (allowed: $(printf '%s\n' "${allowed[@]}" | paste -sd, - | sed 's/,/, /g'))"
     return 1
   fi
@@ -1357,7 +1362,7 @@ _ds_privacy_exemption() {
 }
 
 ds_privacy_report() {
-  local redact=$1 metadata=$2 seq i from to rule location
+  local redact=$1 metadata=$2 seq i from to rule location path
   local -a names=()
   declare -gA _DS_FOUND=() _DS_EXEMPT_FROM=() _DS_EXEMPT_TO=()
   declare -ga _DS_FORBIDDEN_ERES=() _DS_EXCEPT_ERES=()
@@ -1367,11 +1372,16 @@ ds_privacy_report() {
   : >"$_DS_PRIVACY_WORK/findings"
   # The digests of the collected working tree files that exemptions name.
   declare -gA _DS_EXEMPT_DIGEST=()
-  local -A exempt_used=()
+  local -A exempt_used=() exempt_named=()
   if ((${#_DS_EXEMPT_PATH[@]})); then
+    # A set lookup, never `printf | grep -q` per unit: a grep that exits at
+    # the first match leaves the writer to die of SIGPIPE under pipefail
+    # once the paths fill a pipe buffer.
+    for path in "${_DS_EXEMPT_PATH[@]}"; do
+      exempt_named[$path]=1
+    done
     for seq in "${_DS_CONTENT[@]}"; do
-      [[ ${_DS_U_KIND[$seq]} == file ]] || continue
-      printf '%s\n' "${_DS_EXEMPT_PATH[@]}" | grep -qxF -e "${_DS_U_PATH[$seq]}" || continue
+      [[ ${_DS_U_KIND[$seq]} == file && -n ${exempt_named[${_DS_U_PATH[$seq]}]:-} ]] || continue
       _DS_EXEMPT_DIGEST[${_DS_U_PATH[$seq]}]=$(sha256sum <"$_DS_PRIVACY_WORK/u/$seq" | cut -d ' ' -f 1)
     done
   fi

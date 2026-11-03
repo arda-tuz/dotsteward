@@ -20,9 +20,10 @@
 #   launcher       .dotsteward/cli.sh equals the framework's template copy
 #   bootstrap      bootstrap.sh equals the framework's template copy, when the
 #                  framework ships one
-#   skills         vendored skills match the skills lock: schema, counts,
-#                  names, digests, licenses, no symbolic links and no
-#                  framework skills
+#   skills         vendored skills match the skills lock: schema,
+#                  directories, names, digests, licenses, no symbolic links
+#                  and no framework skills (expected_skill_count, a copy of
+#                  the number of entries, is ignored)
 #   versions-lock  versions.lock.json: schema_version "1.0", no persistent
 #                  agentic updates, native application updates kept
 #   allowlist      no update allowlist entry (gate.update_allowlist and the
@@ -253,8 +254,8 @@ done
 # --- shell -------------------------------------------------------------------
 
 check_shell() {
-  local path first output version lock jobs status=0
-  local -a pinned=()
+  local path first output version lock jobs status=0 line directive
+  local -a pinned=() head=()
   for path in "${SHELL_FILES[@]}"; do
     if ! output=$(bash -n -- "$root/$path" 2>&1); then
       fail "$path: bash -n failed"
@@ -264,8 +265,16 @@ check_shell() {
     IFS= read -r first <"$root/$path" || true
     if [[ $first == '#!'* ]]; then
       [[ -x $root/$path ]] || fail "$path: has a shebang but is not executable"
-    elif ! head -n 5 -- "$root/$path" | grep -q '^# shellcheck shell='; then
-      fail "$path: has neither a shebang nor a '# shellcheck shell=' directive"
+    else
+      # The first five lines are read whole: a reader that stops at the
+      # first match (head | grep -q) leaves head to die of SIGPIPE under
+      # pipefail when a long line follows the directive.
+      mapfile -n 5 -t head <"$root/$path" || head=()
+      directive=0
+      for line in "${head[@]}"; do
+        [[ $line != '# shellcheck shell='* ]] || directive=1
+      done
+      ((directive)) || fail "$path: has neither a shebang nor a '# shellcheck shell=' directive"
     fi
   done
   ((${#SHELL_FILES[@]})) || return 0
@@ -376,9 +385,6 @@ check_skills() {
   if ! json_lines problems "$root/$lock" --arg lock "$lock" '
     (if .schema_version != "1.0" then "\($lock): schema_version must be \"1.0\"" else empty end),
     (if (.skills | type) != "array" then "\($lock): skills must be a list" else
-      (if .expected_skill_count != (.skills | length) then
-        "\($lock): expected_skill_count is \(.expected_skill_count), the lock lists \(.skills | length)"
-      else empty end),
       (if any(.skills[]; type != "object") then "\($lock): every skill entry must be an object" else empty end),
       ((.skills | map(objects | .name) | group_by(.) | map(select(length > 1) | .[0]))[]
         | "\($lock): duplicate skill name \(.)"),

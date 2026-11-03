@@ -17,7 +17,9 @@
 # OWNER/REPO` for a marketplace that `claude plugin marketplace list --json`
 # does not list, `claude plugin install SPEC --scope user` for a plugin that
 # `claude plugin list --json` does not list at user scope, and `claude plugin
-# enable SPEC --scope user` for one listed there but disabled. It never
+# enable SPEC --scope user` for one listed there but disabled. Each list is
+# read once per run for every entry and again only after a command that
+# changes it (marketplace add, plugin install or enable). It never
 # confirms a command a marketplace declares: such a plugin is installed once
 # by hand. Claude Code updates a third-party marketplace and its plugins in
 # the background only when extraKnownMarketplaces.NAME.autoUpdate is true in
@@ -68,19 +70,36 @@ json_list() {
   printf '%s\n' "$list"
 }
 
-# listed_marketplace NAME: the `claude plugin marketplace list --json` entry
-# named NAME, else nothing.
-listed_marketplace() {
-  json_list marketplaces plugin marketplace list --json |
-    jq -c --arg name "$1" 'first(.[] | select(.name == $name)) // empty'
+# The two lists of the claude CLI, read once for every entry: empty until
+# the first read, and emptied by the commands that change them, so the next
+# lookup reads the list as it is after the change.
+marketplaces=''
+plugins_listed=''
+
+# load_marketplaces, load_plugins: read a list unless it is current. They
+# run in the hook's own shell, never in a command substitution, so the list
+# they read stays for the next lookup.
+load_marketplaces() {
+  [[ -n $marketplaces ]] || marketplaces=$(json_list marketplaces plugin marketplace list --json)
 }
 
-# listed_plugin SPEC [any]: the `claude plugin list --json` entry of SPEC at
-# user scope when it is enabled (or in any state with "any"), else nothing.
+load_plugins() {
+  [[ -n $plugins_listed ]] || plugins_listed=$(json_list plugins plugin list --json)
+}
+
+# listed_marketplace NAME: the marketplace list entry named NAME, else
+# nothing (after load_marketplaces).
+listed_marketplace() {
+  jq -c --arg name "$1" 'first(.[] | select(.name == $name)) // empty' <<<"$marketplaces"
+}
+
+# listed_plugin SPEC [any]: the plugin list entry of SPEC at user scope when
+# it is enabled (or in any state with "any"), else nothing (after
+# load_plugins).
 listed_plugin() {
-  json_list plugins plugin list --json |
-    jq -c --arg spec "$1" --arg state "${2:-enabled}" \
-      'first(.[] | select(.id == $spec and .scope == "user" and ($state == "any" or .enabled == true))) // empty'
+  jq -c --arg spec "$1" --arg state "${2:-enabled}" \
+    'first(.[] | select(.id == $spec and .scope == "user" and ($state == "any" or .enabled == true))) // empty' \
+    <<<"$plugins_listed"
 }
 
 # lock_minimum PATH: the minimum version at the lock PATH.
@@ -99,12 +118,15 @@ lock_minimum() {
 # GitHub marketplace.
 ensure_marketplace() {
   local market=$1 repo=$2 entry
+  load_marketplaces
   entry=$(listed_marketplace "$market")
   if [[ -z $entry ]]; then
     [[ $check_only != 1 ]] ||
       die "claude marketplace $market ($repo) is not added; run 'dotsteward agents install --profile $profile'"
     log "claude marketplace $market: adding $repo with claude plugin marketplace add"
+    marketplaces=''
     claude plugin marketplace add "$repo" || die "claude plugin marketplace add $repo failed"
+    load_marketplaces
     entry=$(listed_marketplace "$market")
     [[ -n $entry ]] || die "claude plugin marketplace add $repo did not add the marketplace $market"
   fi
@@ -172,20 +194,25 @@ ensure_plugin() {
     ensure_auto_update "$market" "$repo" "$(jq -r 'if has("autoUpdate") then .autoUpdate else true end' <<<"$plugin")"
   fi
 
+  load_plugins
   entry=$(listed_plugin "$spec")
   if [[ -z $entry ]]; then
     [[ $check_only != 1 ]] ||
       die "claude plugin $spec is not installed and enabled at user scope; run 'dotsteward agents install --profile $profile'"
     if [[ -n $(listed_plugin "$spec" any) ]]; then
       log "claude plugin $spec: enabling with claude plugin enable"
+      plugins_listed=''
       claude plugin enable "$spec" --scope user || die "claude plugin enable $spec --scope user failed"
+      load_plugins
       entry=$(listed_plugin "$spec")
       [[ -n $entry ]] ||
         die "claude plugin $spec is still not installed and enabled at user scope after claude plugin enable"
     else
       log "claude plugin $spec: installing with claude plugin install"
+      plugins_listed=''
       claude plugin install "$spec" --scope user ||
         die "claude plugin install $spec --scope user failed; a plugin whose marketplace asks for a confirmation is installed once by hand"
+      load_plugins
       entry=$(listed_plugin "$spec")
       [[ -n $entry ]] ||
         die "claude plugin $spec is still not installed and enabled at user scope after claude plugin install"

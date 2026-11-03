@@ -66,8 +66,9 @@ The update allowlist is the union of:
 
 - the framework defaults: `flake.nix`, `flake.lock`, the versions lock, the
   skills lock, the vendored skill directories, the `.dotsteward/` mirrors
-  and launcher, and the `bootstrap.sh`, `rebuild.sh`, `rollback.sh` and
-  `update.sh` wrappers;
+  and launcher, the `bootstrap.sh`, `rebuild.sh` and `rollback.sh` wrappers,
+  and `update.sh`, a wrapper older templates shipped, so an update may
+  remove it;
 - `gate.updatePaths` of every enabled component
   ([component-contract.md](component-contract.md#updates));
 - `gate.update_allowlist` of `workstation.toml`.

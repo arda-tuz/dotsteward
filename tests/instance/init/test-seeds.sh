@@ -91,7 +91,7 @@ assert_eq "$(jq . "$init_fixtures/seed-merge/versions.golden.json")" \
   "$(jq 'del(.schema_version, .generated_at, .policy, .nix, .flake_inputs, .nix_packages.tomlkit)' "$staged/versions.lock.json")" \
   "versions.lock.json golden"
 assert_eq "$(jq . "$init_fixtures/seed-merge/skills.golden.json")" \
-  "$(jq 'del(.schema_version, .generated_at, .expected_skill_count, .layout, .skills)' "$staged/agent/skills.lock.json")" \
+  "$(jq 'del(.schema_version, .generated_at, .layout, .skills)' "$staged/agent/skills.lock.json")" \
   "skills.lock.json golden"
 # The template's own sections stay as they are.
 for lock in versions.lock.json agent/skills.lock.json; do

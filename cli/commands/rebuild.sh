@@ -8,24 +8,30 @@
 #      not see them), the instance flake.lock; nothing is written before
 #   2. host overrides in <state>/host-overrides: profile.nix (the runtime
 #      $USER and $HOME), flake.nix (input [compat] host_input of
-#      type path: and homeConfigurations.current = <input>.lib.mkHome
-#      (import ./profile.nix)) and the host input lock, created when missing
-#      and refreshed only when (canonical_revision, canonical_repo) of
-#      inventory.json changed or the last run used a framework override
+#      type git+file:, the committed tree that the gate builds as well,
+#      without the .git directory, with shallow=1 for a shallow clone, and
+#      homeConfigurations.current = <input>.lib.mkHome (import
+#      ./profile.nix)) and the host input lock, created when missing and
+#      refreshed only when (canonical_revision, canonical_repo) of
+#      inventory.json changed, the last run used a framework override or
+#      flake.nix changed
 #   3. inventory.json, the build (never updating a lock file), the records
 #      <state>/current/last-built-activation and <state>/current/profile;
 #      --build-only stops here
 #   4. preActivate hooks of the built generation's manifest, the previous
 #      generation capture (once; ABSENT when no Home Manager generation
 #      exists), adoption of the manifest's adopt paths, activate, the
-#      generation's local-maintained-files apply, agents install, login
-#      shell migrate, and the check that the instance flake.lock is
-#      unchanged
+#      activation record <state>/current/activation.json (generation,
+#      profile, revision and tree of HEAD, root, framework override,
+#      activated_at; update publish then requires a passing E2E of that
+#      tree and generation), the generation's local-maintained-files apply,
+#      agents install, login shell migrate, and the check that the instance
+#      flake.lock is unchanged
 # A framework override (--framework-override REF or
 # DOTSTEWARD_FRAMEWORK_OVERRIDE; the flag wins) builds with
-# --override-input <host_input>/dotsteward REF and the instance checkout as
-# <host_input>, writes no lock file, leaves the host lock alone and is
-# recorded in inventory.json.
+# --override-input <host_input>/dotsteward REF and the instance checkout's
+# HEAD as <host_input> (git+file:<checkout>?rev=<HEAD>), writes no lock
+# file, leaves the host lock alone and is recorded in inventory.json.
 set -Eeuo pipefail
 
 # shellcheck source=cli/lib/lib.sh
@@ -34,6 +40,8 @@ source "$DOTSTEWARD_LIB/lib.sh"
 source "$DOTSTEWARD_LIB/config.sh"
 # shellcheck source=cli/lib/methods.sh
 source "$DOTSTEWARD_LIB/methods.sh"
+# shellcheck source=cli/lib/txn.sh
+source "$DOTSTEWARD_LIB/txn.sh"
 
 usage() {
   cat <<'EOF'
@@ -156,6 +164,15 @@ done
 
 canonical_lock_before=$(sha256_file "$instance_lock")
 canonical_revision=$(git -C "$repo_path" rev-parse --verify HEAD)
+# The instance input: the committed tree, read by Nix's git fetcher like the
+# gate's flake reference, so the gate's builds are reused and the .git
+# directory is never copied into the store. Nix reads a shallow clone only
+# with shallow=1.
+instance_url=git+file://$repo_path
+instance_query=''
+if [[ $(git -C "$repo_path" rev-parse --is-shallow-repository) == true ]]; then
+  instance_query=shallow=1
+fi
 
 # assert_instance_lock_unchanged: nothing in the run may change the
 # instance flake.lock.
@@ -198,9 +215,10 @@ write_private "$override_dir/profile.nix" <<EOF
 }
 EOF
 
-write_private "$override_dir/flake.nix" <<EOF
+host_flake=$(
+  cat <<EOF
 {
-  inputs.$host_input.url = "path:$repo_path";
+  inputs.$host_input.url = "$instance_url${instance_query:+?$instance_query}";
 
   outputs = { self, $host_input }:
     let
@@ -211,6 +229,14 @@ write_private "$override_dir/flake.nix" <<EOF
     };
 }
 EOF
+)
+# A changed host flake (another input, or the path: input of an older
+# release) needs a new lock even at the same revision.
+host_flake_changed=0
+if [[ ! -f $override_dir/flake.nix || $(<"$override_dir/flake.nix") != "$host_flake" ]]; then
+  host_flake_changed=1
+fi
+printf '%s\n' "$host_flake" | write_private "$override_dir/flake.nix"
 
 if [[ -n $framework_override ]]; then
   log "framework override $framework_override: the host input lock is not refreshed"
@@ -218,6 +244,9 @@ else
   if [[ -f $host_lock ]]; then
     if [[ $previous_revision != "$canonical_revision" || $previous_repo != "$repo_path" || -n $previous_override ]]; then
       log "instance source changed; refreshing the host input lock"
+      nix_cmd flake update "$host_input" --flake "$override_dir"
+    elif ((host_flake_changed)); then
+      log "host flake changed; refreshing the host input lock"
       nix_cmd flake update "$host_input" --flake "$override_dir"
     else
       log "instance source unchanged; keeping the host input lock"
@@ -250,7 +279,7 @@ assert_instance_lock_unchanged
 build_args=("$override_dir#homeConfigurations.current.activationPackage" --no-link)
 if [[ -n $framework_override ]]; then
   build_args+=(
-    --override-input "$host_input" "path:$repo_path"
+    --override-input "$host_input" "$instance_url?rev=$canonical_revision${instance_query:+&$instance_query}"
     --override-input "$host_input/dotsteward" "$framework_override"
     --no-write-lock-file
   )
@@ -349,6 +378,13 @@ fi
 
 log "activating the Home Manager generation"
 "$activation_path/activate"
+# The machine runs this generation from here on, whatever a later step does.
+jq -n --arg generation "$activation_path" --arg profile "$profile" --arg revision "$canonical_revision" \
+  --arg tree "$(git -C "$repo_path" rev-parse "$canonical_revision^{tree}")" --arg root "$repo_path" \
+  --arg override "$framework_override" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{
+    schema_version: "1.0", generation: $generation, profile: $profile, revision: $revision,
+    tree_oid: $tree, root: $root, framework_override: (if $override == "" then null else $override end),
+    activated_at: $at}' | txn_write_private "$(txn_activation_file)"
 
 # Tracked settings: only entries changed remotely and entries met for the
 # first time are written to the live files; local changes and conflicts are

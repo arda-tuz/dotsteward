@@ -183,6 +183,9 @@ agents phase, before validation). `dotsteward agents install`:
   `claude plugin enable SPEC --scope user` for one listed there but
   disabled.
 
+The hook reads each of the two lists once for all entries, and again only
+after a command that changed it.
+
 Claude Code leaves a third-party marketplace out of its background updates
 unless `extraKnownMarketplaces.NAME.autoUpdate` is `true` in the user's
 `settings.json` (`~/.claude/settings.json`, or the directory of

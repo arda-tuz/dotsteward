@@ -8,7 +8,8 @@ skill's ``source_path`` that touch a vendored file (a file of
 references/, scripts/, assets/, agents/, LICENSE) count. ``release_bound``
 entries compare with the newest release tag. The compare is shared with
 every row of the same repository, revision and release binding
-(git_compare.py).
+(git_compare.py); when its file list may be truncated, the tree of the
+``source_path`` at both revisions decides.
 """
 
 from __future__ import annotations
@@ -21,10 +22,17 @@ from .git_compare import CompareAdapter
 SKILL_STRUCTURE = ("SKILL.md", "references/", "scripts/", "assets/", "agents/", "LICENSE")
 
 
+def source_tree_path(source_path: str) -> str:
+    """The repository directory of a ``source_path``: no leading or trailing
+    slash, "" for the root."""
+    path = source_path.strip("/")
+    return "" if path in ("", ".") else path
+
+
 def vendored_filter(source_path: str, directory: Path) -> Callable[[str], bool]:
     """Selects upstream paths that change vendored files or the structure."""
-    path = source_path.strip("/")
-    prefix = "" if path in ("", ".") else path + "/"
+    path = source_tree_path(source_path)
+    prefix = "" if path == "" else path + "/"
     vendored = (
         {entry.relative_to(directory).as_posix() for entry in directory.rglob("*") if entry.is_file()}
         if directory.is_dir()

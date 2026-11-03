@@ -14,8 +14,9 @@ static = ["tests/static.sh"]
 Every listed script must exist and be executable. They run, in order, from the
 instance root:
 
-- in `dotsteward static`, after every framework check passed; that is the
-  `static` step of `dotsteward gate` (`./update.sh validate`);
+- in `dotsteward static`, after every selected framework check passed; the
+  `static` step of `dotsteward gate` runs them outside the sandbox, after
+  the privacy scan;
 - in the Nix build sandbox, as `checks.<system>.instance-static`, which
   `nix flake check` builds: no network, no home directory, no git metadata.
 

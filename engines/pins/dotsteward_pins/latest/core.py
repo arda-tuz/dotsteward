@@ -29,7 +29,7 @@ from ..lockfile import SKILLS, VERSIONS, LockPath, Locks, Step
 from ..rules.nix_package_format import LOCKED_NIXPKGS
 from .adapters import PlanContext, Planned, Request, make
 from .adapters import framework as framework_adapter
-from .adapters.skill_source import SkillSource, vendored_filter
+from .adapters.skill_source import SkillSource, source_tree_path, vendored_filter
 from .model import error_item, item
 from .upstream import github_repo
 
@@ -137,6 +137,7 @@ def skills(ctx: PlanContext) -> list[Planned]:
                 "revision": revision,
                 "release_bound": bool(skill.get("release_bound")),
                 "matches": vendored_filter(str(skill.get("source_path", "")), vendor / directory),
+                "source_path": source_tree_path(str(skill.get("source_path", ""))),
             },
         )
         planned.append(Planned(identifier, "core", False, request, None))

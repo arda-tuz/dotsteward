@@ -31,13 +31,22 @@
 #                                 HEAD; with --expected-remote-base OID it
 #                                 equals OID and OID is an ancestor of HEAD
 #       core:repo-skill-count     the vendored SKILL.md files git tracks
-#                                 match the skills lock count
+#                                 match the number of skills lock entries
 #   10. <component>:<hook>        late checks.e2e hooks
 #   11. core:framework-skills     every <hm_root>/dotsteward-* link and every
 #                                 framework skill of the manifest resolves to
 #                                 the generation's framework source with the
 #                                 digests of its skills/manifest.json
 #   12. the success line
+# Every run after the configuration loaded (not --list) records its result
+# in <state root>/update/e2e.json (mode 0600, written atomically), keyed by
+# the tree of the instance checkout's HEAD and the verified generation:
+# schema_version "1.0", result (passed only when every check passed),
+# tree_oid and head_oid (null outside a git work tree), generation (null
+# without one), profile, framework_override, repo_checks (false with
+# --skip-repo-checks), findings (their number), root, recorded_at.
+# `dotsteward update publish` requires a passed record of an activated
+# tree.
 # Hooks run for the components active in the profile, in [components]
 # order, then declaration order, when their profiles include the profile,
 # with the hook environment and DOTSTEWARD_CHECK_ONLY=1. A check
@@ -78,6 +87,8 @@ source "$DOTSTEWARD_LIB/config.sh"
 source "$DOTSTEWARD_LIB/methods.sh"
 # shellcheck source=cli/lib/skills.sh
 source "$DOTSTEWARD_LIB/skills.sh"
+# shellcheck source=cli/lib/txn.sh
+source "$DOTSTEWARD_LIB/txn.sh"
 
 usage() {
   cat <<'EOF'
@@ -185,9 +196,40 @@ SKILLS_FINDINGS_FILE=$work_dir/findings.jsonl
 SKILLS_KEEP_GOING=$keep_going
 SKILLS_STEP=setup
 failed=0
+# Set once the configuration is loaded: from then on the run is recorded.
+record_ready=0
+
+# _e2e_write_result STATUS: the result of the run in the E2E record. Runs
+# in a subshell of the exit trap: a failure to write it is a finding there.
+_e2e_write_result() {
+  local status=$1 count result=failed tree='' head='' top
+  count=$(_e2e_findings_count)
+  if ((status == 0 && count == 0)); then
+    result=passed
+  fi
+  # The tree only of a checkout that is the top of its own work tree (the
+  # check functions may not be defined yet when setup failed).
+  top=$(git -C "$DS_INSTANCE_ROOT" rev-parse --show-toplevel 2>/dev/null) || top=''
+  if [[ -n $top && $(cd -P -- "$top" && pwd) == "$(cd -P -- "$DS_INSTANCE_ROOT" && pwd)" ]]; then
+    tree=$(git -C "$DS_INSTANCE_ROOT" rev-parse --verify --quiet 'HEAD^{tree}') || tree=''
+    head=$(git -C "$DS_INSTANCE_ROOT" rev-parse --verify --quiet 'HEAD^{commit}') || head=''
+  fi
+  txn_ensure_state_dir
+  jq -n --arg result "$result" --arg tree "$tree" --arg head "$head" --arg generation "$generation" \
+    --arg profile "$profile" --arg override "$framework_override" --argjson repo "$((!skip_repo))" \
+    --argjson findings "$count" --arg root "$DS_INSTANCE_ROOT" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+    def maybe: if . == "" then null else . end;
+    {schema_version: "1.0", result: $result, tree_oid: ($tree | maybe), head_oid: ($head | maybe),
+     generation: ($generation | maybe), profile: $profile, framework_override: ($override | maybe),
+     repo_checks: ($repo == 1), findings: $findings, root: $root, recorded_at: $at}' |
+    txn_write_private "$(txn_e2e_file)"
+}
 
 _e2e_exit() {
   local status=$?
+  if ((record_ready && !list)); then
+    (_e2e_write_result "$status") || status=1
+  fi
   if ((json && !list)); then
     jq -s --argjson status "$status" \
       '{ result: (if $status == 0 and length == 0 then "passed" else "failed" end), findings: . }' \
@@ -288,6 +330,7 @@ _e2e_same_bytes() {
 
 # shellcheck disable=SC2119 # the instance comes from --instance or discovery
 config_load
+record_ready=1
 require_profile "$profile"
 require_safe_identity
 source_nix_daemon
@@ -754,19 +797,22 @@ _e2e_repo_remote() {
   fi
 }
 
+# The lock's entries are the expected skills; an expected_skill_count that
+# older instances carry only copies their number and is ignored.
 _e2e_repo_skill_count() {
   local vendor expected count
   vendor=${DS_SKILLS_VENDOR_DIR:-agent/skills}
   vendor=${vendor%/}
   [[ $vendor != /* ]] || vendor=${vendor#"$DS_INSTANCE_ROOT"/}
   [[ -f $SKILLS_LOCK ]] || die "skills lock not found: $SKILLS_LOCK"
-  expected=$(jq -r '.expected_skill_count' "$SKILLS_LOCK") || die "invalid skills lock: $SKILLS_LOCK"
-  [[ $expected =~ ^[0-9]+$ ]] || die "invalid skills lock $SKILLS_LOCK: expected_skill_count is not a count"
+  expected=$(jq -r '.skills | if type == "array" then length else "none" end' "$SKILLS_LOCK" 2>/dev/null) ||
+    die "invalid skills lock: $SKILLS_LOCK"
+  [[ $expected =~ ^[0-9]+$ ]] || die "invalid skills lock $SKILLS_LOCK: skills is not a list"
   count=$(git -C "$DS_INSTANCE_ROOT" ls-files -- ":(glob)$vendor/*/SKILL.md" | wc -l)
   count=$((count))
   ((count == expected)) ||
     skills_fail skill-count-mismatch "$SKILLS_LOCK" \
-      "git tracks $count vendored skills ($vendor/*/SKILL.md), the skills lock expects $expected"
+      "git tracks $count vendored skills ($vendor/*/SKILL.md), the skills lock lists $expected"
 }
 
 # _e2e_framework_skill PATH: one framework skill link (findings exit).

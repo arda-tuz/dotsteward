@@ -8,6 +8,6 @@ They replace the shell and codex seeds in a copy of the framework:
 - `versions.golden.json` and `skills.golden.json` are the composed locks
   without the template's own sections and values (`schema_version`,
   `generated_at`, `policy`, `nix`, `flake_inputs`, `nix_packages.tomlkit`,
-  `expected_skill_count`, `layout`, `skills`), in the order init writes
+  `layout`, `skills`), in the order init writes
   them: the template's keys first, then each seed's new keys in catalog
   order.

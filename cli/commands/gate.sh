@@ -13,7 +13,14 @@
 # steps, each with its output in <state>/update/validate.log:
 #   preflight    the binary cache answers (gate.cache_url) and /nix/store
 #                has gate.min_free_gib GiB free; never fall back to mirrors
-#   static       dotsteward static (the instance privacy scan included)
+#   static       the static checks that need this machine: dotsteward
+#                static --only scripts (the [gate] static scripts with
+#                DOTSTEWARD_SANDBOX=0, so their parts outside the sandbox
+#                run), with --only privacy first when [privacy] names a
+#                denylist (a file outside the instance, which the sandbox
+#                never reads); every other static check runs once, in the
+#                sandbox, in checks.<system>.instance-contract of the flake
+#                check
 #   pins         dotsteward pins check --nix
 #   flake-check  nix flake check with gate.nix_max_jobs and gate.nix_cores
 #                (derived from the memory and CPUs of the machine when
@@ -210,8 +217,14 @@ step_preflight() {
   log "binary cache reachable; /nix/store has $((free_kib / 1048576)) GiB free"
 }
 
+# The static checks outside the sandbox: instance-contract runs all of them
+# in the sandbox, without the denylist and with DOTSTEWARD_SANDBOX=1.
+static_args=(static)
+[[ -z $DS_PRIVACY_DENYLIST ]] || static_args+=(--only privacy)
+static_args+=(--only scripts)
+
 step_static() {
-  "$dotsteward" --instance "$root" static
+  "$dotsteward" --instance "$root" "${static_args[@]}"
 }
 
 step_pins() {
@@ -268,7 +281,7 @@ source_nix_daemon
 started=$SECONDS
 run_step preflight "curl $DS_GATE_CACHE_URL/nix-cache-info, df /nix/store (at least $DS_GATE_MIN_FREE_GIB GiB free)" \
   step_preflight
-run_step static "dotsteward static" step_static
+run_step static "dotsteward ${static_args[*]}" step_static
 run_step pins "dotsteward pins check --nix" step_pins
 run_step flake-check "$(quoted nix "${flake_check_args[@]}")" step_flake_check
 run_step cli-probes "nix build $probe_attribute, dotsteward probes --generation <built>" step_cli_probes

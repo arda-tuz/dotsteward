@@ -32,8 +32,9 @@
 #       home-manager profile in <XDG state>/nix/profiles and in
 #       /nix/var/nix/profiles/per-user/$USER), nothing when there is none
 #   skills_validate_lock
-#       the instance skills lock: a regular file, schema_version "1.0",
-#       expected_skill_count equal to its entries, each entry with name,
+#       the instance skills lock: a regular file, schema_version "1.0"
+#       (expected_skill_count, a copy of the number of entries that older
+#       instances carry, is ignored), each entry with name,
 #       directory (a plain name) and skill_sha256, optional
 #       legacy_directory, directory_sha256, deployment (copy, the
 #       default, or home-manager) and agents (a non-empty list of unique
@@ -269,9 +270,6 @@ else
   (if .schema_version != "1.0" then "schema_version is not \"1.0\"" else empty end),
   (if (.skills | type) != "array" then "skills is not a list"
    else
-     (if .expected_skill_count != (.skills | length) then
-        "expected_skill_count is \(.expected_skill_count), the lock has \(.skills | length) skills"
-      else empty end),
      (.skills | to_entries[] | .key as $i | .value as $s
       | if ($s | type) != "object" or ([$s.name, $s.directory, $s.skill_sha256] | all(nonempty) | not) then
           "skill \($i + 1): name, directory and skill_sha256 must be non-empty strings"

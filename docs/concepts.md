@@ -114,7 +114,9 @@ resulting tree, and `update publish` pushes a commit whose tree is exactly
 the proven tree. The gate runs the static checks (including the privacy
 scan), the pins check, `nix flake check` and the CLI probes of a built
 generation; a passed tree is remembered, so an unchanged tree is not proven
-twice.
+twice. When the transaction also activated its tree on the machine
+(`rebuild --switch`), `update publish` requires a passing `dotsteward e2e`
+of that tree and generation, so a red E2E publishes nothing.
 
 A transaction has a **scope**: `update` (only pinned versions may change,
 within an allowlist of paths) or `maintain` (any change, with conventional

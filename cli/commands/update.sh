@@ -34,7 +34,13 @@
 #   the `git push -u` to run); at least one commit after
 #   the base, which must be an ancestor of HEAD; the HEAD tree is the tree
 #   of a passed validation.json, made for the same scope and without a
-#   framework override; the commit subjects (update scope: the last one is
+#   framework override; when the transaction activated a tree on this
+#   machine (<state>/current/activation.json of rebuild --switch: its tree
+#   is the HEAD tree, or its revision a commit after the base), that tree
+#   is the HEAD tree and <state>/update/e2e.json records a passed E2E run
+#   of it and of the activated generation, with the repository checks
+#   (publishing without an activation needs no E2E record); the commit
+#   subjects (update scope: the last one is
 #   exactly commit.update_subject; maintain scope: every one after the base
 #   is a conventional commit); a fresh fetch (60 s) finds origin/<branch>
 #   still at the base; HEAD is pushed to <branch> without force (180 s) and
@@ -288,6 +294,9 @@ cmd_publish() {
   override=$(jq -r '.framework_override // empty | tostring' <<<"$record")
   [[ -z $override ]] ||
     die "the validation used the framework override $override; run 'dotsteward gate --scope $scope' without an override first"
+
+  # An activated tree is published only after it passed E2E on this machine.
+  txn_require_verified_activation "$base"
 
   # The commit subject policy.
   if [[ $scope == update ]]; then

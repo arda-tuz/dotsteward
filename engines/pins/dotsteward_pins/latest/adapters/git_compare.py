@@ -15,10 +15,17 @@ Query: the head (``git ls-remote``: HEAD, or the release tag from ``gh``
 with the stable-tag fallback, peeled), then one ``gh api
 repos/<repo>/compare/<revision>...<head>`` unless nothing moved. Rows with
 the same repository, revision and release binding share that compare
-(vendored skills included). Status ``review`` when a watched path changed
-or the file list may be truncated (300 files), else ``current``. Current
-and latest are 12-character commits; details: ``head``, ``release``,
-``ahead_by``, ``changed_paths`` (40 at most), ``files_truncated``.
+(vendored skills included). Status ``review`` when a watched path changed,
+else ``current``. GitHub lists at most 300 files of a compare, so a list
+of 300 may be truncated: a row with a source path (a vendored skill's
+``source_path``) then compares the tree of that path at the revision and
+at the head (``gh api repos/<repo>/git/trees/<commit>:<path>``, once per
+path and commit): the same tree is ``current``, another tree or a path the
+head lacks a ``review``; a row without one is a ``review``. Current and
+latest are 12-character commits; details: ``head``, ``release``,
+``ahead_by``, ``changed_paths`` (40 at most), ``files_truncated`` and,
+for a truncated compare of a row with a source path, ``source_tree``
+(``unchanged``, ``changed`` or ``missing``).
 
 Example::
 
@@ -69,11 +76,30 @@ def compare_rows(requests: list[Request], upstream: Upstream) -> list[Row]:
             raise UpstreamError(f"the compare of {repo} lists a file without a name")
     files = [entry["filename"] for entry in data["files"]]
     truncated = len(files) >= FILES_LIMIT
+    trees: dict[tuple[str, str], str | None] = {}
+
+    def tree(commit: str, path: str) -> str | None:
+        if (commit, path) not in trees:
+            trees[commit, path] = upstream.tree_sha(repo, commit, path)
+        return trees[commit, path]
+
     rows = []
     for request in requests:
         matches: Callable[[str], bool] = request.values["matches"]
         changed = sorted(name for name in files if matches(name))
         status = "review" if changed or truncated else "current"
+        source_tree = None
+        path = request.values.get("source_path")
+        if truncated and not changed and path is not None:
+            # A truncated list cannot show that nothing below the path
+            # changed; the path's tree at both commits can.
+            before, after = tree(revision, path), tree(head, path)
+            if after is None or before is None:
+                source_tree = "missing"
+            elif before == after:
+                source_tree, status = "unchanged", "current"
+            else:
+                source_tree = "changed"
         rows.append(
             item(
                 request.id,
@@ -87,6 +113,7 @@ def compare_rows(requests: list[Request], upstream: Upstream) -> list[Row]:
                 ahead_by=data.get("ahead_by"),
                 changed_paths=changed[:CHANGED_LIMIT],
                 files_truncated=truncated,
+                **({} if source_tree is None else {"source_tree": source_tree}),
                 note=request.note,
             )
         )

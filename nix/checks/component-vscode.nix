@@ -46,7 +46,7 @@ cli.mkTestCheck {
       printf 'component-vscode: %s\n' "$*" >&2
       exit 1
     }
-    shellcheck -x tests/nix/components/vscode/*.sh
+    shellcheck -x modules/components/vscode/apt-repository.sh tests/nix/components/vscode/*.sh
 
     # The generation exports exactly the editor variables of the option.
     gen=${generation}

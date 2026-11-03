@@ -9,7 +9,7 @@ edit the help text in `cli/commands/` and run `tools/gen-docs.sh`.
 
 | Where | How to run a command |
 | --- | --- |
-| In an instance | `./.dotsteward/cli.sh <command>`: the CLI pinned by the instance's `flake.lock`, built once per lock and cached. The wrappers `./rebuild.sh`, `./rollback.sh` and `./update.sh` call it for you. |
+| In an instance | `./.dotsteward/cli.sh <command>`: the CLI pinned by the instance's `flake.lock`, built once per lock and cached. The wrappers `./rebuild.sh` and `./rollback.sh` call it for you. |
 | Anywhere with Nix | `nix run github:arda-tuz/dotsteward -- <command>`: the newest release. Inside an instance prefer the pinned launcher. |
 | In a framework checkout | `./cli/dotsteward <command>` |
 
@@ -391,7 +391,14 @@ paths; the candidate tree id; `nix --version`; the memo; then five quiet
 steps, each with its output in <state>/update/validate.log:
   preflight    the binary cache answers (gate.cache_url) and /nix/store
                has gate.min_free_gib GiB free; never fall back to mirrors
-  static       dotsteward static (the instance privacy scan included)
+  static       the static checks that need this machine: dotsteward
+               static --only scripts (the [gate] static scripts with
+               DOTSTEWARD_SANDBOX=0, so their parts outside the sandbox
+               run), with --only privacy first when [privacy] names a
+               denylist (a file outside the instance, which the sandbox
+               never reads); every other static check runs once, in the
+               sandbox, in checks.<system>.instance-contract of the flake
+               check
   pins         dotsteward pins check --nix
   flake-check  nix flake check with gate.nix_max_jobs and gate.nix_cores
                (derived from the memory and CPUs of the machine when
@@ -901,9 +908,10 @@ Instance checks, in this order:
   launcher       .dotsteward/cli.sh equals the framework's template copy
   bootstrap      bootstrap.sh equals the framework's template copy, when the
                  framework ships one
-  skills         vendored skills match the skills lock: schema, counts,
-                 names, digests, licenses, no symbolic links and no
-                 framework skills
+  skills         vendored skills match the skills lock: schema,
+                 directories, names, digests, licenses, no symbolic links
+                 and no framework skills (expected_skill_count, a copy of
+                 the number of entries, is ignored)
   versions-lock  versions.lock.json: schema_version "1.0", no persistent
                  agentic updates, native application updates kept
   allowlist      no update allowlist entry (gate.update_allowlist and the
@@ -997,7 +1005,13 @@ publish
   the `git push -u` to run); at least one commit after
   the base, which must be an ancestor of HEAD; the HEAD tree is the tree
   of a passed validation.json, made for the same scope and without a
-  framework override; the commit subjects (update scope: the last one is
+  framework override; when the transaction activated a tree on this
+  machine (<state>/current/activation.json of rebuild --switch: its tree
+  is the HEAD tree, or its revision a commit after the base), that tree
+  is the HEAD tree and <state>/update/e2e.json records a passed E2E run
+  of it and of the activated generation, with the repository checks
+  (publishing without an activation needs no E2E record); the commit
+  subjects (update scope: the last one is
   exactly commit.update_subject; maintain scope: every one after the base
   is a conventional commit); a fresh fetch (60 s) finds origin/<branch>
   still at the base; HEAD is pushed to <branch> without force (180 s) and

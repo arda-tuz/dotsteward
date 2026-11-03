@@ -71,7 +71,7 @@ install -m 0755 "$src/template/bootstrap.sh" bootstrap.sh
 install -m 0755 "$src/template/.dotsteward/cli.sh" .dotsteward/cli.sh
 ```
 
-The other wrappers (`rebuild.sh`, `rollback.sh`, `update.sh`) belong to the instance; change them only when the release notes ask for it.
+The other wrappers (`rebuild.sh`, `rollback.sh`) belong to the instance; change them only when the release notes ask for it. An `update.sh` that an older template wrote is retired: the launcher runs `update` and `gate` itself, and no release brings the file back.
 
 ## Research again, then the single gate
 
