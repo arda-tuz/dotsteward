@@ -20,6 +20,11 @@
 #   privacy/policy.toml (a table key as <table>.<key>);
 # - docs/update-policy.md names every key of the template lock's policy;
 # - docs/writing-components.md names every file all catalog components have;
+# - docs/architecture.md names every catalog component and, in its
+#   Versioning section, every file that carries a copy of VERSION (the
+#   plugin manifests, the marketplace files and the template's framework
+#   tag, which a release moves by hand) and the contract test that keeps
+#   them equal;
 # - docs/testing.md names every suite directory below tests/ and every
 #   assertion of tests/lib/assert.sh.
 # shellcheck source=tests/static/helpers.sh
@@ -190,6 +195,25 @@ if text is not None:
         common = files if common is None else common & files
     require_spans("docs/writing-components.md", text, sorted(common or ()), "component file")
 
+text = read("docs/architecture.md")
+if text is not None:
+    base = os.path.join(root, "modules/components")
+    catalog = sorted(name for name in os.listdir(base) if os.path.isdir(os.path.join(base, name)))
+    require_spans("docs/architecture.md", text, catalog, "catalog component")
+    versioning = re.search(r"^## Versioning$(.*?)(?=^## |\Z)", text, flags=re.S | re.M)
+    copies = [
+        ".claude-plugin/marketplace.json",
+        ".agents/plugins/marketplace.json",
+        "plugins/dotsteward/.claude-plugin/plugin.json",
+        "plugins/dotsteward/.codex-plugin/plugin.json",
+        "template/flake.nix",
+        "tests/static/test-version-contract.sh",
+    ]
+    if versioning is None:
+        findings.append("docs/architecture.md: no Versioning section")
+    else:
+        require_spans("docs/architecture.md (Versioning)", versioning.group(1), copies, "version file")
+
 text = docs["testing"]
 if text is not None:
     suites = sorted(
@@ -227,6 +251,7 @@ sed -i 's/--extra-terms//g; s/`private_ipv4`//g; s/`commits\.utc_only`//g' docs/
 sed -i 's/`native_application_updates`//g' docs/update-policy.md
 sed -i 's/`maintenance\.md`//g' docs/writing-components.md
 sed -i 's#tests/channels##g; s/`assert_calls`//g' docs/testing.md
+sed -i 's/`herdr`//g; s#`template/flake.nix`##g' docs/architecture.md
 sed -i 's#(docs/privacy\.md)#(docs/missing.md)#g' SECURITY.md
 rm -- docs/skills.md
 mkdir tests/example-suite
@@ -251,6 +276,8 @@ for message in \
   "docs/testing.md: does not name suite tests/example-suite" \
   "docs/testing.md: does not name assertion \`assert_calls\`" \
   "docs/testing.md: does not name assertion \`assert_example\`" \
+  "docs/architecture.md: does not name catalog component \`herdr\`" \
+  "docs/architecture.md (Versioning): does not name version file \`template/flake.nix\`" \
   "SECURITY.md: does not link docs/privacy.md"; do
   assert_contains "$findings" "$message"
 done

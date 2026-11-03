@@ -7,8 +7,9 @@
 # batch-mode SSH) and equals the local HEAD, or, with
 # --expected-remote-base OID before a publish, equals OID while OID is an
 # ancestor of HEAD (core:repo-remote), and the vendored SKILL.md files git
-# tracks match expected_skill_count of the instance skills lock
-# (core:repo-skill-count).
+# tracks match the entries of the instance skills lock
+# (core:repo-skill-count; expected_skill_count, a copy of their number, is
+# optional and ignored).
 # shellcheck source=tests/cli/e2e/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/e2e/helpers.sh"
 
@@ -83,12 +84,21 @@ git -C "$agents_inst" rm -q --cached agent/skills/alpha/SKILL.md
 publish_instance
 assert_exit 1 run_e2e --json
 assert_eq '[["core:repo-skill-count","skill-count-mismatch"]]' "$(repo_findings)"
-assert_contains "$DS_STDOUT" "git tracks 0 vendored skills (agent/skills/*/SKILL.md), the skills lock expects 1"
+assert_contains "$DS_STDOUT" "git tracks 0 vendored skills (agent/skills/*/SKILL.md), the skills lock lists 1"
 git -C "$agents_inst" rm -q --cached .gitignore
 rm "$agents_inst/.gitignore"
 git -C "$agents_inst" add agent/skills/alpha/SKILL.md
 publish_instance
 assert_exit 0 run_e2e
+
+# The count is the entries': a stale or a missing expected_skill_count does
+# not matter.
+for filter in '.expected_skill_count = 7' 'del(.expected_skill_count)'; do
+  jq "$filter" "$agents_lock" >"$DS_TEST_ROOT/lock.json"
+  mv -- "$DS_TEST_ROOT/lock.json" "$agents_lock"
+  publish_instance
+  assert_exit 0 run_e2e
+done
 
 # Not a git work tree: one finding, the other repository checks are
 # skipped; --skip-repo-checks skips them all.

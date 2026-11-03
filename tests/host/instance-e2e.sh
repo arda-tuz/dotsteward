@@ -97,7 +97,7 @@ step_init() {
   assert_contains "$(<"$instance/flake.nix")" "$DS_HOST_FRAMEWORK_URL" "the framework input"
   [[ -f $instance/flake.lock ]] || ds_fail "init wrote no flake.lock"
   local script
-  for script in .dotsteward/cli.sh rebuild.sh rollback.sh update.sh bootstrap.sh; do
+  for script in .dotsteward/cli.sh rebuild.sh rollback.sh bootstrap.sh; do
     [[ -x $instance/$script ]] || ds_fail "not executable after init: $script"
     assert_eq 100755 "$(git -C "$instance" ls-files -s -- "$script" | cut -d' ' -f1)" "the committed mode of $script"
   done

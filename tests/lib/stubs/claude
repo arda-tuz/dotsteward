@@ -121,7 +121,10 @@ if [[ ${1:-} == plugin && ${2:-} == install ]]; then
   fi
   name=${BASH_REMATCH[1]}
   market=${BASH_REMATCH[2]}
-  if ! known_markets | grep -qxF -- "$market"; then
+  # The names are read whole first: a grep -q that exits at the first match
+  # leaves known_markets to die of SIGPIPE under pipefail.
+  known=$(known_markets)
+  if ! grep -qxF -- "$market" <<<"$known"; then
     printf 'Error: marketplace "%s" not found\n' "$market" >&2
     exit 1
   fi

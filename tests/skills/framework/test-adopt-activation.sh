@@ -4,12 +4,14 @@
 # components on an adopted machine, and where durable lessons go:
 #   A1  dotsteward-maintain, section 5: on an adopt-mode profile the rebuild
 #       does not install a new or changed system-level component; the user
-#       runs `dotsteward install --profile <profile> --component <name>`
-#       (sudo, in their own terminal) after the commit and before the
-#       rebuild, which otherwise stops with "required command not found"
+#       runs `dotsteward --instance <path> install --profile <profile>
+#       --component <name>` (sudo, in their own terminal, which need not be
+#       in the instance checkout) after the commit and before the rebuild,
+#       which otherwise stops with "required command not found"
 #   A2  dotsteward-update, section 5: the local activation of an update on an
-#       adopt-mode profile names the same command for a raised deb floor or a
-#       new system-level requirement, before the rebuild
+#       adopt-mode profile names the same command, with --instance, for a
+#       raised deb floor or a new system-level requirement, before the
+#       rebuild
 #   A3  every framework skill keeps durable workflow lessons in versioned
 #       text (the framework skill through dotsteward-contribute, or the
 #       instance overlay), never in an agent's own memory store
@@ -63,9 +65,9 @@ update=$skills/dotsteward-update/SKILL.md
 
 # A1: maintain, section 5.
 units=$(units_of "$(section "$maintain" "5.")")
-unit_with "$units" "adopt" "dotsteward install --profile" "--component" "before" "rebuild" >/dev/null ||
+unit_with "$units" "adopt" "dotsteward --instance" "install --profile" "--component" "before" "rebuild" >/dev/null ||
   finding A1 dotsteward-maintain/SKILL.md \
-    "section 5 does not run install --component before the rebuild on an adopt-mode profile"
+    "section 5 does not run install --component, with --instance, before the rebuild on an adopt-mode profile"
 unit_with "$units" "adopt" "required command not found" >/dev/null ||
   finding A1 dotsteward-maintain/SKILL.md \
     "section 5 does not name the rebuild failure of a missing system-level component"
@@ -75,9 +77,9 @@ unit_with "$units" "adopt" "sudo" "terminal" >/dev/null ||
 
 # A2: update, section 5 (local activation).
 units=$(units_of "$(section "$update" "5.")")
-unit_with "$units" "adopt" "deb" "floor" "dotsteward install --profile" "--component" "rebuild" >/dev/null ||
+unit_with "$units" "adopt" "deb" "floor" "dotsteward --instance" "install --profile" "--component" "rebuild" >/dev/null ||
   finding A2 dotsteward-update/SKILL.md \
-    "section 5 does not bring a raised deb floor to an adopt-mode machine with install --component before the rebuild"
+    "section 5 does not bring a raised deb floor to an adopt-mode machine with install --component, with --instance, before the rebuild"
 
 # A3: durable lessons stay in versioned text.
 for name in dotsteward-maintain dotsteward-update dotsteward-contribute; do

@@ -29,11 +29,15 @@ memo_hit() {
   assert_call_count 0 curl
 }
 
+# The static checks the gate runs outside the sandbox (privacy only with a
+# denylist).
+static_call='static --only scripts'
+
 memo_miss() {
   : >"$DS_CALL_LOG"
   assert_exit 0 run_gate "$@"
   assert_not_contains "$DS_STDOUT" "already passed the gate"
-  assert_eq $'static\npins check --nix\nprobes' "$(fake_calls | cut -d' ' -f1-3 | sed 's/ --generation.*//')"
+  assert_eq "$static_call"$'\npins check --nix\nprobes' "$(fake_calls | sed 's/ --generation.*//')"
 }
 
 memo_miss --scope maintain
@@ -80,6 +84,7 @@ denylist=$DS_TEST_ROOT/denylist.txt
 printf 'first-term\n' >"$denylist"
 gate_config "[privacy]
 denylist = \"$denylist\""
+static_call='static --only privacy --only scripts'
 memo_miss --scope maintain
 memo_hit --scope maintain
 printf 'second-term\n' >"$denylist"

@@ -37,7 +37,7 @@ ds_stub_route nix 'build *' --exit 1 --stderr "error: builder for home failed"
 assert_exit 1 run_gate --scope maintain
 probes_failed
 assert_contains "$DS_STDERR" "error: builder for home failed"
-assert_eq $'static\npins check --nix' "$(fake_calls)"
+assert_eq $'static --only scripts\npins check --nix' "$(fake_calls)"
 ds_stub_clear_routes nix
 
 # The candidate has no home-path/bin.
@@ -47,7 +47,7 @@ ds_stub_route nix 'build *' --stdout "$DS_TEST_ROOT/empty-generation"
 assert_exit 1 run_gate --scope maintain
 probes_failed
 assert_contains "$DS_STDERR" "candidate profile bin directory missing: $DS_TEST_ROOT/empty-generation/home-path/bin"
-assert_eq $'static\npins check --nix' "$(fake_calls)"
+assert_eq $'static --only scripts\npins check --nix' "$(fake_calls)"
 ds_stub_clear_routes nix
 
 # The build prints no path.

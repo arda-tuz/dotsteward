@@ -2,8 +2,10 @@
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # fixture text with a literal $ is written on purpose
 # T2: every generic instance contract has a failing fixture: vendored skill
-# integrity (symlinks, digests, license, lock names and counts, framework
-# skill names), shell hygiene (bash -n, exec bit, ShellCheck version and
+# integrity (symlinks, digests, license, lock names and directories,
+# framework skill names; expected_skill_count, a copy of the number of
+# entries, is optional and ignored), shell hygiene (bash -n, exec bit,
+# ShellCheck version and
 # findings), policy bans, the launcher and bootstrap copies, the versions
 # lock policy, the update allowlist versus the settings buffer, byte-protected
 # files and overlays. All failures of a run are reported before exiting 1.
@@ -69,9 +71,14 @@ fresh
 add_skill "$PWD" second-skill
 fails skills "agent/skills: directories do not match the lock (expected example-skill, found example-skill second-skill)"
 
+# expected_skill_count only copies the number of entries, which are the
+# lock: a stale or a missing count is no finding.
 fresh
 jq '.expected_skill_count = 2' agent/skills.lock.json >lock.tmp && mv lock.tmp agent/skills.lock.json
-fails skills "agent/skills.lock.json: expected_skill_count is 2, the lock lists 1"
+assert_exit 0 static --only skills
+fresh
+jq 'del(.expected_skill_count)' agent/skills.lock.json >lock.tmp && mv lock.tmp agent/skills.lock.json
+assert_exit 0 static --only skills
 
 fresh
 add_skill "$PWD" dotsteward-update

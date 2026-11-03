@@ -2,7 +2,9 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # The files of template/: exactly the listed paths, no symbolic
 # links, executable exactly where the file is a script, text that ends with
-# a newline and has no carriage returns.
+# a newline and has no carriage returns. No update.sh: the retired wrapper
+# of `dotsteward update` and `dotsteward gate`, which the launcher runs
+# directly.
 # shellcheck source=tests/instance/template/helpers.sh
 source "$DS_REPO_ROOT/tests/instance/template/helpers.sh"
 
@@ -26,11 +28,10 @@ expected_files=(
   rebuild.sh
   rollback.sh
   tests/README.md
-  update.sh
   versions.lock.json
   workstation.toml
 )
-executables=(.dotsteward/cli.sh bootstrap.sh rebuild.sh rollback.sh update.sh)
+executables=(.dotsteward/cli.sh bootstrap.sh rebuild.sh rollback.sh)
 
 actual=$(cd "$tpl" && find . -mindepth 1 ! -type d -printf '%P\n' | LC_ALL=C sort)
 assert_eq "$(printf '%s\n' "${expected_files[@]}" | LC_ALL=C sort)" "$actual" "template files"

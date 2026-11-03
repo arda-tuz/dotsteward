@@ -39,7 +39,7 @@ assert_vscode_fails '(home (vscode { case = "editor-invalid"; }) "x86_64-linux")
   'dotsteward: component vscode: options.set_default_editor must be true or false, got "yes"'
 assert_vscode_fails '(home (vscode { case = "unknown-option"; }) "aarch64-darwin").home.activationPackage.drvPath' \
   "Failed assertions:" \
-  "dotsteward: component vscode: unknown option theme (known: set_default_editor)"
+  "dotsteward: component vscode: unknown option theme (known: set_default_editor, vendor_repository)"
 
 # PATH: the bundle's command directory with app-archive on darwin (active
 # profiles only); nothing on Linux or with the external method.

@@ -233,7 +233,7 @@ invalid=$(codex_instance invalid '["x86_64-linux"]' 'options = { colour = true, 
 ] }')
 assert_inst_fails "$(username "$invalid")" \
   "Failed assertions:" \
-  "- dotsteward: component codex: unknown option colour (known: plugins)" \
+  "- dotsteward: component codex: unknown option colour (known: plugins, expectedPath)" \
   '- dotsteward: component codex: options.plugins[0].spec must look like NAME@MARKETPLACE, got "no-market"' \
   "- dotsteward: component codex: options.plugins[1].minimumAt: versions.lock.json lacks agent_tools.missing.minimum_version" \
   "- dotsteward: component codex: options.plugins[2].minimumAt: versions.lock.json agent_tools is not a version (a string, or an entry with minimum_version or version)" \

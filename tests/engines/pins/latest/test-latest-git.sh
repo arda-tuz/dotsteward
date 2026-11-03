@@ -1,10 +1,11 @@
 # shellcheck shell=bash
 # Git based rows: channel-head (update when the channel moved, error when
 # the channel is gone, declared rows replacing the built-in one), compares
-# (no compare call when nothing moved, a truncated file list is a review,
+# (no compare call when nothing moved, a truncated file list is a review
+# unless the skill's source_path has the same tree at both revisions,
 # release-bound skills without a GitHub release and with a moved tag, a
-# changed compare answer is an error row), the skills lock without vendored
-# files, and nix-release when nothing is newer.
+# changed compare or tree answer is an error row), the skills lock without
+# vendored files, and nix-release when nothing is newer.
 # shellcheck source=tests/engines/pins/latest/helpers.sh
 source "$DS_REPO_ROOT/tests/engines/pins/latest/helpers.sh"
 
@@ -71,6 +72,65 @@ latest_gh_routes
 declare_latest '{"component":"example-watch","id":"example_watch","adapter":"git-compare","at":"example_watch","repo":"example-org/example-watch","revision_at":".inspected_revision","watched":["README\\.md"]}'
 assert_exit 0 latest --out "$report"
 assert_eq '["review",7,[],true]' "$(row example_watch '[.status, .details.ahead_by, .details.changed_paths, .details.files_truncated]')"
+
+# A truncated compare of vendored skills: the tree of each skill's
+# source_path at the pinned revision and at the head decides, read once per
+# path and revision. The same tree is current, another tree a review, and a
+# source path the head no longer has (HTTP 404) a review.
+skills_pinned=$(rev example-org/example-skills main~1)
+skills_head=$(rev example-org/example-skills main)
+tree() {
+  printf '{"sha": "%s", "url": "https://api.github.com/repos/example-org/example-skills/git/trees/%s", "tree": [], "truncated": false}' "$1" "$1"
+}
+tree_route() {
+  ds_stub_route gh "api repos/example-org/example-skills/git/trees/$1:$2" "${@:3}"
+}
+ds_stub_clear_routes gh
+ds_stub_route gh "api repos/example-org/example-skills/compare/*" --stdout-file "$DS_TEST_ROOT/compare-300.json"
+ds_stub_route gh "api repos/example-org/example-watch/compare/*" --stdout-file "$DS_TEST_ROOT/compare-300.json"
+tree_route "$skills_pinned" skills/example-vendored --stdout "$(tree 1111111111111111111111111111111111111111)"
+tree_route "$skills_head" skills/example-vendored --stdout "$(tree 1111111111111111111111111111111111111111)"
+tree_route "$skills_pinned" skills/example-second --stdout "$(tree 2222222222222222222222222222222222222222)"
+tree_route "$skills_head" skills/example-second --stdout "$(tree 3333333333333333333333333333333333333333)"
+latest_gh_routes
+: >"$DS_CALL_LOG"
+assert_exit 0 latest --out "$report"
+assert_eq '["current",[],true,"unchanged"]' \
+  "$(row skills.example-vendored '[.status, .details.changed_paths, .details.files_truncated, .details.source_tree]')"
+assert_eq '["review",[],true,"changed"]' \
+  "$(row skills.example-second '[.status, .details.changed_paths, .details.files_truncated, .details.source_tree]')"
+for revision in "$skills_pinned" "$skills_head"; do
+  for path in skills/example-vendored skills/example-second; do
+    assert_call_count 1 gh "api repos/example-org/example-skills/git/trees/$revision:$path"
+  done
+done
+# A declared git-compare row has no source path: a truncated list stays a
+# review, without a tree lookup.
+assert_eq '["review",true,null]' "$(row example_watch '[.status, .details.files_truncated, .details.source_tree]')"
+assert_call_count 0 gh "api repos/example-org/example-watch/git/trees/*"
+
+ds_stub_clear_routes gh
+ds_stub_route gh "api repos/example-org/example-skills/compare/*" --stdout-file "$DS_TEST_ROOT/compare-300.json"
+tree_route "$skills_pinned" skills/example-vendored --stdout "$(tree 1111111111111111111111111111111111111111)"
+tree_route "$skills_head" skills/example-vendored --exit 1 --stderr 'gh: Not Found (HTTP 404)'
+tree_route "$skills_pinned" skills/example-second --stdout "$(tree 2222222222222222222222222222222222222222)"
+tree_route "$skills_head" skills/example-second --stdout "$(tree 2222222222222222222222222222222222222222)"
+latest_gh_routes
+assert_exit 0 latest --out "$report"
+assert_eq '["review","missing"]' "$(row skills.example-vendored '[.status, .details.source_tree]')"
+assert_eq '["current","unchanged"]' "$(row skills.example-second '[.status, .details.source_tree]')"
+
+# A tree answer without an object id is an error row, never a silent pass.
+ds_stub_clear_routes gh
+ds_stub_route gh "api repos/example-org/example-skills/compare/*" --stdout-file "$DS_TEST_ROOT/compare-300.json"
+ds_stub_route gh "api repos/example-org/example-skills/git/trees/*" --stdout '{"tree": []}'
+latest_gh_routes
+assert_exit 1 latest --out "$report"
+assert_not_contains "$DS_STDERR" "Traceback"
+for skill in example-vendored example-second; do
+  assert_eq '"error"' "$(row "skills.$skill" .status)"
+  assert_contains "$(row "skills.$skill" .details.error)" "has no tree object id"
+done
 
 # A release-bound skill: without a GitHub release the newest stable tag
 # answers; when the tag moved past the pinned revision, the compare runs

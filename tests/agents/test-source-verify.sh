@@ -2,10 +2,11 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # The instance skills lock and the vendored sources are verified before a
 # skill touches the home: the
-# lock must be a regular file with schema_version "1.0" and
-# expected_skill_count equal to its entries, each entry needs name,
-# directory and skill_sha256 and a known deployment (copy, home-manager or
-# none); a missing vendored SKILL.md, a SKILL.md digest or a directory digest
+# lock must be a regular file with schema_version "1.0" (expected_skill_count,
+# a copy of the number of entries, is optional and ignored), each entry
+# needs name, directory and skill_sha256 and a known deployment (copy,
+# home-manager or none); a missing vendored SKILL.md, a SKILL.md digest or a
+# directory digest
 # that differs from the lock is fatal for that skill in both modes.
 # shellcheck source=tests/agents/helpers.sh
 source "$DS_REPO_ROOT/tests/agents/helpers.sh"
@@ -40,8 +41,14 @@ rm -rf "$source_dir" && cp -a "$DS_TEST_ROOT/alpha-pristine" "$source_dir"
 
 # The lock itself.
 cp -- "$agents_lock" "$DS_TEST_ROOT/lock-pristine"
-jq '.expected_skill_count = 2' "$DS_TEST_ROOT/lock-pristine" >"$agents_lock"
-expect_refusal "invalid skills lock $agents_lock: expected_skill_count is 2, the lock has 1 skills"
+# A stale or a missing expected_skill_count is ignored: the entries are the
+# lock, so the check goes on to the skill itself (not installed yet).
+for filter in '.expected_skill_count = 2' 'del(.expected_skill_count)'; do
+  jq "$filter" "$DS_TEST_ROOT/lock-pristine" >"$agents_lock"
+  assert_exit 1 run_agents check
+  assert_not_contains "$DS_STDERR" "invalid skills lock"
+  assert_contains "$DS_STDERR" "skill missing: alpha"
+done
 jq '.schema_version = "2.0"' "$DS_TEST_ROOT/lock-pristine" >"$agents_lock"
 expect_refusal "invalid skills lock $agents_lock: schema_version is not \"1.0\""
 jq '.skills[0].deployment = "elsewhere"' "$DS_TEST_ROOT/lock-pristine" >"$agents_lock"

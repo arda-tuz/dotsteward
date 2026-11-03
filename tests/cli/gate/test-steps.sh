@@ -48,7 +48,7 @@ assert_eq "$(jq -c '{result, tree_oid, scope, total_seconds, step_seconds}' "$ga
 
 # The calls, in order: the version, the cache probe, the three commands and
 # the two Nix builds with the default parallelism.
-assert_eq $'static\npins check --nix' "$(fake_calls | head -n 2)"
+assert_eq $'static --only scripts\npins check --nix' "$(fake_calls | head -n 2)"
 assert_eq "probes --generation" "$(fake_calls | sed -n 3p | cut -d' ' -f1-2)"
 assert_call_count 1 nix '*--version'
 assert_call_count 1 curl
@@ -73,7 +73,7 @@ done
 assert_contains "$log" "fake static output"
 assert_contains "$log" "fake pins output"
 assert_contains "$log" "fake probes output"
-assert_eq "== static: dotsteward static" "$(grep '^== static: ' <<<"$log")"
+assert_eq "== static: dotsteward static --only scripts" "$(grep '^== static: ' <<<"$log")"
 assert_eq "== pins: dotsteward pins check --nix" "$(grep '^== pins: ' <<<"$log")"
 assert_eq "" "$(temp_dirs)" "temporary directories left behind"
 
@@ -107,7 +107,7 @@ assert_not_contains "$DS_STDOUT" "candidate validated"
 assert_eq "[dotsteward] pins         FAILED (0s)" "$(grep 'FAILED' <<<"$DS_STDERR" | sed 's/([0-9]*s)/(0s)/')"
 assert_contains "$DS_STDERR" "fake pins output"
 assert_eq "[dotsteward] ERROR: gate step failed: pins; full log: $gate_log" "$(tail -n 1 <<<"$DS_STDERR")"
-assert_eq $'static\npins check --nix' "$(fake_calls)"
+assert_eq $'static --only scripts\npins check --nix' "$(fake_calls)"
 assert_call_count 0 nix '*flake check*'
 assert_call_count 0 nix '* build *'
 assert_eq "$record" "$(<"$gate_validation")" "a failed run changed the record"
@@ -129,7 +129,7 @@ assert_not_contains "$DS_STDERR" "check output line 040"
 assert_eq "[dotsteward] ERROR: gate step failed: flake-check; full log: $gate_log" "$(tail -n 1 <<<"$DS_STDERR")"
 assert_eq 62 "$(wc -l <<<"$DS_STDERR")"
 assert_contains "$(<"$gate_log")" "check output line 001"
-assert_eq $'static\npins check --nix' "$(fake_calls)"
+assert_eq $'static --only scripts\npins check --nix' "$(fake_calls)"
 assert_call_count 0 nix '* build *'
 assert_eq "$record" "$(<"$gate_validation")"
 ds_stub_clear_routes nix

@@ -2,10 +2,11 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # The host lock memo: the host input lock is created
 # when missing, kept byte-identical while (canonical_revision,
-# canonical_repo) of inventory.json match the instance, and refreshed with
-# `nix flake update <host_input>` when the revision or the checkout path
-# changes or inventory.json is unreadable. The instance flake.lock is never
-# changed.
+# canonical_repo) of inventory.json match the instance and the host flake is
+# unchanged, and refreshed with `nix flake update <host_input>` when the
+# revision or the checkout path changes, inventory.json is unreadable or
+# the host flake changed (a path: input an older release wrote). The
+# instance flake.lock is never changed.
 # shellcheck source=tests/cli/rebuild/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/rebuild/helpers.sh"
 
@@ -55,8 +56,23 @@ cp -R "$rb_inst" "$moved"
 : >"$DS_CALL_LOG"
 assert_exit 0 "$rb_fw/cli/dotsteward" --instance "$moved" rebuild --profile workstation --build-only </dev/null
 assert_eq "$update_call" "$(ds_calls_of nix | grep ' flake ')"
-assert_contains "$(<"$rb_hosts/flake.nix")" "inputs.dotfiles.url = \"path:$moved\";"
+assert_contains "$(<"$rb_hosts/flake.nix")" "inputs.dotfiles.url = \"git+file://$moved\";"
 assert_json "$rb_hosts/inventory.json" ".canonical_repo == \"$moved\""
+
+# A host flake an older release wrote (a path: input, which copies the .git
+# directory into the store) at the same revision and checkout: refreshed,
+# so the lock follows the git+file: input; the run after it keeps it.
+assert_exit 0 "$rb_fw/cli/dotsteward" --instance "$rb_inst" rebuild --profile workstation --build-only </dev/null
+sed -i "s|git+file://$rb_inst|path:$rb_inst|" "$rb_hosts/flake.nix"
+: >"$DS_CALL_LOG"
+assert_exit 0 run_rebuild --profile workstation --build-only
+assert_contains "$DS_STDOUT" "[dotsteward] host flake changed; refreshing the host input lock"
+assert_eq "$update_call" "$(ds_calls_of nix | grep ' flake ')"
+assert_contains "$(<"$rb_hosts/flake.nix")" "inputs.dotfiles.url = \"git+file://$rb_inst\";"
+: >"$DS_CALL_LOG"
+assert_exit 0 run_rebuild --profile workstation --build-only
+assert_contains "$DS_STDOUT" "[dotsteward] instance source unchanged; keeping the host input lock"
+assert_eq 0 "$(ds_call_count nix '* flake *')"
 
 # A host lock deleted by hand: created again.
 rm -f -- "$rb_hosts/flake.lock"

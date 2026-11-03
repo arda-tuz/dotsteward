@@ -21,12 +21,16 @@ contains_all() {
 
 for doc in README.md AGENTS.md components/README.md agent/overlays/README.md tests/README.md; do
   head -n 1 "$tpl/$doc" | grep -q '^# ' || ds_fail "$doc does not start with a title"
+  assert_not_contains "$(<"$tpl/$doc")" "update.sh" "$doc names the retired update.sh"
 done
 
-# README.md: the entry points and every top-level part of the instance.
+# README.md: the entry points and every top-level part of the instance; the
+# transaction commands run through the launcher (the update.sh wrapper is
+# retired, and no document names it).
 contains_all README.md \
   './bootstrap.sh --profile' './rebuild.sh --profile' '--switch' './rollback.sh' \
-  './update.sh prepare' './update.sh validate' './update.sh publish' './update.sh status' \
+  './.dotsteward/cli.sh update prepare' './.dotsteward/cli.sh gate' \
+  './.dotsteward/cli.sh update publish' './.dotsteward/cli.sh update status' \
   'workstation.toml' 'versions.lock.json' 'flake.nix' 'flake.lock' 'home.nix' 'home/AGENTS.md' \
   'components/' 'agent/skills.lock.json' 'agent/overlays/' 'local-maintained-files/' 'tests/' \
   '.dotsteward/' 'dotsteward-maintain' 'dotsteward-update' 'dotsteward-contribute'

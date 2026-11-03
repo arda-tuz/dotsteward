@@ -77,9 +77,10 @@ assert_eq "$series" "$state_version" "nix.state_version is the channel series"
 jq -e . "$skills" >/dev/null || ds_fail "template/agent/skills.lock.json is not valid JSON"
 assert_eq "$(python3 -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1])), indent=2, ensure_ascii=False))' "$skills")" \
   "$(<"$skills")" "skills.lock.json serialization"
-assert_eq '["schema_version","generated_at","expected_skill_count","layout","skills"]' \
+# No expected_skill_count: it would only copy the number of entries.
+assert_eq '["schema_version","generated_at","layout","skills"]' \
   "$(jq -c keys_unsorted "$skills")" "skills.lock.json sections"
-assert_json "$skills" '.schema_version == "1.0" and .expected_skill_count == 0 and .skills == []'
+assert_json "$skills" '.schema_version == "1.0" and .skills == []'
 assert_json "$skills" '.generated_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")' \
   "generated_at is an ISO time with Z"
 assert_json "$skills" '.layout == { canonical_user_directory: "~/.agents/skills" }' "layout"

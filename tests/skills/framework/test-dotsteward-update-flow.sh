@@ -13,7 +13,8 @@
 #   U3  the candidate table has the statuses update, review, held, manual
 #       and error; nixpkgs and Home Manager move together; the framework
 #       upgrade runs only when the framework row is review; the report
-#       carries step_seconds; the settings buffer is never touched
+#       carries step_seconds and is written in the overlay's language, else
+#       in the user's language; the settings buffer is never touched
 #   U4  references/framework-upgrade.md: gh release list, gh release view,
 #       the tag in flake.nix, nix flake update dotsteward, bootstrap.sh and
 #       .dotsteward/cli.sh refreshed from the new template/, sync, then the
@@ -106,6 +107,8 @@ grep -Ei 'nixpkgs' <<<"$units" | grep -Ei 'home.manager' | grep -qi 'together' |
 grep -F '`framework`' <<<"$units" | grep -F '`review`' | grep -qF 'references/framework-upgrade.md' ||
   finding U3 SKILL.md "the framework upgrade is not tied to the \`framework\` row in \`review\`"
 grep -q 'step_seconds' "$skill" || finding U3 SKILL.md "the report does not carry step_seconds"
+grep -q "language the overlay names, else in the user's language" "$skill" ||
+  finding U3 SKILL.md "the report is not written in the user's language when the overlay names none"
 grep -q 'settings\.buffer_dir' "$skill" || finding U3 SKILL.md "the settings buffer (settings.buffer_dir) is not named"
 
 # U4: the framework upgrade reference.

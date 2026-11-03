@@ -1,19 +1,18 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # The template wrappers: rebuild.sh and rollback.sh pass every
-# argument to `dotsteward rebuild` and `dotsteward rollback`; update.sh maps
-# its subcommands prepare, validate, publish and status to `dotsteward
-# update prepare`, `dotsteward gate`, `dotsteward update publish` and
-# `dotsteward update status`, and prints its usage for -h before anything
-# runs. All of them exec the instance launcher .dotsteward/cli.sh, from any
-# working directory and through symbolic links; the CLI is replaced by a
-# recording stub through the launcher's DOTSTEWARD_CLI override.
+# argument to `dotsteward rebuild` and `dotsteward rollback`. Both exec the
+# instance launcher .dotsteward/cli.sh, from any working directory and
+# through symbolic links; the CLI is replaced by a recording stub through
+# the launcher's DOTSTEWARD_CLI override. The update.sh wrapper is retired:
+# the launcher runs `update` and `gate` itself.
 # shellcheck source=tests/instance/template/helpers.sh
 source "$DS_REPO_ROOT/tests/instance/template/helpers.sh"
 
 command -v shellcheck >/dev/null 2>&1 || ds_fail "the template tests need shellcheck on PATH"
 
-for wrapper in rebuild.sh rollback.sh update.sh; do
+[[ ! -e $tpl/update.sh ]] || ds_fail "template/update.sh is retired, but the template still ships it"
+for wrapper in rebuild.sh rollback.sh; do
   [[ -f $tpl/$wrapper ]] || ds_fail "template/$wrapper is missing"
   bash -n "$tpl/$wrapper" || ds_fail "template/$wrapper is not valid bash"
   grep -qx 'set -Eeuo pipefail' "$tpl/$wrapper" || ds_fail "template/$wrapper lacks set -Eeuo pipefail"
@@ -23,7 +22,7 @@ for wrapper in rebuild.sh rollback.sh update.sh; do
     ds_fail "template/$wrapper maps a legacy environment variable"
   fi
 done
-(cd "$tpl" && shellcheck rebuild.sh rollback.sh update.sh) || ds_fail "shellcheck reported findings in the wrappers"
+(cd "$tpl" && shellcheck rebuild.sh rollback.sh) || ds_fail "shellcheck reported findings in the wrappers"
 
 inst=$DS_TEST_ROOT/instance
 mkdir -p "$inst"
@@ -75,54 +74,19 @@ calls_as rollback --latest --dry-run --json
 assert_exit 0 ./rollback.sh 'two words' '*' ''
 calls_as rollback 'two words' '*' ''
 
-# --- update.sh maps its subcommands --------------------------------------------
-
-assert_exit 0 ./update.sh prepare --official-sources-only --scope maintain
-calls_as update prepare --official-sources-only --scope maintain
-assert_exit 0 ./update.sh validate --scope maintain --force --expected-base 0123abc
-calls_as gate --scope maintain --force --expected-base 0123abc
-assert_exit 0 ./update.sh publish --scope update --expected-base 0123abc
-calls_as update publish --scope update --expected-base 0123abc
-assert_exit 0 ./update.sh status --json
-calls_as update status --json
-assert_exit 0 ./update.sh validate
-calls_as gate
-
 # The CLI's exit status is the wrapper's.
-STUB_STATUS=7 assert_exit 7 ./update.sh validate --force
-calls_as gate --force
 STUB_STATUS=3 assert_exit 3 ./rebuild.sh --profile fresh --build-only
 calls_as rebuild --profile fresh --build-only
-
-# Usage: -h, --help and help print it and exit 0 before anything runs; no
-# subcommand and an unknown one are refused with exit 1.
-for help in -h --help help; do
-  assert_exit 0 ./update.sh "$help"
-  assert_contains "$DS_STDOUT" "Usage: ./update.sh prepare|validate|publish|status [ARG...]"
-  for subcommand in prepare validate publish status; do
-    assert_contains "$DS_STDOUT" "  $subcommand "
-  done
-  assert_eq "" "$DS_STDERR" "update.sh $help writes nothing to stderr"
-  not_called
-done
-assert_exit 1 ./update.sh
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: update.sh needs a subcommand"
-assert_contains "$DS_STDERR" "Usage: ./update.sh"
-not_called
-assert_exit 1 ./update.sh --prepare --official-sources-only
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: update.sh: unknown subcommand --prepare (expected prepare, validate, publish or status)"
-not_called
-assert_exit 1 ./update.sh rebuild
-assert_contains "$DS_STDERR" "unknown subcommand rebuild"
-not_called
+STUB_STATUS=7 assert_exit 7 ./rollback.sh --latest --dry-run
+calls_as rollback --latest --dry-run
 # Nothing was written: no state, no file in the instance.
 assert_eq "" "$(find "$DOTSTEWARD_STATE_ROOT" -mindepth 1 -print -quit)" "state written by the wrappers"
 
 # --- any working directory, symbolic links ---------------------------------------
 
 cd "$DS_TEST_ROOT"
-assert_exit 0 "$inst/update.sh" status
-calls_as update status
+assert_exit 0 "$inst/rebuild.sh" --profile workstation --switch
+calls_as rebuild --profile workstation --switch
 cd /
 assert_exit 0 "$inst/rollback.sh" --latest --apply
 calls_as rollback --latest --apply
@@ -130,9 +94,9 @@ calls_as rollback --latest --apply
 mkdir -p "$DS_TEST_ROOT/bin" "$DS_TEST_ROOT/links"
 ln -s "$inst/rebuild.sh" "$DS_TEST_ROOT/bin/ws-rebuild"
 # A relative link to a relative link.
-ln -s ../instance/update.sh "$DS_TEST_ROOT/links/update.sh"
-ln -s ../links/update.sh "$DS_TEST_ROOT/bin/ws-update"
+ln -s ../instance/rollback.sh "$DS_TEST_ROOT/links/rollback.sh"
+ln -s ../links/rollback.sh "$DS_TEST_ROOT/bin/ws-rollback"
 assert_exit 0 "$DS_TEST_ROOT/bin/ws-rebuild" --profile workstation --build-only
 calls_as rebuild --profile workstation --build-only
-assert_exit 0 "$DS_TEST_ROOT/bin/ws-update" publish
-calls_as update publish
+assert_exit 0 "$DS_TEST_ROOT/bin/ws-rollback" --latest --dry-run
+calls_as rollback --latest --dry-run

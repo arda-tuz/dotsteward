@@ -2,8 +2,10 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # rebuild --build-only: the generated host
 # flake keeps the host-override contract (input [compat] host_input of type
-# path:, homeConfigurations.current = <input>.lib.mkHome (import
-# ./profile.nix)), the files are private, inventory.json records the build,
+# git+file:, the committed tree the gate builds, without the .git directory;
+# shallow=1 for a shallow clone; homeConfigurations.current =
+# <input>.lib.mkHome (import ./profile.nix)), the files are private,
+# inventory.json records the build,
 # the build never updates a lock file, the state records name the built
 # activation package and the profile, and nothing beyond the state root
 # changes: no activation, no hooks, no settings, no agents, no login shell.
@@ -33,7 +35,7 @@ assert_eq "{
   profile = \"workstation\";
 }" "$(<"$rb_hosts/profile.nix")"
 assert_eq "{
-  inputs.dotfiles.url = \"path:$rb_inst\";
+  inputs.dotfiles.url = \"git+file://$rb_inst\";
 
   outputs = { self, dotfiles }:
     let
@@ -86,9 +88,19 @@ open(path, "w").write(text)
 EOF
 instance_commit "default host input"
 assert_exit 0 run_rebuild --profile workstation --build-only
-assert_contains "$(<"$rb_hosts/flake.nix")" "inputs.instance.url = \"path:$rb_inst\";"
+assert_contains "$(<"$rb_hosts/flake.nix")" "inputs.instance.url = \"git+file://$rb_inst\";"
 assert_contains "$(<"$rb_hosts/flake.nix")" "outputs = { self, instance }:"
 assert_contains "$(<"$rb_hosts/flake.nix")" "homeConfigurations.current = instance.lib.mkHome profile;"
+
+# A shallow clone: Nix reads it only with shallow=1.
+shallow=$DS_TEST_ROOT/shallow
+git clone -q --depth 1 "file://$rb_inst" "$shallow"
+git -C "$shallow" remote set-url origin "$(git -C "$rb_inst" remote get-url origin)"
+assert_eq true "$(git -C "$shallow" rev-parse --is-shallow-repository)"
+assert_exit 0 "$rb_fw/cli/dotsteward" --instance "$shallow" rebuild --profile workstation --build-only </dev/null
+assert_contains "$(<"$rb_hosts/flake.nix")" "inputs.instance.url = \"git+file://$shallow?shallow=1\";"
+assert_exit 0 run_rebuild --profile workstation --build-only
+assert_contains "$(<"$rb_hosts/flake.nix")" "inputs.instance.url = \"git+file://$rb_inst\";"
 
 # A failed build stops before the records change, with the build's status.
 printf '%s\n' "$generation" >"$rb_current/last-built-activation"

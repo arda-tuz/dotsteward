@@ -2,9 +2,11 @@
 # shellcheck disable=SC2153 # DS_REPO_ROOT comes from tests/lib/harness.sh
 # The flow of skills/dotsteward-maintain: the frontmatter text,
 # the reference set, the start sequence, the single maintain-scope gate after
-# staging, the fixed commit, activate, verify and publish order, the version
-# and skill steps of the implementation, the settings buffer workflow, and no
-# legacy script path or engine command (the CLI commands do that work).
+# staging, the fixed commit, activate, verify and publish order (after a red
+# E2E too: gate, rebuild, then E2E again), the version and skill steps of
+# the implementation, the settings buffer workflow, the report in the
+# user's language unless the overlay names one, and no legacy script path or
+# engine command (the CLI commands do that work).
 
 skill_dir=$DS_REPO_ROOT/skills/dotsteward-maintain
 skill=$skill_dir/SKILL.md
@@ -87,6 +89,25 @@ assert_contains "$(fenced "$skill" | grep -F 'dotsteward rebuild')" "--switch" "
 assert_contains "$(fenced "$skill" | grep -F 'dotsteward e2e')" \
   '--expected-remote-base "$(dotsteward update status --json | jq -r .candidate.base_oid)"' \
   "e2e takes the prepared base"
+
+# A red E2E: a new commit, the gate, the rebuild that activates it, then E2E
+# again, in this order.
+red=$(grep -F 'If E2E fails' "$skill") || ds_fail "SKILL.md does not say what to do when E2E fails"
+red_order=$(awk -v text="$red" 'BEGIN {
+  n = split("new commit|gate again|rebuild|E2E again", want, "|")
+  at = 0
+  for (i = 1; i <= n; i++) {
+    found = index(substr(text, at + 1), want[i])
+    if (!found) { print "missing " want[i]; exit }
+    at += found
+  }
+  print "ok"
+}')
+assert_eq "ok" "$red_order" "after a red E2E: new commit, gate, rebuild, then E2E again"
+
+# The report: the overlay's language, else the user's.
+grep -q "language the overlay asks for, else in the user's language" "$skill" ||
+  ds_fail "SKILL.md does not write the report in the user's language when the overlay names none"
 
 # Settings: the plain-text decision report by default, and the buffer
 # workflow of the reference in its order.
