@@ -37,7 +37,9 @@
 #   a pre-receive hook on the upstream and the fork that fails a push to
 #   main as the knob push-main says: refuse (a protected branch) or race (a
 #   concurrent commit lands on main first, so the push no longer
-#   fast-forwards; once)
+#   fast-forwards; once); with the knob push-tag (any value), the next push
+#   of a tag finds that the release workflow cut that tag on main just
+#   before (a lightweight tag) and fails (once)
 #
 #   run_contribute ARG...      the dispatcher of rt_fw on the instance
 #   rt_setup MODE [TOML...]    the denylist, workstation.toml in MODE (owner
@@ -203,6 +205,7 @@ for rt_bare in "$ct_upstream_bare" "$ct_fork_bare"; do
     printf '#!%s\n' "$BASH"
     printf 'set -euo pipefail\n'
     printf 'knob=%q\n' "$rt_hub/knobs/push-main"
+    printf 'tag_knob=%q\n' "$rt_hub/knobs/push-tag"
     printf 'bare=%q\n' "$rt_bare"
     cat <<'EOF'
 # The concurrent commit is written outside the push's object quarantine.
@@ -216,7 +219,18 @@ concurrent_commit() (
   commit=$(TZ=UTC git -C "$bare" commit-tree "$tree" -p refs/heads/main -m 'chore: a concurrent change')
   git -C "$bare" update-ref refs/heads/main "$commit"
 )
+# The release workflow's tag on main, written outside the quarantine too.
+workflow_tag() (
+  unset GIT_DIR GIT_QUARANTINE_PATH GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+  git -C "$bare" update-ref "$1" "$(git -C "$bare" rev-parse refs/heads/main)"
+)
 while read -r _ _ ref; do
+  if [[ $ref == refs/tags/* && -f $tag_knob ]]; then
+    rm -f -- "$tag_knob"
+    workflow_tag "$ref"
+    printf 'the release workflow cut %s first\n' "${ref#refs/tags/}" >&2
+    exit 1
+  fi
   [[ $ref == refs/heads/main && -f $knob ]] || continue
   case $(<"$knob") in
     refuse)

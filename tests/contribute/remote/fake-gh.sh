@@ -25,6 +25,14 @@
 #   main-ci-pending a count: the run of main's CI reads in_progress (in a
 #                  listing, and in that many reads by id, which count it
 #                  down) before it concludes
+#   release-workflow "TAG [COMMIT]": once a run of main's CI is read by id
+#                  as concluded with success, the release workflow cuts
+#                  TAG as `tools/version.sh release` does with gh release
+#                  create --target: a lightweight tag on COMMIT (default:
+#                  the commit of that run) and its GitHub release (once)
+#   release-race   any value: the next `release create` finds the GitHub
+#                  release that the release workflow created just before,
+#                  and fails as GitHub does (once)
 #   clean-install  conclusion of a dispatched clean-install.yml run
 #                  (default success)
 #   ci-moves-main  a file name: while the checks run (at the green
@@ -202,6 +210,22 @@ synthetic_main_ci() {
   done
 }
 
+# release_workflow RUN_FILE: the knob release-workflow, once the run of
+# main's CI in RUN_FILE concluded with success: the tag and the GitHub
+# release the release workflow makes (once).
+release_workflow() {
+  local file=$1 knob=$hub/knobs/release-workflow tag target="" repo bare
+  [[ -f $knob && $(jq -r .final "$file") == success ]] || return 0
+  read -r tag target <"$knob"
+  rm -f -- "$knob"
+  repo=$(jq -r .repo "$file")
+  bare=$(bare_of "$repo")
+  [[ -n $target ]] || target=$(jq -r .head_sha "$file")
+  git -C "$bare" tag "$tag" "$target"
+  printf 'release create %s --repo %s --target %s (the release workflow)\n' "$tag" "$repo" "$target" \
+    >"$hub/releases/${repo//\//_}_$tag"
+}
+
 # sync_prs: every open pull request whose head commit is on its base branch
 # becomes merged, with the head as its merge commit.
 sync_prs() {
@@ -272,6 +296,7 @@ case "${1:-} ${2:-}" in
         if consume main-ci-pending; then
           jq '.status = "in_progress" | .conclusion = null' "$file" | answer
         else
+          release_workflow "$file"
           jq '.status = "completed" | .conclusion = .final' "$file" | answer
         fi
       else
@@ -411,6 +436,10 @@ case "${1:-} ${2:-}" in
     tag=$3
     repo=$(repo_option)
     bare=$(bare_of "$repo") || fail "gh: Not Found (HTTP 404)"
+    if [[ -f $hub/knobs/release-race ]]; then
+      rm -f -- "$hub/knobs/release-race"
+      printf 'release create %s --repo %s (the release workflow)\n' "$tag" "$repo" >"$hub/releases/${repo//\//_}_$tag"
+    fi
     [[ ! -f $hub/releases/${repo//\//_}_$tag ]] || fail "a release with the same tag name already exists"
     if [[ " ${args[*]} " == *" --verify-tag "* ]]; then
       git -C "$bare" rev-parse --verify --quiet "refs/tags/$tag" >/dev/null || fail "tag $tag doesn't exist in the repo"
