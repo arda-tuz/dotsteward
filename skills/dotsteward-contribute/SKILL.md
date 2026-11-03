@@ -108,7 +108,7 @@ Use `feat(<area>)` instead of `fix(<area>)` for new behaviour. Never amend or re
 dotsteward contribute check
 ```
 
-The framework gate runs the privacy scans (the tree, the new commits with the denylist, and the instance-leak scan with terms from the instance facts) and `nix flake check` in the clone. It takes long: start it in the background (Claude Code `run_in_background`; Codex with a timeout of at least 60 minutes), then wait for it with the command below instead of polling the process list (a `pgrep` loop matches its own command line and never ends). The same holds for `trial`, `publish`, `release` and `upgrade`.
+The framework gate runs the privacy scans (the tree, the new commits with the denylist, and the instance-leak scan with terms from the instance facts) and `nix flake check` in the clone. It takes long: start it in the background (Claude Code `run_in_background`; Codex with a timeout of at least 60 minutes), then wait for it with the command below instead of polling the process list (a `pgrep` loop matches its own command line and never ends). The same holds for `trial`, `publish`, `release` and `upgrade`. Never poll `api.github.com` without authentication in a loop either (a `curl` watch of the network or of CI): unauthenticated requests share one quota of 60 an hour per IP address with the `github:` inputs that Nix fetches, and an exhausted quota makes the `nix flake update` of the upgrade fail. Read GitHub through `gh`, which is authenticated, or through `dotsteward contribute status` (`main_ci`).
 
 ```bash
 dotsteward contribute status --wait --timeout 540
@@ -139,6 +139,7 @@ dotsteward contribute release
 dotsteward contribute upgrade --tag "$(dotsteward contribute status --json | jq -r .tag)"
 ```
 
+- After a full trial, the `dotsteward` on `PATH` is the candidate's: the trial switched the live generation to the checked framework commit, so `publish`, `release` and the first part of `upgrade` (until `flake.lock` pins the release) run the code of this run, not the pinned release's. `readlink -f "$(command -v dotsteward)"` names the build that runs.
 - `publish` pushes the branch and, in owner mode, opens the pull request, waits for green CI, merges it by fast-forwarding `main` to the checked commit and verifies that the merged tree is the tested tree; in fork mode it fast-forwards the fork's `main` after the same checks. `references/publish-and-release.md` describes both modes, the fork's upstream pull request and every refusal.
 - Exit 5 means the upstream `main` moved (or the merged tree differs): the branch was rebased (resolve conflicts by hand when told to), and the run is back at the framework gate. Run `dotsteward contribute check`, `trial` and `publish` again.
 - CI red: `main` is untouched. Read the failing job, fix it in the clone with a new commit, and go back to `check`.
