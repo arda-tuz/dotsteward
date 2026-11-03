@@ -3,7 +3,7 @@
 # The flow of skills/dotsteward-contribute: the frontmatter text,
 # the reference set, the step order from the instance facts to the report,
 # the reproduction proven failing before the fix, the framework commit
-# identity, the VERSION bump of the fix, the stop rules (privacy hard stop,
+# identity, the release commit (VERSION), the stop rules (privacy hard stop,
 # back to check, recovery through abort), the build-only trial, resuming a
 # run from its state file, the hand-over of the personal part, and no
 # legacy script path (the CLI commands do that work).
@@ -96,11 +96,14 @@ grep -q 'TZ=UTC git commit' "$change_ref" || ds_fail "framework-change.md does n
 grep -qi 'noreply' "$change_ref" || ds_fail "framework-change.md does not name the noreply identity"
 grep -qi 'trailer' "$change_ref" || ds_fail "framework-change.md does not rule out attribution trailers"
 
-# VERSION: the fix sets it to the next patch release, found from the tags,
-# and moves every file that carries the old version.
-grep -q 'ls-remote --tags' "$change_ref" || ds_fail "framework-change.md does not find the next release from the tags"
-grep -q 'git grep' "$change_ref" || ds_fail "framework-change.md does not find the files that carry the old version"
-grep -q 'v0.0.1' "$change_ref" || ds_fail "framework-change.md does not name the first release v0.0.1"
+# VERSION: the fix keeps it (release trains); a release commit sets it
+# with tools/version.sh bump, which follows semantic versioning and moves
+# every copy, and a major release needs the user's decision.
+grep -q 'tools/version.sh bump' "$change_ref" || ds_fail "framework-change.md does not set VERSION with tools/version.sh bump"
+grep -q 'chore(release)' "$change_ref" || ds_fail "framework-change.md does not commit the release commit on its own"
+grep -qi 'semantic versioning' "$change_ref" || ds_fail "framework-change.md does not describe the semantic versions"
+grep -q -- '--major' "$change_ref" || ds_fail "framework-change.md does not keep a major release for the user's decision"
+grep -q 'fetch --quiet --tags' "$change_ref" || ds_fail "framework-change.md does not fetch the release tags first"
 
 # The framework gate is long: run it in the background and wait once.
 grep -qi 'background' "$skill" || ds_fail "SKILL.md does not run the framework gate in the background"

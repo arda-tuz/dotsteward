@@ -14,7 +14,7 @@ assert_untouched() {
 reset_calls
 assert_exit 0 run_contribute --help
 for line in "  trial [--build-only]" "  publish [--pr-to-upstream]" "  release " \
-  "  upgrade [--tag TAG] [--build-only]" "  abort " "  report [--json]" "5  back to check (publish)"; do
+  "  upgrade [--tag TAG | --main] [--carry] [--build-only]" "  abort " "  report [--json]" "5  back to check (publish)"; do
   assert_contains "$DS_STDOUT" "$line"
 done
 for step in trial publish release upgrade abort report; do

@@ -21,7 +21,7 @@ sha=$(git -C "$ct_clone" rev-parse HEAD)
 
 # --- main moved before the push: rebased, back to check -------------------------------
 
-push_upstream other.txt other 'feat: an unrelated change'
+push_upstream other.txt other 'fix: an unrelated change'
 moved=$(upstream_main)
 reset_calls
 assert_exit 5 run_contribute publish
@@ -41,7 +41,7 @@ assert_contains "$DS_STDERR" "has not passed the trial; next: dotsteward contrib
 
 mark_checked
 mark_trialled full false
-push_upstream add-feature.txt 'other content' 'feat: a conflicting change'
+push_upstream add-feature.txt 'other content' 'fix: a conflicting change'
 assert_exit 5 run_contribute publish
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: fix/add-feature conflicts with origin/main: rebase it by hand in $ct_clone (with TZ=UTC), then run: dotsteward contribute check"
 assert_eq "$rebased" "$(git -C "$ct_clone" rev-parse HEAD)" "branch after the aborted rebase"
@@ -56,7 +56,7 @@ checked_branch() {
   printf 'feature\n' >"$ct_clone/feature-two.txt"
   printf '0.1.1\n' >"$ct_clone/VERSION"
   git -C "$ct_clone" add -A
-  git -C "$ct_clone" commit -q -m 'feat(example): the feature, again'
+  git -C "$ct_clone" commit -q -m 'fix(example): the feature, again'
   mark_checked
   mark_trialled full "${1:-false}"
 }
@@ -83,7 +83,7 @@ hub_knob push-main none
 hub_knob ci-moves-main late.txt
 reset_calls
 assert_exit 5 run_contribute publish
-assert_call_count 1 gh 'pr checks * --json bucket *'
+assert_call_count 1 gh 'pr checks * --json *bucket *'
 [[ $(upstream_main) != "$(git -C "$ct_clone" rev-parse HEAD)" ]] || ds_fail "main was fast-forwarded after it moved during CI"
 assert_eq check "$(field .step)" "step after main moved during CI"
 # The remote branch holds the old commit: the rebased one replaces it.
@@ -137,7 +137,7 @@ hand_tree=$(git -C "$ct_clone" rev-parse 'HEAD^{tree}')
 hub_knob checks fail
 assert_exit 1 run_contribute publish
 hand_pr=$(field .pr)
-push_upstream other-by-hand.txt other 'feat: a change merged meanwhile'
+push_upstream other-by-hand.txt other 'fix: a change merged meanwhile'
 gh pr merge "$hand_pr" --squash --match-head-commit "$(git -C "$ct_clone" rev-parse HEAD)"
 squash=$(upstream_main)
 hub_knob checks pass

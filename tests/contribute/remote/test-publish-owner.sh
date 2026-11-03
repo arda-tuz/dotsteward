@@ -42,7 +42,7 @@ printf 'git+file://%s?rev=%s\n' "$ct_clone" "$sha" >"$rt_live"
 hub_knob checks fail
 reset_calls
 assert_exit 1 run_contribute publish
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: CI is not green on $pr_url; main is untouched"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: CI is not green on $pr_url (lint and generic failed); main is untouched"
 assert_eq "$main_before" "$(upstream_main)" "upstream main after red CI"
 assert_eq "$sha" "$(git -C "$ct_upstream_bare" rev-parse refs/heads/fix/add-feature)" "pushed branch"
 assert_call_count 1 gh "pr create -R $CT_UPSTREAM_SLUG --base main --head fix/add-feature *"
@@ -63,7 +63,7 @@ assert_not_contains "$(jq -r .body <<<"$pr_json")" "$ct_clone"
 # No checks at all: CI never ran, so nothing is merged.
 hub_knob checks none
 assert_exit 1 run_contribute publish
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: no CI check appeared on $pr_url within 1s; publishing needs green CI, main is untouched"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: the CI checks lint and generic did not appear on $pr_url within 1s; publishing needs them green, main is untouched"
 
 # --- CI green: merged, verified -----------------------------------------------------------
 
@@ -74,7 +74,7 @@ reset_calls
 assert_exit 0 run_contribute publish
 assert_call_count 0 gh 'pr create*'
 assert_call_count 1 gh "pr list -R $CT_UPSTREAM_SLUG --head fix/add-feature --state open *"
-assert_call_count 1 gh "pr checks $pr_url --json bucket *"
+assert_call_count 1 gh "pr checks $pr_url --json *bucket *"
 assert_call_count 0 gh 'pr merge*'
 assert_call_count 0 gh 'workflow run*'
 assert_contains "$DS_STDOUT" "[dotsteward] merging $pr_url: fast-forwarding main of $CT_UPSTREAM_SLUG to ${sha:0:12}"
@@ -140,10 +140,11 @@ assert_exit 0 run_contribute publish
 assert_call_count 0 gh 'workflow run*'
 assert_contains "$DS_STDOUT" "[dotsteward] clean-install.yml on $(git -C "$ct_clone" rev-parse --short=12 HEAD): success"
 
-# --- VERSION must equal the next release before main is touched ----------------------------
+# --- VERSION: the base release or the next one, before main is touched ------------------------
 
-# VERSION 0.2.0 while the next release is v0.1.1: nothing is pushed, no
-# pull request is opened, main is untouched, the trial switch is recovered.
+# VERSION 0.2.0 while the fixes since v0.1.0 make the next release v0.1.1:
+# nothing is pushed, no pull request is opened, main is untouched, the
+# trial switch is recovered.
 checked_run wrong-version 0.2.0
 mark_trialled full true
 sha4=$(git -C "$ct_clone" rev-parse HEAD)
@@ -151,24 +152,24 @@ main4_before=$(upstream_main)
 printf 'switched\n' >"$rt_live"
 reset_calls
 assert_exit 1 run_contribute publish
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: VERSION is 0.2.0 at ${sha4:0:12}, but the next release is v0.1.1: set VERSION to 0.1.1 in the fix, then run: dotsteward contribute check; nothing is published"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: VERSION is 0.2.0 at ${sha4:0:12}, but it must stay 0.1.0 (no release in this run) or be the next release 0.1.1 (a release commit: tools/version.sh bump); fix it, then run: dotsteward contribute check; nothing is published"
 assert_call_count 0 gh 'pr *'
 [[ -z $(git -C "$ct_upstream_bare" for-each-ref refs/heads/fix/wrong-version) ]] || ds_fail "pushed despite the VERSION mismatch"
 assert_eq "$main4_before" "$(upstream_main)" "upstream main after a VERSION mismatch"
 assert_eq pinned "$(live)" "live framework after a VERSION mismatch"
 state_json | assert_json - '.step == "publish" and .merged_sha == null and .pr == null'
 
-# A release tagged while CI ran moves the next release: checked again right
-# before the merge, so nothing is merged.
+# A release cut while CI ran (v0.2.0 on main) moves the next release:
+# checked again right before the merge, so nothing is merged.
 printf '0.1.1\n' >"$ct_clone/VERSION"
 git -C "$ct_clone" commit -q -a -m 'fix(example): VERSION of the next release'
 mark_checked
 mark_trialled full false
 sha5=$(git -C "$ct_clone" rev-parse HEAD)
-hub_knob ci-tags v0.1.1
+hub_knob ci-tags v0.2.0
 reset_calls
 assert_exit 1 run_contribute publish
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: VERSION is 0.1.1 at ${sha5:0:12}, but the next release is v0.1.2: set VERSION to 0.1.2 in the fix, then run: dotsteward contribute check; nothing is published"
-assert_call_count 1 gh 'pr checks * --json bucket *'
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: VERSION is 0.1.1 at ${sha5:0:12}, but it must stay 0.2.0 (no release in this run) or be the next release 0.2.1 (a release commit: tools/version.sh bump); fix it, then run: dotsteward contribute check; nothing is published"
+assert_call_count 1 gh 'pr checks * --json *bucket *'
 assert_eq "$main4_before" "$(upstream_main)" "upstream main after a release during CI"
 assert_eq publish "$(field .step)" "step after a release during CI"

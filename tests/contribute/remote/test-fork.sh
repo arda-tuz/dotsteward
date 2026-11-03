@@ -128,9 +128,10 @@ assert_exit 0 run_contribute publish
 assert_contains "$DS_STDERR" "[dotsteward] WARNING: GitHub Actions are disabled on $CT_FORK_SLUG, so no CI runs there; relying on the framework gate and the trial"
 assert_eq "$(git -C "$ct_clone" rev-parse HEAD)" "$(fork_main)" "fork main without Actions"
 
-# --- VERSION must equal the next release before the fork is touched -------------------------
+# --- VERSION: the base release or the next one, before the fork is touched -------------------
 
-# The next release is v0.1.2 (the fork's v0.1.1 and the upstream's v0.1.0).
+# The next release is v0.1.2: after the newest release (the fork's v0.1.1),
+# although this history is based on the upstream's v0.1.0.
 hub_knob actions true
 checked_run fifth-feature 0.2.0
 mark_trialled full false
@@ -138,7 +139,7 @@ sha5=$(git -C "$ct_clone" rev-parse HEAD)
 git -C "$ct_fork_bare" update-ref refs/heads/main "$upstream_before"
 reset_calls
 assert_exit 1 run_contribute publish
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: VERSION is 0.2.0 at ${sha5:0:12}, but the next release is v0.1.2: set VERSION to 0.1.2 in the fix, then run: dotsteward contribute check; nothing is published"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: VERSION is 0.2.0 at ${sha5:0:12}, but it must stay 0.1.0 (no release in this run) or be the next release 0.1.2 (a release commit: tools/version.sh bump); fix it, then run: dotsteward contribute check; nothing is published"
 [[ -z $(git -C "$ct_fork_bare" for-each-ref refs/heads/fix/fifth-feature) ]] || ds_fail "pushed to the fork despite the VERSION mismatch"
 assert_eq "$upstream_before" "$(fork_main)" "fork main after a VERSION mismatch"
 assert_eq "$upstream_before" "$(upstream_main)" "upstream main after a VERSION mismatch"

@@ -7,13 +7,14 @@
 #       including hidden directories and through directory links (each
 #       resolved directory is visited once, so link cycles end), as a JSON
 #       list of {name, description, location} sorted by name; location is
-#       the path through the link, not the resolved target. A name found in
-#       several roots is listed once, from the first root; the state value
-#       "skill-precedence" "last" lists it from the last root instead (real
-#       OpenCode loads the skills concurrently, so either may win). The
-#       state value "serve-mode" selects a failure path: "exit" (exit 1 at
-#       once) or "not-list" (/skill answers a JSON object); "normal" is the
-#       default.
+#       the path through the link, not the resolved target; the name is
+#       the SKILL.md frontmatter name (a quoted value unquoted), else the
+#       directory name. A name found in several roots is listed once, from
+#       the first root; the state value "skill-precedence" "last" lists it
+#       from the last root instead (real OpenCode loads the skills
+#       concurrently, so either may win). The state value "serve-mode"
+#       selects a failure path: "exit" (exit 1 at once) or "not-list"
+#       (/skill answers a JSON object); "normal" is the default.
 # --version prints "version" (default "1.0.0"); anything else succeeds
 # silently.
 set -euo pipefail
@@ -71,7 +72,11 @@ def frontmatter(path):
                 break
             key, sep, value = line.partition(":")
             if sep:
-                fields[key.strip()] = value.strip()
+                value = value.strip()
+                # A quoted YAML scalar, as OpenCode reads it.
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in "\x22\x27":
+                    value = value[1:-1]
+                fields[key.strip()] = value
     return fields
 
 

@@ -2,10 +2,11 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # No publish after a red E2E: when the transaction activated a tree on this
 # machine (`rebuild --switch` records <state root>/current/activation.json:
-# the revision, its tree and the generation), update publish requires that
-# the activated tree is the HEAD tree and that the E2E result
-# (<state root>/update/e2e.json) passed for that tree and that generation,
-# with the repository checks. A transaction activated a tree when the
+# the revision, its tree, the generation and the profile), update publish
+# requires that the activated tree is the HEAD tree and that the E2E result
+# (<state root>/update/e2e.json) passed for that tree, that generation and
+# that profile, with the repository checks: an E2E run of another profile
+# checked other hooks. A transaction activated a tree when the
 # activated tree is the HEAD tree or the activated revision is a commit
 # after the base. Publishing without an activation stays allowed: an
 # activation of the base (an earlier transaction) asks for nothing.
@@ -65,6 +66,11 @@ write_e2e passed '.repo_checks = false'
 refused "no passing E2E is recorded for this tree and generation"
 write_e2e passed '.tree_oid = "0000000000000000000000000000000000000000"'
 refused "no passing E2E is recorded for this tree and generation"
+# A passing E2E of the same tree and generation for another profile (which
+# may enable fewer components, so fewer hooks ran) does not verify the
+# activation of this one.
+write_e2e passed '.profile = "minimal"'
+refused "no passing E2E is recorded for this tree and generation; $hint (the recorded E2E checked the profile minimal, not workstation)"
 
 # The transaction activated an earlier commit: HEAD was never activated.
 write_e2e passed

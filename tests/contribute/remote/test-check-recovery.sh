@@ -45,7 +45,7 @@ hub_knob flake-check pass
 
 trialled
 trial_ref=$(live)
-push_upstream other.txt other 'feat: an unrelated change'
+push_upstream other.txt other 'fix: an unrelated change'
 reset_calls
 assert_exit 5 run_contribute publish
 assert_eq "$trial_ref" "$(live)" "live framework after the rebase"

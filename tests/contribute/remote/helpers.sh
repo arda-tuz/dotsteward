@@ -18,8 +18,11 @@
 #                     status of the first matching stand_in_fail rule;
 #                     rebuild --switch writes the live framework to rt_live
 #                     (the --framework-override value, else "pinned"); sync
-#                     writes the untracked mirror .dotsteward/synced; gate
-#                     refuses untracked files, as the real gate does
+#                     writes the untracked mirror .dotsteward/synced (and,
+#                     with the knob sync-mirror, every
+#                     .dotsteward/manifest.*.json as "mirror of:
+#                     <components.txt>"); gate refuses untracked files, as
+#                     the real gate does
 #   DOTSTEWARD_CLI    (exported) the CLI the instance launcher runs (its
 #                     step 1): a wrapper that records "dotsteward-launcher
 #                     ARG..." and runs rt_fw, standing in for the CLI pinned
@@ -52,9 +55,10 @@
 #                              arguments match GLOB; stand_in_clear COMMAND
 #   checked_run SLUG [VERSION] a run on fix/SLUG with a test commit
 #                              (tests/example/test-SLUG.sh) and a fix commit
-#                              (SLUG.txt, VERSION (default 0.1.1) and
-#                              template/bootstrap.sh of that release) whose
-#                              check passed
+#                              (fix(example): SLUG with SLUG.txt, VERSION
+#                              (default 0.1.1, the next patch after v0.1.0)
+#                              and template/bootstrap.sh of that release)
+#                              whose check passed
 #   rt_bootstrap VERSION       template/bootstrap.sh of a release
 #   mark_checked               records the clone's HEAD as checked
 #   mark_trialled KIND [SWITCHED]
@@ -147,8 +151,15 @@ fi
 EOF
         ;;
       sync)
+        printf 'mirror_knob=%q\n' "$rt_hub/knobs/sync-mirror"
         cat <<'EOF'
 printf 'synced\n' >"$DOTSTEWARD_INSTANCE/.dotsteward/synced"
+if [[ -f $mirror_knob ]]; then
+  for mirror in "$DOTSTEWARD_INSTANCE"/.dotsteward/manifest.*.json; do
+    [[ -f $mirror ]] || continue
+    printf 'mirror of: %s\n' "$(cat "$DOTSTEWARD_INSTANCE/components.txt" 2>/dev/null || true)" >"$mirror"
+  done
+fi
 EOF
         ;;
       gate)
@@ -348,7 +359,7 @@ checked_run() {
   printf '%s\n' "$version" >"$ct_clone/VERSION"
   rt_bootstrap "$version" >"$ct_clone/template/bootstrap.sh"
   git -C "$ct_clone" add -A
-  git -C "$ct_clone" commit -q -m "feat(example): $slug"
+  git -C "$ct_clone" commit -q -m "fix(example): $slug"
   mark_checked
 }
 

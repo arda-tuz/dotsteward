@@ -7,37 +7,54 @@
 #
 # Knobs (DS_TEST_ROOT/hub/knobs/NAME, see hub_knob in helpers.sh):
 #   push           push permission on every repository (default true)
+#   logged-out     true: `gh auth status` fails, as without a login
 #   actions        GitHub Actions enabled (default true)
-#   checks         pull request checks: pass, fail or none (default pass)
+#   checks         pull request checks: pass, fail, pending or none
+#                  (default pass), the bucket of lint (ci) and generic
+#                  (privacy); the knobs lint and generic set one of them
+#   full-check     the bucket of the full check (check of ci) on a pull
+#                  request: skipping (default, as the CI runs it only on
+#                  main and for forks), pending, pass or fail; denylist
+#                  (privacy) is always skipping
 #   ci             the synthetic push run of ci.yml on every pushed commit:
 #                  success, failure or none (default success)
+#   main-ci        the push runs of ci.yml and privacy.yml on main for a
+#                  commit on main (main's CI): success, failure or none
+#                  (default success); main-ci-WORKFLOW (main-ci-ci.yml,
+#                  main-ci-privacy.yml) sets one of them
+#   main-ci-pending a count: the run of main's CI reads in_progress (in a
+#                  listing, and in that many reads by id, which count it
+#                  down) before it concludes
 #   clean-install  conclusion of a dispatched clean-install.yml run
 #                  (default success)
 #   ci-moves-main  a file name: while the checks run (at the green
-#                  `pr checks --json bucket` answer), a commit writing that
+#                  `pr checks` answer with buckets), a commit writing that
 #                  file lands on main (once)
 #   ci-tags        a tag name: while the checks run (as above), that tag
 #                  (annotated) lands on main of the repository (once)
 #   stale-head     a count: the next that many `pr view` and `pr checks`
 #                  calls answer for the head the pull request had before
-#                  the last push (headRefOid 1111...; one failed check), as
-#                  GitHub does for a moment after a push
+#                  the last push (headRefOid 1111...; lint failed there),
+#                  as GitHub does for a moment after a push
 #   checks-later   a count: the next that many `pr checks` calls (after any
 #                  stale-head calls) find no check on the new head yet
-#   checks-flaky   a count: the next that many `pr checks --json bucket`
-#                  calls fail with HTTP 502, as GitHub's API does at times
-#   checks-pending a count: the next that many `pr checks --json bucket`
-#                  calls find the check still pending
+#   checks-flaky   a count: the next that many `pr checks` calls with
+#                  buckets fail with HTTP 502, as GitHub's API does at times
+#   checks-pending a count: the next that many `pr checks` calls with
+#                  buckets find lint and generic still pending
 #
 # Supported commands (--jq/-q FILTER is applied to the JSON answer):
 #   auth status; api user; config get git_protocol; api repos/R;
 #   api repos/R/actions/permissions; api -X GET repos/R/actions/runs
 #   -f head_sha=S ...; api repos/R/actions/runs/ID; workflow run W -R R
 #   --ref B; pr list -R R --head B ...; pr create -R R --base main --head
-#   [OWNER:]B --title T --body B; pr view URL; pr checks URL --json name |
-#   --json bucket; pr merge URL --squash --match-head-commit SHA (a merge
+#   [OWNER:]B --title T --body B; pr view URL; pr checks URL --json FIELDS
+#   (name, workflow, event, bucket); pr merge URL --squash --match-head-commit SHA (a merge
 #   made on GitHub by hand: a new squash commit on main); release view TAG
-#   -R R; release create TAG -R R ... --verify-tag
+#   -R R; release create TAG -R R ... --verify-tag | --target SHA (a missing
+#   tag is created there, lightweight) [--notes-file FILE] (kept next to the
+#   release as <release>.notes); every -R also as --repo; workflow run
+#   also on a tag
 #
 # An open pull request whose head commit is on its base branch (main was
 # fast-forwarded to it by a push) is recorded as merged with that head as
@@ -160,6 +177,31 @@ synthetic_ci() {
       created_at: "2026-01-01T00:00:00Z", html_url: "https://github.com/\($repo)/actions/runs/\($id)"}' >"$file"
 }
 
+# synthetic_main_ci REPO SHA: main's CI for a commit on main of REPO, the
+# push runs of ci.yml and privacy.yml (head_branch main), as the knobs
+# main-ci and main-ci-WORKFLOW say now (written again on every listing,
+# removed for none or a commit that is not on main).
+synthetic_main_ci() {
+  local repo=$1 sha=$2 bare workflow id file conclusion
+  bare=$(bare_of "$repo") || return 0
+  for workflow in ci.yml privacy.yml; do
+    id=$((800000 + $(printf '%s' "$repo$sha$workflow" | cksum | cut -d' ' -f1) % 99999))
+    file=$hub/runs/$id.json
+    conclusion=$(knob "main-ci-$workflow" "$(knob main-ci success)")
+    if [[ $conclusion == none || -z $sha ]] ||
+      ! git -C "$bare" merge-base --is-ancestor "$sha" refs/heads/main 2>/dev/null; then
+      rm -f -- "$file"
+      continue
+    fi
+    jq -n --argjson id "$id" --arg repo "$repo" --arg sha "$sha" --arg path ".github/workflows/$workflow" \
+      --arg conclusion "$conclusion" --argjson pending "$(knob main-ci-pending 0)" '{id: $id, repo: $repo,
+        path: $path, event: "push", head_sha: $sha, head_branch: "main", synthetic: "main",
+        status: (if $pending > 0 then "in_progress" else "completed" end),
+        conclusion: (if $pending > 0 then null else $conclusion end), created_at: "2026-01-01T00:00:01Z",
+        html_url: "https://github.com/\($repo)/actions/runs/\($id)", final: $conclusion}' >"$file"
+  done
+}
+
 # sync_prs: every open pull request whose head commit is on its base branch
 # becomes merged, with the head as its merge commit.
 sync_prs() {
@@ -193,6 +235,7 @@ stale_head=1111111111111111111111111111111111111111
 
 case "${1:-} ${2:-}" in
   "auth status")
+    [[ $(knob logged-out false) != true ]] || fail "You are not logged into any GitHub hosts. To log in, run: gh auth login"
     printf 'github.com\n  - Logged in to github.com account dotsteward-test (keyring)\n'
     ;;
   "api user")
@@ -212,6 +255,7 @@ case "${1:-} ${2:-}" in
       fi
     done
     synthetic_ci "$repo" "$sha"
+    synthetic_main_ci "$repo" "$sha"
     find "$hub/runs" -name '*.json' -exec cat {} + |
       jq -s --arg repo "$repo" --arg sha "$sha" '{workflow_runs: [.[] | select(.repo == $repo and .head_sha == $sha)]}' |
       answer
@@ -221,8 +265,18 @@ case "${1:-} ${2:-}" in
     if [[ $path =~ ^repos/([^/]+/[^/]+)/actions/permissions$ ]]; then
       jq -n --argjson enabled "$(knob actions true)" '{enabled: $enabled}' | answer
     elif [[ $path =~ ^repos/([^/]+/[^/]+)/actions/runs/([0-9]+)$ ]]; then
-      [[ -f $hub/runs/${BASH_REMATCH[2]}.json ]] || fail "gh: Not Found (HTTP 404)"
-      answer <"$hub/runs/${BASH_REMATCH[2]}.json"
+      file=$hub/runs/${BASH_REMATCH[2]}.json
+      [[ -f $file ]] || fail "gh: Not Found (HTTP 404)"
+      if [[ $(jq -r '.synthetic // ""' "$file") == main ]]; then
+        # main's CI concludes once main-ci-pending ran out.
+        if consume main-ci-pending; then
+          jq '.status = "in_progress" | .conclusion = null' "$file" | answer
+        else
+          jq '.status = "completed" | .conclusion = .final' "$file" | answer
+        fi
+      else
+        answer <"$file"
+      fi
     elif [[ $path =~ ^repos/([^/]+/[^/]+)$ ]]; then
       bare_of "${BASH_REMATCH[1]}" >/dev/null || fail "gh: Not Found (HTTP 404)"
       jq -n --arg slug "${BASH_REMATCH[1]}" --argjson push "$(knob push true)" \
@@ -238,6 +292,7 @@ case "${1:-} ${2:-}" in
     [[ $(knob actions true) == true ]] || fail "HTTP 403: Actions are disabled for this repository"
     bare=$(bare_of "$repo") || fail "gh: Not Found (HTTP 404)"
     sha=$(tip_of "$bare" "$ref")
+    [[ -n $sha ]] || sha=$(git -C "$bare" rev-parse --verify --quiet "refs/tags/$ref^{commit}" || true)
     [[ -n $sha ]] || fail "HTTP 422: No ref found for: $ref"
     id=$(next_id "$hub/runs" 1000)
     jq -n --argjson id "$id" --arg repo "$repo" --arg path ".github/workflows/$workflow" --arg sha "$sha" \
@@ -290,17 +345,17 @@ case "${1:-} ${2:-}" in
     pr_file_of "$3" >/dev/null
     state=$(knob checks pass)
     if consume stale-head; then
-      jq -n '[{name: "ci", bucket: "fail"}]' | answer
+      jq -n '[{name: "lint", workflow: "ci", event: "pull_request", bucket: "fail"},
+        {name: "generic", workflow: "privacy", event: "pull_request", bucket: "pass"}]' | answer
       exit 0
     fi
     if consume checks-later; then
       state=none
     fi
-    if [[ " ${args[*]} " == *" bucket"* ]]; then
+    if [[ " ${args[*]} " == *bucket* ]]; then
       consume checks-flaky && fail "HTTP 502: 502 Bad Gateway (https://api.github.com/graphql)"
       if consume checks-pending; then
-        jq -n '[{name: "ci", bucket: "pending"}]' | answer
-        exit 0
+        state=pending
       fi
       if [[ $state == pass ]]; then
         if [[ -f $hub/knobs/ci-moves-main ]]; then
@@ -317,7 +372,14 @@ case "${1:-} ${2:-}" in
     if [[ $state == none ]]; then
       jq -n '[]' | answer
     else
-      jq -n --arg state "$state" '[{name: "ci", bucket: $state}]' | answer
+      # The checks of the pull request head: the jobs of ci.yml and
+      # privacy.yml (gh names a check by its job and its workflow).
+      jq -n --arg lint "$(knob lint "$state")" --arg generic "$(knob generic "$state")" \
+        --arg full "$(knob full-check skipping)" '[
+          {name: "lint", workflow: "ci", event: "pull_request", bucket: $lint},
+          {name: "check", workflow: "ci", event: "pull_request", bucket: $full},
+          {name: "generic", workflow: "privacy", event: "pull_request", bucket: $generic},
+          {name: "denylist", workflow: "privacy", event: "pull_request", bucket: "skipping"}]' | answer
     fi
     ;;
   "pr merge")
@@ -349,10 +411,19 @@ case "${1:-} ${2:-}" in
     tag=$3
     repo=$(repo_option)
     bare=$(bare_of "$repo") || fail "gh: Not Found (HTTP 404)"
-    [[ " ${args[*]} " == *" --verify-tag "* ]] || fail "fake gh: release create needs --verify-tag"
-    git -C "$bare" rev-parse --verify --quiet "refs/tags/$tag" >/dev/null || fail "tag $tag doesn't exist in the repo"
     [[ ! -f $hub/releases/${repo//\//_}_$tag ]] || fail "a release with the same tag name already exists"
+    if [[ " ${args[*]} " == *" --verify-tag "* ]]; then
+      git -C "$bare" rev-parse --verify --quiet "refs/tags/$tag" >/dev/null || fail "tag $tag doesn't exist in the repo"
+    elif ! git -C "$bare" rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
+      # GitHub creates a missing tag (a lightweight one) at --target.
+      target=$(option --target) || fail "fake gh: release create of a new tag needs --verify-tag or --target"
+      git -C "$bare" cat-file -e "$target^{commit}" 2>/dev/null || fail "HTTP 422: Validation Failed (target_commitish)"
+      git -C "$bare" tag "$tag" "$target"
+    fi
     printf '%s\n' "${args[*]}" >"$hub/releases/${repo//\//_}_$tag"
+    if notes=$(option --notes-file); then
+      cp -- "$notes" "$hub/releases/${repo//\//_}_$tag.notes"
+    fi
     printf 'https://github.com/%s/releases/tag/%s\n' "$repo" "$tag"
     ;;
   *)

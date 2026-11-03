@@ -1,9 +1,12 @@
 # shellcheck shell=bash
 # The built-in framework row: the tag of the instance's dotsteward input
 # (flake.lock original.ref) against the newest release of its upstream
-# (a github owner/repo or a git URL), review when newer, manual for an
-# input that is not a release tag or is a local path, error rows for a
-# missing input or lock file and unknown input types.
+# (a github owner/repo or a git URL), review when newer. A commit pin
+# (original.rev, as `contribute upgrade --main` writes it) is current while
+# the commit contains the newest release and review once a newer release
+# exists, from the upstream's commits. Manual for an input that is neither
+# or is a local path, error rows for a missing input or lock file, unknown
+# input types and a commit the upstream does not have.
 # shellcheck source=tests/engines/pins/latest/helpers.sh
 source "$DS_REPO_ROOT/tests/engines/pins/latest/helpers.sh"
 
@@ -43,10 +46,42 @@ assert_eq "{\"id\":\"framework\",\"kind\":\"framework\",\"current\":\"v0.1.0\",\
   "$(row framework)"
 assert_call_count 0 gh "api repos/example/dotsteward/*"
 
-# Not a release tag, or a local checkout: manual.
+# A commit pin: current while the commit contains the newest release
+# (the release commit itself, or a main commit after it), review when the
+# commit is older than the newest release.
+released=$(rev example/dotsteward v0.2.0)
+older=$(rev example/dotsteward v0.1.0)
+set_original "{\"owner\": \"example\", \"repo\": \"dotsteward\", \"rev\": \"$released\", \"type\": \"github\"}"
+assert_exit 0 latest --out "$report"
+assert_eq "{\"id\":\"framework\",\"kind\":\"framework\",\"current\":\"${released:0:12}\",\"latest\":\"v0.2.0\",\"status\":\"current\",\"source\":\"https://github.com/example/dotsteward/releases\",\"details\":{\"tag\":\"v0.2.0\",\"upstream\":\"github:example/dotsteward\",\"rev\":\"$released\",\"contains\":true}}" \
+  "$(row framework)"
+set_original "{\"owner\": \"example\", \"repo\": \"dotsteward\", \"rev\": \"$older\", \"type\": \"github\"}"
+assert_exit 0 latest --out "$report"
+assert_eq "[\"${older:0:12}\",\"v0.2.0\",\"review\",false]" "$(row framework '[.current, .latest, .status, .details.contains]')"
+ds_git_commit "$sources/example/dotsteward" CHANGES.txt "unreleased" "fix: a change on main after v0.2.0"
+publish example/dotsteward
+ahead=$(rev example/dotsteward main)
+set_original "{\"owner\": \"example\", \"repo\": \"dotsteward\", \"rev\": \"$ahead\", \"type\": \"github\"}"
+assert_exit 0 latest --out "$report"
+assert_eq "[\"${ahead:0:12}\",\"v0.2.0\",\"current\",true]" "$(row framework '[.current, .latest, .status, .details.contains]')"
+
+# The git form of a commit pin (?ref=refs/heads/main&rev=...): git alone.
+: >"$DS_CALL_LOG"
+set_original "{\"type\": \"git\", \"url\": \"file://$github/example/dotsteward\", \"ref\": \"refs/heads/main\", \"rev\": \"$older\"}"
+assert_exit 0 latest --out "$report"
+assert_eq "[\"${older:0:12}\",\"v0.2.0\",\"review\",\"$older\"]" "$(row framework '[.current, .latest, .status, .details.rev]')"
+assert_call_count 0 gh "api repos/example/dotsteward/*"
+
+# A commit the upstream does not have: an error row.
+set_original '{"owner": "example", "repo": "dotsteward", "rev": "0123456789abcdef0123456789abcdef01234567", "type": "github"}'
+assert_exit 1 latest --out "$report"
+assert_eq '["0123456789ab","error"]' "$(row framework '[.current, .status]')"
+assert_not_contains "$DS_STDERR" "Traceback"
+
+# Neither a release tag nor a commit, or a local checkout: manual.
 set_original '{"owner": "example", "repo": "dotsteward", "type": "github"}'
 assert_exit 0 latest --out "$report"
-assert_eq '{"id":"framework","kind":"framework","current":null,"latest":null,"status":"manual","source":"https://github.com/example/dotsteward/releases","details":{"note":"the dotsteward input is not pinned to a release tag","upstream":"github:example/dotsteward"}}' \
+assert_eq '{"id":"framework","kind":"framework","current":null,"latest":null,"status":"manual","source":"https://github.com/example/dotsteward/releases","details":{"note":"the dotsteward input is not pinned to a release tag or a commit","upstream":"github:example/dotsteward"}}' \
   "$(row framework)"
 set_original '{"owner": "example", "ref": "main", "repo": "dotsteward", "type": "github"}'
 assert_exit 0 latest --out "$report"
