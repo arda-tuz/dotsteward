@@ -8,6 +8,14 @@ Every contribution is one run with one state file, `<state root>/contribute/<id>
 dotsteward contribute status --json
 ```
 
+A long step (`check`, `trial`, `publish`, `release`, `upgrade`, `abort`, `report`) that runs in the background is waited for, never polled:
+
+```bash
+dotsteward contribute status --wait --timeout 540
+```
+
+It blocks until no step of the run runs, prints the state and exits with the status of the run's last step (exit 3: the timeout passed first; run it again).
+
 | Field | Meaning |
 | --- | --- |
 | `id` | the run id |
@@ -24,6 +32,9 @@ dotsteward contribute status --json
 | `tag` | the release tag |
 | `instance_commit` | the instance commit of the upgrade |
 | `step` | the next step of the run |
+| `running` | while a long step works: its `step`, `pid` and `started_at` (UTC); every other step refuses meanwhile |
+| `promote` | only in a run started with `--promote NAME`: the private component the run moves into the catalog, the one name its instance-leak scan exempts |
+| `last_step` | the last long step that ended: `step`, its exit `status` (`null` when its process vanished without ending it), `started_at` and `ended_at` |
 
 The remote steps add `profile` (the profile of the trial, recovery and upgrade), `trial` and `trial_sha` (full or build-only, and the commit it passed for), `upgrade` (full or build-only), `upgrade_to` (the release tag, or `main` when the upgrade follows the merged commit), `instance_base` (the instance commit the upgrade started from), `upgrade_commit` (the framework upgrade commit of the instance), `carry` (the instance commits carried across the upgrade with `--carry`: `head`, `remote`, `commits` and `applied`), `recovery` (`done` or `failed`) and `outcome` (`completed` or `aborted`). Once the run has a merged commit, `status` also shows `main_ci`, main's CI for that commit (`state` pending, green, red or unknown, its `url` and `runs`), read once from GitHub.
 
@@ -34,7 +45,7 @@ The remote steps add `profile` (the profile of the trial, recovery and upgrade),
 | `step` | Next command |
 | --- | --- |
 | `reproduce` | write the test, then `dotsteward contribute check --expect-fail <test path>` |
-| `fix` | write the fix, then `dotsteward contribute check` |
+| `fix` | commit the test (`dotsteward contribute commit --test`), write and commit the fix (`dotsteward contribute commit`), then `dotsteward contribute check` |
 | `check` | `dotsteward contribute check` |
 | `trial` | `dotsteward contribute trial` (or `--build-only`) |
 | `publish` | `dotsteward contribute publish` |
@@ -48,7 +59,8 @@ The remote steps add `profile` (the profile of the trial, recovery and upgrade),
 ## Exit status of the steps
 
 - `0`: the step is done; the output names the next command.
-- `1`: refused or red. Nothing was published by this step; read the message, fix the cause, and run the named command.
+- `1`: refused or red. Nothing was published by this step; read the message, fix the cause, and run the named command. A step refused because another one is running names it: wait for that one (`dotsteward contribute status --wait`), never start it twice.
+- `3` (`status --wait --timeout`): the step still runs; wait again.
 - `4` (`check`): privacy hard stop. The findings are redacted to a rule and a location. Remove them from every commit of the branch and run `check` again; nothing may be published before it passes.
 - `5` (`publish`): back to `check`. The upstream `main` moved or the merged tree differed; the branch was rebased (or must be rebased by hand after a conflict) and the tested commit is gone.
 

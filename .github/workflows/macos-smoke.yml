@@ -1,16 +1,29 @@
 name: macos-smoke
 
-# The macOS smoke test (tests/ci/macos-smoke.sh): on a macos-14 arm64
-# runner, the pinned Nix through stage 0 (--install-nix-only), a new
-# aarch64-darwin instance from `dotsteward init` with the darwin methods,
-# rebuild --build-only and --switch in the runner's home, the login shell
-# and the E2E checks. Manual only: macOS minutes are expensive, so it runs
-# when a release needs a real Mac:
+# macOS on a real Mac (macos-14, arm64), in two jobs on fresh runners:
+# - smoke (tests/ci/macos-smoke.sh): the pinned Nix through stage 0
+#   (--install-nix-only), a new aarch64-darwin instance from `dotsteward
+#   init` with the darwin methods, rebuild --build-only and --switch in the
+#   runner's home, the login shell and the E2E checks;
+# - checks: the pinned Nix through stage 0, then `nix flake check`, which
+#   builds the checks of the runner's system: checks.aarch64-darwin, the
+#   darwinChecks of nix/outputs.nix.
+# macOS minutes are expensive, so the workflow runs on release tags (pushed
+# ones, and the ones the release workflow makes, on which it dispatches
+# this workflow), nightly on the default branch, and on demand for a tag or
+# branch:
 #
 #   gh workflow run macos-smoke.yml --ref <tag or branch>
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+  schedule:
+    # Nightly, a few minutes past the hour (scheduled runs that start on
+    # the hour queue the longest).
+    - cron: "17 3 * * *"
 
 permissions:
   contents: read
@@ -40,3 +53,24 @@ jobs:
       # only inside the script that sourced its profile.
       - name: Smoke test (Nix, init, rebuild, login shell, e2e)
         run: bash tests/ci/macos-smoke.sh
+
+  checks:
+    runs-on: macos-14
+    timeout-minutes: 120
+    env:
+      # Authenticated GitHub fetches of the locked flake inputs.
+      NIX_CONFIG: access-tokens = github.com=${{ github.token }}
+    steps:
+      # The whole history: the flake is the git checkout, as in ci.yml.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # One step, as in the smoke job: Nix is on PATH only after its daemon
+      # profile is sourced. --keep-going reports every failing check.
+      - name: Darwin checks (nix flake check on aarch64-darwin)
+        run: |
+          DOTSTEWARD_ASSUME_YES=1 /bin/bash template/bootstrap.sh --install-nix-only
+          # shellcheck source=/dev/null
+          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+          nix --extra-experimental-features 'nix-command flakes' flake check -L --keep-going

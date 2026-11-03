@@ -4,8 +4,8 @@
     {
       "name": "dotsteward-contribute",
       "directory": "dotsteward-contribute",
-      "skill_sha256": "f38d44dbf0f651dbef862bd218d259261c80ffae43f61b21a448fe669a1bdec7",
-      "directory_sha256": "048df5d214b5119ee6a5b22dffa5c054b6afb1fdaf456cf5729997d739e06d31"
+      "skill_sha256": "0235dc4a341b21880fc637be7dcac0b85a162b8fa642de26d63cd3d4161227ee",
+      "directory_sha256": "6107862ec937396fbee957ece253193d5ccd7b4e3605c8bb129ea1170ed9d45d"
     },
     {
       "name": "dotsteward-maintain",

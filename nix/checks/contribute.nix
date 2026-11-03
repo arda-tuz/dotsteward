@@ -4,8 +4,10 @@
 # transport) with the gh and nix stubs: the mode matrix, clone and fork
 # setup, branches from upstream main, the run state file, the reproduction
 # check and the framework gate with its privacy hard stops and the
-# instance-leak scan. Then shellcheck over the command, its library and the
-# tests.
+# instance-leak scan, the running marker of the long steps with
+# `status --wait`, and `contribute commit` with the commit-msg and
+# pre-commit hooks. Then shellcheck over the command, its libraries, the
+# commit hooks and the tests.
 {
   pkgs,
   dsLib,
@@ -19,6 +21,7 @@ cli.mkTestCheck {
   paths = [ "tests/contribute/local" ];
   nativeBuildInputs = [ pkgs.shellcheck ];
   postCheck = ''
-    shellcheck -x cli/commands/contribute.sh cli/lib/contribute-local.sh tests/contribute/local/*.sh
+    shellcheck -x cli/commands/contribute.sh cli/lib/contribute-local.sh cli/lib/commit-rules.sh \
+      .githooks/commit-msg .githooks/pre-commit tests/contribute/local/*.sh
   '';
 }

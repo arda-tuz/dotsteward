@@ -86,6 +86,10 @@ finding and exits 1 when there is at least one, 0 when the scan is clean.
 
 ## Where scans run
 
+- **Commit hooks** (`.githooks/pre-commit` and `.githooks/commit-msg`,
+  enabled with the pre-push hook): the metadata rules before a commit
+  exists, so a commit with dates outside UTC, a trailer or an attribution
+  line is never made in the first place.
 - **Pre-push hook** (`.githooks/pre-push`, enabled by
   `git config core.hooksPath .githooks`; `dotsteward contribute setup`
   sets it in your framework clone): every pushed commit with the metadata

@@ -1,12 +1,15 @@
 # shellcheck shell=bash
-# The local steps of `dotsteward contribute`: mode, setup, start and check.
+# The local steps of `dotsteward contribute`: mode, setup, start, commit and
+# check.
 # Sourced by cli/commands/contribute.sh, which provides lib.sh, config.sh, the
-# run state helpers and the constants CONTRIBUTE_PRIVACY_STOP and
-# CONTRIBUTE_DENYLIST_SHOWN; framework_root is the framework source of the
-# running CLI.
+# run state helpers, contribute_at_exit (the steps register their cleanups
+# there and never set an EXIT trap) and the constants CONTRIBUTE_PRIVACY_STOP
+# and CONTRIBUTE_DENYLIST_SHOWN; framework_root is the framework source of the
+# running CLI; the commit rules (cli/lib/commit-rules.sh) are loaded too.
 #
 #   contribute_cmd_mode, contribute_cmd_setup, contribute_cmd_start,
-#   contribute_cmd_check     the steps (arguments as in the command usage)
+#   contribute_cmd_commit, contribute_cmd_check
+#                            the steps (arguments as in the command usage)
 #   contribute_resolve_mode  sets the CT_* facts below from the instance
 #   contribute_report_fallback
 #                            warns when owner mode fell back to fork mode
@@ -19,7 +22,7 @@
 #   contribute_fetch_main DIR REMOTE
 #                            fetches main of REMOTE into
 #                            refs/remotes/REMOTE/main (180 s)
-#   contribute_leak_terms CONTEXT_JSON ALLOWLIST BASE PUBLIC...
+#   contribute_leak_terms CONTEXT_JSON ALLOWLIST BASE EXEMPT PUBLIC...
 #                            the instance-leak terms in the denylist format:
 #                            runtime and check user and home, the instance
 #                            remote's owner and repository, instance
@@ -39,7 +42,10 @@
 #                            upstream main; empty: no such skip) already
 #                            holds outside the allowlisted strings, which
 #                            are no new leak of the branch and would stop
-#                            every change of a file that mentions them
+#                            every change of a file that mentions them; and
+#                            the one term EXEMPT (case-insensitive; empty:
+#                            none), the private component the run promotes
+#                            into the catalog (start --promote)
 #
 # Facts set by contribute_resolve_mode (the remote steps use them too):
 #   CT_CONTEXT          `dotsteward context --json` of the instance
@@ -420,7 +426,7 @@ contribute_cmd_setup() {
   git -C "$CT_CLONE" config user.name "$CT_GH_LOGIN"
   git -C "$CT_CLONE" config user.email "$CT_GH_ID+$CT_GH_LOGIN@users.noreply.github.com"
   git -C "$CT_CLONE" config core.hooksPath .githooks
-  log "contribute setup done: $CT_MODE mode, clone $CT_CLONE, commits as $CT_GH_LOGIN (commit with TZ=UTC)"
+  log "contribute setup done: $CT_MODE mode, clone $CT_CLONE, commits as $CT_GH_LOGIN (commit with: dotsteward contribute commit)"
 }
 
 # --- start --------------------------------------------------------------------------
@@ -445,7 +451,7 @@ _contribute_open_run() {
 }
 
 _contribute_resume() {
-  local id=$1 clone branch step current
+  local id=$1 clone branch step current promote
   clone=$(contribute_state_get "$id" clone)
   branch=$(contribute_state_get "$id" branch)
   step=$(contribute_state_get "$id" step)
@@ -459,16 +465,55 @@ _contribute_resume() {
   fi
   contribute_set_current "$id"
   log "resuming run $id at step $step (branch $branch in $clone)"
+  promote=$(contribute_state_read "$id" | jq -r '.promote // ""')
+  [[ -z $promote ]] || _contribute_log_promote "$promote"
+}
+
+_contribute_log_promote() {
+  log "promote: $1; the instance-leak scan of this run exempts exactly this name, every other instance term still stops it"
+}
+
+# _contribute_require_private NAME: NAME is a private component of the
+# instance (source "instance" in CT_CONTEXT), the only kind that a run may
+# promote into the catalog.
+_contribute_require_private() {
+  local source
+  source=$(jq -r --arg name "$1" 'first(.components[]? | select(.name == $name) | .source) // ""' <<<"$CT_CONTEXT")
+  case $source in
+    instance) ;;
+    "") die "--promote $1: the instance has no component of that name; promote moves one of its private components (source = \"instance\") into the framework catalog" ;;
+    *) die "--promote $1: $1 is a $source component already, not a private one" ;;
+  esac
+}
+
+# _contribute_promote_open_run ID NAME: start --promote NAME for the
+# unfinished run ID: sets promote when the run has none; the same name
+# changes nothing; another one is refused (one run promotes one component).
+_contribute_promote_open_run() {
+  local id=$1 name=$2 current
+  current=$(contribute_state_read "$id" | jq -r '.promote // ""')
+  [[ $current != "$name" ]] || return 0
+  [[ -z $current ]] ||
+    die "run $id promotes $current already; one run promotes one component (abort it and start a new run for $name)"
+  _contribute_load_context
+  _contribute_require_private "$name"
+  # shellcheck disable=SC2016 # jq variables
+  contribute_state_update "$id" '.promote = $promote' --arg promote "$name"
 }
 
 contribute_cmd_start() {
-  local slug="" have_slug=0
+  local slug="" have_slug=0 promote=""
   while (($#)); do
     case $1 in
       --slug)
         need_value "$1" "$#" "${2:-}"
         slug=$2
         have_slug=1
+        shift
+        ;;
+      --promote)
+        need_value "$1" "$#" "${2:-}"
+        promote=$2
         shift
         ;;
       -h | --help)
@@ -483,17 +528,21 @@ contribute_cmd_start() {
   ((have_slug)) || die "start requires --slug SLUG"
   _contribute_valid_slug "$slug" ||
     die "invalid slug: $slug (lowercase letters, digits and dashes, starting with a letter or digit, at most 60 characters)"
+  [[ -z $promote || $promote =~ ^[a-z][a-z0-9-]*$ ]] ||
+    die "invalid component name for --promote: $promote (lowercase letters, digits and dashes, starting with a letter)"
   contribute_load_config
 
   local open
   open=$(_contribute_open_run "$slug")
   if [[ -n $open ]]; then
+    [[ -z $promote ]] || _contribute_promote_open_run "$open" "$promote"
     _contribute_resume "$open"
     return 0
   fi
 
   contribute_resolve_mode
   contribute_report_fallback
+  [[ -z $promote ]] || _contribute_require_private "$promote"
   contribute_is_clone "$CT_CLONE" || die "no framework clone at $CT_CLONE; run 'dotsteward contribute setup' first"
   _contribute_verify_remotes 0
   contribute_require_clean "$CT_CLONE"
@@ -509,14 +558,114 @@ contribute_cmd_start() {
   git -C "$CT_CLONE" switch --quiet --no-track -c "$branch" "$base" ||
     die "cannot create $branch in $CT_CLONE"
   json=$(jq -n --arg id "$id" --arg slug "$slug" --arg mode "$CT_MODE" --arg clone "$CT_CLONE" \
-    --arg branch "$branch" --arg base "$base" '{
+    --arg branch "$branch" --arg base "$base" --arg promote "$promote" '{
       id: $id, slug: $slug, mode: $mode, clone: $clone, branch: $branch, base_sha: $base,
       test_sha: null, tested_tree: null, trial_switched: false, pr: null, merged_sha: null,
-      tag: null, instance_commit: null, step: "reproduce"}')
+      tag: null, instance_commit: null, step: "reproduce"}
+      + (if $promote == "" then {} else {promote: $promote} end)')
   contribute_state_write "$id" "$json"
   contribute_set_current "$id"
   log "started run $id: branch $branch from $CT_UPSTREAM_REMOTE/main ${base:0:12} ($CT_MODE mode)"
+  [[ -z $promote ]] || _contribute_log_promote "$promote"
   log "next: write the failing test in $CT_CLONE, then run: dotsteward contribute check --expect-fail <test path>"
+}
+
+# --- commit -------------------------------------------------------------------------
+
+contribute_cmd_commit() {
+  local id="" test=0 paragraph
+  local -a paragraphs=()
+  while (($#)); do
+    case $1 in
+      -m)
+        need_value "$1" "$#" "${2:-}"
+        paragraphs+=("$2")
+        shift
+        ;;
+      --test) test=1 ;;
+      --id)
+        need_value "$1" "$#" "${2:-}"
+        id=$2
+        shift
+        ;;
+      -h | --help)
+        usage
+        return 0
+        ;;
+      -*) die "unknown option: $1" ;;
+      *) die "unexpected argument: $1" ;;
+    esac
+    shift
+  done
+  ((${#paragraphs[@]})) || die "commit requires -m SUBJECT"
+  local subject=${paragraphs[0]}
+  [[ $subject != *[$'\n\r']* ]] || die "the subject is one line; give the body with further -m options"
+  [[ $subject =~ $COMMIT_RULES_SUBJECT ]] ||
+    die "not a conventional commit subject: $subject (TYPE(AREA): what changed, TYPE one of ${COMMIT_RULES_TYPES[*]})"
+  local test_type='^test[(!:]'
+  if ((test)) && [[ ! $subject =~ $test_type ]]; then
+    die "--test commits the reproduction test: its subject is test(AREA): ..."
+  fi
+  contribute_load_config
+  id=$(contribute_run_id "$id")
+
+  local state branch step current
+  state=$(contribute_state_read "$id")
+  CT_CLONE=$(jq -r '.clone // ""' <<<"$state")
+  branch=$(jq -r '.branch // ""' <<<"$state")
+  step=$(jq -r '.step // ""' <<<"$state")
+  [[ -n $CT_CLONE && -n $branch ]] || die "the state file of run $id lacks its clone or branch"
+  case $step in
+    reproduce)
+      die "the reproduction has not failed yet: run dotsteward contribute check --expect-fail <test path> first, then commit the test with --test"
+      ;;
+    fix | check | trial | publish) ;;
+    *) die "run $id is published already (step $step): a further change is a new run (dotsteward contribute start --slug SLUG)" ;;
+  esac
+  contribute_is_clone "$CT_CLONE" || die "the clone $CT_CLONE of run $id is missing"
+  current=$(git -C "$CT_CLONE" symbolic-ref --quiet --short HEAD 2>/dev/null) || current="a detached HEAD"
+  [[ $current == "$branch" ]] || die "the clone is on $current, not on the run's branch $branch"
+  [[ -n $(git -C "$CT_CLONE" config --local --get user.name || true) &&
+    -n $(git -C "$CT_CLONE" config --local --get user.email || true) ]] ||
+    die "the clone $CT_CLONE has no contributor identity; run: dotsteward contribute setup"
+
+  # The message, checked with the rules of the hooks before anything is
+  # staged.
+  local message problems problem
+  message=$(mktemp "${TMPDIR:-/tmp}/dotsteward-commit.XXXXXX")
+  contribute_at_exit "rm -f -- $(printf '%q' "$message")"
+  printf '%s\n' "$subject" >"$message"
+  for paragraph in "${paragraphs[@]:1}"; do
+    printf '\n%s\n' "$paragraph" >>"$message"
+  done
+  if ! problems=$(cd -- "$CT_CLONE" && commit_rules_message "$message"); then
+    while IFS= read -r problem; do
+      [[ -z $problem ]] || printf '[dotsteward] ERROR: %s\n' "$problem" >&2
+    done <<<"$problems"
+    die "commit refused: a framework commit has a conventional subject and no trailers or attribution lines"
+  fi
+
+  git -C "$CT_CLONE" add -A || die "git add -A failed in $CT_CLONE"
+  ! git -C "$CT_CLONE" diff --cached --quiet || die "nothing to commit in $CT_CLONE"
+  # The clone's identity and UTC dates, whatever the environment says; the
+  # clone's own hooks run as for any commit.
+  env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_AUTHOR_DATE \
+    -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL -u GIT_COMMITTER_DATE \
+    TZ=UTC git -C "$CT_CLONE" commit --quiet --file "$message" </dev/null ||
+    die "git commit failed in $CT_CLONE; the changes stay staged"
+
+  local head
+  head=$(git -C "$CT_CLONE" rev-parse HEAD)
+  log "committed ${head:0:12} on $branch: $subject"
+  if [[ $step == trial || $step == publish ]]; then
+    contribute_state_update "$id" '.test_sha = null | .tested_tree = null | .step = "check"'
+    log "the run goes back to check: the framework gate passed for an earlier commit"
+  fi
+  if ((test)); then
+    log "next: fix the cause, then: dotsteward contribute commit -m 'fix(AREA): what changed'"
+  else
+    log "next: dotsteward contribute check"
+  fi
 }
 
 # --- check --------------------------------------------------------------------------
@@ -534,8 +683,8 @@ _contribute_ere_escape() {
 }
 
 contribute_leak_terms() {
-  local context=$1 allowlist=$2 base=$3 line term lower key path host public
-  shift 3
+  local context=$1 allowlist=$2 base=$3 exempt=${4,,} line term lower key path host public
+  shift 4
   local -a candidates=() allowed=() publics=() segments=()
   local -A seen=()
   # Settings targets of catalog components are public framework names.
@@ -580,6 +729,7 @@ contribute_leak_terms() {
     lower=${term,,}
     [[ -z ${seen[$lower]:-} ]] || continue
     seen[$lower]=1
+    [[ -z $exempt || $lower != "$exempt" ]] || continue
     for public in "${allowed[@]}"; do
       [[ $public != "$lower" ]] || continue 2
     done
@@ -637,6 +787,7 @@ _contribute_expect_fail() {
   if [[ $step == reproduce ]]; then
     contribute_state_update "$id" '.step = "fix"'
   fi
+  log "next: commit the test alone: dotsteward contribute commit -m 'test(AREA): what the test expects' --test"
 }
 
 # _contribute_scan LABEL ARG...: one scan of the running framework's scanner
@@ -685,12 +836,13 @@ contribute_cmd_check() {
   contribute_load_config
   id=$(contribute_run_id "$id")
 
-  local state branch mode step current
+  local state branch mode step current promote
   state=$(contribute_state_read "$id")
   CT_CLONE=$(jq -r '.clone // ""' <<<"$state")
   branch=$(jq -r '.branch // ""' <<<"$state")
   mode=$(jq -r '.mode // ""' <<<"$state")
   step=$(jq -r '.step // ""' <<<"$state")
+  promote=$(jq -r '.promote // ""' <<<"$state")
   [[ -n $CT_CLONE && -n $branch && ($mode == owner || $mode == fork) ]] ||
     die "the state file of run $id lacks its clone, branch or mode"
   contribute_is_clone "$CT_CLONE" || die "the clone $CT_CLONE of run $id is missing"
@@ -733,18 +885,27 @@ contribute_cmd_check() {
   # from the branch under check.
   _contribute_load_context
   CT_TERMS_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dotsteward-contribute.XXXXXX")
-  trap 'cleanup_temp_dir "$CT_TERMS_DIR"' EXIT
+  # shellcheck disable=SC2016 # expanded when the command exits
+  contribute_at_exit 'cleanup_temp_dir "$CT_TERMS_DIR"'
   chmod 0700 "$CT_TERMS_DIR"
   local terms=$CT_TERMS_DIR/terms allowlist=$CT_TERMS_DIR/allowlist count
   git -C "$CT_CLONE" show "$base:privacy/allowlist.txt" >"$allowlist" 2>/dev/null || : >"$allowlist"
   (
     umask 077
-    contribute_leak_terms "$CT_CONTEXT" "$allowlist" "$base" \
+    contribute_leak_terms "$CT_CONTEXT" "$allowlist" "$base" "$promote" \
       "$(git -C "$CT_CLONE" config user.name || true)" "$(git -C "$CT_CLONE" config user.email || true)" >"$terms"
   )
   chmod 0600 "$terms"
   count=$(wc -l <"$terms")
   log "instance-leak scan: ${count//[[:space:]]/} terms from the instance context"
+  if [[ -n $promote ]]; then
+    if jq -e --arg name "$promote" 'any(.components[]?; .name == $name and .source == "instance")' \
+      <<<"$CT_CONTEXT" >/dev/null; then
+      log "instance-leak scan: $promote is exempt for this run (contribute start --promote); every other instance term still stops it"
+    else
+      warn "instance-leak scan: the promoted component $promote is no longer a private component of the instance, so nothing is exempt"
+    fi
+  fi
 
   local range=$base..$head
   local -a stopped=()

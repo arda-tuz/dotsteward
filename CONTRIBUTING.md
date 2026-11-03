@@ -15,8 +15,10 @@ The rules below apply however you work.
   the tests (and fixtures) and fails; `feat(<area>): ...` or
   `fix(<area>): ...` makes them pass. A bug fix starts with a test that
   reproduces the bug. See [docs/testing.md](docs/testing.md).
-- **Conventional commits.** Types: `feat`, `fix`, `test`, `refactor`,
-  `docs`, `chore`, `ci`, `build`, `perf`.
+- **Conventional commits.** Types: `feat`, `fix`, `perf`, `refactor`,
+  `docs`, `chore`, `test`, `build`, `ci`, `style`, `revert`
+  (`commit.conventional_types` of `dotsteward context --json`); the
+  commit-msg hook refuses any other subject.
 - **No changelog file.** Release notes are generated from the commit history.
 - **Lint and flakiness are bugs.** Fix any lint error, failing test or flaky
   test you meet, even when it is not yours.
@@ -40,9 +42,12 @@ git config core.hooksPath .githooks
 TZ=UTC git commit
 ```
 
-The pre-push hook scans every pushed commit and refuses to push without
-your private denylist; [docs/privacy.md](docs/privacy.md) explains the
-scanner, the denylist and the CI checks.
+The pre-commit hook refuses dates outside UTC and the commit-msg hook a
+subject that is not a conventional commit, trailers and attribution lines,
+before the commit exists. The pre-push hook scans every pushed commit and
+refuses to push without your private denylist;
+[docs/privacy.md](docs/privacy.md) explains the scanner, the denylist and
+the CI checks.
 
 ## Layout and discovery
 

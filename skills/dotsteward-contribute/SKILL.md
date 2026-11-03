@@ -52,7 +52,7 @@ dotsteward contribute mode --json
 dotsteward contribute setup
 ```
 
-Setup clones or fetches the clone and gives it the contributor identity (the GitHub login and its noreply address) and the pre-push hook. In fork mode, a missing fork makes setup stop; the fork is created on GitHub only after the user agrees, by running setup again with:
+Setup clones or fetches the clone and gives it the contributor identity (the GitHub login and its noreply address) and the framework's git hooks: pre-commit and commit-msg refuse a commit whose dates are not UTC, whose subject is not a conventional commit or that carries a trailer, pre-push runs the privacy scans. In fork mode, a missing fork makes setup stop; the fork is created on GitHub only after the user agrees, by running setup again with:
 
 ```bash
 dotsteward contribute setup --create-fork
@@ -66,6 +66,14 @@ dotsteward contribute start --slug SLUG
 
 `SLUG` is a short kebab-case name of the change (`fix/SLUG` becomes the branch, from a freshly fetched upstream `main`). The same slug again resumes its unfinished run.
 
+When the change moves one of the instance's private components into the framework catalog, ask the user first; only with their explicit approval, start the run with the component's name:
+
+```bash
+dotsteward contribute start --slug SLUG --promote NAME
+```
+
+`NAME` is the private component (`source = "instance"` in `workstation.toml`). The instance-leak scan of this run then exempts exactly that name, and `check` says so; every other instance term, the component's own settings targets included, still stops the run. Never allowlist the name instead.
+
 ## 3. Reproduce (step 4)
 
 Read `references/framework-change.md` for the framework layout, the test conventions and the commit rules. In the clone, write the smallest test that shows the defect (or the missing behaviour) the way a user meets it: an end-to-end test of the command, the skill contract or the Nix check involved, with synthetic fixtures. Then prove that it fails; the path is relative to the clone:
@@ -74,11 +82,13 @@ Read `references/framework-change.md` for the framework layout, the test convent
 dotsteward contribute check --expect-fail tests/AREA/test-NAME.sh
 ```
 
-A test that passes does not reproduce the problem: make it sharper. When it fails for the right reason, commit it alone in the clone:
+A test that passes does not reproduce the problem: make it sharper. When it fails for the right reason, commit it alone; `--test` marks the reproduction commit:
 
 ```bash
-(cd "$clone" && git add -A && TZ=UTC git commit -m "test(<area>): <what the test expects>")
+dotsteward contribute commit -m "test(<area>): <what the test expects>" --test
 ```
+
+`dotsteward contribute commit` stages everything in the clone (`git add -A`) and commits with the contributor identity and UTC dates, whatever the environment says; it refuses a subject that is not a conventional commit, any trailer and any attribution line. Further `-m` options are the paragraphs of the body. Commit only through it: a plain `git commit` in the clone meets the same rules in the clone's hooks.
 
 ## 4. Fix generically (step 5)
 
@@ -87,7 +97,7 @@ Change the framework source in the clone so the reproduction passes, keeping the
 The fix keeps `VERSION`: changes ride a release train, and the next release bundles every commit since the last one. Only when this run should end with a release, add a release commit after the fix commit: `bash tools/version.sh bump --commit` in the clone sets `VERSION` and its copies to the next version and commits them, as `references/framework-change.md` describes. Commit the fix first:
 
 ```bash
-(cd "$clone" && git add -A && TZ=UTC git commit -m "fix(<area>): <what changed>")
+dotsteward contribute commit -m "fix(<area>): <what changed>"
 ```
 
 Use `feat(<area>)` instead of `fix(<area>)` for new behaviour. Never amend or rewrite the test commit to make it pass.
@@ -98,7 +108,13 @@ Use `feat(<area>)` instead of `fix(<area>)` for new behaviour. Never amend or re
 dotsteward contribute check
 ```
 
-The framework gate runs the privacy scans (the tree, the new commits with the denylist, and the instance-leak scan with terms from the instance facts) and `nix flake check` in the clone. It takes long: start it in the background (Claude Code `run_in_background`; Codex with a timeout of at least 60 minutes) and wait for it once instead of polling.
+The framework gate runs the privacy scans (the tree, the new commits with the denylist, and the instance-leak scan with terms from the instance facts) and `nix flake check` in the clone. It takes long: start it in the background (Claude Code `run_in_background`; Codex with a timeout of at least 60 minutes), then wait for it with the command below instead of polling the process list (a `pgrep` loop matches its own command line and never ends). The same holds for `trial`, `publish`, `release` and `upgrade`.
+
+```bash
+dotsteward contribute status --wait --timeout 540
+```
+
+It returns when the running step ends and exits with that step's status (0, 1, 4 or 5, read as below); exit 3 means the timeout passed first, so run it again. While a step runs, every other step refuses and names it: never start a second one.
 
 - Exit 4 is a privacy hard stop: nothing may be published. The findings are redacted to a rule and a location; remove them from the branch (rewrite the commits that carry them, for example with `git reset --soft` onto the branch base and two fresh commits, the test and then the fix), then run the check again. Never answer a finding by allowlisting the term or relaxing the policy: a branch that changes `privacy/allowlist.txt` or `privacy/policy.toml` is itself a hard stop (`privacy-config`); such changes go only in their own, manually reviewed pull request.
 - Any other failure: fix it in a new commit and run the check again.

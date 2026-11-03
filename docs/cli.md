@@ -59,7 +59,7 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | [`bootstrap`](#bootstrap) | Bootstrap stage 1 (run by ./bootstrap.sh once Nix is installed) |
 | [`component`](#component) | Run a component hook with the hook environment |
 | [`context`](#context) | Print the facts of the instance on this machine (--json for skills) |
-| [`contribute`](#contribute) | Change the dotsteward framework itself: mode, setup, start, check, trial, publish, release, upgrade |
+| [`contribute`](#contribute) | Change the dotsteward framework itself: mode, setup, start, commit, check, trial, publish, release, upgrade |
 | [`doctor`](#doctor) | Check the health of the instance on this machine (--redact to share) |
 | [`e2e`](#e2e) | Verify this machine against the instance: the end-to-end checks of a profile |
 | [`gate`](#gate) | Validate the candidate tree of a maintenance transaction (the gate) |
@@ -177,7 +177,7 @@ error, an invalid configuration or an unreadable source.
 
 ## `contribute`
 
-Change the dotsteward framework itself: mode, setup, start, check, trial, publish, release, upgrade.
+Change the dotsteward framework itself: mode, setup, start, commit, check, trial, publish, release, upgrade.
 
 ```text
 Usage: dotsteward [--instance DIR] contribute <step> [OPTION...]
@@ -204,14 +204,41 @@ Steps:
                           upstream; fork: the fork, plus an `upstream`
                           remote) or fetches an existing clone, and sets
                           its user.name and user.email (the GitHub login
-                          and noreply address) and core.hooksPath. A
-                          missing fork is created with `gh repo fork
-                          --clone=false` only with --create-fork (or
-                          DOTSTEWARD_ASSUME_YES=1). Owner mode refuses
-                          without the denylist; fork mode warns.
-  start --slug SLUG       branch fix/SLUG from a freshly fetched upstream
+                          and noreply address) and core.hooksPath
+                          (.githooks: the clone's pre-commit, commit-msg
+                          and pre-push hooks). A missing fork is created
+                          with `gh repo fork --clone=false` only with
+                          --create-fork (or DOTSTEWARD_ASSUME_YES=1).
+                          Owner mode refuses without the denylist; fork
+                          mode warns.
+  start --slug SLUG [--promote NAME]
+                          branch fix/SLUG from a freshly fetched upstream
                           main and a new run (the current one); the same
-                          SLUG again resumes its unfinished run
+                          SLUG again resumes its unfinished run. --promote:
+                          the run moves the private component NAME (source
+                          "instance") into the catalog, with the user's
+                          explicit approval; recorded as promote, it
+                          exempts exactly the term NAME from the
+                          instance-leak scan of the run's check (the same
+                          SLUG again sets it on the unfinished run;
+                          another NAME is refused)
+  commit -m SUBJECT [-m PARAGRAPH...] [--test]
+                          in the run's clone: stages everything (git add
+                          -A) and commits with the clone's identity (from
+                          setup) and UTC dates, whatever the environment
+                          says. SUBJECT is a conventional commit subject
+                          (TYPE(AREA): text, TYPE from
+                          commit.conventional_types of `dotsteward
+                          context --json`); further -m options are the
+                          paragraphs of the body; trailers and attribution
+                          lines (Co-Authored-By, Signed-off-by,
+                          Claude-Session) are refused, as the clone's
+                          commit-msg and pre-commit hooks refuse them and
+                          non-UTC dates for a plain git commit. --test: the
+                          reproduction test (a test subject). Refused
+                          before the reproduction failed and after
+                          publish; a commit after a passing check sends
+                          the run back to check
   check [--expect-fail PATH]
                           with --expect-fail: runs `tests/run.sh PATH` in
                           the clone, which must fail (the reproduction).
@@ -314,26 +341,44 @@ Steps:
                           the recovery: rebuild --switch and e2e without
                           an override, back to the pinned framework
   report [--json]         the run's result (pull request, merged commit,
-                          release, instance commit, tests); ends the run,
-                          also at step release (a run that ends at
-                          publish), after the recovery of a trial switch
-  status [--json]         the run's state (--json: the state document);
-                          once merged_sha is set also main_ci, main's CI
-                          for the merged commit read now: {sha, state
-                          (pending, green, red or unknown), url, runs}
-Options of the steps that use a run (check, status and the remote steps):
+                          release, instance commit, tests, the promoted
+                          component); ends the run, also at step release
+                          (a run that ends at publish), after the recovery
+                          of a trial switch
+  status [--json] [--wait [--timeout SECONDS]]
+                          the run's state and its running step (--json: the
+                          state document); once merged_sha is set also
+                          main_ci, main's CI for the merged commit read
+                          now: {sha, state (pending, green, red or
+                          unknown), url, runs}. --wait: first waits until
+                          no step of the run runs (at most SECONDS), then
+                          exits with the status of the run's last step (0,
+                          1, 4 or 5; 1 for an interrupted step or an
+                          unknown outcome; 0 before the first step), or 3
+                          when SECONDS passed first
+Options of the steps that use a run (commit, check, status, remote steps):
   --id ID                 that run instead of the current one
+
+Running steps: check, trial, publish, release, upgrade, abort and report
+record running = {step, pid, started_at} in the run's state while they
+work and replace it with last_step = {step, status, started_at, ended_at}
+when they end, also after a failure and on SIGINT, SIGTERM or SIGHUP.
+While a step of any run is running, setup, start, commit and those steps
+refuse and name it. A marker whose process is gone (killed, or the machine
+stopped) is stale: status and the next step report and clear it, and its
+outcome is unknown (last_step.status null).
 
 State: one file per run, <state root>/contribute/<id>.json (0600, in a 0700
 directory), id = <UTC timestamp>-<slug>, with the fields id, slug, mode,
 clone, branch, base_sha, test_sha, tested_tree, trial_switched, pr,
 merged_sha, tag, instance_commit and step, plus profile, trial, trial_sha,
 upgrade, upgrade_to, instance_base, upgrade_commit, carry, recovery and
-outcome from the remote steps (see cli/lib/contribute-remote.sh);
-<state root>/contribute/current holds the current run's id. step is the
-next step of the run: reproduce, fix, check, trial, publish, release,
-upgrade, report or done; every step reads and updates the file, so an
-interrupted run resumes at step.
+outcome from the remote steps (see cli/lib/contribute-remote.sh), running
+and last_step (see Running steps) and promote (start --promote, only when
+given); <state root>/contribute/current holds the current run's id. step
+is the next step of the run: reproduce, fix, check, trial, publish,
+release, upgrade, report or done; every step reads and updates the file,
+so an interrupted run resumes at step.
 
 Privacy: the denylist is ~/.config/dotsteward/denylist.txt, the file the
 pre-push hook reads; check needs it in both modes. Findings are always
@@ -342,12 +387,16 @@ characters, equal to a line of the clone's privacy/allowlist.txt (the
 scanner masks those strings), part of the contributor's public identity
 (the clone's user.name and user.email, carried by every commit) or already
 in the content of the fetched upstream main outside the allowlisted
-strings (published before, so no new leak). Any finding (or scan failure)
-is a hard stop: exit 4, nothing may be published.
+strings (published before, so no new leak); the run's promote (start
+--promote) is exempt as well, as the one term the run exists to publish,
+never through privacy/allowlist.txt or privacy/policy.toml. Any finding (or
+scan failure) is a hard stop: exit 4, nothing may be published.
 
 Exit status:
   0  done
   1  refused or failed
+  3  still running (status --wait --timeout): the step has not ended yet;
+     wait again
   4  privacy hard stop (check): nothing may be published
   5  back to check (publish): upstream main moved, the branch was rebased
      (or must be rebased by hand after a conflict)

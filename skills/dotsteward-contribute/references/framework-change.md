@@ -22,7 +22,7 @@ Nix checks are files too: `nix/checks/<name>.nix`, discovered by name; most wrap
 - A test is a file `tests/<area>/test-<name>.sh`, discovered by `tests/run.sh`. It runs in a fresh bash with a temporary `HOME`, `TMPDIR` and git identity and the assertions of `tests/lib/assert.sh`.
 - Test the behaviour the user met, end to end: run the real command on a synthetic instance or fixture, with stubs only for the network and for programs outside the framework.
 - Fixtures are synthetic: example names, `example.com` style addresses, `/home/user` style paths. Build secret-shaped strings at run time with `fake_secret` from `tests/lib/harness.sh`; never paste one into a file.
-- Prove it fails with `dotsteward contribute check --expect-fail tests/<area>/test-<name>.sh` (the path is relative to the clone), then commit it alone.
+- Prove it fails with `dotsteward contribute check --expect-fail tests/<area>/test-<name>.sh` (the path is relative to the clone), then commit it alone with `dotsteward contribute commit -m "test(<area>): ..." --test`.
 
 ## The fix
 
@@ -57,5 +57,5 @@ The copies of `VERSION` are never edited by hand: `bash tools/version.sh sync` w
 ## Commits
 
 - Two commits on the run's branch: `test(<area>): ...` with the reproduction (it fails), then `fix(<area>): ...` or `feat(<area>): ...` with the change (it passes), plus the `chore(release): X.Y.Z` release commit when the run ends with a release. Further fixes after a red gate, trial or CI are new commits; nothing is amended after `check` passed.
-- The identity is the one `dotsteward contribute setup` set in the clone: the GitHub login and its noreply address (`<id>+<login>@users.noreply.github.com`). Dates are UTC: always commit with `TZ=UTC git commit`.
-- Commit messages carry no attribution trailers: no co-author lines, no agent session links, no generated-by lines. The pre-push hook, CI and the framework gate refuse them.
+- Commit with `dotsteward contribute commit -m SUBJECT [-m PARAGRAPH...]`, adding `--test` for the reproduction: it stages everything and commits with the identity `dotsteward contribute setup` set in the clone, the GitHub login and its noreply address (`<id>+<login>@users.noreply.github.com`), and with UTC dates, whatever the environment says. The subject is a conventional commit, `TYPE(<area>): <what changed>`. The release commit of `tools/version.sh bump --commit` meets the same rules.
+- Commit messages carry no attribution trailers: no co-author lines, no agent session links, no generated-by lines, and no trailer block of any kind. `contribute commit` and the clone's commit-msg hook refuse them before the commit exists, and the clone's pre-commit hook refuses dates outside UTC; the pre-push hook, CI and the framework gate refuse both later.

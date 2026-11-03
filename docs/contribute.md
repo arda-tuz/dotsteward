@@ -25,20 +25,23 @@ names the fork and the local clone.
 | Step | Command | What it does |
 | --- | --- | --- |
 | mode | `dotsteward contribute mode` | Owner or fork, and why. Writes nothing. |
-| setup | `dotsteward contribute setup` | Clones or fetches the framework (`upstream.local_clone`), sets the clone's `user.name`, `user.email` (your GitHub noreply address) and `core.hooksPath`. A missing fork is created only with `--create-fork`. |
-| start | `dotsteward contribute start --slug SLUG` | Branch `fix/SLUG` from a freshly fetched upstream `main` and a new run; the same slug again resumes its run. |
+| setup | `dotsteward contribute setup` | Clones or fetches the framework (`upstream.local_clone`), sets the clone's `user.name`, `user.email` (your GitHub noreply address) and `core.hooksPath` (the clone's pre-commit, commit-msg and pre-push hooks). A missing fork is created only with `--create-fork`. |
+| start | `dotsteward contribute start --slug SLUG` | Branch `fix/SLUG` from a freshly fetched upstream `main` and a new run; the same slug again resumes its run. `--promote NAME` moves a private component into the catalog (see [The framework gate](#the-framework-gate)). |
 | reproduce | `dotsteward contribute check --expect-fail PATH` | Runs the new test, which must fail before the fix. |
+| commit | `dotsteward contribute commit -m SUBJECT [--test]` | Stages everything in the clone and commits it with your identity and UTC dates; refuses a subject that is not a conventional commit and any trailer. `--test` marks the reproduction, after it failed. |
 | check | `dotsteward contribute check` | The framework gate on a clean clone: privacy scans, then `nix flake check`. |
 | trial | `dotsteward contribute trial` | Your instance's gate, `rebuild --switch` and `e2e` with the candidate framework (`--build-only`: gate and build only). |
 | publish | `dotsteward contribute publish` | Owner: pull request, lint and privacy CI, fast-forward of `main` to the tested commits. Fork: push, CI, fast-forward of the fork's `main`. |
 | release | `dotsteward contribute release` | Once `main`'s CI is green on the merged commit: the tag of the version its release commit set; owner mode also creates the GitHub release with grouped notes. Without a release commit, nothing to release. |
 | upgrade | `dotsteward contribute upgrade --tag TAG` | Your instance moves to the release (`--main`: to the merged commit, without a release): lock, gate, commit, rebuild, `e2e`, publish. `--carry` carries unpublished instance commits across it. |
-| report | `dotsteward contribute report` | The result: pull request, merged commit, release, instance commit, tests. Ends the run, also right after publish. |
+| report | `dotsteward contribute report` | The result: pull request, merged commit, release, instance commit, tests and a promoted component. Ends the run, also right after publish. |
 
 `dotsteward contribute status --json` shows the run at any time, and
 `dotsteward contribute abort` ends it (see [Recovery](#recovery)). Every
 step prints the next command, and a step out of order refuses and names the
-right one.
+right one. While a long step runs, the other steps refuse and `status`
+names it; `dotsteward contribute status --wait` waits for it (see
+[Run state](#run-state)).
 
 ## Reproduce first
 
@@ -54,6 +57,17 @@ Then fix the cause generically: in English, without any value of your own
 instance (no user names, paths, private component names or settings).
 Never copy instance files into the framework.
 
+Commit the test alone, then the fix, with `dotsteward contribute commit`:
+it stages everything and commits with your identity and UTC dates, and it
+refuses a subject that is not a conventional commit, trailers and
+attribution lines. A plain `git commit` in the clone meets the same rules
+in its commit-msg and pre-commit hooks.
+
+```sh
+dotsteward contribute commit -m "test(<area>): <what the test expects>" --test
+dotsteward contribute commit -m "fix(<area>): <what changed>"
+```
+
 ## The framework gate
 
 `dotsteward contribute check` runs, in a clean clone of the branch:
@@ -67,6 +81,15 @@ Never copy instance files into the framework.
    instance skill names and the host name (terms shorter than 4
    characters, allowlisted strings and your public identity are skipped);
 4. `nix flake check` with a parallelism of its own (below).
+
+A change that moves one of your private components into the catalog
+names that component everywhere. With your explicit approval, start its
+run with `dotsteward contribute start --slug SLUG --promote NAME`: the
+instance-leak scan of that run exempts exactly the name `NAME` (the run
+records it as `promote`, and `check`, `status` and `report` show it),
+while every other term, the component's own settings targets included,
+still stops the run. The exemption never goes through
+`privacy/allowlist.txt` or `privacy/policy.toml`.
 
 Any privacy finding is a hard stop (exit 4): nothing may be published
 until the finding is gone from every commit of the branch. A branch that
@@ -168,14 +191,34 @@ mirrors stops with the cherry-pick in progress: resolve it, run
 Each run has a state file, `<state root>/contribute/<id>.json` (mode
 0600), with `id`, `slug`, `mode`, `clone`, `branch`, `base_sha`,
 `test_sha`, `tested_tree`, `trial_switched`, `pr`, `merged_sha`, `tag`,
-`instance_commit` and `step`, the next step to run. Every step reads and
-updates it, so an interrupted run resumes where it stopped;
+`instance_commit` and `step`, the next step to run (and `promote` in a run
+started with `--promote`). Every step reads and updates it, so an
+interrupted run resumes where it stopped;
 `--id ID` addresses a run other than the current one.
+
+The long steps (`check`, `trial`, `publish`, `release`, `upgrade`, `abort`
+and `report`, which may first run the recovery of a trial switch) record
+`running` (`step`, `pid`, `started_at`) while they work and
+replace it with `last_step` (`step`, `status`, `started_at`, `ended_at`)
+when they end, also after a failure or an interrupt. Meanwhile `setup`,
+`start`, `commit` and the long steps of every run refuse and name the
+running step, and `dotsteward contribute status` shows it. To wait for a
+step that runs in the background, without polling the process list:
+
+```sh
+dotsteward contribute status --wait --timeout 540
+```
+
+It returns when the step ends and exits with the step's status, or with 3
+when the timeout passed first (wait again). A marker whose process is gone,
+because it was killed or the machine stopped, is stale: `status` and the
+next step report and clear it, and its outcome counts as unknown.
 
 | Exit status | Meaning |
 | --- | --- |
 | 0 | the step is done; the output names the next command |
 | 1 | refused or red; nothing was published by this step |
+| 3 | still running (`status --wait --timeout`) |
 | 4 | privacy hard stop (`check`) |
 | 5 | back to `check` (`publish`): the branch was rebased or the merged tree differed |
 

@@ -54,7 +54,7 @@ jobs:
       # as one shellcheck over all files does for the files it was given.
       - name: shellcheck (pinned by flake.lock, in parallel)
         run: |
-          git ls-files -z -- '*.sh' cli/dotsteward .githooks/pre-push |
+          git ls-files -z -- '*.sh' cli/dotsteward .githooks/pre-push .githooks/commit-msg .githooks/pre-commit |
             nix shell --inputs-from . nixpkgs#shellcheck --command xargs -0 -r -P "$(nproc)" -n 50 shellcheck -x --
       - name: actionlint (pinned by flake.lock)
         run: nix shell --inputs-from . nixpkgs#actionlint nixpkgs#shellcheck --command actionlint

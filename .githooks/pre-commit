@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# dotsteward pre-commit hook: the dates of framework commits are UTC
+# (privacy/policy.toml commits.utc_only), checked before the commit exists
+# (the pre-push hook and `dotsteward contribute check` would refuse the
+# commit only after the work is done).
+#
+# Install once per clone, with the commit-msg and pre-push hooks next to it
+# (dotsteward contribute setup does it as well):
+#   git config core.hooksPath .githooks
+#
+# The author and committer dates are the ones git is about to record, as
+# `git var` reports them: GIT_AUTHOR_DATE and GIT_COMMITTER_DATE when they are
+# set (git commit --date and --amend set the author date), otherwise the time
+# zone in effect (TZ). Any offset other than +0000 refuses the commit. The
+# rules are cli/lib/commit-rules.sh next to this directory; without them the
+# commit is refused. `dotsteward contribute commit` always commits in UTC.
+set -Eeuo pipefail
+
+error() {
+  printf '[dotsteward] ERROR: pre-commit: %s\n' "$*" >&2
+}
+
+if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4))); then
+  error "bash 4.4 or newer is required (found $BASH_VERSION); commit refused"
+  exit 1
+fi
+
+trap 'error "unexpected failure at line $LINENO (exit $?); commit refused"' ERR
+
+hook_dir=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+rules=$(dirname -- "$hook_dir")/cli/lib/commit-rules.sh
+if [[ ! -f $rules ]]; then
+  error "the commit rules cli/lib/commit-rules.sh are missing next to the hook; commit refused"
+  exit 1
+fi
+# shellcheck source=cli/lib/commit-rules.sh
+source "$rules"
+
+if ! problems=$(commit_rules_dates); then
+  while IFS= read -r problem; do
+    [[ -z $problem ]] || error "$problem"
+  done <<<"$problems"
+  error "commit refused: framework commits are dated in UTC; commit with: dotsteward contribute commit -m 'TYPE(AREA): what changed' (or TZ=UTC git commit, without a GIT_AUTHOR_DATE or GIT_COMMITTER_DATE in another time zone)"
+  exit 1
+fi

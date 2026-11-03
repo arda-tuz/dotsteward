@@ -1760,7 +1760,7 @@ contribute_cmd_report() {
       release_url: (if $release_url == "" then null else $release_url end), instance_commit,
       tests: {gate: (if .test_sha then "passed" else null end), tested_commit: .test_sha,
               tested_tree: .tested_tree, trial: (.trial // null), upgrade: (.upgrade // null)},
-      trial_switched, recovery: (.recovery // null)}')
+      trial_switched, recovery: (.recovery // null), promote: (.promote // null)}')
   if ((json)); then
     jq --indent 2 . <<<"$document"
     return 0
@@ -1776,5 +1776,6 @@ contribute_cmd_report() {
     "  framework gate: \(.tests.gate | show) at \(.tests.tested_commit | show)",
     "  trial: \(.tests.trial | show)",
     "  upgrade: \(.tests.upgrade | show)",
-    "  recovery after the trial switch: \(.recovery | show)"' <<<"$document"
+    "  recovery after the trial switch: \(.recovery | show)",
+    (if .promote then "  promoted component: \(.promote) (exempt from the instance-leak scan of this run)" else empty end)' <<<"$document"
 }

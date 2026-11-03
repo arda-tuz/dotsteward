@@ -27,8 +27,9 @@ on:
         default: false
 
 permissions:
-  # The tag and the GitHub release, and the dispatch of channels.yml on the
-  # tag (a tag made with this token starts no workflow by itself).
+  # The tag and the GitHub release, and the dispatch of channels.yml and
+  # macos-smoke.yml on the tag (a tag made with this token starts no
+  # workflow by itself).
   contents: write
   actions: write
 

@@ -37,8 +37,9 @@
 #          when the tag exists elsewhere, and unless main's CI of REV (the
 #          push runs of ci.yml and privacy.yml on main) is green. Then `gh
 #          release create vX.Y.Z --target REV` with the notes, and
-#          channels.yml dispatched on the tag (a tag made with a workflow's
-#          token starts no workflow). RELEASE_WAIT_SECONDS (default 1800)
+#          channels.yml and macos-smoke.yml dispatched on the tag (a tag
+#          made with a workflow's token starts no workflow).
+#          RELEASE_WAIT_SECONDS (default 1800)
 #          bounds the wait for main's CI, RELEASE_POLL_SECONDS (default 15)
 #          is its polling interval.
 #
@@ -246,9 +247,10 @@ cmd_release() {
 
 # publish_release ROOT REPO TAG SHA: the GitHub release TAG at SHA (the tag
 # is created there when missing) with the notes of the commits since the
-# release before it, then channels.yml dispatched on the tag.
+# release before it, then channels.yml and macos-smoke.yml dispatched on
+# the tag.
 publish_release() {
-  local root=$1 repo=$2 tag=$3 sha=$4 notes base
+  local root=$1 repo=$2 tag=$3 sha=$4 notes base workflow
   base=$(release_base_before "$root" "$sha" "$tag" "$(release_local_tags "$root")")
   notes=$(mktemp "${TMPDIR:-/tmp}/release-notes.XXXXXX")
   release_notes "$root" "$base" "$sha" >"$notes"
@@ -258,9 +260,11 @@ publish_release() {
   fi
   rm -f -- "$notes"
   say "released $tag at ${sha:0:12}: https://github.com/$repo/releases/tag/$tag"
-  gh workflow run channels.yml --repo "$repo" --ref "$tag" </dev/null ||
-    die "released $tag, but channels.yml could not be dispatched on it; dispatch it by hand"
-  say "dispatched channels.yml on $tag"
+  for workflow in channels.yml macos-smoke.yml; do
+    gh workflow run "$workflow" --repo "$repo" --ref "$tag" </dev/null ||
+      die "released $tag, but $workflow could not be dispatched on it; dispatch it by hand"
+    say "dispatched $workflow on $tag"
+  done
 }
 
 (($#)) || {

@@ -2,7 +2,8 @@
 # discovered from directories, so adding one never edits this file:
 # - every nix/checks/<name>.nix becomes checks.x86_64-linux.<name>; each file
 #   is a function { self, pkgs, system, lib, dsLib } -> derivation, where
-#   self and dsLib are the checks' view without the commit (checkSelf);
+#   self and dsLib are the checks' view without the commit (checkSelf); the
+#   ones listed in darwinChecks below are checks.aarch64-darwin.<name> as well;
 # - every directory of modules/components/ is a catalog component
 #   (lib.catalog, homeModules.<name>).
 inputs@{
@@ -62,6 +63,21 @@ let
     else
       [ ];
 
+  # The checks that also run on a Mac (built by the checks job of
+  # .github/workflows/macos-smoke.yml on release tags and nightly): their
+  # tests are platform independent and mean something on darwin, and their
+  # definitions build nothing for Linux. The others stay Linux-only: they
+  # build x86_64-linux generations, need Linux tools (APT, dpkg, the bash
+  # 3.2 build of the stage-0 tests) or test the Linux platform layer.
+  darwinChecks = [
+    "darwin-eval" # the darwin platform layer and the darwin instance contract, natively
+    "harness" # the stubs and helpers that every test check runs on
+    "privacy" # the scanner behind the pre-push hook and contribute check
+    "settings" # the settings engine in a darwin home
+    "settings-jsonc" # the JSONC reader of the settings engine
+    "skeleton" # the dispatcher and the packaged CLI with its darwin toolchain
+  ];
+
   checksFor =
     system:
     lib.listToAttrs (
@@ -109,11 +125,10 @@ in
     };
   });
 
-  # Only the Linux sandbox runs checks during development; darwin gets
-  # evaluation-safe checks only (none yet).
+  # Every check runs on x86_64-linux; aarch64-darwin gets darwinChecks.
   checks = {
     x86_64-linux = checksFor "x86_64-linux";
-    aarch64-darwin = { };
+    aarch64-darwin = lib.getAttrs darwinChecks (checksFor "aarch64-darwin");
   };
 
   # nixfmt in RFC style; nixpkgs now ships it as `nixfmt` (`nixfmt-rfc-style`
