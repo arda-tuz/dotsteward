@@ -769,9 +769,11 @@ contribute_cmd_check() {
     exit "$CONTRIBUTE_PRIVACY_STOP"
   fi
 
-  log "nix flake check in $CT_CLONE"
+  # The framework check's own parallelism (DS_CONTRIBUTE_NIX_*), not the
+  # gate's, which sizes the instance builds.
+  log "nix flake check in $CT_CLONE: $DS_CONTRIBUTE_NIX_MAX_JOBS jobs, $DS_CONTRIBUTE_NIX_CORES cores each"
   nix_cmd flake check "$CT_CLONE" --no-update-lock-file --keep-going -L \
-    --max-jobs "$DS_GATE_NIX_MAX_JOBS" --cores "$DS_GATE_NIX_CORES" </dev/null || {
+    --max-jobs "$DS_CONTRIBUTE_NIX_MAX_JOBS" --cores "$DS_CONTRIBUTE_NIX_CORES" </dev/null || {
     printf '[dotsteward] ERROR: nix flake check failed in %s\n' "$CT_CLONE" >&2
     _contribute_check_red "$id"
     exit 1

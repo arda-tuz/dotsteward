@@ -68,5 +68,8 @@ jobs:
         run: bash tests/ci/install-nix.sh
       - name: nix flake check
         run: nix flake check -L
-      - name: Hook tests (outside the sandbox)
-        run: bash tests/run.sh tests/hooks
+      # The suites that need the host: the pre-push hook (a writable bare
+      # remote), real Nix (tests/host) and the channel installer's
+      # stand-ins (tests/channels).
+      - name: Host-level tests (outside the sandbox)
+        run: bash tests/run.sh tests/hooks tests/host tests/channels

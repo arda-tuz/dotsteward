@@ -52,6 +52,9 @@ scanner, the denylist and the CI checks.
   `nix/outputs.nix`. Each is a function
   `{ self, pkgs, system, lib, dsLib }` returning a derivation; most use
   `(dsLib.mkCli pkgs).mkTestCheck { name = "..."; paths = [ "tests/..." ]; }`.
+  `self` and `dsLib` have no `rev`, `narHash` or `lastModified`, so a check
+  depends on the tree alone; `tests/host/test-check-identity.sh` holds
+  every check to that.
 - Tests are files: `tests/**/test-*.sh`, discovered by `tests/run.sh`.
 - Catalog components are directories: `modules/components/<name>/`,
   discovered by `nix/outputs.nix` ([docs/component-contract.md](docs/component-contract.md)).

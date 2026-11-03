@@ -103,7 +103,7 @@ real person.
 | `tests/skeleton` | repository files, dispatcher, runner, harness core | `checks.skeleton` |
 | `tests/harness` | the stubs, fixtures and fake remotes themselves | `checks.harness` |
 | `tests/privacy` | the scanner | `checks.privacy` |
-| `tests/hooks` | the pre-push hook | outside the sandbox (needs a writable bare remote) |
+| `tests/hooks` | the pre-push hook | outside the sandbox (needs a writable bare remote): the host-level tests of `ci.yml` |
 | `tests/cli` | CLI library, context, gate, update, bootstrap, rebuild, methods, launcher, E2E runner | `checks.cli-*` |
 | `tests/engines` | the pins and settings engines | `checks.pins-*`, `checks.settings*` |
 | `tests/agents`, `tests/probes` | the agents installer and the probe runner | `checks.agents`, `checks.probes` |
@@ -112,9 +112,9 @@ real person.
 | `tests/instance` | the template and `dotsteward init` | `checks.init`, `checks.template-*` |
 | `tests/skills` | the skill contract | `checks.skills` |
 | `tests/contribute` | the contribution flow against local bare remotes | `checks.contribute*` |
-| `tests/host` | an instance built with real Nix in a temporary home, without activation | locally and in CI |
+| `tests/host` | real Nix on the host: an instance built in a temporary home without activation (`instance-e2e.sh`), and the framework checks, which depend on the tree alone, never on its commit (`test-*.sh`) | `instance-e2e.sh` locally; `test-*.sh` locally and in the host-level tests of `ci.yml` |
 | `tests/ci` | clean-machine install and the macOS smoke test with real activation | GitHub Actions only |
-| `tests/channels` | installing `dotsteward-init` through every channel | GitHub Actions only |
+| `tests/channels` | installing `dotsteward-init` through every channel (`local-install.sh`), and that script over stand-ins of the tools (`test-*.sh`) | the installs in GitHub Actions only (`channels.yml`); `test-*.sh` locally and in the host-level tests of `ci.yml` |
 | `tests/vm` | the virtual machine harness | its self-test locally and in CI (`ci.yml`); VMs only on request |
 
 `tests/lib` holds the harness itself and `tests/fixtures` the shared data.
@@ -131,7 +131,7 @@ sandbox.
 
 | Workflow | What it runs |
 | --- | --- |
-| `ci.yml` | shellcheck, actionlint, Python syntax and the VM harness self-test (`tests/vm/selftest.sh`, no VM boots); `nix flake check -L`; the hook tests |
+| `ci.yml` | shellcheck, actionlint, Python syntax and the VM harness self-test (`tests/vm/selftest.sh`, no VM boots); `nix flake check -L`; the host-level tests (`tests/hooks`, `tests/host`, `tests/channels`) |
 | `privacy.yml` | the privacy scans ([privacy.md](privacy.md#where-scans-run)) |
 | `clean-install.yml` | a fresh Ubuntu runner set up end to end through `bootstrap.sh`, switched, checked, carried to a second home and rolled back |
 | `macos-smoke.yml` | a real Mac: stage 0, a new darwin instance, build, switch and end-to-end checks; manual only |

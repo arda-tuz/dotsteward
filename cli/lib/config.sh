@@ -57,6 +57,15 @@
 #                                        DOTSTEWARD_CACHE_URL overrides (and
 #                                        their DOTFILES_* fallbacks with
 #                                        compat.legacy_env)
+#   DS_CONTRIBUTE_NIX_MAX_JOBS, DS_CONTRIBUTE_NIX_CORES
+#                                        the parallelism of the framework
+#                                        check (`contribute check`): its own
+#                                        budget derived from the machine,
+#                                        never gate.*; the
+#                                        DOTSTEWARD_CONTRIBUTE_NIX_MAX_JOBS
+#                                        and
+#                                        DOTSTEWARD_CONTRIBUTE_NIX_CORES
+#                                        overrides win
 #   DS_GATE_PREPARE_WARN_FREE_GIB
 #   DS_COMMIT_UPDATE_SUBJECT, DS_COMMIT_SETTINGS_SUBJECT,
 #   DS_COMMIT_UPGRADE_SUBJECT

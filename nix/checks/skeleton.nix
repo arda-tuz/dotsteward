@@ -1,6 +1,9 @@
 # Skeleton: dispatcher, version command, test runner and harness
 # (tests/skeleton), plus the packaged CLI started with an empty environment,
-# which proves the wrapper brings its own toolchain and baked source info.
+# which proves the wrapper brings its own toolchain and baked source info:
+# the checks see the framework without its commit (nix/outputs.nix), so
+# their CLI reports no revision, and a CLI built for a fixture commit
+# reports that one.
 {
   self,
   pkgs,
@@ -10,22 +13,41 @@
 }:
 let
   cli = dsLib.mkCli pkgs;
-  expected = lib.concatStringsSep "\n" [
-    "dotsteward ${dsLib.version}"
-    "rev: ${self.rev or self.dirtyRev or "unknown"}"
-    "narHash: ${self.narHash or "unknown"}"
-  ];
+  fixture = {
+    rev = "0123456789abcdef0123456789abcdef01234567";
+    narHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+  };
+  baked = import ../packages/dotsteward.nix (
+    {
+      inherit (dsLib) version;
+      src = self;
+    }
+    // fixture
+  ) pkgs;
+  versionOutput =
+    rev: narHash:
+    lib.concatStringsSep "\n" [
+      "dotsteward ${dsLib.version}"
+      "rev: ${rev}"
+      "narHash: ${narHash}"
+    ];
 in
 cli.mkTestCheck {
   name = "skeleton";
   paths = [ "tests/skeleton" ];
   postCheck = ''
-    actual=$(env -i ${lib.getExe cli} version)
-    expected=${lib.escapeShellArg expected}
-    if [[ $actual != "$expected" ]]; then
-      printf 'packaged version output on %s:\n%s\nexpected:\n%s\n' ${system} "$actual" "$expected" >&2
-      exit 1
-    fi
+    # check_version CLI EXPECTED: the version output of CLI, started with an
+    # empty environment, is EXPECTED.
+    check_version() {
+      local actual
+      actual=$(env -i "$1" version)
+      if [[ $actual != "$2" ]]; then
+        printf 'packaged version output on %s:\n%s\nexpected:\n%s\n' ${system} "$actual" "$2" >&2
+        exit 1
+      fi
+    }
+    check_version ${lib.getExe cli} ${lib.escapeShellArg (versionOutput "unknown" "unknown")}
+    check_version ${lib.getExe baked} ${lib.escapeShellArg (versionOutput fixture.rev fixture.narHash)}
     # The wrapper names the toolchain it puts first on PATH, so the checks of
     # the user's environment can leave it out (user_path in cli/lib/lib.sh).
     toolchain=$(sed -n "s/^export DOTSTEWARD_TOOLCHAIN_PATH='\(.*\)'$/\1/p" ${lib.getExe cli})

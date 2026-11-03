@@ -35,8 +35,9 @@
 #                   written to a file.
 #
 # Needs claude, codex, gh (with `gh skill`), git and jq on PATH. Nothing
-# outside the temporary directory is changed; it is deleted at the end.
-# Exit 0 when every channel passed, 1 otherwise.
+# outside the temporary directory is changed; it is deleted at the end (a
+# directory that cannot be removed is reported and does not change the exit
+# status). Exit 0 when every channel passed, 1 otherwise.
 set -Eeuo pipefail
 
 die() {
@@ -111,8 +112,26 @@ else
 fi
 
 work=$(mktemp -d)
+# cleanup: removes the work directory and keeps the exit status of the run.
+# A process a tool started may still write below the directory for a while
+# (a detached git maintenance run, for example), so the removal is tried
+# for about five seconds; a directory that still cannot be removed is
+# reported and left behind.
 cleanup() {
-  rm -rf -- "$work"
+  local status=$? tries=1
+  until rm -rf -- "$work" 2>/dev/null; do
+    if ((tries >= 10)); then
+      if [[ ${GITHUB_ACTIONS:-} == true ]]; then
+        printf '::warning title=channels::%s could not be removed\n' "$work"
+      fi
+      printf '[dotsteward] WARNING: channels: %s could not be removed: a process still writes below it, or it is not writable\n' \
+        "$work" >&2
+      break
+    fi
+    tries=$((tries + 1))
+    sleep 0.5
+  done
+  exit "$status"
 }
 trap cleanup EXIT
 
@@ -130,10 +149,15 @@ fail() {
 # terminal and the GitHub token cross into it; every tool configuration,
 # cache and state directory is below it (Claude Code and Codex use their
 # default ~/.claude and ~/.codex), and no SSH agent is reachable, so git
-# clones use HTTPS like on a fresh machine.
+# clones use HTTPS like on a fresh machine. git runs no automatic
+# maintenance there: a `git maintenance run --auto` (or `git gc --auto`)
+# that a clone or fetch of a tool starts would detach and still write below
+# the work directory while it is removed.
 isolate() {
   local home=$work/$1/home
   mkdir -p "$home"
+  git config --file "$home/.gitconfig" maintenance.auto false || return 1
+  git config --file "$home/.gitconfig" gc.autoDetach false || return 1
   run_env=(env -i
     "PATH=$PATH" "HOME=$home" "USER=${USER:-$(id -un)}" "LANG=${LANG:-C.UTF-8}" "TERM=dumb" "TMPDIR=$work/$1"
     "XDG_CONFIG_HOME=$home/.config" "XDG_CACHE_HOME=$home/.cache"

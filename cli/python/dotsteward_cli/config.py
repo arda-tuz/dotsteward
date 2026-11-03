@@ -866,6 +866,22 @@ def derived_cores(memory_mib: int, cpus: int, max_jobs: int) -> int:
     return max(1, min(cpus // max_jobs, budget // max_jobs // PARALLELISM_CORE_MIB))
 
 
+# The Nix parallelism of the framework check (`nix flake check` of a
+# framework clone in `dotsteward contribute check`): its builds are test
+# runs and evaluations, lighter than the instance builds the gate's budget
+# is sized for, so a job takes a smaller share of the same budget and at
+# most CHECK_MAX_JOBS run; the cores of a job follow the gate's rule. The
+# gate's configured values do not apply to it. docs/contribute.md states
+# the same numbers.
+CHECK_JOB_MIB = 3072
+CHECK_MAX_JOBS = 4
+
+
+def derived_check_max_jobs(memory_mib: int, cpus: int) -> int:
+    budget = max(0, memory_mib - PARALLELISM_RESERVE_MIB)
+    return max(1, min(CHECK_MAX_JOBS, cpus, budget // CHECK_JOB_MIB))
+
+
 def _machine_memory_mib() -> int:
     """The total physical memory of this machine in MiB."""
     try:
@@ -873,7 +889,7 @@ def _machine_memory_mib() -> int:
         page_size = os.sysconf("SC_PAGE_SIZE")
     except (ValueError, OSError) as problem:
         raise DotstewardError(
-            f"cannot read the memory of this machine ({problem}); set gate.nix_max_jobs and gate.nix_cores"
+            f"cannot read the memory of this machine ({problem}); set DOTSTEWARD_MEMORY_MIB to it in MiB"
         ) from problem
     return max(1, pages * page_size // (1024 * 1024))
 
@@ -901,8 +917,9 @@ def runtime_values(instance: Instance, env: Mapping[str, str] | None = None) -> 
     """The run-time values of an instance: expanded paths, the environment
     overrides (``DOTSTEWARD_*``), the gate parallelism derived from the machine
     (DOTSTEWARD_MEMORY_MIB and DOTSTEWARD_CPU_COUNT replace its facts) where
-    neither the configuration nor the environment sets it, and the
-    effective skill overlays. Raises
+    neither the configuration nor the environment sets it, the parallelism
+    of the framework check (derived from the same facts unless the
+    environment sets it), and the effective skill overlays. Raises
     DotstewardError with every problem of the environment."""
     env = os.environ if env is None else env
     config = instance.config
@@ -935,15 +952,34 @@ def runtime_values(instance: Instance, env: Mapping[str, str] | None = None) -> 
             gate[key] = int(value)
         else:
             problems.append(f"{name}: expected an integer >= {minimum}, got {to_json(value)}")
+    # The framework check has no configuration keys, only these overrides.
+    check: dict[str, Any] = {"nix_max_jobs": None, "nix_cores": None}
+    for key, name in (
+        ("nix_max_jobs", "DOTSTEWARD_CONTRIBUTE_NIX_MAX_JOBS"),
+        ("nix_cores", "DOTSTEWARD_CONTRIBUTE_NIX_CORES"),
+    ):
+        value = _env_get(env, name)
+        if value is None:
+            continue
+        minimum = gate_schema[key]["minimum"]
+        if re.fullmatch(r"[0-9]+", value, re.ASCII) and int(value) >= minimum:
+            check[key] = int(value)
+        else:
+            problems.append(f"{name}: expected an integer >= {minimum}, got {to_json(value)}")
     memory_mib = _machine_fact(env, "DOTSTEWARD_MEMORY_MIB", problems)
     cpus = _machine_fact(env, "DOTSTEWARD_CPU_COUNT", problems)
-    if not problems and (gate["nix_max_jobs"] is None or gate["nix_cores"] is None):
+    derive = None in (gate["nix_max_jobs"], gate["nix_cores"], check["nix_max_jobs"], check["nix_cores"])
+    if not problems and derive:
         memory_mib = _machine_memory_mib() if memory_mib is None else memory_mib
         cpus = _machine_cpus() if cpus is None else cpus
         if gate["nix_max_jobs"] is None:
             gate["nix_max_jobs"] = derived_max_jobs(memory_mib, cpus)
         if gate["nix_cores"] is None:
             gate["nix_cores"] = derived_cores(memory_mib, cpus, gate["nix_max_jobs"])
+        if check["nix_max_jobs"] is None:
+            check["nix_max_jobs"] = derived_check_max_jobs(memory_mib, cpus)
+        if check["nix_cores"] is None:
+            check["nix_cores"] = derived_cores(memory_mib, cpus, check["nix_max_jobs"])
     gate["cache_url"] = config["gate"]["cache_url"]
     override = _override(env, _Override("DOTSTEWARD_CACHE_URL", "DOTFILES_CACHE_URL"), legacy_env)
     if override is not None:
@@ -975,6 +1011,7 @@ def runtime_values(instance: Instance, env: Mapping[str, str] | None = None) -> 
         "local_clone": _user_path(config, "upstream", "local_clone", env),
         "denylist": denylist,
         "gate": gate,
+        "check": check,
         "overlays": overlays,
     }
 
@@ -1065,6 +1102,8 @@ def export_variables(instance: Instance, env: Mapping[str, str] | None = None) -
         ("DS_GATE_MIN_FREE_GIB", gate["min_free_gib"]),
         ("DS_GATE_PREPARE_WARN_FREE_GIB", c["gate"]["prepare_warn_free_gib"]),
         ("DS_GATE_CACHE_URL", gate["cache_url"]),
+        ("DS_CONTRIBUTE_NIX_MAX_JOBS", values["check"]["nix_max_jobs"]),
+        ("DS_CONTRIBUTE_NIX_CORES", values["check"]["nix_cores"]),
         ("DS_COMMIT_UPDATE_SUBJECT", c["commit"]["update_subject"]),
         ("DS_COMMIT_SETTINGS_SUBJECT", c["commit"]["settings_subject"]),
         ("DS_COMMIT_UPGRADE_SUBJECT", c["commit"]["upgrade_subject"]),

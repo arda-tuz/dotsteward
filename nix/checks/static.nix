@@ -3,10 +3,11 @@
 # privacy policy. The seed lock-path test evaluates the catalog's Home
 # Manager configurations with nix-instantiate against an isolated store, so
 # the sandbox needs Nix and the nixpkgs and home-manager sources; a setup
-# hook exports their paths. Then `dotsteward static --sandbox` over the
-# framework source itself, which in the sandbox has no .git and is listed
-# with find, and the packaged CLI on a small instance, which proves the package carries
-# the template copies and schemas the instance checks compare with.
+# hook exports their paths. `dotsteward static --sandbox` over the framework
+# source itself, which in the sandbox has no .git and is listed with find,
+# runs once, in tests/static/test-framework.sh. Then the packaged CLI on a
+# small instance, which proves the package carries the template copies and
+# schemas the instance checks compare with.
 {
   self,
   pkgs,
@@ -41,8 +42,6 @@ cli.mkTestCheck {
     testEnv
   ];
   postCheck = ''
-    ./cli/dotsteward static --sandbox
-
     instance=$(mktemp -d)
     mkdir -p "$instance/.dotsteward"
     cp template/.dotsteward/cli.sh "$instance/.dotsteward/cli.sh"

@@ -42,7 +42,8 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | `DOTSTEWARD_INSTANCE` | The instance directory, like `--instance`. |
 | `DOTSTEWARD_STATE_ROOT` | The root of the machine records, instead of `state.root`. |
 | `DOTSTEWARD_NIX_MAX_JOBS`, `DOTSTEWARD_NIX_CORES` | The Nix parallelism of the gate, instead of `gate.nix_max_jobs` and `gate.nix_cores` or the values derived from the machine. |
-| `DOTSTEWARD_MEMORY_MIB`, `DOTSTEWARD_CPU_COUNT` | The memory (MiB) and CPU count the derived Nix parallelism of the gate reads, instead of the machine's. |
+| `DOTSTEWARD_MEMORY_MIB`, `DOTSTEWARD_CPU_COUNT` | The memory (MiB) and CPU count the derived Nix parallelism of the gate and of `contribute check` reads, instead of the machine's. |
+| `DOTSTEWARD_CONTRIBUTE_NIX_MAX_JOBS`, `DOTSTEWARD_CONTRIBUTE_NIX_CORES` | The Nix parallelism of the framework check in `contribute check`, instead of the values derived from the machine. |
 | `DOTSTEWARD_MIN_FREE_GB` | The free space the gate requires in `/nix/store`, instead of `gate.min_free_gib`. |
 | `DOTSTEWARD_CACHE_URL` | The binary cache the gate probes, instead of `gate.cache_url`. |
 | `DOTSTEWARD_FRAMEWORK_OVERRIDE` | The framework flake reference of `--framework-override`. |
@@ -219,7 +220,10 @@ Steps:
                           commits after upstream main with metadata rules
                           and the denylist; the instance-leak scan with
                           terms from `dotsteward context --json`), then
-                          `nix flake check` with the gate's parallelism.
+                          `nix flake check` with the framework check's own
+                          parallelism (derived from the machine, at most 4
+                          jobs; DOTSTEWARD_CONTRIBUTE_NIX_MAX_JOBS and
+                          DOTSTEWARD_CONTRIBUTE_NIX_CORES override it).
                           Records test_sha and tested_tree on success; any
                           failure before publish withdraws an earlier pass
                           (the run goes back to check); a privacy stop or

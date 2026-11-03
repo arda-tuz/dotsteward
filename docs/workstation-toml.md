@@ -120,6 +120,8 @@ applies on every machine instead, and `DOTSTEWARD_NIX_MAX_JOBS` and
 and `DOTSTEWARD_CPU_COUNT` replace the memory (in MiB) and the CPU count the
 derivation reads, for example in a container whose limits are lower than
 the host's. `dotsteward context --json` shows the values in effect.
+The framework check of `dotsteward contribute check` derives a parallelism
+of its own instead ([contribute.md](contribute.md#the-framework-gate)).
 
 ## `[commit]`
 

@@ -1,7 +1,8 @@
 # Assembles the framework flake outputs. Checks and catalog components are
 # discovered from directories, so adding one never edits this file:
 # - every nix/checks/<name>.nix becomes checks.x86_64-linux.<name>; each file
-#   is a function { self, pkgs, system, lib, dsLib } -> derivation;
+#   is a function { self, pkgs, system, lib, dsLib } -> derivation, where
+#   self and dsLib are the checks' view without the commit (checkSelf);
 # - every directory of modules/components/ is a catalog component
 #   (lib.catalog, homeModules.<name>).
 inputs@{
@@ -25,6 +26,30 @@ let
     inherit (inputs) nixpkgs home-manager;
   };
 
+  # What the checks see of the framework: self without the attributes that
+  # name the fetched source rather than its files (the revision, the narHash
+  # and the modification time), and a library built from that view. The CLI
+  # the checks build has no source-info and the manifests of their fixture
+  # instances no framework revision, so every check depends on the tree
+  # alone: two commits with the same tree have the same checks, and an
+  # empty, amended or rebased commit rebuilds none of them.
+  # packages.<system>.dotsteward keeps the revision and narHash.
+  checkSelf = builtins.removeAttrs self [
+    "rev"
+    "shortRev"
+    "dirtyRev"
+    "dirtyShortRev"
+    "narHash"
+    "lastModified"
+    "lastModifiedDate"
+    "revCount"
+    "sourceInfo"
+  ];
+  checkLib = import ../lib {
+    dotsteward = checkSelf;
+    inherit (inputs) nixpkgs home-manager;
+  };
+
   checkFiles =
     if builtins.pathExists ./checks then
       lib.sort lib.lessThan (
@@ -43,12 +68,9 @@ let
       map (file: {
         name = lib.removeSuffix ".nix" file;
         value = import (./checks + "/${file}") {
-          inherit
-            self
-            system
-            lib
-            dsLib
-            ;
+          inherit system lib;
+          self = checkSelf;
+          dsLib = checkLib;
           pkgs = pkgsFor system;
         };
       }) checkFiles

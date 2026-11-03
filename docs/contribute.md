@@ -66,13 +66,26 @@ Never copy instance files into the framework.
    remote, private component names, settings target and entry names,
    instance skill names and the host name (terms shorter than 4
    characters, allowlisted strings and your public identity are skipped);
-4. `nix flake check` with the gate's parallelism.
+4. `nix flake check` with a parallelism of its own (below).
 
 Any privacy finding is a hard stop (exit 4): nothing may be published
 until the finding is gone from every commit of the branch. A branch that
 changes `privacy/allowlist.txt` or `privacy/policy.toml` is refused too;
 those files change only in their own, manually reviewed pull request. See
 [privacy.md](privacy.md).
+
+The framework's checks are test runs and evaluations, which need less
+memory than the instance builds the gate's parallelism is sized for, so
+step 4 derives its own from the machine: the budget is the total memory
+minus 2048 MiB, as for the gate; one job per full 3072 MiB of it, at most 4
+jobs and at most one per CPU; the cores of a job are the CPUs divided among
+the jobs, at most one per full 1024 MiB of a job's share. A machine with
+16 GiB and 12 CPUs runs 4 jobs on 3 cores each, an 8 GiB machine one job.
+`gate.nix_max_jobs` and `gate.nix_cores` do not apply to it.
+`DOTSTEWARD_CONTRIBUTE_NIX_MAX_JOBS` and `DOTSTEWARD_CONTRIBUTE_NIX_CORES`
+override the values for one run, and `DOTSTEWARD_MEMORY_MIB` and
+`DOTSTEWARD_CPU_COUNT` replace the facts of the machine, as they do for
+the gate. `contribute check` prints the values it uses.
 
 ## Trial
 

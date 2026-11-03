@@ -40,7 +40,10 @@
 #                           commits after upstream main with metadata rules
 #                           and the denylist; the instance-leak scan with
 #                           terms from `dotsteward context --json`), then
-#                           `nix flake check` with the gate's parallelism.
+#                           `nix flake check` with the framework check's own
+#                           parallelism (derived from the machine, at most 4
+#                           jobs; DOTSTEWARD_CONTRIBUTE_NIX_MAX_JOBS and
+#                           DOTSTEWARD_CONTRIBUTE_NIX_CORES override it).
 #                           Records test_sha and tested_tree on success; any
 #                           failure before publish withdraws an earlier pass
 #                           (the run goes back to check); a privacy stop or

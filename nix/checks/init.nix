@@ -7,9 +7,14 @@
 # built here (DS_INIT_PACKAGED_CLI), as `nix run <framework>#dotsteward --
 # init` does. Then ShellCheck over the command and the tests, and a lint of
 # the Python module.
+#
+# The suite is the longest of the framework, so its test files run as two
+# halves (in file name order), two derivations that Nix builds in parallel;
+# the check passes when both do.
 {
   self,
   pkgs,
+  lib,
   dsLib,
   ...
 }:
@@ -25,20 +30,39 @@ let
       export DS_INIT_PACKAGED_CLI=${cli}/bin/dotsteward
     '';
   };
-in
-cli.mkTestCheck {
-  name = "init";
-  paths = [ "tests/instance/init" ];
-  nativeBuildInputs = [
-    pkgs.nix
-    pkgs.shellcheck
-    pkgs.ruff
-    testEnv
-  ];
-  postCheck = ''
+
+  testFiles = lib.sort lib.lessThan (
+    lib.attrNames (
+      lib.filterAttrs (
+        name: type: type == "regular" && lib.hasPrefix "test-" name && lib.hasSuffix ".sh" name
+      ) (builtins.readDir ../../tests/instance/init)
+    )
+  );
+  half = (lib.length testFiles + 1) / 2;
+
+  part =
+    name: files: postCheck:
+    cli.mkTestCheck {
+      name = "init-${name}";
+      paths = map (file: "tests/instance/init/${file}") files;
+      nativeBuildInputs = [
+        pkgs.nix
+        pkgs.shellcheck
+        pkgs.ruff
+        testEnv
+      ];
+      inherit postCheck;
+    };
+
+  first = part "1" (lib.take half testFiles) ''
     shellcheck -x cli/commands/init.sh tests/instance/init/*.sh
     module=cli/python/dotsteward_cli/init.py
     ruff check --no-cache --quiet --line-length 120 --select E,F,W,B,UP,SIM,RUF "$module"
     ruff format --no-cache --quiet --check --line-length 120 "$module"
   '';
-}
+  second = part "2" (lib.drop half testFiles) "";
+in
+pkgs.runCommand "dotsteward-check-init" { } ''
+  echo "both halves of tests/instance/init passed: ${first} ${second}"
+  touch "$out"
+''
