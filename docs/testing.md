@@ -30,6 +30,7 @@ the rules, the harness, where each suite runs and how to add a test.
 bash tests/run.sh                          # every fast suite
 bash tests/run.sh tests/engines/settings   # one directory
 bash tests/run.sh tests --only pins        # files whose path matches *pins*
+bash tests/run.sh tests/cli --jobs 1       # one file after another
 nix flake check -L                         # every suite in the build sandbox
 ```
 
@@ -40,6 +41,14 @@ failed or none was found. Directories named `fixtures` are never searched.
 `tests/ci`, `tests/host`, `tests/channels` and `tests/vm` run only when
 named explicitly. `DS_TEST_TIMEOUT` (seconds, default 900) bounds each
 file.
+
+Up to `--jobs N` files run at once (`DS_TEST_JOBS`, else the number of
+CPUs); `--jobs 1` runs them one after another. However many run at once,
+the results print in file order, each with its own output, and the summary
+and exit status are those of a run file after file. An interrupted run
+stops its test processes, whose own cleanup then runs. Every test file has
+its own temporary root, so files never share state; a check runs as many
+files at once as its build has cores (`nix flake check --cores N`).
 
 ## The harness
 
@@ -112,7 +121,7 @@ real person.
 | `tests/instance` | the template and `dotsteward init` | `checks.init`, `checks.template-*` |
 | `tests/skills` | the skill contract | `checks.skills` |
 | `tests/contribute` | the contribution flow against local bare remotes | `checks.contribute*` |
-| `tests/host` | real Nix on the host: an instance built in a temporary home without activation (`instance-e2e.sh`), and the framework checks, which depend on the tree alone, never on its commit (`test-*.sh`) | `instance-e2e.sh` locally; `test-*.sh` locally and in the host-level tests of `ci.yml` |
+| `tests/host` | real Nix on the host: an instance built in a temporary home without activation (`instance-e2e.sh`), and the framework checks, which depend on the tree alone, never on its commit, and each only on the files of its source set (`test-*.sh`) | `instance-e2e.sh` locally; `test-*.sh` locally and in the host-level tests of `ci.yml` |
 | `tests/ci` | clean-machine install and the macOS smoke test with real activation | GitHub Actions only |
 | `tests/channels` | installing `dotsteward-init` through every channel (`local-install.sh`), and that script over stand-ins of the tools (`test-*.sh`) | the installs in GitHub Actions only (`channels.yml`); `test-*.sh` locally and in the host-level tests of `ci.yml` |
 | `tests/vm` | the virtual machine harness | its self-test locally and in CI (`ci.yml`); VMs only on request |
@@ -122,10 +131,43 @@ real person.
 Each `nix/checks/<name>.nix` is one sandboxed check, discovered by file
 name. Most are a single
 `(dsLib.mkCli pkgs).mkTestCheck { name = "..."; paths = [ "tests/..." ]; }`,
-which runs `tests/run.sh` on those paths in a writable copy of the source
-with the CLI toolchain on `PATH`. Nix tests evaluate against an isolated store
-inside the test root, so they behave the same on a laptop and in the
-sandbox.
+which runs `tests/run.sh` on those paths in a writable copy of the check's
+source set with the CLI toolchain on `PATH`. Nix tests evaluate against an
+isolated store inside the test root, so they behave the same on a laptop and
+in the sandbox.
+
+### Source sets
+
+`nix/check-sources.nix` names, in one place, the files each check reads:
+its suite and the suites whose helpers it uses, the parts of the framework
+its tests run (whole directories wherever possible) and the documents it
+checks. A check copies only that set, so a commit that changes files
+outside it reuses the check's cached result: a README or documentation fix
+rebuilds only the checks that read those files, and a fix of one suite
+only the checks of that suite. Every commit rebuilds the checks whose source
+is the whole tree: `checks.privacy`, `checks.skeleton` and `checks.static`
+scan it, `checks.contribute-round` searches it for the version (only
+`VERSION` and its copies may carry it), and the checks that build instance
+outputs inside the flake (`checks.nix-instance`, `checks.template-*`,
+`checks.darwin-eval` and the component checks with a fixture instance)
+depend on it as an instance depends on its framework input. The files a
+release changes (`VERSION`, `template/flake.nix`, the plugin manifests and
+the marketplace entry) are only in the sets of the checks that read them;
+every other check sees the placeholder version `0.0.0`.
+
+A set that misses an input would turn a change of that input into a stale
+result, so:
+
+- a test that needs a file outside its check's set does not see it in the
+  sandbox, so its check fails until the set holds the file;
+- `checks.check-sources` fails when a file of the tree is in no set and in
+  none of the lists of files that no check reads (`untested`) or that only
+  the flake evaluation reads (`evaluated`), so a new directory cannot escape
+  every check unseen;
+- `tests/host/test-check-sources.sh` proves with real Nix that a commit to
+  files outside a check's set leaves the check's derivation unchanged, one
+  inside its set changes it, and a release changes only the checks whose
+  sets hold the release files.
 
 ## Continuous integration
 
@@ -148,4 +190,5 @@ sandbox.
    and assert on its output, files and the stub call log.
 4. Watch it fail, commit it as `test(<area>): ...`, then make it pass.
 5. When the suite runs in the sandbox, it already belongs to a check; a new
-   suite gets its own `nix/checks/<name>.nix`.
+   suite gets its own `nix/checks/<name>.nix` and an entry in
+   `nix/check-sources.nix` with the files it reads.

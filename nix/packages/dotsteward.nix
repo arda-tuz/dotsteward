@@ -7,12 +7,10 @@
 # (ssh, sudo, platform package managers, catalog CLIs) resolves from the
 # inherited PATH.
 #
-# The package copies cli/, engines/, skills/manifest.json, privacy/, schema/,
-# VERSION, template/ (which `dotsteward init` copies and `dotsteward static`
-# compares instances with) and the component seeds
-# modules/components/*/seed.json (which `dotsteward init` merges) by path
-# (missing ones are skipped), so new command files need no edit here, and
-# bakes the framework rev and narHash into share/dotsteward/source-info for
+# The package copies the files of nix/packages/dotsteward-files.nix (cli/,
+# engines/, skills/manifest.json, privacy/, schema/, VERSION, template/ and
+# the component seeds modules/components/*/seed.json) and bakes the
+# framework rev and narHash into share/dotsteward/source-info for
 # `dotsteward version`. Of modules/ it ships only the seeds, so the
 # packaged modules/components directories are not the catalog:
 # share/dotsteward/catalog.json lists the catalog component names (the
@@ -20,7 +18,6 @@
 # configuration reader takes its default catalog from it.
 {
   version,
-  src,
   rev,
   narHash,
 }:
@@ -60,22 +57,7 @@ let
 
   source = fs.toSource {
     inherit root;
-    fileset = fs.unions (
-      [
-        (root + "/VERSION")
-        (root + "/cli")
-      ]
-      ++ map fs.maybeMissing [
-        (root + "/engines")
-        (root + "/skills/manifest.json")
-        (root + "/privacy")
-        (root + "/schema")
-        (root + "/template")
-      ]
-      ++ lib.optional (builtins.pathExists componentsDir) (
-        fs.fileFilter (file: file.name == "seed.json") componentsDir
-      )
-    );
+    fileset = import ./dotsteward-files.nix { inherit lib; };
   };
 
   componentsDir = root + "/modules/components";
@@ -89,23 +71,30 @@ let
     lib.optional (rev != null) "rev=${rev}\n" ++ lib.optional (narHash != null) "narHash=${narHash}\n"
   );
 
-  # mkTestCheck { name, paths, nativeBuildInputs ? [ ], postCheck ? "",
-  #               keepShebangs ? [ ] }:
-  # a check that runs `tests/run.sh PATHS...` on a writable copy of the
-  # framework source in the build sandbox, with the CLI toolchain on PATH,
-  # then the shell snippet postCheck. Used by nix/checks/*.nix. Executable
-  # files get their shebangs patched to store paths (the sandbox has no
+  # mkTestCheck { name, paths, source ? name, nativeBuildInputs ? [ ],
+  #               postCheck ? "", keepShebangs ? [ ] }:
+  # a check that runs `tests/run.sh PATHS...` on a writable copy of its
+  # source set in the build sandbox, with the CLI toolchain on PATH and as
+  # many test files at once as the build has cores (NIX_BUILD_CORES), then
+  # the shell snippet postCheck. Used by nix/checks/*.nix. The source set is
+  # the entry `source` of nix/check-sources.nix, the files the check reads,
+  # so a change to any other file of the tree leaves the check as it is; a
+  # set without VERSION gets the placeholder version 0.0.0. Executable files
+  # get their shebangs patched to store paths (the sandbox has no
   # /usr/bin/env), except the keepShebangs paths (relative to the source
   # root): fixture data the tests compare byte for byte.
   mkTestCheck =
     {
       name,
       paths,
+      source ? name,
       nativeBuildInputs ? [ ],
       postCheck ? "",
       keepShebangs ? [ ],
     }:
     let
+      checkSources = import ../check-sources.nix { inherit lib; };
+      src = checkSources.sources.${source};
       patchShebangsCommand =
         if keepShebangs == [ ] then
           "patchShebangs --build . >/dev/null"
@@ -120,13 +109,15 @@ let
     pkgs.runCommand "dotsteward-check-${name}"
       {
         nativeBuildInputs = toolchain ++ nativeBuildInputs;
+        passthru = { inherit src; };
       }
       ''
         cp -R ${src} source
         chmod -R u+w source
         cd source
+        ${lib.optionalString (!checkSources.hasVersion source) "printf '0.0.0\\n' >VERSION"}
         ${patchShebangsCommand}
-        bash tests/run.sh ${lib.escapeShellArgs paths}
+        bash tests/run.sh --jobs "$NIX_BUILD_CORES" ${lib.escapeShellArgs paths}
         ${postCheck}
         touch "$out"
       '';

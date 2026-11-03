@@ -7,11 +7,11 @@
 # framework without its commit (nix/outputs.nix), and the fixture commit
 # for a CLI built for it. Then shellcheck over the tests and the tool.
 {
-  self,
   pkgs,
   system,
   lib,
   dsLib,
+  ...
 }:
 let
   cli = dsLib.mkCli pkgs;
@@ -19,13 +19,7 @@ let
     rev = "89abcdef0123456789abcdef0123456789abcdef";
     narHash = "sha256-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=";
   };
-  baked = import ../packages/dotsteward.nix (
-    {
-      inherit (dsLib) version;
-      src = self;
-    }
-    // fixture
-  ) pkgs;
+  baked = import ../packages/dotsteward.nix ({ inherit (dsLib) version; } // fixture) pkgs;
   # builtins.toJSON sorts the keys, as `jq -cS` does.
   versionJson =
     { rev, narHash }:

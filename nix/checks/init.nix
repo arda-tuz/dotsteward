@@ -44,6 +44,7 @@ let
     name: files: postCheck:
     cli.mkTestCheck {
       name = "init-${name}";
+      source = "init";
       paths = map (file: "tests/instance/init/${file}") files;
       nativeBuildInputs = [
         pkgs.nix

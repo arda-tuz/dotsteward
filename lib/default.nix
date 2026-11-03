@@ -62,7 +62,6 @@ lib.fix (
     # mkCli :: pkgs -> derivation. The CLI built with the caller's nixpkgs.
     mkCli = import ../nix/packages/dotsteward.nix {
       inherit (dsLib) version;
-      src = dotsteward;
       rev = dotsteward.rev or dotsteward.dirtyRev or null;
       narHash = dotsteward.narHash or null;
     };

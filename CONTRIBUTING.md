@@ -59,7 +59,10 @@ the CI checks.
   `(dsLib.mkCli pkgs).mkTestCheck { name = "..."; paths = [ "tests/..." ]; }`.
   `self` and `dsLib` have no `rev`, `narHash` or `lastModified`, so a check
   depends on the tree alone; `tests/host/test-check-identity.sh` holds
-  every check to that.
+  every check to that. A check copies only its source set, the files
+  `nix/check-sources.nix` names for it, so a change outside the set never
+  rebuilds it; `checks.check-sources` and
+  `tests/host/test-check-sources.sh` hold the sets to the tree.
 - Tests are files: `tests/**/test-*.sh`, discovered by `tests/run.sh`.
 - Catalog components are directories: `modules/components/<name>/`,
   discovered by `nix/outputs.nix` ([docs/component-contract.md](docs/component-contract.md)).
@@ -76,13 +79,16 @@ the CI checks.
 bash tests/run.sh                        # all fast suites
 bash tests/run.sh tests/skeleton         # one suite
 bash tests/run.sh tests --only dispatch  # filter by path glob
+bash tests/run.sh tests --jobs 1         # one file at a time
 nix flake check -L                       # sandboxed checks
 ```
 
-Each test file runs in a fresh bash process with `set -Eeuo pipefail`, a
-temporary `HOME`, `TMPDIR` and git identity, `TZ=UTC`, and the assertions
-from `tests/lib/assert.sh` (`assert_eq`, `assert_contains`,
-`assert_not_contains`, `assert_exit`, `assert_file_mode`,
+The runner runs as many test files at once as the machine has CPUs
+(`--jobs N` or `DS_TEST_JOBS` set another number) and prints their results
+in file order. Each test file runs in a fresh bash process with
+`set -Eeuo pipefail`, a temporary `HOME`, `TMPDIR` and git identity,
+`TZ=UTC`, and the assertions from `tests/lib/assert.sh` (`assert_eq`,
+`assert_contains`, `assert_not_contains`, `assert_exit`, `assert_file_mode`,
 `assert_symlink_to`, `assert_calls`, `assert_call_count`, `assert_json`).
 Never activate a Home Manager generation on your own machine to test a
 change; real activation runs on CI runners and virtual machines.

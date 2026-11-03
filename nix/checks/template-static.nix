@@ -24,6 +24,8 @@
 }:
 let
   cli = dsLib.mkCli pkgs;
+  # The source set of this check (nix/check-sources.nix), unpatched.
+  src = (import ../check-sources.nix { inherit lib; }).sources.template-static;
 
   testEnv = pkgs.writeTextFile {
     name = "dotsteward-template-static-test-env";
@@ -119,8 +121,9 @@ cli.mkTestCheck {
       printf 'template-static: %s\n' "$*" >&2
       exit 1
     }
-    # template/bootstrap.sh is the generated stage-0, as committed.
-    bash ${self}/tools/gen-stage0.sh --check --root ${self} ||
+    # template/bootstrap.sh is the generated stage-0, as committed (the
+    # unpatched store copy of the source set).
+    bash ${src}/tools/gen-stage0.sh --check --root ${src} ||
       fail "template/bootstrap.sh is not the generated stage-0"
 
     # Every check of the template instance is built; both generations are

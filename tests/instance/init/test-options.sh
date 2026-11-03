@@ -30,7 +30,7 @@ assert_template_comments() {
 
 # config_errors FILE: the configuration reader's messages for FILE.
 config_errors() {
-  PYTHONPATH=$DS_REPO_ROOT/cli/python python3 -m dotsteward_cli.config --file "$1" errors
+  PYTHONPATH=$DS_REPO_ROOT/cli/python PYTHONDONTWRITEBYTECODE=1 python3 -m dotsteward_cli.config --file "$1" errors
 }
 
 # --- every option, both systems ------------------------------------------------------------

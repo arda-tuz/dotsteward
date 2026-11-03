@@ -5,11 +5,11 @@
 # their CLI reports no revision, and a CLI built for a fixture commit
 # reports that one.
 {
-  self,
   pkgs,
   system,
   lib,
   dsLib,
+  ...
 }:
 let
   cli = dsLib.mkCli pkgs;
@@ -17,13 +17,7 @@ let
     rev = "0123456789abcdef0123456789abcdef01234567";
     narHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
   };
-  baked = import ../packages/dotsteward.nix (
-    {
-      inherit (dsLib) version;
-      src = self;
-    }
-    // fixture
-  ) pkgs;
+  baked = import ../packages/dotsteward.nix ({ inherit (dsLib) version; } // fixture) pkgs;
   versionOutput =
     rev: narHash:
     lib.concatStringsSep "\n" [
