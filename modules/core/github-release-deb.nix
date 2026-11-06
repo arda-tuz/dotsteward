@@ -20,11 +20,13 @@
 #   commands      <name> (the application) and <name>-cli (its command line)
 #   E2E           github-release-deb-e2e.sh on every profile: the package is
 #                 at least the floor, ships a desktop entry, its CLI answers
-#                 and APT takes it from the local APT bridge
+#                 and APT takes it from the local APT bridge; a bridge timer
+#                 that is not installed yet is reported, not failed
 #   latest        the github-release adapter over the repository's newest
 #                 release (tags v<version>)
 # Fresh profiles install it in the system-install phase; an adopted machine
-# takes it in with `dotsteward install --profile <profile> --component <name>`.
+# takes it in, and the bridge's timer with it, with
+# `dotsteward install --profile <profile> --component <name>`.
 { lib }:
 {
   name,

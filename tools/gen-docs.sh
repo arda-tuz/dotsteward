@@ -155,6 +155,7 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | `DOTSTEWARD_FRAMEWORK_OVERRIDE` | The framework flake reference of `--framework-override`. |
 | `DOTSTEWARD_E2E_JOBS` | How many parallel E2E hooks `dotsteward e2e` runs at a time, like `--jobs` (default 3). |
 | `DOTSTEWARD_APT_UPDATE_TIMEOUT` | Seconds one `apt-get update` may take before it is stopped and tried once more (default 600). |
+| `DOTSTEWARD_APT_BRIDGE_TIMEOUT` | Seconds the deb transaction lets one refresh of the local APT bridge take before it leaves the rest to the bridge's timer (default 1800). |
 | `DOTSTEWARD_ASSUME_YES` | `1` answers installer and package manager confirmations; meant for CI runners only. |
 | `DOTSTEWARD_CLI` | A CLI that `.dotsteward/cli.sh` runs instead of building the pinned one. |
 

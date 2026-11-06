@@ -125,24 +125,60 @@ or differs. Back them up with `bootstrap.backupPaths` when a machine may
 already have them.
 
 The local APT bridge (`install.deb.githubRelease`) serves vendors that
-publish DEBs as GitHub release assets but run no APT repository. Before the
-transaction it writes, each only when it differs, the bridge script
+publish DEBs as GitHub release assets but run no APT repository. The
+transaction writes, each only when it differs, the bridge script
 `/usr/local/lib/dotsteward/apt-bridge.sh`, one configuration per package in
 `/etc/dotsteward/apt-bridge.d/<package>.conf` (the release download URL and
-the asset of the machine's dpkg architecture), the hook
-`/etc/apt/apt.conf.d/60dotsteward-apt-bridge` and the trusted flat source
+the asset of the machine's dpkg architecture), the system units
+`/etc/systemd/system/dotsteward-apt-bridge.service` and
+`/etc/systemd/system/dotsteward-apt-bridge.timer`, and the trusted flat source
 `/etc/apt/sources.list.d/dotsteward-apt-bridge.sources` over the root-owned
 repository `/var/lib/dotsteward/apt-bridge`; the system `curl` joins the
-transaction. APT runs the script as root before every update
-(`APT::Update::Pre-Invoke`, which also covers the periodic
-`apt-daily.service` update): it reads the release's checksum file, and when
-the matching asset is new it downloads it, checks its SHA-256 and that its
-control fields name the package and the architecture, keeps it as the only
-version of the package and rewrites the index. A failure prints one line,
-keeps the repository and never fails the update. Later releases then arrive
-with plain `apt update && apt upgrade`; unattended upgrades leave them alone
-unless their configuration allows the origin `dotsteward`. `--check-only`
-fails while a bridge file is missing or differs, or `curl` is missing.
+transaction. It enables the timer and runs the script itself before its
+`apt-get update` (bounded by `DOTSTEWARD_APT_BRIDGE_TIMEOUT`, default 1800
+seconds; a run that exceeds it leaves the rest to the timer), after its install
+when `curl` was missing, and the source appears once the repository holds a
+valid index. All files are root-owned, mode 0644, below
+`DOTSTEWARD_SYSTEM_ROOT` where tests set it.
+
+The script runs outside any apt lock, so no `apt-get update` ever waits for a
+vendor download or fails on a lock that a download holds. The timer starts the
+service at most once a day and catches up after downtime (`Persistent=true`);
+the service is one run at low priority after `network-online.target`, limited
+to two hours, and every run holds `/var/lib/dotsteward/apt-bridge/.lock`. A run
+reads each release's checksum file, and when the matching asset is new it
+downloads it into a work directory, checks its SHA-256 and that its control
+fields name the package and the architecture, lands it by rename and commits
+an index that lists it as the only version of the package. The script also
+runs on its own, as root with the configuration directory and the repository as
+its arguments, for a caller that wants the newest releases right before its own
+`apt-get update`. A failure prints one line (`journalctl -t
+dotsteward-apt-bridge` for the service), keeps the repository as it was and
+never fails the run.
+
+APT can read the repository at any moment. It reads `Release` first and takes
+`Packages` by the hash it read (`Acquire-By-Hash`) from `by-hash/SHA256/`, so
+the rename of `Release` alone commits an index and the index of before the
+commit stays reachable. A DEB the index no longer lists stays on disk, marked
+`<deb>.superseded`, until the next version of the package lands, so `apt
+upgrade` with lists from before the commit still finds what they promise. The
+source says `Trusted: yes` because the repository is local, root-owned and
+unsigned, `Signed-By: /dev/null` because no key can sign it (which also ends
+APT's note about a missing `Signed-By`) and `Check-Date: no` because the index
+is dated by the clock of the same machine; a `Release` is always dated after
+the one it replaces, since APT silently ignores an older one.
+
+Later releases arrive with plain `apt update && apt upgrade`, at most a day
+behind; unattended upgrades leave them alone unless their configuration allows
+the origin `dotsteward`. `--check-only` fails while a bridge file is missing or
+differs, the timer is not enabled, the repository has no index, or `curl` is
+missing. The `APT::Update::Pre-Invoke` hook of older frameworks
+(`/etc/apt/apt.conf.d/60dotsteward-apt-bridge`), which downloaded while
+`apt-get update` held its lock, is removed when the bridge is installed or
+repaired, and `--check-only` fails while it is in place. An adopt-mode profile
+does not manage any of this: the machine takes it in with `dotsteward install
+--profile <profile> --component <name>`, and until then its E2E hook reports
+that step and stays green.
 
 A component that installs one such DEB can be written in a few lines with
 `modules/core/github-release-deb.nix`, which the catalog components

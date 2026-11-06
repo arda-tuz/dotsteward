@@ -5,9 +5,12 @@
 # Usage: bash apt-bridge.sh CONF_DIR REPO_DIR
 #
 # The deb method writes this file (deliberately without a shebang, so it
-# never depends on an interpreter path that can disappear) next to an
-# APT::Update::Pre-Invoke hook that runs it as root with /bin/bash before
-# every `apt update`, and a trusted file: source over REPO_DIR. Each
+# never depends on an interpreter path that can disappear) next to a daily
+# system timer and the oneshot service it starts, which runs it as root with
+# /bin/bash, and a trusted file: source over REPO_DIR. It runs outside any apt
+# lock, and it can run on its own, right before an `apt-get update` of the
+# caller. One run at a time holds REPO_DIR/.lock; another one waits for it, at
+# most DOTSTEWARD_APT_BRIDGE_LOCK_WAIT seconds (600), then gives up. Each
 # CONF_DIR/<package>.conf holds key=value lines:
 #
 #   package=NAME          the package the DEB must hold
@@ -19,10 +22,26 @@
 #
 # For each package the checksum file is read; the one asset that matches
 # the template is downloaded when REPO_DIR does not hold it yet, checked
-# against its SHA-256 and its control fields, and kept as the only version
-# of the package. The index (Packages, Release) is rewritten when the set of
-# DEBs changed. Every failure prints one line, keeps the repository as it
-# was and lets the update go on: the script always exits 0.
+# against its SHA-256 and its control fields, and becomes the only version
+# the index (Packages, Release) lists, which is written when the listed DEBs
+# changed. Every failure prints one line (the service sends it to the
+# journal), keeps the repository as it was and goes on: the script always
+# exits 0. With DOTSTEWARD_CHECK_ONLY=1 it changes nothing.
+#
+# APT may read the repository at any moment of a run, or be killed with it:
+#   - A valid index exists before the first download.
+#   - A DEB is downloaded into a work directory inside REPO_DIR and lands by
+#     rename; the index that lists it follows.
+#   - The rename of Release commits an index. APT reads Release first and
+#     then takes Packages by the hash it read (Acquire-By-Hash) from
+#     by-hash/SHA256/, which keeps the index of before the commit: Packages
+#     and Release in two renames alone would fail an update that falls between
+#     them with "Hash Sum mismatch".
+#   - A DEB the index no longer lists stays, marked <deb>.superseded, until
+#     the next version of the package lands: `apt upgrade` still finds what
+#     lists from before the commit promise.
+#   - A Release is dated after the one it replaces whatever the clock says:
+#     APT silently ignores a Release older than the one it holds.
 
 set -uo pipefail
 umask 022
@@ -38,10 +57,12 @@ say() {
   printf 'dotsteward-apt-bridge: %s\n' "$*"
 }
 
+# The lock stays with this script: a download that outlives it must not keep
+# the next run out.
 fetch() {
   curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
     --connect-timeout 20 --retry 2 --retry-delay 5 --speed-limit 10240 --speed-time 60 \
-    --max-time "$3" --output "$2" "$1"
+    --max-time "$3" --output "$2" "$1" 9>&-
 }
 
 sha256_of() {
@@ -61,8 +82,25 @@ conf_value() {
   done <"$1"
 }
 
-# update_package CONF: brings the package of CONF to the newest release;
-# status 1 with the reason in $reason when it cannot.
+# list_only PACKAGE DEB: DEB becomes the listed version of PACKAGE. The one
+# listed until now stays on disk, marked as superseded; one that was already
+# marked goes.
+list_only() {
+  local package=$1 deb=$2 other
+  rm -f -- "$deb.superseded"
+  for other in "$repo/${package}_"*.deb; do
+    [[ -f $other && $other != "$deb" ]] || continue
+    if [[ -e $other.superseded ]]; then
+      rm -f -- "$other" "$other.superseded"
+    else
+      : >"$other.superseded"
+    fi
+  done
+}
+
+# update_package CONF: brings the package of CONF to the newest release and
+# sets $landed when the listed version changed; status 1 with the reason in
+# $reason when it cannot.
 update_package() {
   local conf=$1 package arch url asset checksums prefix suffix
   local sums line sha name version found_sha='' found_name='' matches=0 status
@@ -111,13 +149,21 @@ update_package() {
     return 1
   fi
 
-  # Already held: nothing to do.
+  # Already held: nothing to download. A superseded DEB is listed again: the
+  # vendor went back to that release.
   for current in "$repo/${package}_"*.deb; do
     [[ -f $current ]] || continue
-    [[ $(sha256_of "$current") == "$found_sha" ]] && return 0
+    [[ $(sha256_of "$current") == "$found_sha" ]] || continue
+    if [[ -e $current.superseded ]]; then
+      list_only "$package" "$current"
+      landed=1
+      say "$package: back to $found_name"
+    fi
+    return 0
   done
 
   deb=$work/$found_name
+  say "$package: downloading $found_name"
   status=0
   fetch "$url/$found_name" "$deb" 3600 2>/dev/null || status=$?
   if ((status != 0)); then
@@ -144,57 +190,103 @@ update_package() {
     return 1
   fi
 
-  # The new DEB becomes the only version of the package.
+  # The new DEB becomes the only listed version of the package.
   name=${package}_${version//:/%3a}_${field}.deb
   mv -f -- "$deb" "$repo/$name" || {
     reason="cannot move $found_name into $repo; keeping the current package"
     return 1
   }
-  for current in "$repo/${package}_"*.deb; do
-    [[ -f $current && $current != "$repo/$name" ]] && rm -f -- "$current"
-  done
+  list_only "$package" "$repo/$name"
+  landed=1
   say "$package: $version added"
 }
 
-# write_index: Packages and Release of the flat repository, rewritten only
-# when the DEBs changed (or the index is missing).
+# write_index: commits Packages and Release of the listed DEBs, unless Release
+# already commits that index.
 write_index() {
-  local deb packages=$work/Packages release=$work/Release size
+  local deb packages=$work/Packages release=$work/Release copy=$work/by-hash
+  local sha size stamp previous kept entry
   : >"$packages"
   for deb in "$repo"/*.deb; do
-    [[ -f $deb ]] || continue
+    [[ -f $deb && ! -e $deb.superseded ]] || continue
     {
       dpkg-deb -f "$deb" || return 1
       printf 'Filename: ./%s\nSize: %s\nSHA256: %s\n\n' \
         "$(basename -- "$deb")" "$(stat -c %s -- "$deb")" "$(sha256_of "$deb")"
-    } >>"$packages"
+    } >>"$packages" || return 1
   done
-  if [[ -f $repo/Release && -f $repo/Packages && $(<"$packages") == "$(<"$repo/Packages")" ]]; then
+  sha=$(sha256_of "$packages") || return 1
+  size=$(stat -c %s -- "$packages") || return 1
+  kept=''
+  if [[ -f $repo/Release ]]; then
+    kept=$(sed -n 's/^ \([0-9a-f]\{64\}\) [0-9]* Packages$/\1/p' "$repo/Release")
+  fi
+  if [[ $kept == "$sha" && -f $repo/by-hash/SHA256/$sha && -f $repo/Packages &&
+    $(<"$packages") == "$(<"$repo/Packages")" ]]; then
     return 0
   fi
-  size=$(stat -c %s -- "$packages")
+
+  # Dated after the Release it replaces, whatever the clock says.
+  stamp=$(date -u +%s) || return 1
+  if [[ -f $repo/Release ]]; then
+    previous=$(sed -n 's/^Date: //p' "$repo/Release")
+    if previous=$(date -u -d "$previous" +%s 2>/dev/null) && ((previous >= stamp)); then
+      stamp=$((previous + 1))
+    fi
+  fi
   {
     printf 'Origin: dotsteward\nLabel: dotsteward-apt-bridge\n'
-    printf 'Date: %s\n' "$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S UTC')"
-    printf 'SHA256:\n %s %s Packages\n' "$(sha256_of "$packages")" "$size"
-  } >"$release"
-  mv -f -- "$packages" "$repo/Packages" && mv -f -- "$release" "$repo/Release"
+    printf 'Date: %s\n' "$(LC_ALL=C date -u -d "@$stamp" '+%a, %d %b %Y %H:%M:%S UTC')"
+    printf 'Acquire-By-Hash: yes\n'
+    printf 'SHA256:\n %s %s Packages\n' "$sha" "$size"
+  } >"$release" || return 1
+
+  # by-hash keeps the index Release names until now and gets the new one; the
+  # rename of Release is the commit.
+  mkdir -p -- "$repo/by-hash/SHA256" || return 1
+  for entry in "$repo/by-hash/SHA256"/*; do
+    [[ -f $entry && ${entry##*/} != "$kept" && ${entry##*/} != "$sha" ]] && rm -f -- "$entry"
+  done
+  cp -- "$packages" "$copy" || return 1
+  mv -f -- "$copy" "$repo/by-hash/SHA256/$sha" || return 1
+  mv -f -- "$packages" "$repo/Packages" || return 1
+  mv -f -- "$release" "$repo/Release"
 }
+
+if [[ ${DOTSTEWARD_CHECK_ONLY:-0} == 1 ]]; then
+  say "check only: $repo stays as it is"
+  exit 0
+fi
 
 mkdir -p -- "$repo" || exit 0
 exec 9>"$repo/.lock" || exit 0
-flock -w 600 9 || {
-  say "another run holds $repo/.lock; skipped"
-  exit 0
-}
+if ! flock -n 9; then
+  say "another run holds $repo/.lock; waiting for it"
+  flock -w "${DOTSTEWARD_APT_BRIDGE_LOCK_WAIT:-600}" 9 || {
+    say "another run holds $repo/.lock; skipped"
+    exit 0
+  }
+fi
+# Holding the lock, whatever is still there comes from a run that was killed.
+rm -rf -- "$repo"/.partial.*
 work=$(mktemp -d "$repo/.partial.XXXXXX") || exit 0
-trap 'rm -rf -- "$work"' EXIT
+# systemd and timeout signal this shell and then its whole group: the second
+# SIGTERM must not end the cleanup that the first one started.
+trap 'trap "" HUP INT TERM; rm -rf -- "$work"' EXIT
 
+if [[ ! -f $repo/Release ]]; then
+  write_index || say "cannot write the index of $repo"
+fi
 for conf in "$conf_dir"/*.conf; do
   [[ -f $conf ]] || continue
   reason=''
   label=''
+  landed=0
   update_package "$conf" || say "${label:-$conf}: $reason"
+  if ((landed)); then
+    write_index || say "cannot write the index of $repo"
+  fi
 done
+# Also what a killed run did not commit, and the form an older framework wrote.
 write_index || say "cannot write the index of $repo"
 exit 0

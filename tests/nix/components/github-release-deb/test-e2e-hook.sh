@@ -5,7 +5,9 @@
 # stand-ins of dpkg-query, dpkg, apt-cache and the component's CLI: it
 # passes for a package at or above its floor that ships its desktop entry,
 # whose CLI answers and that APT takes from the local APT bridge, and fails
-# with one message for each of these conditions that does not hold.
+# with one message for each of these conditions that does not hold. It reports
+# a bridge timer that is not enabled and an APT hook of an older framework that
+# is still in place, with the step that fixes them, and stays green for both.
 
 hook=$DS_REPO_ROOT/modules/core/github-release-deb-e2e.sh
 [[ -x $hook ]] || ds_fail "modules/core/github-release-deb-e2e.sh is missing or not executable"
@@ -54,15 +56,56 @@ cat >"$bin/$name-cli" <<STUB
 echo "$name 1.3.0"
 exit "\$(<"$state/cli")"
 STUB
+printf '#!%s\nexit 0\n' "$BASH" >"$bin/systemctl"
 chmod +x "$bin"/*
+
+units=$DS_SYSTEM_ROOT/etc/systemd/system
+timer=$units/dotsteward-apt-bridge.timer
+timer_link=$units/timers.target.wants/dotsteward-apt-bridge.timer
+old_hook=$DOTSTEWARD_APT_DIR/apt.conf.d/60dotsteward-apt-bridge
+mkdir -p "$units/timers.target.wants" "$DOTSTEWARD_APT_DIR/apt.conf.d"
+: >"$timer"
+ln -s "$timer" "$timer_link"
 
 run_hook() {
   env PATH="$bin:$PATH" DOTSTEWARD_LIB="$DS_REPO_ROOT/cli/lib" DOTSTEWARD_INSTANCE="$instance" \
-    DOTSTEWARD_COMPONENT="$name" DOTSTEWARD_CHECK_ONLY=1 "$hook"
+    DOTSTEWARD_COMPONENT="$name" DOTSTEWARD_PROFILE=workstation DOTSTEWARD_CHECK_ONLY=1 "$hook"
 }
 
 assert_exit 0 run_hook
 assert_contains "$DS_STDOUT$DS_STDERR" "$name 1.3.0-1: floor 1.2.0, desktop entry, CLI and the local APT bridge"
+assert_not_contains "$DS_STDOUT$DS_STDERR" "bridge timer"
+assert_not_contains "$DS_STDOUT$DS_STDERR" "bridge hook"
+
+# The timer that is missing, or not enabled, is one line and no failure.
+step="run dotsteward install --profile workstation --component $name"
+rm -f -- "$timer_link"
+assert_exit 0 run_hook
+assert_contains "$DS_STDERR" "$name: bridge timer not installed: $step"
+assert_contains "$DS_STDOUT" "$name 1.3.0-1: floor 1.2.0, desktop entry, CLI and the local APT bridge"
+rm -f -- "$timer"
+assert_exit 0 run_hook
+assert_contains "$DS_STDERR" "$name: bridge timer not installed: $step"
+: >"$timer"
+ln -s "$timer" "$timer_link"
+
+# So is the APT hook of an older framework next to an enabled timer.
+: >"$old_hook"
+assert_exit 0 run_hook
+assert_contains "$DS_STDERR" "$name: obsolete bridge hook $old_hook: $step"
+rm -f -- "$old_hook"
+
+# A machine without systemd can take in no timer: nothing to report.
+rm -f -- "$timer_link" "$timer"
+no_systemctl=$(PATH=$bin:$PATH ds_path_without systemctl)
+run_without_systemd() {
+  env PATH="$no_systemctl" DOTSTEWARD_LIB="$DS_REPO_ROOT/cli/lib" DOTSTEWARD_INSTANCE="$instance" \
+    DOTSTEWARD_COMPONENT="$name" DOTSTEWARD_CHECK_ONLY=1 "$hook"
+}
+assert_exit 0 run_without_systemd
+assert_not_contains "$DS_STDOUT$DS_STDERR" "bridge timer"
+: >"$timer"
+ln -s "$timer" "$timer_link"
 
 printf '1.1.9-1\n' >"$state/version"
 assert_exit 1 run_hook

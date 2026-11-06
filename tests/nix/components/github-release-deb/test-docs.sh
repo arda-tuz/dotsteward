@@ -3,7 +3,7 @@
 # shellcheck disable=SC2016 # needles are literal Markdown text
 # The documentation of the github-release-deb components: each README.md
 # names its package, the deb method, its pin, the local APT bridge with
-# plain `apt upgrade`, `install --component` for an adopted machine, the
+# its timer and plain `apt upgrade`, `install --component` for an adopted machine, the
 # commands and the E2E hook, the darwin limit, the preselection line of
 # `dotsteward init` (Linux only) and its verification record;
 # maintenance.md names the github-release adapter and the asset.
@@ -21,7 +21,7 @@ for name in pdfcraft gridcraft wordcraft deckcraft craft-anything; do
   text=$(<"$readme")
   for needle in \
     '`deb`' "\`desktop_packages.$name\`" "https://github.com/storytold/$name" \
-    "\`$name-<version>-linux-x86_64.deb\`" 'SHA256SUMS.txt' 'local APT bridge' '`apt update && apt upgrade`' \
+    "\`$name-<version>-linux-x86_64.deb\`" 'SHA256SUMS.txt' 'local APT bridge' '`dotsteward-apt-bridge.timer`' '`apt update && apt upgrade`' \
     "dotsteward install --profile <profile> --component $name" "\`$name-cli --version\`" \
     'darwin: not supported' '`github-release`' 'unattended'; do
     assert_contains "$text" "$needle" "$name README.md"

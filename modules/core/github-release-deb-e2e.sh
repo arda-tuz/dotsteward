@@ -12,6 +12,11 @@
 #   - <name>-cli --version answers, run from the user's PATH (user_run);
 #   - APT takes the package from the local APT bridge
 #     (file:/var/lib/dotsteward/apt-bridge in `apt-cache policy`).
+# A machine can pass all of this and still wait for one step: the bridge's
+# timer comes with `dotsteward install --component`, which needs sudo and which
+# no rebuild runs in an adopt-mode profile. Until then the package only misses
+# later releases, so the hook reports the step and stays green. The same goes
+# for the APT hook of an older framework that is still in place.
 # shellcheck source=cli/lib/lib.sh
 source "$DOTSTEWARD_LIB/lib.sh"
 
@@ -45,5 +50,15 @@ user_run "$name-cli" --version </dev/null >/dev/null 2>&1 || die "$name: $name-c
 policy=$(apt-cache policy "$name" 2>/dev/null) || policy=""
 [[ $policy == *'file:/var/lib/dotsteward/apt-bridge'* ]] ||
   die "$name: APT does not take the package from the local APT bridge"
+
+step="run dotsteward install --profile ${DOTSTEWARD_PROFILE:-<profile>} --component $name"
+units=${DOTSTEWARD_SYSTEM_ROOT:-}/etc/systemd/system
+old_hook=${DOTSTEWARD_APT_DIR:-/etc/apt}/apt.conf.d/60dotsteward-apt-bridge
+if command -v systemctl >/dev/null 2>&1 && [[ ! -f $units/dotsteward-apt-bridge.timer ||
+  ! -L $units/timers.target.wants/dotsteward-apt-bridge.timer ]]; then
+  warn "$name: bridge timer not installed: $step"
+elif [[ -e $old_hook ]]; then
+  warn "$name: obsolete bridge hook $old_hook: $step"
+fi
 
 log "$name $installed: floor $minimum, desktop entry, CLI and the local APT bridge"

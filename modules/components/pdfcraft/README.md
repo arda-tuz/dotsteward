@@ -18,7 +18,7 @@ Preselected for new instances on: `x86_64-linux`.
 | Linux (x86_64) | `deb` | none | `desktop_packages.pdfcraft` |
 
 - `deb` (Linux): the DEB package `pdfcraft` (architecture `amd64`), the release asset `pdfcraft-<version>-linux-x86_64.deb`. In a `fresh` profile, `dotsteward install` downloads the pinned asset, verifies its size and SHA-256 and adds it to the single apt transaction when the installed `pdfcraft` is older than `minimum_version`; a newer installed version is kept, never downgraded. In an `adopt` profile it is not installed by the rebuild: run `dotsteward install --profile <profile> --component pdfcraft` once (it needs `sudo`).
-- Updates: the vendor runs no APT repository, so the same transaction sets up the local APT bridge (`/etc/apt/sources.list.d/dotsteward-apt-bridge.sources`, served from `/var/lib/dotsteward/apt-bridge`). Before every `apt update` it reads the newest release of `storytold/pdfcraft`, verifies the asset against the release's `SHA256SUMS.txt` and offers it as the only version of `pdfcraft`, so a plain `apt upgrade` installs it. Nothing upgrades the package unattended.
+- Updates: the vendor runs no APT repository, so the same transaction sets up the local APT bridge (`/etc/apt/sources.list.d/dotsteward-apt-bridge.sources`, served from `/var/lib/dotsteward/apt-bridge`). A daily system timer (`dotsteward-apt-bridge.timer`), outside any apt lock, reads the newest release of `storytold/pdfcraft`, verifies the asset against the release's `SHA256SUMS.txt` and offers it as the only version of `pdfcraft`, so a plain `apt upgrade` installs it, at most a day behind. Nothing upgrades the package unattended. A machine that took in the package with an older framework gets the timer, and loses the old APT hook, with the same `dotsteward install --profile <profile> --component pdfcraft`.
 - darwin: not supported; an instance whose `nix.systems` holds a darwin system cannot enable it.
 
 The pin holds `minimum_version`, `url`, `size` and `sha256`; the URL is the asset of release `v<minimum_version>`, and the pins check (`dotsteward pins check`) requires exactly that form. `dotsteward pins latest` compares the pin with the newest release (`github-release` adapter, see `maintenance.md`). `dotsteward init` starts a new instance from `seed.json`.
@@ -28,7 +28,7 @@ The pin holds `minimum_version`, `url`, `size` and `sha256`; the URL is the asse
 | Check | What it verifies |
 | --- | --- |
 | commands | `pdfcraft` and `pdfcraft-cli` are on `PATH` |
-| E2E `package` (every profile, parallel) | the installed `pdfcraft` is at least `minimum_version`, the package ships its desktop entry, `pdfcraft-cli --version` answers, and `apt-cache policy pdfcraft` shows the local APT bridge |
+| E2E `package` (every profile, parallel) | the installed `pdfcraft` is at least `minimum_version`, the package ships its desktop entry, `pdfcraft-cli --version` answers, and `apt-cache policy pdfcraft` shows the local APT bridge; a bridge timer that is not installed yet is reported with the step that installs it, not failed |
 
 ## Verification (catalog facts)
 

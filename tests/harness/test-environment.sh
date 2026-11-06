@@ -77,3 +77,16 @@ assert_exit 0 env SSH_AUTH_SOCK=/nonexistent SSH_AGENT_PID=1 GH_TOKEN=x \
   GITHUB_TOKEN=x GH_ENTERPRISE_TOKEN=x GITHUB_ENTERPRISE_TOKEN=x GH_HOST=x \
   GH_CONFIG_DIR=/nonexistent bash "$DS_REPO_ROOT/tests/run.sh" "$inner"
 assert_contains "$DS_STDOUT" "PASS"
+
+# ds_path_without hides one command and keeps everything else on PATH.
+mkdir -p "$DS_TEST_ROOT/tools"
+printf '#!%s\nexit 0\n' "$BASH" >"$DS_TEST_ROOT/tools/example-app"
+printf '#!%s\nexit 0\n' "$BASH" >"$DS_TEST_ROOT/tools/example-term"
+chmod 0755 "$DS_TEST_ROOT/tools/example-app" "$DS_TEST_ROOT/tools/example-term"
+hidden=$(PATH=$DS_TEST_ROOT/tools:$PATH ds_path_without example-app)
+if PATH=$hidden command -v example-app >/dev/null; then
+  ds_fail "ds_path_without left the command on PATH"
+fi
+[[ $(PATH=$hidden command -v example-term) == "$DS_TEST_ROOT/path-without-example-app/0/example-term" ]] ||
+  ds_fail "ds_path_without lost the other commands of the directory"
+assert_eq "$PATH" "$(ds_path_without no-such-command)" "a PATH without the command stays as it is"

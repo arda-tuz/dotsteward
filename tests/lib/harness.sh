@@ -65,6 +65,7 @@
 # Downloads: ds_curl_serve, ds_curl_fail, ds_curl_delay, ds_curl_redirect;
 # a real loopback server: ds_httpfix_start, ds_httpfix_stop.
 # Fixtures: ds_fixture, ds_fixture_skill_tree, ds_fixture_backup_layouts.
+# A machine without a command: ds_path_without.
 # Git remotes: tests/lib/bare-remote.sh and tests/lib/fakessh.sh (sourced by
 # the tests that need them).
 
@@ -392,6 +393,28 @@ _ds_stub_known() {
       printf '%s: unknown stub: %s\n' "${FUNCNAME[1]}" "$1" >&2
       return 1
     }
+}
+
+# ds_path_without NAME: prints a PATH on which NAME is not found: the
+# directories of PATH in order, a directory that holds NAME replaced by one
+# with links to everything else it holds.
+ds_path_without() {
+  (($# == 1)) || _ds_usage "ds_path_without NAME" || return
+  local dir copy result='' index=0
+  local -a dirs=()
+  IFS=: read -ra dirs <<<"$PATH"
+  for dir in "${dirs[@]}"; do
+    if [[ -e $dir/$1 ]]; then
+      copy=$DS_TEST_ROOT/path-without-$1/$index
+      index=$((index + 1))
+      mkdir -p "$copy"
+      ln -s "$dir"/* "$copy"/
+      rm -f -- "$copy/$1"
+      dir=$copy
+    fi
+    result+=${result:+:}$dir
+  done
+  printf '%s\n' "$result"
 }
 
 # ds_use_stubs --all | NAME...
