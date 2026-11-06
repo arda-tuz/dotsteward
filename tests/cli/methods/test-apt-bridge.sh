@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # The local APT bridge (cli/libexec/apt-bridge.sh) that a deb component
-# with install.githubRelease puts on the machine. A daily timer runs it as
+# with install.githubRelease puts on the machine. A system timer runs it as
 # root, outside any apt lock, with the configuration directory and the
 # repository directory; the deb transaction and any other caller run it the
 # same way on its own. For each <package>.conf it reads the checksum

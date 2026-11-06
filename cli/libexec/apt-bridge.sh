@@ -5,8 +5,8 @@
 # Usage: bash apt-bridge.sh CONF_DIR REPO_DIR
 #
 # The deb method writes this file (deliberately without a shebang, so it
-# never depends on an interpreter path that can disappear) next to a daily
-# system timer and the oneshot service it starts, which runs it as root with
+# never depends on an interpreter path that can disappear) next to a system
+# timer and the oneshot service it starts, which runs it as root with
 # /bin/bash, and a trusted file: source over REPO_DIR. It runs outside any apt
 # lock, and it can run on its own, right before an `apt-get update` of the
 # caller. One run at a time holds REPO_DIR/.lock; another one waits for it, at

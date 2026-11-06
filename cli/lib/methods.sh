@@ -903,7 +903,7 @@ _methods_apt_source_check() {
 # newest release is served from a local flat repository, so the package
 # updates with plain `apt upgrade`. The bridge script
 # (cli/libexec/apt-bridge.sh) refreshes the repository outside any apt lock: a
-# system timer runs it at most once a day through a oneshot service, and the
+# system timer runs it four times a day through a oneshot service, and the
 # deb transaction runs it itself before its `apt-get update`. The bridge
 # consists of the script, one configuration per package, the service, the
 # timer and a trusted file: source; all files are root-owned and mode 0644.
@@ -940,7 +940,9 @@ _methods_bridge_source_script() {
 
 # One run at low priority once the network is up, bounded: a run the limit
 # ends keeps what it landed, and the next one goes on from there. What the
-# script prints, a failed download above all, goes to the journal.
+# script prints, a failed download above all, goes to the journal. Like apt's
+# own daily service it first waits for the network: network-online.target stays
+# reached from the boot on, also while a laptop that just woke up has none.
 _methods_bridge_service_text() {
   printf '%s\n' "# Written by dotsteward: refreshes the local APT bridge outside any apt lock." \
     "[Unit]" \
@@ -951,6 +953,7 @@ _methods_bridge_service_text() {
     "" \
     "[Service]" \
     "Type=oneshot" \
+    "ExecStartPre=-/usr/lib/apt/apt-helper wait-online" \
     "ExecStart=/bin/bash $_bridge_script $_bridge_conf_dir $_bridge_repo" \
     "TimeoutStartSec=2h" \
     "Nice=19" \
@@ -960,14 +963,18 @@ _methods_bridge_service_text() {
     "SyslogIdentifier=dotsteward-apt-bridge"
 }
 
-# At most once a day, and after downtime as soon as the machine is back.
+# Four runs a day, and after downtime as soon as the machine is back. A run
+# that finds no network or no vendor cannot tell the rest of the day, so the
+# next one is the retry; with no new release a run is one small request per
+# package. A calendar and not OnUnitActiveSec, whose clock stops while the
+# machine sleeps.
 _methods_bridge_timer_text() {
-  printf '%s\n' "# Written by dotsteward: refreshes the local APT bridge at most once a day." \
+  printf '%s\n' "# Written by dotsteward: refreshes the local APT bridge four times a day." \
     "[Unit]" \
-    "Description=Daily refresh of the dotsteward local APT bridge" \
+    "Description=Regular refresh of the dotsteward local APT bridge" \
     "" \
     "[Timer]" \
-    "OnCalendar=daily" \
+    "OnCalendar=*-*-* 00/6:00:00" \
     "RandomizedDelaySec=1h" \
     "Persistent=true" \
     "" \

@@ -143,9 +143,12 @@ valid index. All files are root-owned, mode 0644, below
 
 The script runs outside any apt lock, so no `apt-get update` ever waits for a
 vendor download or fails on a lock that a download holds. The timer starts the
-service at most once a day and catches up after downtime (`Persistent=true`);
-the service is one run at low priority after `network-online.target`, limited
-to two hours, and every run holds `/var/lib/dotsteward/apt-bridge/.lock`. A run
+service four times a day and catches up after downtime (`Persistent=true`), so
+a run that finds no network, as on a laptop that just woke up, costs hours and
+not a day; with no new release a run is one small request per package. The
+service is one run at low priority that first waits for the network the way
+apt's own daily service does (`apt-helper wait-online`), limited to two hours,
+and every run holds `/var/lib/dotsteward/apt-bridge/.lock`. A run
 reads each release's checksum file, and when the matching asset is new it
 downloads it into a work directory, checks its SHA-256 and that its control
 fields name the package and the architecture, lands it by rename and commits
@@ -168,8 +171,8 @@ APT's note about a missing `Signed-By`) and `Check-Date: no` because the index
 is dated by the clock of the same machine; a `Release` is always dated after
 the one it replaces, since APT silently ignores an older one.
 
-Later releases arrive with plain `apt update && apt upgrade`, at most a day
-behind; unattended upgrades leave them alone unless their configuration allows
+Later releases arrive with plain `apt update && apt upgrade`, once a run of the
+timer has reached the vendor; unattended upgrades leave them alone unless their configuration allows
 the origin `dotsteward`. `--check-only` fails while a bridge file is missing or
 differs, the timer is not enabled, the repository has no index, or `curl` is
 missing. The `APT::Update::Pre-Invoke` hook of older frameworks
