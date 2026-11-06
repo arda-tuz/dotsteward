@@ -64,14 +64,13 @@ import stat
 import subprocess
 import sys
 import tempfile
-import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import FrameType
 from typing import Any, NoReturn, TypeVar
 
-from dotsteward_cli import config
+from dotsteward_cli import config, tomlfile
 
 PREFIX = "[dotsteward]"
 EXIT_REFUSAL = 1
@@ -893,7 +892,7 @@ def compose_config(text: str, options: Options, identity: Identity, env: Mapping
         if trailer:
             parts += ["\n", trailer]
     composed = "".join(parts)
-    raw = tomllib.loads(composed)
+    raw = tomlfile.loads(composed)
     problems = config.errors(raw)
     if problems:
         raise UsageError(f"the options make an invalid {CONFIG_FILE}: {'; '.join(problems)}")

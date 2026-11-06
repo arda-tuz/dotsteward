@@ -83,7 +83,6 @@ SCHEMA_VERSION = 1
 CONFIG_FILE = "workstation.toml"
 DEFAULT_BUFFER_DIR = "local-maintained-files"
 DEFAULT_PUBLISHED_REF = "origin/main"
-DEFAULT_STATE_ROOT = "${XDG_STATE_HOME:-~/.local/state}/dotsteward"
 STATE_SUBDIR = "local-maintained-files"
 ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 SOURCE_PATTERN = re.compile(r"^(?!\.{1,2}$)[A-Za-z0-9._-]+$")
@@ -310,12 +309,8 @@ def resolve_context(args: argparse.Namespace) -> Context:
         else:
             buffer_dir = DEFAULT_BUFFER_DIR
             published_ref = DEFAULT_PUBLISHED_REF
-            if args.state_dir is None:
-                state_root = os.environ.get("DOTSTEWARD_STATE_ROOT") or None
-                if state_root is None and args.state_dir_default is None:
-                    state_root = ds_config.expand_path(DEFAULT_STATE_ROOT, os.environ)
-                if state_root is not None and not os.path.isabs(state_root):
-                    raise LmfError(f"the state root is not an absolute path: {state_root!r}")
+            if args.state_dir is None and (args.state_dir_default is None or os.environ.get("DOTSTEWARD_STATE_ROOT")):
+                state_root = ds_config.state_root()
     except ds_config.DotstewardError as error:
         raise LmfError(*_config_messages(error)) from error
     if args.state_dir is not None:

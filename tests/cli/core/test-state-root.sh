@@ -8,6 +8,8 @@
 source "$DS_REPO_ROOT/tests/cli/core/helpers.sh"
 
 export DOTSTEWARD_LIB=$DS_REPO_ROOT/cli/lib
+# The harness points the state root into the test root.
+unset DOTSTEWARD_STATE_ROOT
 
 # bash_root: the state root as a hook sees it, without an instance.
 bash_root() {

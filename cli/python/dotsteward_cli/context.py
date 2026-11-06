@@ -45,12 +45,11 @@ import os
 import platform
 import subprocess
 import sys
-import tomllib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, NoReturn
 
-from dotsteward_cli import config
+from dotsteward_cli import config, tomlfile
 
 SCHEMA_VERSION = 1
 
@@ -256,8 +255,8 @@ def read_buffer(instance: config.Instance) -> tuple[list[str], list[str]]:
     if text is None:
         return [], []
     try:
-        document = tomllib.loads(text)
-    except tomllib.TOMLDecodeError as error:
+        document = tomlfile.loads(text)
+    except tomlfile.TomlError as error:
         raise ContextError(f"{relative}: invalid TOML: {error}") from error
     targets = document.get("targets", {})
     if not isinstance(targets, dict):

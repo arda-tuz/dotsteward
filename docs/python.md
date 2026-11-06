@@ -50,6 +50,24 @@ with the framework.
 
 Every part of the framework uses these, so each answer exists once.
 
+### State root
+
+`dotsteward_cli.config.state_root(instance=None, env=None)` is the one machine
+state root: `DOTSTEWARD_STATE_ROOT`, then `DOTFILES_STATE_ROOT` with
+`compat.legacy_env`, then `state.root` of the instance, then the default of
+`schema/workstation.schema.json`. `discovered_state_root(env=None)` looks the
+instance up first. From bash: `ds_internal state-root [--instance DIR]`, and
+`state_root` of `lib.sh` after `config_load`, which a test holds to the same
+answer.
+
+### TOML
+
+`dotsteward_cli.tomlfile` is the one TOML reader: `load(path)` and `loads(text)`
+give a plain document and raise `TomlError` for text that is not TOML. The two
+modules that edit TOML files and keep their comments (`init` and the settings
+engine) use tomlkit. `privacy/policy.toml` is read in bash, because the pre-push
+hook runs before any Python is available.
+
 ### Versions
 
 `dotsteward_cli.versions` is the one version order: `compare(left, right)`,

@@ -46,12 +46,13 @@ import os
 import platform
 import re
 import sys
-import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from typing import Any, NoReturn
+
+from dotsteward_cli import tomlfile
 
 FRAMEWORK_ROOT = Path(__file__).resolve().parents[3]
 
@@ -508,15 +509,10 @@ def _check_toml_values(value: Any, path: list[str | int]) -> None:
 def read_toml(path: str | os.PathLike[str]) -> dict[str, Any]:
     """Parses a workstation.toml (raises DotstewardError or ConfigError)."""
     try:
-        with open(path, "rb") as handle:
-            data = handle.read()
+        raw = tomlfile.load(path)
     except OSError as error:
         raise DotstewardError(f"cannot read {path}: {error.strerror}") from error
-    try:
-        raw = tomllib.loads(data.decode("utf-8"))
-    except UnicodeDecodeError as error:
-        raise ConfigError(f"invalid TOML: not valid UTF-8 ({error.reason} at byte {error.start})") from error
-    except tomllib.TOMLDecodeError as error:
+    except tomlfile.TomlError as error:
         raise ConfigError(f"invalid TOML: {error}") from error
     _check_toml_values(raw, [])
     return raw
@@ -858,6 +854,47 @@ def _override(env: Mapping[str, str], names: _Override, legacy_env: bool) -> tup
     return None
 
 
+_STATE_ROOT_OVERRIDE = _Override("DOTSTEWARD_STATE_ROOT", "DOTFILES_STATE_ROOT")
+
+
+def _state_root(instance: Instance | None, env: Mapping[str, str]) -> tuple[str, str | None]:
+    """(the state root, the problem of its environment override, if any)."""
+    config = None if instance is None else instance.config
+    override = _override(env, _STATE_ROOT_OVERRIDE, config is not None and config["compat"]["legacy_env"] is True)
+    if override is not None:
+        name, value = override
+        return value, None if os.path.isabs(value) else f"{name}: expected an absolute path, got {to_json(value)}"
+    if config is None:
+        default = schema()["properties"]["state"]["properties"]["root"]["default"]
+        config = {"state": {"root": default}}
+    return _user_path(config, "state", "root", env), None
+
+
+def state_root(instance: Instance | None = None, env: Mapping[str, str] | None = None) -> str:
+    """The one machine state root: DOTSTEWARD_STATE_ROOT, then DOTFILES_STATE_ROOT
+    with compat.legacy_env, then state.root of INSTANCE, then the default of the
+    schema. Raises DotstewardError when an override is not an absolute path and
+    ConfigError when a state.root expands to a relative one."""
+    value, problem = _state_root(instance, os.environ if env is None else env)
+    if problem is not None:
+        raise DotstewardError(problem)
+    return value
+
+
+def discovered_state_root(env: Mapping[str, str] | None = None) -> str:
+    """The state root of the instance that discovery finds (its configuration
+    must be valid), else the state root without an instance. An instance named
+    in the environment that does not exist stays an error."""
+    env = os.environ if env is None else env
+    try:
+        root = discover_instance(env=env)
+    except DotstewardError:
+        if _env_get(env, "DOTSTEWARD_INSTANCE") is not None:
+            raise
+        return state_root(None, env)
+    return state_root(load_instance(str(root), env=env), env)
+
+
 # The Nix parallelism of the gate when workstation.toml sets none: the total
 # memory minus a reserve for the evaluation and the system is the budget;
 # one job per full share of it, at most one per CPU; the cores of a job are
@@ -941,13 +978,9 @@ def runtime_values(instance: Instance, env: Mapping[str, str] | None = None) -> 
     gate_schema = document["properties"]["gate"]["properties"]
     problems: list[str] = []
 
-    state_root = _override(env, _Override("DOTSTEWARD_STATE_ROOT", "DOTFILES_STATE_ROOT"), legacy_env)
-    if state_root is None:
-        state_root_value = _user_path(config, "state", "root", env)
-    else:
-        name, state_root_value = state_root
-        if not os.path.isabs(state_root_value):
-            problems.append(f"{name}: expected an absolute path, got {to_json(state_root_value)}")
+    state_root_value, state_root_problem = _state_root(instance, env)
+    if state_root_problem is not None:
+        problems.append(state_root_problem)
 
     gate: dict[str, Any] = {}
     for key, names in (

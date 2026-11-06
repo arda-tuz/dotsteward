@@ -6,6 +6,7 @@ command of the CLI and may change with the framework. Exit status: 0 done, 1
 refused or failed, 2 usage error, unless a subcommand says otherwise.
 
     version-compare LEFT RIGHT   prints -1, 0 or 1 (dotsteward_cli.versions)
+    state-root [--instance DIR]  prints the state root (config.state_root)
 """
 
 from __future__ import annotations
@@ -22,6 +23,16 @@ def _version_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _state_root(args: argparse.Namespace) -> int:
+    from dotsteward_cli import config
+
+    if args.instance is None:
+        print(config.discovered_state_root())
+    else:
+        print(config.state_root(config.load_instance(args.instance)))
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dotsteward_cli.internal", description=__doc__, allow_abbrev=False)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -30,12 +41,22 @@ def _parser() -> argparse.ArgumentParser:
     compare.add_argument("left")
     compare.add_argument("right")
     compare.set_defaults(run=_version_compare)
+
+    root = commands.add_parser("state-root", allow_abbrev=False)
+    root.add_argument("--instance")
+    root.set_defaults(run=_state_root)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    from dotsteward_cli import config
+
     args = _parser().parse_args(argv)
-    code: int = args.run(args)
+    try:
+        code: int = args.run(args)
+    except config.DotstewardError as error:
+        print("\n".join(error.lines()), file=sys.stderr)
+        return 1
     return code
 
 
