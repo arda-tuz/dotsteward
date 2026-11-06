@@ -294,12 +294,14 @@ startup files print before it) and returns its exit status, so a hook
 asks for every answer in one `SCRIPT`, for example
 `user_login_zsh 'whence -p example-app; example-app --version'`.
 
-`DOTSTEWARD_LIB` is the library of the CLI that runs the hook. A contribute
-trial runs the candidate's own CLI, so a hook and its library are of one
-release there. Only a trial that a release before that rule starts checks the
-generation of a candidate framework with the CLI of the pinned release, which
-is why the claude-code E2E hook still defines `user_login_zsh` when
-`declare -F` does not find it.
+`DOTSTEWARD_LIB` is the library of the CLI that runs the hook, which can be
+older than the hook: an older `dotsteward rebuild --switch` runs the hooks of
+the generation it activates with its own library, for example after a pull on
+a machine that was not upgraded yet. A catalog hook that uses a helper its own
+release adds to `lib.sh` therefore defines it when `declare -F` does not find
+it, as the claude-code E2E hook does for `user_login_zsh`. A contribute trial
+is no longer one of these cases: it runs the candidate's own CLI (a trial that
+an older release starts still is one).
 
 ## Machine safety
 

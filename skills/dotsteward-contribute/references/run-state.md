@@ -59,7 +59,7 @@ The remote steps add `profile` (the profile of the trial, recovery and upgrade),
 ## Exit status of the steps
 
 - `0`: the step is done; the output names the next command.
-- `1`: refused or red. Nothing was published by this step; read the message, fix the cause, and run the named command. A step refused because another one is running names it: wait for that one (`dotsteward contribute status --wait`), never start it twice.
+- `1`: refused or red. Read the message, fix the cause, and run the named command; a step that reached the network may have landed something, and says so when it runs again. A step refused because another one is running names it: wait for that one (`dotsteward contribute status --wait`), never start it twice.
 - `3` (`status --wait --timeout`): the step still runs; wait again.
 - `4` (`check`): privacy hard stop. The findings are redacted to a rule and a location. Remove them from every commit of the branch and run `check` again; nothing may be published before it passes.
 - `5` (`publish`): back to `check`. The upstream `main` moved or the merged tree differed; the branch was rebased (or must be rebased by hand after a conflict) and the tested commit is gone.
@@ -76,7 +76,7 @@ A full trial switches the live generation to the candidate framework (`trial_swi
   dotsteward contribute abort
   ```
 
-  Abort runs the recovery first and finishes the run only when it succeeded. A failed recovery (`recovery` is `failed`) says why: uncommitted instance changes block the rebuild (finish them with the upgrade or remove them), or the rebuild or `e2e` failed. Fix the cause and run `dotsteward contribute abort` again; it resumes at the part that failed.
+  Abort runs the recovery first and finishes the run only when it succeeded. After a commit of the upgrade, the recovery rebuilds the instance with that commit; abort then warns and names the commands that return to what `origin` has. A failed recovery (`recovery` is `failed`) says why: uncommitted instance changes block the rebuild (finish them with the upgrade or remove them), or the rebuild or `e2e` failed. Fix the cause and run `dotsteward contribute abort` again; it resumes at the part that failed.
 - Abort never undoes what is already public: a merged commit stays on `main`, and an open pull request stays open (close it when it is no longer wanted).
 
 The report states whether a recovery ran, so the user knows which framework the machine uses.

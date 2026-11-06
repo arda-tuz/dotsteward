@@ -243,7 +243,7 @@ next step report and clear it, and its outcome counts as unknown.
 | Exit status | Meaning |
 | --- | --- |
 | 0 | the step is done; the output names the next command |
-| 1 | refused or red; nothing was published by this step |
+| 1 | refused or red; read the message, and run the named command once the cause is fixed |
 | 3 | still running (`status --wait --timeout`) |
 | 4 | privacy hard stop (`check`) |
 | 5 | back to `check` (`publish`): the branch was rebased or the merged tree differed |

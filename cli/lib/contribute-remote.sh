@@ -233,7 +233,7 @@ _contribute_recover() {
     log "recovery: switching the live generation back to the instance's pinned framework"
     if ! _contribute_instance rebuild --profile "$profile" --switch; then
       _contribute_set '.recovery = "failed"'
-      printf '[dotsteward] ERROR: recovery failed: rebuild --switch without the override failed, so the live generation may still use the trial framework; fix the problem, then run: dotsteward contribute abort\n' >&2
+      printf '[dotsteward] ERROR: recovery failed: rebuild --switch without the override failed, so the live generation may still use the trial framework; fix the problem, then run: dotsteward contribute abort (when the dotsteward on PATH is the broken one: %s/.dotsteward/cli.sh contribute abort, the CLI pinned by flake.lock)\n' "$DS_INSTANCE_ROOT" >&2
       return 1
     fi
     _contribute_set '.trial_switched = false'
@@ -443,7 +443,9 @@ _contribute_remote_facts() {
 
 _contribute_require_gh() {
   command -v gh >/dev/null 2>&1 || die "gh is not installed; publishing needs it"
-  gh auth status >/dev/null 2>&1 || die "gh is not logged in; run 'gh auth login' first"
+  # gh cannot tell a dead network from a missing login here.
+  gh auth status >/dev/null 2>&1 ||
+    die "gh is not logged in, or GitHub cannot be reached; check the network, then run 'gh auth login'"
 }
 
 # _contribute_remote_ref_once REMOTE REF: the commit REF has on REMOTE (peeled
@@ -1796,8 +1798,11 @@ contribute_cmd_upgrade() {
       [[ $head == "$base" ]] ||
         die "the instance moved since the upgrade started (HEAD ${head:0:12}, started at ${base:0:12}); restore it or start the upgrade over"
     fi
-    _contribute_instance update prepare --official-sources-only --scope maintain ||
+    if ! _contribute_instance update prepare --official-sources-only --scope maintain; then
+      [[ -z $(_contribute_get carry) ]] ||
+        _contribute_red "upgrade: update prepare failed; the instance is at origin/$DS_INSTANCE_BRANCH, and the carried commits stay saved as $(_contribute_carry_ref)"
       _contribute_red "upgrade: update prepare failed; the instance is unchanged"
+    fi
     if [[ -z $base ]]; then
       base=$(git -C "$DS_INSTANCE_ROOT" rev-parse HEAD)
       # shellcheck disable=SC2016 # jq variables
@@ -1884,6 +1889,21 @@ contribute_cmd_upgrade() {
 
 # --- abort --------------------------------------------------------------------------
 
+# _contribute_warn_unpublished_upgrade: after an abort: an upgrade commit that
+# stays in the instance while origin is still at the upgrade's base means that
+# the machine and the recovery use the upgraded instance, not what origin has;
+# the warning names the way back. A remote that cannot be read says nothing.
+_contribute_warn_unpublished_upgrade() {
+  local commit base remote
+  commit=$(_contribute_get upgrade_commit)
+  base=$(_contribute_get instance_base)
+  [[ -n $commit && -n $base && $commit != "$base" ]] || return 0
+  [[ $(git -C "$DS_INSTANCE_ROOT" rev-parse HEAD 2>/dev/null) != "$base" ]] || return 0
+  remote=$(git_net 60 -C "$DS_INSTANCE_ROOT" ls-remote origin "refs/heads/$DS_INSTANCE_BRANCH" </dev/null) || return 0
+  [[ ${remote%%[[:space:]]*} == "$base" ]] || return 0
+  warn "the instance keeps its upgrade commit ${commit:0:12}, which origin lacks; to return to the published instance run: git -C $DS_INSTANCE_ROOT reset --hard ${base:0:12}, then: dotsteward rebuild --profile $(_contribute_profile) --switch"
+}
+
 contribute_cmd_abort() {
   local id=""
   while (($#)); do
@@ -1914,6 +1934,7 @@ contribute_cmd_abort() {
   _contribute_recover || die "abort stopped: the recovery did not finish; run abort again once the problem is fixed"
   _contribute_set '.step = "done" | .outcome = "aborted"'
   log "aborted run $id at step $CT_STEP"
+  _contribute_warn_unpublished_upgrade
   local pr merged
   pr=$(_contribute_get pr)
   merged=$(_contribute_get merged_sha)
