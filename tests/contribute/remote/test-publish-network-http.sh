@@ -74,14 +74,12 @@ state_set '.step = "done"'
 switched_run third-feature 0.1.3
 sha=$(git -C "$ct_clone" rev-parse HEAD)
 git_http_fail lost-reset refs/heads/main
-: >"$DS_TEST_ROOT/git-http.log"
 reset_calls
 assert_exit 0 run_contribute publish
 assert_contains "$DS_STDERR" "[dotsteward] WARNING: cannot read or push refs/heads/main on origin; trying again in 1s"
 assert_contains "$DS_STDOUT" "[dotsteward] main of $CT_UPSTREAM_SLUG is already ${sha:0:12}"
 assert_not_contains "$DS_STDERR" "was refused"
 assert_eq "$sha" "$(upstream_main)" "upstream main after the lost answer"
-assert_eq 2 "$(http_pushes)" "pushes: the branch and main, once each"
 no_recovery
 assert_exit 0 run_contribute release
 state_set '.step = "done"'

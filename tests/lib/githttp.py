@@ -14,7 +14,9 @@ names REF removes the file and fails:
   post-reset  the connection is reset before receive-pack runs
   lost-502    receive-pack runs (the push landed), then HTTP 502
   lost-reset  receive-pack runs (the push landed), then the connection is reset
-or "FAILURE ." for the next reference advertisement, of any repository:
+A reset takes the POST that curl makes again by itself on a fresh connection
+too, so that git sees it. Or "FAILURE ." for the next reference advertisement,
+of any repository:
   get-503     HTTP 503
   get-403     HTTP 403
 """
@@ -114,9 +116,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             failure = None
         if failure:
             os.unlink(PLAN_FILE)
+        if failure in ("post-reset", "lost-reset"):
+            with open(PLAN_FILE, "w", encoding="ascii") as plan:
+                plan.write(f"again-reset {ref}\n")
         if failure == "post-502":
             self.reply(502)
-        elif failure == "post-reset":
+        elif failure in ("post-reset", "again-reset"):
             self.reset()
         else:
             answer = self.backend(body)

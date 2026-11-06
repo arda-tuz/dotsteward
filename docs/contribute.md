@@ -148,8 +148,10 @@ after a pause that starts at `DOTSTEWARD_CONTRIBUTE_POLL_SECONDS` and
 doubles, until the failures lasted `DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS`. A
 push reads its ref again first, because a push whose answer was lost has
 landed. A push the remote refuses (a protected branch, a `main` that moved),
-a finding of the pre-push hook and a refused login are verdicts and are never
-made again.
+a finding of the pre-push hook, a refused login and a failure on this machine
+(no `ssh`) are verdicts, and so are words the CLI does not know as those of a
+failed connection: they get one attempt. Over HTTP the failure of a POST ends
+`git push` with the status of a rejected push, so the words decide.
 
 The full check (`nix flake check`) runs on every push to `main`, nightly
 and for pull requests from forks, not on the pull requests and branches of
