@@ -150,8 +150,11 @@ hook runs before any Python is available.
 
 `dotsteward_cli.versions` is the one version order: `compare(left, right)`,
 `at_least(version, minimum)`, `newest(versions)` and `sort_key` for `sorted`
-and `max`. A release sorts after its pre-releases (`1.2.3-rc1`, `1.2.3~rc1`)
-and before its package revisions (`1.2.3-1`); the module documents the rest.
+and `max`. It is the algorithm of dpkg behind a small pre-pass, so it gives
+dpkg's answer on package versions and is a real order. A release sorts after
+its pre-releases (`1.2.3-rc1`, `1.2.3~rc1`, `1.2.3rc1`, `1.2.3.dev0`) and before
+its package revisions (`1.2.3-1`) and what follows `+` (`1.2-1+esm1`); the module
+documents the rest.
 From bash: `ds_internal version-compare LEFT RIGHT` prints -1, 0 or 1, and
 hooks keep `methods_version_compare` and `methods_version_at_least`. Two things
 stay outside on purpose: `dpkg --compare-versions` for installed packages,

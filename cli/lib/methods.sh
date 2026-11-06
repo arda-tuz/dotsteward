@@ -33,8 +33,8 @@
 #   methods_lock_get PATH COMPONENT  the value at the dotted lock PATH (JSON);
 #                                    dies like pinAt when it is missing
 #   methods_version_compare A B      prints -1, 0 or 1: the one version order
-#                                    (a pre-release before its release, a
-#                                    package revision after it)
+#                                    (dpkg's, with a pre-release before its
+#                                    release and a package revision after it)
 #   methods_version_at_least V MIN
 #   methods_extract_version TEXT [REGEX]
 #                                    the first group of REGEX (default: the
@@ -242,11 +242,16 @@ _methods_pin_download() {
 }
 
 # methods_version_compare A B: the one version order of the framework
-# (cli/python/dotsteward_cli/versions.py). A failure stops the caller: an
-# order nobody computed must never pass for a version check.
+# (cli/python/dotsteward_cli/versions.py). Two equal strings, the usual check,
+# start no process. A failure stops the caller: an order nobody computed must
+# never pass for a version check.
 methods_version_compare() {
   (($# == 2)) || die "usage: methods_version_compare A B"
-  ds_internal version-compare "$1" "$2" || die "cannot compare the versions $1 and $2"
+  if [[ $1 == "$2" ]]; then
+    printf '0\n'
+    return 0
+  fi
+  ds_internal version-compare -- "$1" "$2" || die "cannot compare the versions $1 and $2"
 }
 
 methods_version_at_least() {
@@ -472,12 +477,15 @@ methods_official_binary_companions() {
 # _methods_official_binary_ok VERSION: VERSION meets the pin by policy.
 _methods_official_binary_ok() {
   [[ -n $1 ]] || return 1
+  # What a binary prints seldom carries the build metadata of the pin.
+  local wanted=$_ob_version
+  [[ $1 == *+* ]] || wanted=${wanted%%+*}
   if [[ $_ob_policy == exact ]]; then
     local order
-    order=$(methods_version_compare "$1" "$_ob_version") || exit 1
+    order=$(methods_version_compare "$1" "$wanted") || exit 1
     [[ $order == 0 ]]
   else
-    methods_version_at_least "$1" "$_ob_version"
+    methods_version_at_least "$1" "$wanted"
   fi
 }
 
