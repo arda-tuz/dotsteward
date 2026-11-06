@@ -5,8 +5,12 @@
 # transaction then puts the local APT bridge on the machine: the bridge
 # script, one configuration per package (the release download URL and the
 # asset of the machine's architecture), a oneshot service that runs the script
-# and a daily timer that starts it, and a trusted flat file: source over the
+# and a timer that starts it, and a trusted flat file: source over the
 # bridge repository; the system curl the script needs joins the transaction.
+# A run can find no network, as on a laptop that just woke up, and nothing
+# tells that from a day without a new release: the service waits for the
+# network as apt's own daily service does, and the timer has four runs a day, so
+# a failed one does not cost the day.
 # Nothing downloads inside `apt-get update`: the transaction runs the script
 # first (after its install when curl was missing), an APT hook of an older
 # framework goes, and each file is written only when it differs, so a second
@@ -70,6 +74,7 @@ ConditionPathExists=$script
 
 [Service]
 Type=oneshot
+ExecStartPre=-/usr/lib/apt/apt-helper wait-online
 ExecStart=/bin/bash $script $DS_SYSTEM_ROOT/etc/dotsteward/apt-bridge.d $repo
 TimeoutStartSec=2h
 Nice=19
@@ -77,12 +82,12 @@ IOSchedulingClass=idle
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=dotsteward-apt-bridge"
-expected_timer="# Written by dotsteward: refreshes the local APT bridge at most once a day.
+expected_timer="# Written by dotsteward: refreshes the local APT bridge four times a day.
 [Unit]
-Description=Daily refresh of the dotsteward local APT bridge
+Description=Regular refresh of the dotsteward local APT bridge
 
 [Timer]
-OnCalendar=daily
+OnCalendar=*-*-* 00/6:00:00
 RandomizedDelaySec=1h
 Persistent=true
 
