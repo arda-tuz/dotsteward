@@ -903,7 +903,7 @@ contribute_cmd_check() {
       <<<"$CT_CONTEXT" >/dev/null; then
       log "instance-leak scan: $promote is exempt for this run (contribute start --promote); every other instance term still stops it"
     else
-      warn "instance-leak scan: the promoted component $promote is no longer a private component of the instance, so nothing is exempt"
+      warn "instance-leak scan: $promote is no longer a private component of the instance; the name stays exempt for this run (contribute start --promote), every other instance term still stops it"
     fi
   fi
 
