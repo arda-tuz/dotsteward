@@ -45,7 +45,7 @@ prepared_anyway
 # DOTSTEWARD_CACHE_URL replaces the configured cache.
 down=https://down-cache.example.invalid
 ds_curl_fail "$down/nix-cache-info" 6 "Could not resolve host"
-assert_exit 0 env DOTSTEWARD_CACHE_URL=$down "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" update prepare \
+assert_exit 0 env DOTSTEWARD_CACHE_URL=$down "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" txn prepare \
   --official-sources-only
 assert_eq "Nix binary cache unreachable: $down" "$(warnings)"
 prepared_anyway
@@ -69,7 +69,7 @@ prepared_anyway
 # Every warning at once, in order, with the GitHub CLI missing.
 ds_curl_serve "$UP_CACHE_URL/nix-cache-info" "$DS_TEST_ROOT/empty" 404
 nogh=$(path_without gh)
-assert_exit 0 env PATH="$nogh" "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" update prepare \
+assert_exit 0 env PATH="$nogh" "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" txn prepare \
   --official-sources-only --scope maintain
 assert_eq "Nix binary cache unreachable: $UP_CACHE_URL
 free space for /nix/store is below 1000000000 GiB
@@ -79,7 +79,7 @@ prepared_anyway
 
 # curl itself is required.
 nocurl=$(path_without curl)
-assert_exit 1 env PATH="$nocurl" "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" update prepare \
+assert_exit 1 env PATH="$nocurl" "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" txn prepare \
   --official-sources-only
 assert_eq "[dotsteward] ERROR: required command not found: curl" "$DS_STDERR"
 [[ ! -e $up_candidate ]] || ds_fail "prepare wrote candidate.json without curl"

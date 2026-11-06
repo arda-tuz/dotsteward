@@ -17,7 +17,7 @@
 #   up_candidate, up_validation, up_log
 #                  the files inside it
 #
-#   run_update ARG...         dotsteward --instance <instance> update ARG...
+#   run_update ARG...         dotsteward --instance <instance> txn ARG...
 #                             through the dispatcher under test, standard
 #                             input empty
 #   serve_cache               the curl stub answers the binary cache probe
@@ -102,7 +102,7 @@ ds_fakessh_map "$UP_REMOTE" "$up_bare"
 # --- helpers ------------------------------------------------------------------
 
 run_update() {
-  "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" update "$@" </dev/null
+  "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" txn "$@" </dev/null
 }
 
 serve_cache() {

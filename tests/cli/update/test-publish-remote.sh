@@ -38,7 +38,7 @@ git -C "$up_bare" update-ref refs/heads/main "$base"
 # --- the fetch fails ------------------------------------------------------------
 
 reset_logs
-assert_exit 1 env DS_FAKESSH_FAIL=1 "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" update publish --scope maintain
+assert_exit 1 env DS_FAKESSH_FAIL=1 "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" txn publish --scope maintain
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: could not fetch origin/main within 60 s"
 assert_eq "$base" "$(remote_oid)"
 

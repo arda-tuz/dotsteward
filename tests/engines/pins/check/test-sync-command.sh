@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# `dotsteward sync`: evaluates the instance's dotstewardMirrors (stub nix),
+# `dotsteward generate`: evaluates the instance's dotstewardMirrors (stub nix),
 # writes every .dotsteward/ mirror byte for byte (only when changed, never
 # outside .dotsteward/), removes stale manifest and stage-0 mirrors, refuses
 # untracked files before any Nix call, then runs `pins sync` with the same
@@ -31,7 +31,7 @@ serve_mirrors "$DS_TEST_ROOT/manifest.json"
 printf '{}\n' >"$inst/.dotsteward/manifest.aarch64-darwin.json"
 printf '#!/usr/bin/env bash\n' >"$inst/.dotsteward/cli.sh"
 git -C "$inst" add -A
-assert_exit 0 dotsteward --instance "$inst" sync
+assert_exit 0 dotsteward --instance "$inst" generate
 assert_eq "[dotsteward] Removed stale mirror .dotsteward/manifest.aarch64-darwin.json
 [dotsteward] Wrote mirror .dotsteward/stage0.linux.env
 [pins] Mirrors already in sync; no changes" "$DS_STDOUT"
@@ -48,7 +48,7 @@ assert_call_count 0 nix '*lib.pinnedVersions'
 git -C "$inst" add -A
 : >"$DS_CALL_LOG"
 before=$(stat -c %Y "$mirror")
-assert_exit 0 dotsteward --instance "$inst" sync
+assert_exit 0 dotsteward --instance "$inst" generate
 assert_eq "[dotsteward] Mirrors are current
 [pins] Mirrors already in sync; no changes" "$DS_STDOUT"
 assert_eq "$before" "$(stat -c %Y "$mirror")"
@@ -68,7 +68,7 @@ with open(sys.argv[2], "w", encoding="utf-8") as handle:
 PY
 serve_mirrors "$DS_TEST_ROOT/manifest.new.json"
 : >"$DS_CALL_LOG"
-assert_exit 0 dotsteward --instance "$inst" sync --nix
+assert_exit 0 dotsteward --instance "$inst" generate --nix
 assert_eq "[dotsteward] Wrote mirror .dotsteward/manifest.x86_64-linux.json
 [pins] Synced files: versions.lock.json" "$DS_STDOUT"
 cmp -s "$mirror" "$DS_TEST_ROOT/manifest.new.json" || ds_fail "manifest mirror not written byte for byte"
@@ -77,7 +77,7 @@ assert_call_count 1 nix '*dotstewardMirrors'
 assert_call_count 1 nix '*lib.pinnedVersions'
 
 # --skill passes through to pins sync.
-assert_exit 1 dotsteward --instance "$inst" sync --skill example-missing
+assert_exit 1 dotsteward --instance "$inst" generate --skill example-missing
 assert_contains "$DS_STDERR" "[pins] ERROR: skill not in lock: example-missing"
 
 # A mirror that sync writes for the first time is untracked when pins sync
@@ -86,7 +86,7 @@ pins_fresh
 serve_mirrors "$DS_TEST_ROOT/manifest.json"
 : >"$DS_CALL_LOG"
 [[ ! -e $inst/.dotsteward/stage0.linux.env ]] || ds_fail "fixture already has a stage-0 mirror"
-assert_exit 0 dotsteward --instance "$inst" sync --nix
+assert_exit 0 dotsteward --instance "$inst" generate --nix
 assert_eq "[dotsteward] Wrote mirror .dotsteward/stage0.linux.env
 [pins] Mirrors already in sync; no changes" "$DS_STDOUT"
 assert_eq "" "$DS_STDERR"
@@ -96,7 +96,7 @@ assert_call_count 1 nix '*lib.pinnedVersions'
 # Running sync again (the natural retry) with the mirror still untracked is
 # idempotent: sync does not refuse the mirror it wrote itself.
 : >"$DS_CALL_LOG"
-assert_exit 0 dotsteward --instance "$inst" sync --nix
+assert_exit 0 dotsteward --instance "$inst" generate --nix
 assert_eq "[dotsteward] Mirrors are current
 [pins] Mirrors already in sync; no changes" "$DS_STDOUT"
 assert_eq "" "$DS_STDERR"
@@ -107,7 +107,7 @@ assert_call_count 1 nix '*lib.pinnedVersions'
 # sync and by pins --nix, before any Nix call.
 printf 'new\n' >"$inst/example-new.txt"
 : >"$DS_CALL_LOG"
-assert_exit 1 dotsteward --instance "$inst" sync --nix
+assert_exit 1 dotsteward --instance "$inst" generate --nix
 assert_eq "[dotsteward] ERROR: Nix does not see untracked files; run 'git add -A' first: example-new.txt" "$DS_STDERR"
 assert_call_count 0 nix
 assert_exit 1 pins sync --nix
@@ -120,7 +120,7 @@ pins_fresh
 serve_mirrors "$DS_TEST_ROOT/manifest.json"
 : >"$DS_CALL_LOG"
 printf 'new\n' >"$inst/example-new.txt"
-assert_exit 1 dotsteward --instance "$inst" sync
+assert_exit 1 dotsteward --instance "$inst" generate
 assert_eq "[dotsteward] ERROR: Nix does not see untracked files; run 'git add -A' first: example-new.txt" "$DS_STDERR"
 assert_call_count 0 nix
 rm "$inst/example-new.txt"
@@ -128,7 +128,7 @@ rm "$inst/example-new.txt"
 # Evaluation failures and unsafe names stop before any write.
 ds_stub_clear_routes nix
 ds_stub_route nix "$mirrors_glob" --exit 1 --stderr "error: example evaluation failure"
-assert_exit 1 dotsteward --instance "$inst" sync
+assert_exit 1 dotsteward --instance "$inst" generate
 assert_contains "$DS_STDERR" "error: example evaluation failure"
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: cannot evaluate the mirrors of the instance"
 
@@ -137,12 +137,12 @@ for name in '../escape.json' 'manifest.x86_64-linux.json.bak' 'notes.txt'; do
   jq -n --arg name "$name" '{($name): "x\n"}' >"$DS_TEST_ROOT/bad.json"
   ds_stub_clear_routes nix
   ds_stub_route nix "$mirrors_glob" --stdout-file "$DS_TEST_ROOT/bad.json"
-  assert_exit 1 dotsteward --instance "$inst" sync
+  assert_exit 1 dotsteward --instance "$inst" generate
   assert_eq "[dotsteward] ERROR: unexpected mirror name from dotstewardMirrors: $name" "$DS_STDERR"
   [[ ! -e $inst/escape.json && ! -e $DS_TEST_ROOT/escape.json ]] || ds_fail "wrote outside .dotsteward"
 done
 
-assert_exit 0 dotsteward sync --help
+assert_exit 0 dotsteward generate --help
 assert_contains "$DS_STDOUT" "--nix"
 assert_contains "$DS_STDOUT" "--skill"
-assert_exit 1 dotsteward --instance "$inst" sync --example-flag
+assert_exit 1 dotsteward --instance "$inst" generate --example-flag

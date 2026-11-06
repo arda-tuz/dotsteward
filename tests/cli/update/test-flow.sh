@@ -35,7 +35,7 @@ git -C "$canon" remote set-url origin "$UP_REMOTE"
 
 # --- update scope: a pin refresh ------------------------------------------------------
 
-assert_exit 0 ds update prepare --official-sources-only
+assert_exit 0 ds txn prepare --official-sources-only
 base=$(jq -r .base_oid "$up_candidate")
 assert_eq "$(head_oid)" "$base"
 
@@ -44,20 +44,20 @@ assert_exit 0 ds gate
 assert_json "$up_validation" '.result == "passed" and .scope == "update" and .base_oid == "'"$base"'"'
 tree=$(jq -r .tree_oid "$up_validation")
 
-assert_exit 0 ds update status --json
+assert_exit 0 ds txn status --json
 assert_eq "$base" "$(jq -r .candidate.base_oid <<<"$DS_STDOUT")"
 assert_eq "$tree" "$(jq -r .validation.tree_oid <<<"$DS_STDOUT")"
 assert_eq "preflight static pins flake-check cli-probes" \
   "$(jq -r '.validation.step_seconds | keys_unsorted | join(" ")' <<<"$DS_STDOUT")"
 
 # Publishing before the commit is refused: the tree is not committed.
-assert_exit 1 ds update publish
-assert_eq "[dotsteward] ERROR: update publish needs a committed, clean candidate" "$DS_STDERR"
+assert_exit 1 ds txn publish
+assert_eq "[dotsteward] ERROR: txn publish needs a committed, clean candidate" "$DS_STDERR"
 
 commit_all "$UP_UPDATE_SUBJECT"
 assert_eq "$tree" "$(head_tree)"
 reset_logs
-assert_exit 0 ds update publish
+assert_exit 0 ds txn publish
 assert_eq "$(head_oid)" "$(remote_oid)"
 assert_eq "$(head_oid)" "$(git -C "$canon" rev-parse HEAD)"
 assert_contains "$DS_STDOUT" "[dotsteward] published $(head_oid) to main without force"
@@ -66,12 +66,12 @@ assert_call_count 0 nix
 
 # --- maintain scope: a framework override is never published -----------------------------
 
-assert_exit 0 ds update prepare --official-sources-only --scope maintain
+assert_exit 0 ds txn prepare --official-sources-only --scope maintain
 base=$(head_oid)
 printf 'maintained\n' >>"$up_inst/docs/guide.md"
 assert_exit 0 ds gate --scope maintain --framework-override "path:$DS_TEST_ROOT/candidate-framework"
 commit_all "docs: maintain the guide"
-assert_exit 1 ds update publish --scope maintain
+assert_exit 1 ds txn publish --scope maintain
 assert_eq "[dotsteward] ERROR: the validation used the framework override path:$DS_TEST_ROOT/candidate-framework; run 'dotsteward gate --scope maintain' without an override first" \
   "$DS_STDERR"
 assert_eq "$base" "$(remote_oid)"
@@ -81,12 +81,12 @@ assert_eq "$base" "$(remote_oid)"
 assert_exit 0 ds gate --scope maintain
 assert_not_contains "$DS_STDOUT" '"memo":true'
 assert_json "$up_validation" '.framework_override == null and .tree_oid == "'"$(head_tree)"'"'
-assert_exit 0 ds update publish --scope maintain
+assert_exit 0 ds txn publish --scope maintain
 assert_eq "$(head_oid)" "$(remote_oid)"
 assert_eq "$(head_oid)" "$(git -C "$canon" rev-parse HEAD)"
 
 # Run again: already published.
-assert_exit 0 ds update publish --scope maintain
+assert_exit 0 ds txn publish --scope maintain
 assert_eq "[dotsteward] main is already $(head_oid) on the remote; nothing to push" "$DS_STDOUT"
 # The canonical checkout already holds the published commit: nothing to say.
 assert_eq "" "$DS_STDERR"
@@ -97,20 +97,20 @@ assert_eq "" "$DS_STDERR"
 # therefore asks for --force, which runs the gate again and records the
 # publish scope.
 
-assert_exit 0 ds update prepare --official-sources-only --scope maintain
+assert_exit 0 ds txn prepare --official-sources-only --scope maintain
 base=$(head_oid)
 printf '{\n  "schema_version": "1.0",\n  "maintained": true\n}\n' >"$up_inst/versions.lock.json"
 assert_exit 0 ds gate --scope update
 commit_all "chore: maintain the versions lock"
 scope_hint="[dotsteward] ERROR: the validation was made for the update scope, not maintain; run 'dotsteward gate --scope maintain --force' first"
-assert_exit 1 ds update publish --scope maintain
+assert_exit 1 ds txn publish --scope maintain
 assert_eq "$scope_hint" "$DS_STDERR"
 
 # The plain gate is a memo hit and leaves the update scope in the record.
 assert_exit 0 ds gate --scope maintain
 assert_contains "$DS_STDOUT" '"memo":true'
 assert_json "$up_validation" '.scope == "update"'
-assert_exit 1 ds update publish --scope maintain
+assert_exit 1 ds txn publish --scope maintain
 assert_eq "$scope_hint" "$DS_STDERR"
 assert_eq "$base" "$(remote_oid)"
 
@@ -118,6 +118,6 @@ assert_eq "$base" "$(remote_oid)"
 assert_exit 0 ds gate --scope maintain --force
 assert_not_contains "$DS_STDOUT" '"memo":true'
 assert_json "$up_validation" '.result == "passed" and .scope == "maintain" and .tree_oid == "'"$(head_tree)"'"'
-assert_exit 0 ds update publish --scope maintain
+assert_exit 0 ds txn publish --scope maintain
 assert_eq "$(head_oid)" "$(remote_oid)"
 assert_eq "$(head_oid)" "$(git -C "$canon" rev-parse HEAD)"

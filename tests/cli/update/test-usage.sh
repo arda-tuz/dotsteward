@@ -24,15 +24,15 @@ assert_untouched() {
 
 for help in -h --help; do
   assert_exit 0 run_update "$help"
-  assert_contains "$DS_STDOUT" "Usage: dotsteward [--instance DIR] update prepare --official-sources-only"
-  assert_contains "$DS_STDOUT" "dotsteward [--instance DIR] update publish"
-  assert_contains "$DS_STDOUT" "dotsteward [--instance DIR] update status"
+  assert_contains "$DS_STDOUT" "Usage: dotsteward [--instance DIR] txn prepare --official-sources-only"
+  assert_contains "$DS_STDOUT" "dotsteward [--instance DIR] txn publish"
+  assert_contains "$DS_STDOUT" "dotsteward [--instance DIR] txn status"
   assert_contains "$DS_STDOUT" "--expected-base OID"
   assert_eq "" "$DS_STDERR"
   assert_untouched
   for subcommand in prepare publish status; do
     assert_exit 0 run_update "$subcommand" "$help"
-    assert_contains "$DS_STDOUT" "Usage: dotsteward [--instance DIR] update prepare"
+    assert_contains "$DS_STDOUT" "Usage: dotsteward [--instance DIR] txn prepare"
     assert_eq "" "$DS_STDERR"
     assert_untouched
   done
@@ -46,19 +46,19 @@ assert_untouched
 
 # The dispatcher lists the command with its summary.
 assert_exit 0 "$DS_REPO_ROOT/cli/dotsteward" --help
-assert_contains "$DS_STDOUT" "update"
-assert_contains "$(grep -E '^  update ' <<<"$DS_STDOUT")" "maintenance transaction"
+assert_contains "$DS_STDOUT" "txn"
+assert_contains "$(grep -E '^  txn ' <<<"$DS_STDOUT")" "maintenance transaction"
 
 # --- subcommand ---------------------------------------------------------------
 
 assert_exit 1 run_update
-assert_eq "[dotsteward] ERROR: update requires a subcommand: prepare, publish or status" "$DS_STDERR"
+assert_eq "[dotsteward] ERROR: txn requires a subcommand: prepare, publish or status" "$DS_STDERR"
 assert_eq "" "$DS_STDOUT"
 assert_untouched
 
 for bad in validate bogus --scope ""; do
   assert_exit 1 run_update "$bad"
-  assert_eq "[dotsteward] ERROR: unknown update subcommand: $bad (expected prepare, publish or status)" "$DS_STDERR"
+  assert_eq "[dotsteward] ERROR: unknown txn subcommand: $bad (expected prepare, publish or status)" "$DS_STDERR"
   assert_untouched
 done
 
@@ -113,10 +113,10 @@ assert_untouched
 
 # prepare requires the affirmation that only official sources are used.
 assert_exit 1 run_update prepare
-assert_eq "[dotsteward] ERROR: update prepare requires --official-sources-only" "$DS_STDERR"
+assert_eq "[dotsteward] ERROR: txn prepare requires --official-sources-only" "$DS_STDERR"
 assert_untouched
 assert_exit 1 run_update prepare --scope maintain
-assert_eq "[dotsteward] ERROR: update prepare requires --official-sources-only" "$DS_STDERR"
+assert_eq "[dotsteward] ERROR: txn prepare requires --official-sources-only" "$DS_STDERR"
 assert_untouched
 
 # --- instance and repository guards -------------------------------------------
@@ -127,7 +127,7 @@ mkdir -p "$DS_TEST_ROOT/nowhere"
 for subcommand in "prepare --official-sources-only" publish status; do
   # shellcheck disable=SC2016,SC2086 # expanded by the inner shell; the subcommand splits on purpose
   assert_exit 1 bash -c 'cd "$1" && shift && "$@" </dev/null' bash "$DS_TEST_ROOT/nowhere" \
-    "$DS_REPO_ROOT/cli/dotsteward" update $subcommand
+    "$DS_REPO_ROOT/cli/dotsteward" txn $subcommand
   assert_contains "$DS_STDERR" "[dotsteward] ERROR:"
   assert_contains "$DS_STDERR" "workstation.toml"
   assert_untouched
@@ -147,10 +147,10 @@ guard() {
 copy=$DS_TEST_ROOT/copy
 cp -R "$up_inst" "$copy"
 rm -rf -- "$copy/.git"
-assert_exit 1 "$DS_REPO_ROOT/cli/dotsteward" --instance "$copy" update prepare --official-sources-only
+assert_exit 1 "$DS_REPO_ROOT/cli/dotsteward" --instance "$copy" txn prepare --official-sources-only
 assert_eq "[dotsteward] ERROR: maintenance runs only in a git clone: $copy" "$DS_STDERR"
 assert_untouched
-assert_exit 1 "$DS_REPO_ROOT/cli/dotsteward" --instance "$copy" update publish
+assert_exit 1 "$DS_REPO_ROOT/cli/dotsteward" --instance "$copy" txn publish
 assert_eq "[dotsteward] ERROR: maintenance runs only in a git clone: $copy" "$DS_STDERR"
 assert_untouched
 

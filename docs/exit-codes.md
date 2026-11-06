@@ -24,6 +24,7 @@ status as a failure.
 | `doctor` | 0, 1 | 1: at least one health check failed |
 | `e2e` | 0, 1 | |
 | `gate` | 0, 1 | 0 also when the memo answers for an unchanged tree |
+| `generate` | 0, 1, 2 | 1 and 2 as for `pins`, from the `pins sync` it runs |
 | `init` | 0, 1, 2 | 2: usage error; on 1 and 2 the directory is left as it was |
 | `install` | 0, 1, 3 | 3: the preflight took the adaptive route and stopped the phase |
 | `login-shell` | 0, 1, child | |
@@ -35,8 +36,9 @@ status as a failure.
 | `scan` | 0, 1 | 1: at least one finding (all are collected first) or an error |
 | `settings` | 0, 1, 2, 3 | 1: `verify` found a difference; 2: error; 3: a decision is pending (a conflict or a local deletion; resolve it with `settings resolve`) |
 | `static` | 0, 1, script | otherwise the status of the failing instance script of `gate.static` |
-| `sync` | 0, 1, 2 | 1 and 2 as for `pins`, from the `pins sync` it runs |
-| `update` | 0, 1 | `update publish` exits 0 when the commit is already published |
+| `sync` | as `generate` | the old name of `generate`: a warning on standard error, then the same arguments, output and status |
+| `txn` | 0, 1 | `txn publish` exits 0 when the commit is already published |
+| `update` | as `txn` | the old name of `txn`: a warning on standard error, then the same arguments, output and status |
 | `version` | 0, 1 | 1: usage error |
 
 `--json` never changes the exit code: a command that prints a failed result

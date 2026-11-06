@@ -16,6 +16,6 @@ cli.mkTestCheck {
   paths = [ "tests/engines/pins/check" ];
   nativeBuildInputs = [ pkgs.shellcheck ];
   postCheck = ''
-    shellcheck -x cli/commands/pins.sh cli/commands/sync.sh tests/engines/pins/check/*.sh
+    shellcheck -x cli/commands/pins.sh cli/commands/generate.sh cli/commands/sync.sh tests/engines/pins/check/*.sh
   '';
 }

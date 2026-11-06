@@ -83,7 +83,7 @@ git -C "$up_inst" checkout -q -b feature
 printf 'dirty\n' >"$up_inst/new.txt"
 git -C "$up_inst" remote remove origin
 other=$DS_TEST_ROOT/other-state
-assert_exit 0 env DOTSTEWARD_STATE_ROOT="$other" "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" update status --json
+assert_exit 0 env DOTSTEWARD_STATE_ROOT="$other" "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" txn status --json
 assert_eq "$other/update" "$(jq -r .paths.state_dir <<<"$DS_STDOUT")"
 assert_eq "$other/update/candidate.json" "$(jq -r .paths.candidate <<<"$DS_STDOUT")"
 [[ ! -e $other ]] || ds_fail "status created the state root"
@@ -91,5 +91,5 @@ assert_eq "$other/update/candidate.json" "$(jq -r .paths.candidate <<<"$DS_STDOU
 # The state root of the configuration.
 set_toml state root '"~/custom-state"'
 assert_exit 0 bash -c 'unset DOTSTEWARD_STATE_ROOT; exec "$@"' bash "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" \
-  update status --json
+  txn status --json
 assert_eq "$HOME/custom-state/update" "$(jq -r .paths.state_dir <<<"$DS_STDOUT")"

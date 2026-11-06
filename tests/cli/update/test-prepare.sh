@@ -63,7 +63,7 @@ refused_dirty() {
   reset_logs
   printf 'keep\n' >"$up_candidate"
   assert_exit 1 run_update prepare --official-sources-only "$@"
-  assert_eq "[dotsteward] ERROR: update prepare requires a clean clone" "$DS_STDERR"
+  assert_eq "[dotsteward] ERROR: txn prepare requires a clean clone" "$DS_STDERR"
   assert_eq "" "$DS_STDOUT"
   assert_no_network
   assert_eq "keep" "$(<"$up_candidate")" "a refused prepare replaced candidate.json"
@@ -132,7 +132,7 @@ published=$moved
 
 # The fetch fails (no connection): refused without writing the record.
 printf 'keep\n' >"$up_candidate"
-assert_exit 1 env DS_FAKESSH_FAIL=1 "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" update prepare \
+assert_exit 1 env DS_FAKESSH_FAIL=1 "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" txn prepare \
   --official-sources-only
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: could not fetch origin/main within 60 s"
 assert_eq "keep" "$(<"$up_candidate")"

@@ -1,4 +1,4 @@
-# Update (tests/cli/update): `dotsteward update prepare|publish|status`
+# Update (tests/cli/update): `dotsteward txn prepare|publish|status`
 # against a synthetic instance whose remote is a local bare repository
 # reached through the fake SSH transport, with the nix, curl and gh stubs
 # (arguments and repository guards, prepare records and warnings, the
@@ -18,6 +18,6 @@ cli.mkTestCheck {
   paths = [ "tests/cli/update" ];
   nativeBuildInputs = [ pkgs.shellcheck ];
   postCheck = ''
-    shellcheck -x cli/commands/update.sh tests/cli/update/*.sh
+    shellcheck -x cli/commands/txn.sh cli/commands/update.sh tests/cli/update/*.sh
   '';
 }
