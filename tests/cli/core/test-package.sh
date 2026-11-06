@@ -136,3 +136,33 @@ for name in (Checker, Declaration, EngineError, Instance, core, PlanContext, dec
     assert name is not None
 assert callable(make) and KINDS and Context
 PY
+
+# --- what the primitives load ------------------------------------------------------------
+
+# A hook of an agent runs on every tool call, and takes a lock and writes a file when
+# something has changed. These modules cost it little: what they need only when used
+# loads then. No clock here, on purpose, what is loaded is what can be held to.
+python_at cli/python - <<'PY' || ds_fail "a primitive loads what it does not need yet"
+import sys
+
+before = set(sys.modules)
+from dotsteward_cli import atomic, locks, procs  # noqa: F401
+
+loaded = set(sys.modules) - before
+heavy = {
+    "dataclasses",
+    "datetime",
+    "dotsteward_cli.config",
+    "inspect",
+    "json",
+    "pathlib",
+    "re",
+    "secrets",
+    "signal",
+    "subprocess",
+    "tempfile",
+    "tomllib",
+    "typing",
+}
+assert not loaded & heavy, sorted(loaded & heavy)
+PY

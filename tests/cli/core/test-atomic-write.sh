@@ -79,13 +79,13 @@ from dotsteward_cli import atomic
 
 path = sys.argv[1]
 events = []
-real_fsync, real_replace = os.fsync, os.replace
+real_sync, real_replace = atomic._sync, os.replace
 
 
-def fsync(fd):
+def sync(fd):
     kind = "directory" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file"
     events.append(f"fsync {kind}")
-    real_fsync(fd)
+    real_sync(fd)
 
 
 def replace(source, destination):
@@ -96,10 +96,86 @@ def replace(source, destination):
     real_replace(source, destination)
 
 
-os.fsync, os.replace = fsync, replace
+atomic._sync, os.replace = sync, replace
 atomic.atomic_write(path, b"data")
 assert events == ["fsync file", "rename", "fsync directory"], events
 assert open(path, "rb").read() == b"data"
+PY
+
+# A new path lasts when every new name is in a directory that has been synced, the
+# file first, then the directories from the inside out.
+core_python - "$work" <<'PY' || ds_fail "the syncs of new directories"
+import os
+import sys
+
+from dotsteward_cli import atomic
+
+work = sys.argv[1]
+synced = []
+real_sync = atomic._sync
+
+
+def sync(fd):
+    synced.append(os.fstat(fd).st_ino)
+    real_sync(fd)
+
+
+def inodes(*paths):
+    return [os.stat(path).st_ino for path in paths]
+
+
+atomic._sync = sync
+atomic.atomic_write(f"{work}/new-a/new-b/file", b"data", parents=True)
+assert synced == inodes(f"{work}/new-a/new-b/file", f"{work}/new-a/new-b", f"{work}/new-a", work), synced
+synced.clear()
+atomic.atomic_write(f"{work}/new-a/new-b/other", b"data", parents=True)
+assert synced == inodes(f"{work}/new-a/new-b/other", f"{work}/new-a/new-b"), "no new directory, one sync of it"
+synced.clear()
+atomic.make_private_dirs(f"{work}/new-c/new-d")
+assert synced == inodes(f"{work}/new-c", work), synced
+synced.clear()
+atomic.make_private_dirs(f"{work}/new-c/new-d")
+assert synced == [], "a directory that exists needs no sync"
+PY
+
+# What a sync is: fsync, and on macOS F_FULLFSYNC as well as it can, since fsync stops
+# at the cache of the drive there. Run here with the system call of macOS faked, so that
+# a machine without it runs the branch too.
+core_python - "$work/ordered" <<'PY' || ds_fail "what a sync is"
+import errno
+import fcntl
+import os
+import sys
+
+from dotsteward_cli import atomic
+
+descriptor = os.open(sys.argv[1], os.O_RDONLY)
+fsyncs, commands = [], []
+
+
+def fake_fcntl(fd, command, *rest):
+    commands.append(command)
+
+
+def no_full_sync(fd, command, *rest):
+    raise OSError(errno.ENOTSUP, "not on this file system")
+
+
+os.fsync = fsyncs.append
+fcntl.F_FULLFSYNC = 51
+fcntl.fcntl = fake_fcntl
+sys.platform = "darwin"
+atomic._sync(descriptor)
+assert commands == [51] and fsyncs == [], (commands, fsyncs)
+fcntl.fcntl = no_full_sync
+atomic._sync(descriptor)
+assert fsyncs == [descriptor], "a file system without F_FULLFSYNC gets fsync"
+fcntl.fcntl = fake_fcntl
+commands.clear()
+fsyncs.clear()
+sys.platform = "linux"
+atomic._sync(descriptor)
+assert commands == [] and fsyncs == [descriptor], (commands, fsyncs)
 PY
 
 # --- a crash between the write and the rename ------------------------------------------
