@@ -1,6 +1,6 @@
 ---
 name: dotsteward-contribute
-description: "Change the dotsteward framework itself (a skill flow, the CLI, an engine, the gate, a catalog component, the template or framework docs) from the user's machine: reproduce, fix generically, test on this machine, then publish to the user's fork, or in owner mode to the upstream repository with a patch release, and upgrade the user's instance to it. Personal changes belong to dotsteward-maintain."
+description: "Change the dotsteward framework itself (a skill flow, the CLI, an engine, the gate, a catalog component, the template or framework docs) from the user's machine: reproduce, fix generically, test on this machine, then publish to the user's fork, or in owner mode to the upstream repository (a later release train releases it), and upgrade the user's instance to it. Personal changes belong to dotsteward-maintain."
 ---
 
 # dotsteward Contribute
