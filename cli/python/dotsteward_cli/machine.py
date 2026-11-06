@@ -49,6 +49,7 @@ _ARCHITECTURES = {"amd64": "x86_64", "arm64": "aarch64"}
 # What a lock entry or a plugin entry says about the machines it is for.
 REASON_MACHINES = "machines"
 REASON_DECLINED = "declined"
+REASON_DELETED = "deleted"
 
 
 def valid_name(name: str) -> bool:
@@ -199,6 +200,33 @@ def recorded_profile(state_root: str, instance: config.Instance) -> str | None:
     return recorded if recorded in instance.config["profiles"]["names"] else None
 
 
+def _deleted_here(instance: config.Instance, state: str, lock: Mapping[str, Any], env: Mapping[str, str]) -> list[str]:
+    """The own skills this machine had in sync and has no copy of any more: no command
+    installs them again and no check misses them, until the user answers."""
+    from dotsteward_cli.skills import state as skill_state
+
+    base = skill_state.load_base(state)
+    if not base:
+        return []
+    revisions = {skill_state.REPO_OWNED_REVISION, instance.config["compat"].get("repo_owned_revision")}
+    roots: list[Path] | None = None
+    deleted = []
+    for entry in _entries(lock, "skills"):
+        skill = entry.get("name")
+        record = skill_state.base_entry(base, skill) if isinstance(skill, str) else None
+        if record is None or entry.get("revision") not in revisions or entry.get("deployment", "copy") != "copy":
+            continue
+        known = record.get("local_path")
+        if isinstance(known, str) and os.path.isfile(os.path.join(known, "SKILL.md")):
+            continue
+        if roots is None:
+            roots = _skill_roots(instance, env)
+        directory = entry.get("directory")
+        if not any((root / str(directory) / "SKILL.md").exists() for root in roots):
+            deleted.append(str(skill))
+    return deleted
+
+
 def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -> dict[str, Any]:
     """What applies to this machine: ``{name, profile, tags, skip: {components, skills,
     plugins}, reasons}``. ``skip`` holds sorted names, ``reasons`` one word for each,
@@ -223,6 +251,8 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
                 reasons[f"skill:{skill}"] = REASON_MACHINES
             elif skill in declined.get("skills", []):
                 reasons[f"skill:{skill}"] = REASON_DECLINED
+    for skill in _deleted_here(instance, state, lock, os.environ if env is None else env):
+        reasons.setdefault(f"skill:{skill}", REASON_DELETED)
     plugins = {str(p["name"]): p for p in _entries(lock, "own_plugins") if isinstance(p.get("name"), str)}
     plugins.update({str(p["spec"]): p for p in _plugin_entries(instance) if isinstance(p.get("spec"), str)})
     for plugin, entry in plugins.items():
@@ -391,8 +421,9 @@ def _parser() -> argparse.ArgumentParser:
         description=(
             "Prints the machine name, its profile and tags, and what it leaves out: skip.components, "
             "skip.skills and skip.plugins, with one word for each in reasons (machines: the entry is for "
-            "other machines; declined: hosts/<name>.toml says never). name_taken lists the skills of the "
-            "lock that are for other machines while this machine has a skill of that name."
+            "other machines; declined: hosts/<name>.toml says never; deleted: an own skill deleted here). "
+            "name_taken lists the skills of the lock that are for other machines while this machine has a "
+            "skill of that name."
         ),
         allow_abbrev=False,
     )

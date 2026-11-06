@@ -51,6 +51,8 @@
 #                                        lists of names: skip of `dotsteward
 #                                        skills effective`; every list is empty
 #                                        when the instance names no machine
+#   DS_DELETED_SKILLS_JSON               those of DS_SKIP_SKILLS_JSON left out
+#                                        because they were deleted here
 #   DS_NIX_PRIMARY_SYSTEM, DS_NIX_ALLOW_UNFREE, DS_NIX_STATE_VERSION
 #   DS_PROFILES_DEFAULT, DS_PROFILES_CHECK, DS_PROFILES_BOOTSTRAP
 #   DS_PLATFORM_LINUX_OS_ID, DS_PLATFORM_LINUX_OS_VERSION,

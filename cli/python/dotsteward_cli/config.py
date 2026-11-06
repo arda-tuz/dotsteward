@@ -1192,6 +1192,11 @@ def _scalar(value: Any) -> str:
     return str(value)
 
 
+def _deleted_skills(scope: Mapping[str, Any]) -> list[str]:
+    """The skills of skip.skills that are left out because they were deleted here."""
+    return [name for name in scope["skip"]["skills"] if scope["reasons"].get(f"skill:{name}") == "deleted"]
+
+
 def export_variables(instance: Instance, env: Mapping[str, str] | None = None) -> list[str]:
     """The DS_* declarations of an instance for bash (``cli/lib/config.sh``
     documents every name), one per line: exported scalars
@@ -1227,6 +1232,7 @@ def export_variables(instance: Instance, env: Mapping[str, str] | None = None) -
         ("DS_MACHINE_NAME", scope["name"]),
         ("DS_SKIP_COMPONENTS_JSON", to_json(scope["skip"]["components"])),
         ("DS_SKIP_SKILLS_JSON", to_json(scope["skip"]["skills"])),
+        ("DS_DELETED_SKILLS_JSON", to_json(_deleted_skills(scope))),
         ("DS_SKIP_PLUGINS_JSON", to_json(scope["skip"]["plugins"])),
         ("DS_NIX_PRIMARY_SYSTEM", c["nix"]["systems"][0]),
         ("DS_NIX_ALLOW_UNFREE", c["nix"]["allow_unfree"]),

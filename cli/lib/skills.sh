@@ -51,7 +51,7 @@
 #       one compact JSON object per line: the framework skills of the
 #       manifest ({name, entry}, entry from skills.framework_manifest or
 #       null) and the instance lock entries this machine does not leave out
-#       (DS_SKIP_SKILLS_JSON), in file order
+#       (DS_SKIP_SKILLS_JSON without DS_DELETED_SKILLS_JSON), in file order
 #   skills_process_framework NAME ENTRY_JSON
 #       a framework skill: ~/<hm_root>/<directory> must be a link that
 #       resolves to the generation's home-files/<hm_root>/<directory> (the
@@ -618,8 +618,9 @@ skills_framework_entries() {
 }
 
 skills_instance_entries() {
-  jq -c --argjson skip "${DS_SKIP_SKILLS_JSON:-[]}" \
-    '.skills[] | select(.name as $name | $skip | index($name) | not)' "$SKILLS_LOCK"
+  # An own skill deleted here stays: its decision says so, and removes its links.
+  jq -c --argjson skip "${DS_SKIP_SKILLS_JSON:-[]}" --argjson deleted "${DS_DELETED_SKILLS_JSON:-[]}" \
+    '($skip - $deleted) as $left | .skills[] | select(.name as $name | $left | index($name) | not)' "$SKILLS_LOCK"
 }
 
 skills_process_framework() {
