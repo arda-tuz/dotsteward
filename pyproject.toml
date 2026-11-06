@@ -23,6 +23,7 @@ version = { file = "VERSION" }
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+per-file-target-version = { "cli/libexec/apt_helper.py" = "py310", "tests/apt-worlds/fixtures/*.py" = "py310" }
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "UP", "SIM", "RUF"]

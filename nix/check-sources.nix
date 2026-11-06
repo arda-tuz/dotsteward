@@ -627,6 +627,7 @@ let
   untested = paths [
     "tests/host"
     "tests/hooks"
+    "tests/apt-worlds"
     "tests/channels"
     "tests/ci"
     "tests/vm"

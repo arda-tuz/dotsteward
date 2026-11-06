@@ -128,6 +128,7 @@ real person.
 | `tests/host` | real Nix on the host: an instance built in a temporary home without activation (`instance-e2e.sh`), and the framework checks, which depend on the tree alone, never on its commit, and each only on the files of its source set (`test-*.sh`) | `instance-e2e.sh` locally; `test-*.sh` locally and in the host-level tests of `ci.yml` |
 | `tests/ci` | clean-machine install and the macOS smoke test with real activation | GitHub Actions only |
 | `tests/channels` | installing `dotsteward-init` through every channel (`local-install.sh`), and that script over stand-ins of the tools (`test-*.sh`) | the installs in GitHub Actions only (`channels.yml`); `test-*.sh` locally and in the host-level tests of `ci.yml` |
+| `tests/apt-worlds` | the apt engine (`cli/libexec/apt_helper.py`) on a real apt and python3-apt, rootless, on synthetic worlds with the records of real kernels and drivers | on the host when `/usr/bin/python3` has python3-apt, in the default run of `tests/run.sh`; otherwise each file says `SKIP`; it cannot run in the build sandbox |
 | `tests/vm` | the virtual machine harness | its self-test locally and in CI (`ci.yml`); VMs only on request |
 
 `tests/lib` holds the harness itself and `tests/fixtures` the shared data.
