@@ -210,6 +210,18 @@ let
       cli
       (paths [ "tests/cli/gate" ])
     ];
+    cli-host = fs.unions [
+      runner
+      cli
+      catalog
+      (paths [
+        "engines"
+        "tools"
+        "tests/cli/host"
+        "tests/cli/e2e/helpers.sh"
+        "tests/agents/helpers.sh"
+      ])
+    ];
     cli-launcher = fs.unions [
       runner
       (paths [
