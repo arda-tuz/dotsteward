@@ -8,7 +8,11 @@
 # .github/workflows/macos-smoke.yml runs on release tags (v*), on a nightly
 # schedule and on demand, never on branch pushes, and has a job on a macOS
 # runner that runs `nix flake check`, which builds the checks of the
-# runner's system, aarch64-darwin.
+# runner's system, aarch64-darwin. Its jobs run on a hosted arm64 runner
+# that GitHub still offers: the plain label macos-N is the arm64 image of
+# macOS N, a suffix (-intel, -large) is an x86_64 image, and GitHub retired
+# the macOS 14 images, so a job on macos-14 is cancelled before its first
+# step. The workflow names no other label than the one its jobs run on.
 
 outputs=$DS_REPO_ROOT/nix/outputs.nix
 workflow=$DS_REPO_ROOT/.github/workflows/macos-smoke.yml
@@ -64,3 +68,15 @@ jobs=$(awk '
 [[ -n $jobs ]] || ds_fail "no job of macos-smoke.yml runs nix flake check on a macOS runner"
 # The smoke test of a real activation stays.
 grep -qF 'bash tests/ci/macos-smoke.sh' "$workflow" || ds_fail "macos-smoke.yml no longer runs tests/ci/macos-smoke.sh"
+
+# The runners: arm64 images that exist.
+mapfile -t labels < <(sed -n 's/^[[:space:]]*runs-on:[[:space:]]*//p' "$workflow" | LC_ALL=C sort -u)
+((${#labels[@]})) || ds_fail "no job of macos-smoke.yml names its runner"
+for label in "${labels[@]}"; do
+  [[ $label =~ ^macos-([0-9]+)$ ]] ||
+    ds_fail "macos-smoke.yml runs on $label, not on the arm64 image of a macOS version (macos-N)"
+  ((BASH_REMATCH[1] >= 15)) || ds_fail "macos-smoke.yml runs on $label, a macOS image that GitHub retired"
+done
+while IFS= read -r named; do
+  [[ " ${labels[*]} " == *" $named "* ]] || ds_fail "macos-smoke.yml names $named, but its jobs run on ${labels[*]}"
+done < <(grep -oE 'macos-[0-9]+' "$workflow" | LC_ALL=C sort -u)
