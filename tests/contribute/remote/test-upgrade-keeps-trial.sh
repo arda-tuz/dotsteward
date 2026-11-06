@@ -79,6 +79,7 @@ assert_eq pinned "$(live)" "live framework after the upgrade"
 state_json | assert_json - '.step == "report" and .trial_switched == false and (.recovery // null) == null'
 assert_exit 0 run_contribute report
 assert_contains "$DS_STDOUT" "  recovery after the trial switch: none"
+git -C "$ct_inst" push -q origin HEAD:main
 
 # --- the upgrade to the merged commit, at step release ---------------------------------------------
 
@@ -95,6 +96,7 @@ reset_calls
 assert_exit 0 run_contribute upgrade --main
 assert_eq pinned "$(live)" "live framework after the upgrade to the merged commit"
 assert_exit 0 run_contribute report
+git -C "$ct_inst" push -q origin HEAD:main
 
 # --- a red upgrade that the user ends with abort: the recovery runs then --------------------------
 

@@ -51,6 +51,9 @@
 #                    refs/dotsteward/carry/<id> until the upgrade is done),
 #                    remote, commits (oldest first) and applied
 #   recovery         done or failed: the last recovery after a trial switch
+#                    (a red step runs it before the merge; past it, a red
+#                    release or upgrade keeps the switch, and abort or report
+#                    run it when they end the run)
 #   outcome          completed (report after the upgrade), published (report
 #                    of a run that ends at publish: no release tag and no
 #                    instance commit) or aborted (abort)
@@ -262,19 +265,31 @@ contribute_recover_run() {
   _contribute_recover || true
 }
 
-# CT_KEEP_TRIAL: 1 in release, whose red outcomes keep a trial switch: the
-# change is merged with the tested tree, so the trial framework of the live
-# generation is what main has, and the upgrade (or the recovery of abort and
-# report, when they end the run) moves it on.
-CT_KEEP_TRIAL=0
+# _contribute_past_merge: the run is past publish, so its change is merged
+# with the tested tree (step release or later).
+_contribute_past_merge() {
+  case $(_contribute_get step) in
+    release | upgrade | report | done) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
-# _contribute_red MESSAGE: a red step: the message, the recovery after a
-# trial switch (unless CT_KEEP_TRIAL), exit 1.
+# _contribute_red MESSAGE: a red step: the message, then exit 1, after the
+# recovery of a trial switch. Past the merge a red step (release, upgrade)
+# keeps a trial switch: the trial framework of the live generation is what
+# main has, a switch back would only be undone by the upgrade, whose own
+# switch moves it on (or the recovery of abort, and of report at a run that
+# ends at publish).
 _contribute_red() {
   printf '[dotsteward] ERROR: %s\n' "$1" >&2
-  if ((CT_KEEP_TRIAL)); then
-    [[ $(_contribute_get trial_switched) != true ]] ||
-      log "the live generation keeps the trial framework: the change is merged with the tested tree, so no recovery runs; run the step again once the cause is fixed, or end the run with abort or report, which return the machine to the pinned framework"
+  if _contribute_past_merge; then
+    if [[ $(_contribute_get trial_switched) == true ]]; then
+      local enders="abort, which returns"
+      if [[ $(_contribute_get step) == release && -z $(_contribute_get instance_base) && -z $(_contribute_get carry) ]]; then
+        enders="abort or report, which return"
+      fi
+      log "the live generation keeps the trial framework: the change is merged with the tested tree, so no recovery runs; run the step again once the cause is fixed, or end the run with $enders the machine to the pinned framework"
+    fi
   else
     _contribute_recover || true
   fi
@@ -1143,8 +1158,6 @@ contribute_cmd_release() {
       ;;
     *) die "run $id is not published yet; next: $(_contribute_next_command "$CT_STEP")" ;;
   esac
-  # The change is merged: a red outcome from here on keeps a trial switch.
-  CT_KEEP_TRIAL=1
   local merged tag local_tag remote_tag notes
   merged=$(_contribute_get merged_sha)
   [[ -n $merged ]] || die "run $id has no merged commit; run: dotsteward contribute publish"

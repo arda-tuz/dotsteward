@@ -349,7 +349,9 @@ Steps:
                           with the cherry-pick in progress: resolve it,
                           git cherry-pick --continue, then upgrade again),
                           syncs and gates the whole tree, and publishes
-                          them with the upgrade
+                          them with the upgrade. A red upgrade keeps a
+                          trial switch, as a red release does: run it again
+                          once the cause is fixed
   abort                   ends the run; after a trial switch it first runs
                           the recovery: rebuild --switch and e2e without
                           an override, back to the pinned framework

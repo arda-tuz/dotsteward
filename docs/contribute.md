@@ -249,9 +249,10 @@ A full trial switches your machine to the candidate framework
 upgrade, because a step is red, a privacy stop, red CI, your decision or
 a `report` that ends the run at publish, the recovery runs `rebuild --switch` and `e2e` without the override, so the
 machine and its framework skills return to the pinned release. Red steps
-recover on their own, except `release`: its change is merged with the
-tested tree, so the machine keeps the trial framework, which is what
-`main` has, until the upgrade; `dotsteward contribute abort` recovers
+recover on their own, except `release` and `upgrade`: the change is merged
+with the tested tree, so the machine keeps the trial framework, which is
+what `main` has, until the upgrade switches on; run the red step again once
+the cause is fixed. `dotsteward contribute abort` recovers
 first and then ends the run. Abort never undoes what is already public: a
 merged commit stays, and an open pull request stays open until you close
 it.
