@@ -97,6 +97,15 @@ assert_exit 0 run_skills effective
 assert_contains "$DS_STDOUT" "name taken: alpha"
 rm -rf -- "$HOME/.codex/skills/alpha"
 
+# The roots are those of this system, whatever other mirrors the instance holds.
+jq '.skill_layout.legacy_roots = ["~/.elsewhere/skills"]' "$agents_manifest" >"$agents_inst/.dotsteward/manifest.aarch64-darwin.json"
+make_skill "$HOME/.codex/skills/alpha" alpha
+assert_eq '["alpha"]' "$(effective .name_taken)"
+rm -rf -- "$HOME/.codex/skills/alpha"
+make_skill "$HOME/.elsewhere/skills/alpha" alpha
+assert_eq '[]' "$(effective .name_taken)"
+rm -rf -- "$HOME/.elsewhere" "$agents_inst/.dotsteward/manifest.aarch64-darwin.json"
+
 # --- the profile -----------------------------------------------------------------------------
 
 # Never profiles.default: the host file, then the record, then the last rebuild.
