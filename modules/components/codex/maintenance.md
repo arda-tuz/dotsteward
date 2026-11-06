@@ -55,7 +55,10 @@ so a pin bump never downgrades a machine; it only raises the floor.
   list with `pluginId`, `installed`, `enabled`, `version` and an optional
   local `source` with `path`), on `codex plugin add NAME@MARKETPLACE` and on
   the cache layout
-  `${CODEX_HOME:-~/.codex}/plugins/cache/<marketplace>/<name>/<version>/.codex-plugin/plugin.json`.
+  `${CODEX_HOME:-~/.codex}/plugins/cache/<marketplace>/<name>/<version>/.codex-plugin/plugin.json`,
+  which it verifies before the local source, because Codex may leave the
+  marketplace snapshot (`.tmp/marketplaces/<marketplace>`, the local source
+  of a plugin at a marketplace's root) ahead of the listed version.
   A change in any of them needs `plugins.sh`, the `codex` test stub and
   `tests/nix/components/codex/test-plugins.sh` updated together. The
   re-reads of check mode (`relist_pauses` in `plugins.sh`) rely on Codex

@@ -131,9 +131,13 @@ verify every plugin:
   name, as a Git marketplace from `https://github.com/OWNER/REPO` (a
   trailing `.git` and letter case aside);
 - it is listed as installed and enabled, with a plain version string;
-- its directory (the listed local source path, else
-  `${CODEX_HOME:-~/.codex}/plugins/cache/<marketplace>/<name>/<version>`)
-  holds `.codex-plugin/plugin.json` with the same version;
+- its directory (the cached copy
+  `${CODEX_HOME:-~/.codex}/plugins/cache/<marketplace>/<name>/<version>`
+  when it holds a manifest, else the listed local source path) holds
+  `.codex-plugin/plugin.json` with the same version. The listed version is
+  that of the cached copy, which Codex loads; the local source of a plugin
+  at the root of a Git marketplace is the marketplace snapshot, which a
+  session that ends early leaves ahead of the cache, and that is no defect;
 - the version is at least the lock minimum; an older plugin fails and is
   never upgraded silently;
 - every required skill directory has a `SKILL.md`.

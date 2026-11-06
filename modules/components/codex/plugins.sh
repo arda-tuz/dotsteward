@@ -21,9 +21,13 @@
 #     name, from https://github.com/OWNER/REPO (a trailing .git and letter
 #     case aside);
 #   - it is listed installed and enabled, with a plain version string;
-#   - its directory (the listed local source path, else
-#     ${CODEX_HOME:-~/.codex}/plugins/cache/<marketplace>/<name>/<version>)
-#     holds .codex-plugin/plugin.json with the listed version;
+#   - its directory (the cached copy
+#     ${CODEX_HOME:-~/.codex}/plugins/cache/<marketplace>/<name>/<version>
+#     when it holds a manifest, else the listed local source path) holds
+#     .codex-plugin/plugin.json with the listed version: the listed version
+#     is that of the cached copy, which Codex loads, while the local source
+#     of a plugin at the root of a Git marketplace is the marketplace
+#     snapshot, which a session that ends early leaves ahead of the cache;
 #   - the version is at least the lock value at minimumAt (a version string,
 #     or an entry with minimum_version or version); a newer plugin passes,
 #     an older one fails and is never upgraded silently;
@@ -178,10 +182,9 @@ ensure_plugin() {
 
   source_kind=$(jq -r '.source.source // empty | strings' <<<"$entry")
   source_path=$(jq -r '.source.path // empty | strings' <<<"$entry")
-  if [[ $source_kind == local && $source_path == /* ]]; then
+  dir=$codex_root/plugins/cache/$market/$name/$version
+  if [[ ! -f $dir/.codex-plugin/plugin.json && $source_kind == local && $source_path == /* ]]; then
     dir=$source_path
-  else
-    dir=$codex_root/plugins/cache/$market/$name/$version
   fi
   manifest=$dir/.codex-plugin/plugin.json
   [[ -f $manifest ]] || die "codex plugin $spec $version has no plugin manifest at $manifest"
