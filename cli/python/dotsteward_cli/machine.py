@@ -16,8 +16,8 @@ reads it with ``dotsteward skills effective --json``. A later release adds more
 reasons to leave something out; the commands read only the result.
 
 Python API: ``effective``, ``name_taken``, ``current_name``, ``read_machine``,
-``write_machine``, ``known_names``, ``read_host``, ``host_path``, ``check_problems``
-and ``valid_name``.
+``write_machine``, ``recorded_profile``, ``known_names``, ``read_host``, ``parse_host``,
+``host_path``, ``scoped_entries``, ``check_problems`` and ``valid_name``.
 
 Command line (``cli/commands/skills.sh``)::
 
@@ -169,6 +169,15 @@ def _plugin_entries(instance: config.Instance) -> Iterator[dict[str, Any]]:
             yield from (plugin for plugin in plugins if isinstance(plugin, dict))
 
 
+def scoped_entries(instance: config.Instance) -> Iterator[dict[str, Any]]:
+    """Every entry that can name machines: the skills and own plugins of the lock and
+    the plugin tables of the components."""
+    lock = _read_lock(instance)
+    yield from _entries(lock, "skills")
+    yield from _entries(lock, "own_plugins")
+    yield from _plugin_entries(instance)
+
+
 def _for_this_machine(entry: Mapping[str, Any], name: str | None) -> bool:
     """An entry without machines is for every machine; an entry with machines is
     for the machines it names, so never for a machine without a name."""
@@ -179,7 +188,7 @@ def _for_this_machine(entry: Mapping[str, Any], name: str | None) -> bool:
 # --- The effective scope ----------------------------------------------------------------
 
 
-def _recorded_profile(state_root: str, instance: config.Instance) -> str | None:
+def recorded_profile(state_root: str, instance: config.Instance) -> str | None:
     """The profile of the last rebuild, when it still is a profile of the instance."""
     try:
         recorded = (Path(state_root) / CURRENT_PROFILE).read_text(encoding="utf-8").strip()
@@ -220,7 +229,7 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
         elif plugin in declined.get("plugins", []):
             reasons[f"plugin:{plugin}"] = REASON_DECLINED
 
-    profile = host.get("profile") or recorded.get("profile") or _recorded_profile(state, instance)
+    profile = host.get("profile") or recorded.get("profile") or recorded_profile(state, instance)
     return {
         "name": name,
         "profile": profile,

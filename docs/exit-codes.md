@@ -25,6 +25,7 @@ status as a failure.
 | `e2e` | 0, 1 | |
 | `gate` | 0, 1 | 0 also when the memo answers for an unchanged tree |
 | `generate` | 0, 1, 2 | 1 and 2 as for `pins`, from the `pins sync` it runs |
+| `host` | 0, 1, 2, 4, 6 | 2: usage error; `host publish`: 4 a privacy finding and 6 no network or no login, in both cases nothing was published; 6 asks to run it again |
 | `init` | 0, 1, 2 | 2: usage error; on 1 and 2 the directory is left as it was |
 | `install` | 0, 1, 3 | 3: the preflight took the adaptive route and stopped the phase |
 | `login-shell` | 0, 1, child | |

@@ -16,6 +16,6 @@ cli.mkTestCheck {
   paths = [ "tests/cli/host" ];
   nativeBuildInputs = [ pkgs.shellcheck ];
   postCheck = ''
-    shellcheck -x cli/commands/skills.sh tests/cli/host/*.sh
+    shellcheck -x cli/commands/host.sh cli/commands/skills.sh tests/cli/host/*.sh
   '';
 }
