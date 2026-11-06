@@ -147,9 +147,8 @@ says nothing about the change, so `publish` and `release` make it again
 after a pause that starts at `DOTSTEWARD_CONTRIBUTE_POLL_SECONDS` and
 doubles, until the failures lasted `DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS`
 (the fetch of `check` too, and of `start`, which stops after a minute unless
-that variable says otherwise). A
-push reads its ref again first, because a push whose answer was lost has
-landed. A push the remote refuses (a protected branch, a `main` that moved),
+that variable says otherwise). A push reads its ref again first, because a
+push whose answer was lost has landed. A push the remote refuses (a protected branch, a `main` that moved),
 a finding of the pre-push hook, a refused login and a failure on this machine
 (no `ssh`) are verdicts, and so are words the CLI does not know as those of a
 failed connection: they get one attempt. Over HTTP the failure of a POST ends
@@ -260,7 +259,7 @@ with the tested tree, so the machine keeps the trial framework, which is
 what `main` has, until the upgrade switches on; run the red step again once
 the cause is fixed. A step that stops because the network kept failing says
 so and leaves the machine as it is too: the failure says nothing about the
-change, so run the step again once the network is back. `dotsteward contribute abort` recovers
-first and then ends the run. Abort never undoes what is already public: a
+change, so run the step again once the network is back.
+`dotsteward contribute abort` recovers first and then ends the run. Abort never undoes what is already public: a
 merged commit stays, and an open pull request stays open until you close
 it.
