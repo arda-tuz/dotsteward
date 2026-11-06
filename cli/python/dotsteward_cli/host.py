@@ -14,6 +14,9 @@ the tree to the rules of the machines.
 Exit status: 0 done, 1 refusal, 2 usage error; ``publish`` 4 for a privacy finding
 (nothing was published) and 6 without a network (nothing was published, run it again).
 Messages go to standard error as ``[dotsteward] ERROR:`` lines.
+
+Python API: ``publish``, ``host_text``, ``commit_identity``, ``commit_message`` and
+``MACHINE_TRAILER``, for the commits other parts of the framework make for a machine.
 """
 
 from __future__ import annotations
@@ -37,7 +40,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from dotsteward_cli import config, locks, machine, report, tomlfile
+from dotsteward_cli import atomic, config, locks, machine, report, tomlfile
 
 EXIT_REFUSAL = 1
 EXIT_USAGE = 2
@@ -60,7 +63,7 @@ FETCH_SECONDS = 60
 PUSH_SECONDS = 180
 
 _PRIVATE_TIP = "refs/dotsteward/host/tip"
-_MACHINE_TRAILER = "Dotsteward-Machine"
+MACHINE_TRAILER = "Dotsteward-Machine"
 
 # What git prints when the remote says no: more tries change nothing. Any other
 # failure of a fetch is the network.
@@ -428,7 +431,7 @@ def _raced(stderr: str) -> bool:
     return any(needle in stderr for needle in _RACE)
 
 
-def _identity(root: Path, tip: str) -> list[str]:
+def commit_identity(root: Path, tip: str) -> list[str]:
     """`-c` options for a commit: nothing with a configured identity, else the author
     of the tip, the owner of the repository. Nothing is written to any configuration."""
     configured = [_git(root, "config", key).stdout.strip() for key in ("user.name", "user.email")]
@@ -438,8 +441,9 @@ def _identity(root: Path, tip: str) -> list[str]:
     return ["-c", f"user.name={author}", "-c", f"user.email={email}"]
 
 
-def _commit_message(subject: str, name: str | None) -> str:
-    return f"{subject}\n\n{_MACHINE_TRAILER}: {name}\n" if name else f"{subject}\n"
+def commit_message(subject: str, name: str | None) -> str:
+    """The message of a commit of the instance: the trailer says which machine made it."""
+    return f"{subject}\n\n{MACHINE_TRAILER}: {name}\n" if name else f"{subject}\n"
 
 
 # --- host publish ---------------------------------------------------------------------------
@@ -453,7 +457,7 @@ def _tomlkit() -> Any:
     return tomlkit
 
 
-def _host_text(current: str | None, facts: Mapping[str, Any]) -> str:
+def host_text(current: str | None, facts: Mapping[str, Any]) -> str:
     """The text of the host file: what this machine knows about itself over CURRENT,
     whose other keys and comments stay."""
     tomlkit = _tomlkit()
@@ -498,18 +502,42 @@ def _commit_on_tip(instance: config.Instance, tip: str, name: str, text: str) ->
         tree = _git_output(root, "write-tree", env=index)
     return _git_output(
         root,
-        *_identity(root, tip),
+        *commit_identity(root, tip),
         "commit-tree",
         tree,
         "-p",
         tip,
         "-F",
         "-",
-        text=_commit_message(f"chore(hosts): publish {name}", name),
+        text=commit_message(f"chore(hosts): publish {name}", name),
+    )
+
+
+def _fetch_tip(instance: config.Instance) -> subprocess.CompletedProcess[str] | None:
+    """Fetches the branch of the instance into a private ref, without the remote-tracking
+    ref of the configured refspec: concurrent fetches of that ref fail on its lock."""
+    branch = instance.config["instance"]["branch"]
+    return _git_net(
+        instance.root,
+        FETCH_SECONDS,
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        "--refmap=",
+        "origin",
+        f"+refs/heads/{branch}:{_PRIVATE_TIP}",
     )
 
 
 def cmd_publish(args: argparse.Namespace, instance: config.Instance, env: Mapping[str, str]) -> int:
+    return publish(instance, env)
+
+
+def publish(instance: config.Instance, env: Mapping[str, str] | None = None) -> int:
+    """Brings hosts/<name>.toml of this machine to the remote: the exit status of
+    ``host publish`` (OK, PARTIAL without a network, PRIVACY_STOP); Refusal when the
+    remote says no."""
+    env = os.environ if env is None else env
     root = instance.root
     state = config.state_root(instance, env)
     record = machine.read_machine(state)
@@ -522,18 +550,7 @@ def cmd_publish(args: argparse.Namespace, instance: config.Instance, env: Mappin
     path = f"{machine.HOSTS_DIR}/{name}.toml"
     pushed: tuple[str, str] | None = None
     for attempt in range(1, PUBLISH_ATTEMPTS + 1):
-        # A private ref, without the remote-tracking ref of the configured refspec:
-        # concurrent fetches of that ref fail on its lock.
-        fetched = _git_net(
-            root,
-            FETCH_SECONDS,
-            "fetch",
-            "--quiet",
-            "--no-tags",
-            "--refmap=",
-            "origin",
-            f"+refs/heads/{branch}:{_PRIVATE_TIP}",
-        )
+        fetched = _fetch_tip(instance)
         if fetched is None or fetched.returncode != 0:
             detail = "" if fetched is None else fetched.stderr.strip()
             if fetched is not None and _refused(detail):
@@ -551,7 +568,7 @@ def cmd_publish(args: argparse.Namespace, instance: config.Instance, env: Mappin
             raise Refusal(f"the push of {path} failed: {pushed[1]}")
         shown = _git(root, "show", f"{tip}:{path}")
         current = shown.stdout if shown.returncode == 0 else None
-        text = _host_text(current, facts)
+        text = host_text(current, facts)
         if current is not None and tomlfile.loads(current) == tomlfile.loads(text):
             _log(f"{path} is on the remote; nothing to publish")
             return 0
@@ -579,6 +596,21 @@ def cmd_publish(args: argparse.Namespace, instance: config.Instance, env: Mappin
 # --- host rename, host producer ---------------------------------------------------------------
 
 
+def _refuse_behind(instance: config.Instance) -> None:
+    """A commit on a checkout behind the remote could not be published, and what the
+    checkout does not hold yet (the host file another run published) would stay as it
+    is. Without a network the publish finds out."""
+    root = instance.root
+    fetched = _fetch_tip(instance)
+    if fetched is None or fetched.returncode != 0:
+        return
+    if (
+        _git(root, "rev-parse", "HEAD").stdout.strip() != _git(root, "rev-parse", _PRIVATE_TIP).stdout.strip()
+        and _git(root, "merge-base", "--is-ancestor", "HEAD", _PRIVATE_TIP).returncode == 0
+    ):
+        raise Refusal("the checkout is behind the remote; 'git pull --ff-only' first")
+
+
 def _require_clean_checkout(instance: config.Instance) -> None:
     root = instance.root
     branch = instance.config["instance"]["branch"]
@@ -600,7 +632,7 @@ def _edit_workstation(instance: config.Instance, edit: Any) -> None:
     tomlkit = _tomlkit()
     document = tomlkit.parse(instance.file.read_text(encoding="utf-8"))
     edit(document)
-    instance.file.write_text(tomlkit.dumps(document), encoding="utf-8")
+    atomic.atomic_write(instance.file, tomlkit.dumps(document))
 
 
 def _generate(instance: config.Instance) -> None:
@@ -617,7 +649,7 @@ def _commit_maintain(instance: config.Instance, subject: str, name: str | None) 
     _generate(instance)
     _git_output(root, "add", "-A")
     head = _git_output(root, "rev-parse", "HEAD")
-    _git_output(root, *_identity(root, head), "commit", "--quiet", "-F", "-", text=_commit_message(subject, name))
+    _git_output(root, *commit_identity(root, head), "commit", "--quiet", "-F", "-", text=commit_message(subject, name))
     _log(f"committed: {subject}")
     _log("publish it: 'dotsteward gate --scope maintain', then 'dotsteward txn publish --scope maintain'")
 
@@ -638,6 +670,7 @@ def cmd_producer(args: argparse.Namespace, instance: config.Instance, env: Mappi
         document["hosts"]["producer"] = name
 
     with locks.instance_lock("host", state_root=state):
+        _refuse_behind(instance)
         _require_clean_checkout(instance)
         try:
             _edit_workstation(instance, edit)
@@ -679,7 +712,7 @@ def _rename_references(instance: config.Instance, old: str, new: str) -> None:
                 entry["machines"] = _rename_in_list(entry["machines"], old, new)
                 changed = True
     if changed:
-        lock_path.write_text(json.dumps(lock, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        atomic.atomic_write(lock_path, json.dumps(lock, indent=2, ensure_ascii=False) + "\n")
 
 
 def _tree_mentions(instance: config.Instance, name: str) -> bool:
@@ -706,6 +739,7 @@ def cmd_rename(args: argparse.Namespace, instance: config.Instance, env: Mapping
     if new in machine.known_names(instance.root):
         raise Refusal(f"{machine.HOSTS_DIR}/{new}.toml exists: that name belongs to another machine")
     with locks.instance_lock("host", state_root=state):
+        _refuse_behind(instance)
         if _tree_mentions(instance, old):
             _require_clean_checkout(instance)
             try:

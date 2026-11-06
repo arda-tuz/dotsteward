@@ -7,9 +7,10 @@ instance that names no machine behaves as if none of this existed.
 
 `dotsteward host init` gives this machine its name, which is yours to choose. The
 name matches `^[a-z0-9][a-z0-9-]{0,31}$`. `./bootstrap.sh` asks for it first on a
-terminal; without a terminal it takes `--name` or `DOTSTEWARD_MACHINE`. Only
-`<state>/machine.json` is written, so the checkout stays clean and the bootstrap
-needs no git identity.
+terminal. Without a terminal it takes `DOTSTEWARD_MACHINE`, or with
+`DOTSTEWARD_ASSUME_YES=1` the cleaned host name; an instance whose `hosts/` names no
+machine goes on without a name then. Only `<state>/machine.json` is written, so the
+checkout stays clean and the bootstrap needs no git identity.
 
 `dotsteward host publish` brings `hosts/<name>.toml` to the remote without touching
 the checkout. The bootstrap tries it at its end. Without a network or a login it

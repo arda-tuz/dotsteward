@@ -3,7 +3,7 @@
 # The one TOML reader of the package, dotsteward_cli.tomlfile: a parsed
 # document, or one TomlError for text that is not TOML (bad syntax, or bytes
 # that are not UTF-8), and the OSError of an unreadable file. tomllib appears
-# nowhere else; tomlkit only in the two modules that edit TOML and keep its
+# nowhere else; tomlkit only in the three modules that edit TOML and keep its
 # comments. The messages of the configuration reader stay as they were
 # (tests/cli/config/test-reader.sh pins them).
 # shellcheck source=tests/cli/core/helpers.sh
@@ -51,9 +51,10 @@ for missing in (work / "missing.toml", work):
         raise AssertionError(f"{missing} was read")
 PY
 
-# One reader: tomllib in this module, tomlkit only in the two editors.
+# One reader: tomllib in this module, tomlkit only in the three editors.
 readers=$(grep -rlE '^\s*(import|from) tomllib' "$DS_REPO_ROOT/cli/python" "$DS_REPO_ROOT/engines" --include='*.py' || true)
 assert_eq "$DS_REPO_ROOT/cli/python/dotsteward_cli/tomlfile.py" "$readers" "the modules that import tomllib"
 editors=$(grep -rlE '^\s*(import|from) tomlkit' "$DS_REPO_ROOT/cli/python" "$DS_REPO_ROOT/engines" --include='*.py' | LC_ALL=C sort)
-assert_eq "$DS_REPO_ROOT/cli/python/dotsteward_cli/init.py
+assert_eq "$DS_REPO_ROOT/cli/python/dotsteward_cli/host.py
+$DS_REPO_ROOT/cli/python/dotsteward_cli/init.py
 $DS_REPO_ROOT/engines/local-maintained-files/local_maintained_files.py" "$editors" "the modules that import tomlkit"

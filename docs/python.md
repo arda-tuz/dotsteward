@@ -179,9 +179,9 @@ which a test holds to the same answer.
 ### TOML
 
 `dotsteward_cli.tomlfile` is the one TOML reader: `load(path)` and `loads(text)`
-give a plain document and raise `TomlError` for text that is not TOML. The two
-modules that edit TOML files and keep their comments (`init` and the settings
-engine) use tomlkit. `privacy/policy.toml` is read in bash, because the pre-push
+give a plain document and raise `TomlError` for text that is not TOML. The three
+modules that edit TOML files and keep their comments (`init`, `host` and the
+settings engine) use tomlkit. `privacy/policy.toml` is read in bash, because the pre-push
 hook runs before any Python is available.
 
 ### Machines
