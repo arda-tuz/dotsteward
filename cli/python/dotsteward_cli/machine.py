@@ -16,8 +16,8 @@ reads it with ``dotsteward skills effective --json``. A later release adds more
 reasons to leave something out; the commands read only the result.
 
 Python API: ``effective``, ``name_taken``, ``current_name``, ``read_machine``,
-``write_machine``, ``recorded_profile``, ``known_names``, ``read_host``, ``parse_host``,
-``host_path``, ``scoped_entries``, ``check_problems`` and ``valid_name``.
+``write_machine``, ``recorded_profile``, ``nix_system``, ``known_names``, ``read_host``,
+``parse_host``, ``host_path``, ``scoped_entries``, ``check_problems`` and ``valid_name``.
 
 Command line (``cli/commands/skills.sh``)::
 
@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import re
 import sys
 from collections.abc import Iterator, Mapping, Sequence
@@ -43,6 +44,7 @@ HOSTS_DIR = "hosts"
 CURRENT_PROFILE = "current/profile"
 
 _NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,31}", re.ASCII)
+_ARCHITECTURES = {"amd64": "x86_64", "arm64": "aarch64"}
 
 # What a lock entry or a plugin entry says about the machines it is for.
 REASON_MACHINES = "machines"
@@ -243,16 +245,25 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
     }
 
 
+def nix_system(instance: config.Instance, env: Mapping[str, str] | None = None) -> str:
+    """The Nix system of this machine: the entry of nix.systems for its platform, as the
+    commands choose it, else the running machine's."""
+    platform_name = config.runtime_platform(env)
+    for system in instance.config["nix"]["systems"]:
+        if system.endswith(f"-{platform_name}"):
+            return str(system)
+    architecture = platform.machine().lower()
+    return f"{_ARCHITECTURES.get(architecture, architecture)}-{platform_name}"
+
+
 def _skill_roots(instance: config.Instance, env: Mapping[str, str]) -> list[Path]:
     """The directories that hold the user's skills on this machine: the canonical
     root and the roots the manifest mirror names."""
-    layout: Any = {}
-    for mirror in sorted((instance.root / ".dotsteward").glob("manifest.*.json")):
-        try:
-            layout = json.loads(mirror.read_text(encoding="utf-8")).get("skill_layout") or {}
-        except (OSError, ValueError, AttributeError):
-            continue
-        break
+    mirror = instance.root / ".dotsteward" / f"manifest.{nix_system(instance, env)}.json"
+    try:
+        layout = json.loads(mirror.read_text(encoding="utf-8")).get("skill_layout") or {}
+    except (OSError, ValueError, AttributeError):
+        layout = {}
     named: list[Any] = ["~/.agents/skills"]
     if isinstance(layout, dict):
         named += layout.get("legacy_roots") or []

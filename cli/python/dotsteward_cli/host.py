@@ -27,7 +27,6 @@ import hashlib
 import hmac
 import json
 import os
-import platform as platform_module
 import random
 import re
 import secrets
@@ -55,7 +54,6 @@ MACHINE_ID_FILE = "DOTSTEWARD_MACHINE_ID_FILE"
 _MACHINE_KEY_APP_ID = "5f2c8e9a41d7463fb0a6d3c17e8b9f24"
 
 _TAG = re.compile(r"[a-z0-9][a-z0-9-]*", re.ASCII)
-_MACHINE_ARCHITECTURES = {"amd64": "x86_64", "arm64": "aarch64"}
 
 # A race ends in a new attempt on top of the new tip: at most this many.
 PUBLISH_ATTEMPTS = 5
@@ -156,17 +154,6 @@ def _machine_key(env: Mapping[str, str]) -> str:
     digest[6] = (digest[6] & 0x0F) | 0x40
     digest[8] = (digest[8] & 0x3F) | 0x80
     return digest.hex()
-
-
-def _system(instance: config.Instance, env: Mapping[str, str]) -> str:
-    """The Nix system: the entry of nix.systems for this platform, as the commands
-    choose it, else the running machine's."""
-    platform_name = config.runtime_platform(env)
-    for system in instance.config["nix"]["systems"]:
-        if system.endswith(f"-{platform_name}"):
-            return str(system)
-    architecture = platform_module.machine().lower()
-    return f"{_MACHINE_ARCHITECTURES.get(architecture, architecture)}-{platform_name}"
 
 
 def _os_release(env: Mapping[str, str]) -> dict[str, str]:
@@ -304,7 +291,7 @@ def cmd_init(args: argparse.Namespace, instance: config.Instance, env: Mapping[s
             "named_at": (record or {}).get("named_at")
             or datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "host": {
-                "system": _system(instance, env),
+                "system": machine.nix_system(instance, env),
                 "profile": profile,
                 "platform": _platform(env),
                 "tags": tags if tags is not None else kept.get("tags", host_file.get("tags", [])),
