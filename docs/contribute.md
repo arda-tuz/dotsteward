@@ -145,7 +145,9 @@ A `git ls-remote`, fetch or push that fails for the network (a connection
 that times out, a name that does not resolve, an answer that never comes)
 says nothing about the change, so `publish` and `release` make it again
 after a pause that starts at `DOTSTEWARD_CONTRIBUTE_POLL_SECONDS` and
-doubles, until the failures lasted `DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS`. A
+doubles, until the failures lasted `DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS`
+(the fetch of `check` too, and of `start`, which stops after a minute unless
+that variable says otherwise). A
 push reads its ref again first, because a push whose answer was lost has
 landed. A push the remote refuses (a protected branch, a `main` that moved),
 a finding of the pre-push hook, a refused login and a failure on this machine

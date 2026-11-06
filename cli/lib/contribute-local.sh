@@ -57,7 +57,7 @@
 #                                         again (default 15; the pause
 #                                         doubles)
 #   DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS  how long it may keep failing
-#                                         (default 300)
+#                                         (default 300, for start 60)
 #
 # Facts set by contribute_resolve_mode (the remote steps use them too):
 #   CT_CONTEXT          `dotsteward context --json` of the instance
@@ -638,7 +638,10 @@ contribute_cmd_start() {
   if git -C "$CT_CLONE" show-ref --verify --quiet "refs/heads/$branch"; then
     die "branch $branch exists in $CT_CLONE but no run records it; delete it or choose another slug"
   fi
-  contribute_fetch_main "$CT_CLONE" "$CT_UPSTREAM_REMOTE"
+  # A minute for a network that stays down: nothing waits for start, nothing
+  # is lost when it stops, and it is safe to run again.
+  DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS=${DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS:-60} \
+    contribute_fetch_main "$CT_CLONE" "$CT_UPSTREAM_REMOTE"
   base=$(git -C "$CT_CLONE" rev-parse --verify --quiet "refs/remotes/$CT_UPSTREAM_REMOTE/main^{commit}") ||
     die "$CT_UPSTREAM_REMOTE/main is missing after the fetch"
   id=$(timestamp_utc)-$slug
