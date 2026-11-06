@@ -13,8 +13,9 @@
 # keeps the repository as it was, prints one line and still exits 0.
 #
 # APT reads the repository at any moment: a DEB lands by rename, one rename
-# (of Release) commits an index, by-hash keeps the index of before the commit,
-# and a DEB the index no longer lists stays until the next version arrives.
+# (of Release) commits an index, by-hash keeps the indexes of before the commit
+# for a day, and a DEB the index no longer lists stays until the next version
+# arrives.
 # tests/cli/methods/test-apt-bridge-real-apt.sh shows what a real APT makes of
 # all this.
 # shellcheck source=tests/cli/methods/helpers.sh
@@ -200,7 +201,9 @@ dotsteward-apt-bridge: example-term: refusing a non-HTTPS URL: http://downloads.
 assert_eq "example-app_1.3.0_amd64.deb" "$(listed)"
 rm -f -- "$conf_dir/example-term.conf"
 
-# The next version takes the superseded DEB and the oldest index with it.
+# The next version takes the superseded DEB. An index stays for a day: a run
+# can commit several in a row, and an APT that read a Release must still find
+# what it names when more than one commit follows.
 rm -f -- "$(_ds_curl_path "$base/SHA256SUMS.txt").exit"
 release 1.7.0 >/dev/null
 assert_exit 0 run_bridge
@@ -208,7 +211,7 @@ assert_eq "example-app_1.7.0_amd64.deb" "$(listed)"
 assert_eq "example-app_1.3.0_amd64.deb
 example-app_1.7.0_amd64.deb" "$(pool)"
 [[ ! -e $repo/example-app_1.2.0_amd64.deb.superseded ]] || ds_fail "the marker of a removed DEB stayed"
-assert_eq "$(printf '%s\n' "$second_index" "$(digest "$repo/Packages")" | sort)" "$(by_hash)"
+assert_eq "$(printf '%s\n' "$first_index" "$second_index" "$(digest "$repo/Packages")" | sort)" "$(by_hash)"
 
 # The vendor goes back to the release before: the DEB it still has is listed
 # again without a download, and the one it left is the superseded one now.
@@ -275,6 +278,40 @@ assert_contains "$(<"$repo/Release")" "Acquire-By-Hash: yes"
 [[ -f $repo/by-hash/SHA256/$(digest "$repo/Packages") ]] || ds_fail "by-hash lacks the index"
 [[ -z $(find "$repo" -mindepth 1 -maxdepth 1 -name '.partial*' -print) ]] ||
   ds_fail "a work directory stayed after a full run"
+
+# After a day an index goes, unless the Release until now names it.
+current_index=$(digest "$repo/Packages")
+mkdir -p "$repo/by-hash/SHA256"
+printf 'an older index\n' >"$repo/by-hash/SHA256/$(printf 'd%.0s' {1..64})"
+find "$repo/by-hash/SHA256" -type f -exec touch -d '2 days ago' {} +
+release 2.0.0 >/dev/null
+assert_exit 0 run_bridge
+assert_eq "$(printf '%s\n' "$current_index" "$(digest "$repo/Packages")" | sort)" "$(by_hash)"
+
+# A power cut can leave what a commit renamed empty, since a rename can reach
+# the disk before the data does. The next run does not take that for a
+# committed index.
+release_before=$(<"$repo/Release")
+good_index=$(<"$repo/Packages")
+: >"$repo/by-hash/SHA256/$(digest "$repo/Packages")"
+assert_exit 0 run_bridge
+assert_eq "$good_index" "$(<"$repo/by-hash/SHA256/$(sed -n 's/^ \([0-9a-f]\{64\}\) [0-9]* Packages$/\1/p' "$repo/Release")")"
+: >"$repo/Packages"
+assert_exit 0 run_bridge
+assert_eq "$good_index" "$(<"$repo/Packages")"
+
+# A run killed between the rename of a DEB and marking the one before leaves
+# two unmarked DEBs. Nothing is left to download, and the next run still lists
+# the one the vendor names.
+held=$repo/example-app_2.0.0_amd64.deb
+rm -f -- "$repo"/example-app_*.superseded
+ds_fake_deb "$repo/example-app_1.9.5_amd64.deb" example-app 1.9.5 amd64
+: >"$DS_CALL_LOG"
+assert_exit 0 run_bridge
+assert_eq "1" "$(ds_call_count curl)"
+assert_eq "example-app_2.0.0_amd64.deb" "$(listed)"
+[[ -e $repo/example-app_1.9.5_amd64.deb.superseded && ! -e $held.superseded ]] ||
+  ds_fail "a run after the kill left the markers wrong"
 
 # With DOTSTEWARD_CHECK_ONLY=1 nothing changes and nothing is downloaded.
 state_before=$(find "$repo" -printf '%p %s %T@\n' | sort)
