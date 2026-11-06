@@ -100,3 +100,17 @@ assert_contains "$DS_STDOUT$DS_STDERR" "$success"
 printf '// Written by dotsteward: refreshes the local APT bridge before every update.\n' >"$hook"
 assert_exit 0 run_e2e
 assert_contains "$DS_STDOUT$DS_STDERR" "example-app: obsolete bridge hook $hook: run dotsteward install --profile workstation --component example-app"
+rm -f -- "$hook"
+
+# A first refresh that failed: the package is installed, but APT does not take
+# it from the bridge. That stays red, as the only sign of a bridge that does not
+# work, and the failure says what to do.
+ds_stub_clear_routes apt-cache
+ds_stub_route apt-cache 'policy example-app' --stdout "example-app:
+  Installed: 1.3.0-1
+  Candidate: 1.3.0-1
+  Version table:
+ *** 1.3.0-1 100
+        100 /var/lib/dpkg/status"
+assert_exit 1 run_e2e
+assert_contains "$DS_STDOUT$DS_STDERR" "example-app: APT does not take the package from the local APT bridge: the bridge holds no release of it yet (journalctl -t dotsteward-apt-bridge): run dotsteward install --profile workstation --component example-app"

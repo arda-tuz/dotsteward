@@ -245,5 +245,63 @@ forget_lists
 ds_curl_delay "$base/SHA256SUMS.txt" 300
 assert_exit 0 env DOTSTEWARD_APT_BRIDGE_TIMEOUT=10 "$methods_fw/cli/dotsteward" --instance "$methods_inst" install --profile fresh
 assert_contains "$DS_STDERR" "the refresh did not finish within 10 s"
+# The rest goes on in the background, not at the next run of the timer, and
+# the install says what is missing and what to do about it.
+assert_eq "1" "$(ds_call_count sudo 'systemctl start --no-block dotsteward-apt-bridge.service')"
+assert_contains "$DS_STDERR" "example-app (deb): the apt bridge holds no release of example-app yet"
 assert_exit 0 real_update
 assert_eq "" "$(candidate)"
+
+# As long as the repository does not hold the package, its check says so and
+# the next install, which is what a second bootstrap runs, tries again.
+check_named() {
+  "$methods_fw/cli/dotsteward" --instance "$methods_inst" install --profile fresh --component example-app --check-only
+}
+assert_exit 1 check_named
+assert_contains "$DS_STDERR" "example-app (deb): the apt bridge repository $repo holds no release of example-app yet"
+ds_curl_delay "$base/SHA256SUMS.txt" 0
+: >"$DS_CALL_LOG"
+assert_exit 0 run_install --profile fresh
+assert_eq "1" "$(ds_call_count sudo 'timeout 1800 bash *')"
+assert_contains "$DS_STDOUT" "dotsteward-apt-bridge: example-app: 1.4.0 added"
+assert_not_contains "$DS_STDERR" "holds no release"
+assert_exit 0 real_update
+assert_eq "1.4.0" "$(candidate)"
+assert_exit 0 check_named
+
+# Now current, the install has nothing left to do.
+: >"$DS_CALL_LOG"
+assert_exit 0 run_install --profile fresh
+assert_eq "0" "$(ds_call_count sudo)"
+
+# --- a first refresh that leaves no index --------------------------------
+# Another run holds the lock past the wait: the script writes nothing, and a
+# source over a repository without an index would fail every apt-get update of
+# the machine. The source waits for the index; the next install writes it.
+rm -rf -- "$repo" "$source_file"
+mkdir -p "$repo"
+flock_held=$DS_TEST_ROOT/flock-held
+(
+  exec 9>"$repo/.lock"
+  flock 9
+  : >"$flock_held"
+  exec sleep 300
+) &
+holder=$!
+ds_defer kill -KILL "$holder"
+for ((i = 0; i < 1200; i++)); do
+  [[ -e $flock_held ]] && break
+  sleep 0.1
+done
+[[ -e $flock_held ]] || ds_fail "the lock holder did not start"
+assert_exit 0 env DOTSTEWARD_APT_BRIDGE_LOCK_WAIT=0 "$methods_fw/cli/dotsteward" --instance "$methods_inst" install --profile fresh
+assert_contains "$DS_STDOUT" "another run holds $repo/.lock; skipped"
+assert_contains "$DS_STDERR" "apt bridge: $repo has no index yet, so its APT source waits"
+[[ ! -e $source_file ]] || ds_fail "the source was written over a repository without an index"
+assert_exit 0 real_update
+kill -KILL "$holder" 2>/dev/null || true
+wait "$holder" 2>/dev/null || true
+assert_exit 0 run_install --profile fresh
+[[ -f $source_file ]] || ds_fail "the next install did not write the source"
+assert_exit 0 real_update
+assert_eq "1.4.0" "$(candidate)"

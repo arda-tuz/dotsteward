@@ -5,7 +5,8 @@
 # stand-ins of dpkg-query, dpkg, apt-cache and the component's CLI: it
 # passes for a package at or above its floor that ships its desktop entry,
 # whose CLI answers and that APT takes from the local APT bridge, and fails
-# with one message for each of these conditions that does not hold. It reports
+# with one message for each of these conditions that does not hold, the last
+# one with the step that fixes it. It reports
 # a bridge timer that is not enabled and an APT hook of an older framework that
 # is still in place, with the step that fixes them, and stays green for both.
 
@@ -146,6 +147,18 @@ assert_contains "$DS_STDOUT$DS_STDERR" "$name 1.3.0-1: floor 1.2.0, desktop entr
 printf '%s:\n  Installed: 1.3.0-1\n        500 https://example.com/apt ./ Packages\n' "$name" >"$state/policy"
 assert_exit 1 run_hook
 assert_contains "$DS_STDERR" "$name: APT does not take the package from the local APT bridge"
+# The failure names its way out. A repository without the package (its first
+# refresh found a weak network, say) takes the install, which tries again.
+assert_contains "$DS_STDERR" "the bridge holds no release of it yet (journalctl -t dotsteward-apt-bridge): $step"
+# One that holds it, from a later run of the timer, only takes an update.
+bridge_repo=$DS_SYSTEM_ROOT/var/lib/dotsteward/apt-bridge
+mkdir -p "$bridge_repo"
+printf 'Package: %s-extra\nVersion: 1.3.0\n\n' "$name" >"$bridge_repo/Packages"
+assert_exit 1 run_hook
+assert_contains "$DS_STDERR" "the bridge holds no release of it yet"
+printf 'Package: %s\nVersion: 1.3.0\n\n' "$name" >"$bridge_repo/Packages"
+assert_exit 1 run_hook
+assert_contains "$DS_STDERR" "$name: APT does not take the package from the local APT bridge yet: the bridge holds it, run sudo apt-get update"
 
 assert_exit 1 env -u DOTSTEWARD_COMPONENT DOTSTEWARD_LIB="$DS_REPO_ROOT/cli/lib" "$hook"
 assert_contains "$DS_STDERR" "DOTSTEWARD_COMPONENT is not set"

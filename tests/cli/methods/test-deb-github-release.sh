@@ -223,6 +223,29 @@ assert_exit 0 run_install --profile fresh
 assert_contains "$(<"$repo/Packages")" "Version: 1.3.0"
 assert_exit 0 run_install --profile fresh --check-only
 
+# A first refresh that cannot reach the vendor leaves the repository without
+# the package. The install still ends well, since the package itself is in
+# place, and says so; the check holds the machine to it, and the next install
+# tries again.
+rm -rf -- "$repo"
+ds_curl_fail "$release_base/SHA256SUMS.txt" 6
+: >"$DS_CALL_LOG"
+assert_exit 0 run_install --profile fresh
+assert_contains "$DS_STDERR" "example-app (deb): the apt bridge holds no release of example-app yet"
+assert_eq "0" "$(ds_call_count sudo 'systemctl start *')" "no network now: a second run at once finds none either"
+assert_exit 1 run_install --profile fresh --check-only
+assert_contains "$DS_STDERR" "example-app (deb): the apt bridge repository $repo holds no release of example-app yet"
+: >"$DS_CALL_LOG"
+assert_exit 0 run_install --profile fresh
+assert_eq "1" "$(ds_call_count sudo 'timeout 1800 bash *')"
+assert_contains "$DS_STDERR" "example-app (deb): the apt bridge holds no release of example-app yet"
+rm -f -- "$(_ds_curl_path "$release_base/SHA256SUMS.txt").exit"
+: >"$DS_CALL_LOG"
+assert_exit 0 run_install --profile fresh
+assert_contains "$DS_STDOUT" "dotsteward-apt-bridge: example-app: 1.3.0 added"
+assert_not_contains "$DS_STDERR" "holds no release"
+assert_exit 0 run_install --profile fresh --check-only
+
 # Without a running systemd (a container, an image) the timer is enabled for
 # the next boot.
 rm -rf -- "$DS_SYSTEM_ROOT/run/systemd/system" "$timer_link"
