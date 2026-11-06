@@ -11,7 +11,9 @@
 #     tests set);
 #   - <name>-cli --version answers, run from the user's PATH (user_run);
 #   - APT takes the package from the local APT bridge
-#     (file:/var/lib/dotsteward/apt-bridge in `apt-cache policy`).
+#     (file:/var/lib/dotsteward/apt-bridge in `apt-cache policy`); the failure
+#     names the step, which is another install when a first refresh left the
+#     repository without the package.
 # A machine can pass all of this and still wait for one step: the bridge's
 # timer comes with `dotsteward install --component`, which needs sudo and which
 # no rebuild runs in an adopt-mode profile. Until then the package only misses
@@ -48,10 +50,14 @@ user_run "$name-cli" --version </dev/null >/dev/null 2>&1 || die "$name: $name-c
 # leaves apt-cache to die of SIGPIPE under pipefail when more output follows,
 # as it does while a newer version waits in the bridge.
 policy=$(apt-cache policy "$name" 2>/dev/null) || policy=""
-[[ $policy == *'file:/var/lib/dotsteward/apt-bridge'* ]] ||
-  die "$name: APT does not take the package from the local APT bridge"
-
 step="run dotsteward install --profile ${DOTSTEWARD_PROFILE:-<profile>} --component $name"
+if [[ $policy != *'file:/var/lib/dotsteward/apt-bridge'* ]]; then
+  if grep -qxF -- "Package: $name" "${DOTSTEWARD_SYSTEM_ROOT:-}/var/lib/dotsteward/apt-bridge/Packages" 2>/dev/null; then
+    die "$name: APT does not take the package from the local APT bridge yet: the bridge holds it, run sudo apt-get update"
+  fi
+  die "$name: APT does not take the package from the local APT bridge: the bridge holds no release of it yet (journalctl -t dotsteward-apt-bridge): $step"
+fi
+
 units=${DOTSTEWARD_SYSTEM_ROOT:-}/etc/systemd/system
 old_hook=${DOTSTEWARD_APT_DIR:-/etc/apt}/apt.conf.d/60dotsteward-apt-bridge
 if command -v systemctl >/dev/null 2>&1 && [[ ! -f $units/dotsteward-apt-bridge.timer ||

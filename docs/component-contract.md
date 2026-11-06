@@ -134,12 +134,21 @@ the asset of the machine's dpkg architecture), the system units
 `/etc/systemd/system/dotsteward-apt-bridge.timer`, and the trusted flat source
 `/etc/apt/sources.list.d/dotsteward-apt-bridge.sources` over the root-owned
 repository `/var/lib/dotsteward/apt-bridge`; the system `curl` joins the
-transaction. It enables the timer and runs the script itself before its
-`apt-get update` (bounded by `DOTSTEWARD_APT_BRIDGE_TIMEOUT`, default 1800
-seconds; a run that exceeds it leaves the rest to the timer), after its install
-when `curl` was missing, and the source appears once the repository holds a
-valid index. All files are root-owned, mode 0644, below
+transaction. When any of this changed, or the repository does not list a
+package yet, it enables the timer and runs the script itself before its
+`apt-get update`, after its install when `curl` was missing. That run is bounded
+by `DOTSTEWARD_APT_BRIDGE_TIMEOUT` (default 1800 seconds); one that exceeds it
+goes on in the background as the service. The source appears once the repository
+holds a valid index. All files are root-owned, mode 0644, below
 `DOTSTEWARD_SYSTEM_ROOT` where tests set it.
+
+A first refresh that fails, on a weak network say, does not fail the install:
+the package itself is in place. The install prints a line, the timer goes on,
+and so does the next install, which is what a second bootstrap runs. Until a
+refresh has landed the package, APT does not take it from the bridge, so the
+E2E hook fails with the step to take (`dotsteward install --profile <profile>
+--component <name>`, or `sudo apt-get update` when the repository already
+holds it); that failure is also the only sign of a bridge that never works.
 
 The script runs outside any apt lock, so no `apt-get update` ever waits for a
 vendor download or fails on a lock that a download holds. The timer starts the
@@ -172,16 +181,24 @@ is dated by the clock of the same machine; a `Release` is always dated after
 the one it replaces, since APT silently ignores an older one.
 
 Later releases arrive with plain `apt update && apt upgrade`, once a run of the
-timer has reached the vendor; unattended upgrades leave them alone unless their configuration allows
-the origin `dotsteward`. `--check-only` fails while a bridge file is missing or
-differs, the timer is not enabled, the repository has no index, or `curl` is
-missing. The `APT::Update::Pre-Invoke` hook of older frameworks
+timer has reached the vendor; unattended upgrades leave them alone unless their
+configuration allows the origin `dotsteward`. `--check-only` fails while a bridge
+file is missing or differs, the timer is not enabled, the repository has no index
+or lists no release of the package, or `curl` is missing. The
+`APT::Update::Pre-Invoke` hook of older frameworks
 (`/etc/apt/apt.conf.d/60dotsteward-apt-bridge`), which downloaded while
 `apt-get update` held its lock, is removed when the bridge is installed or
 repaired, and `--check-only` fails while it is in place. An adopt-mode profile
 does not manage any of this: the machine takes it in with `dotsteward install
 --profile <profile> --component <name>`, and until then its E2E hook reports
 that step and stays green.
+
+Nothing removes the bridge along with its last component: the timer goes on
+serving the configurations in place. To remove it by hand, run `sudo systemctl
+disable --now dotsteward-apt-bridge.timer`, delete the two units, the source,
+`/usr/local/lib/dotsteward/apt-bridge.sh`, `/etc/dotsteward/apt-bridge.d` and
+`/var/lib/dotsteward/apt-bridge`, and run `sudo systemctl daemon-reload`. A
+component that goes takes its configuration file with it the same way.
 
 A component that installs one such DEB can be written in a few lines with
 `modules/core/github-release-deb.nix`, which the catalog components

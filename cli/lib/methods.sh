@@ -912,6 +912,7 @@ _methods_apt_source_check() {
 # apt-get update held its lock, goes when the bridge is installed or repaired.
 
 _METHODS_BRIDGE_TIMER_UNIT=dotsteward-apt-bridge.timer
+_METHODS_BRIDGE_SERVICE_UNIT=dotsteward-apt-bridge.service
 
 # _methods_bridge_paths: sets _bridge_script, _bridge_conf_dir, _bridge_repo,
 # _bridge_hook (the file an older framework wrote), _bridge_source,
@@ -1018,16 +1019,29 @@ _methods_bridge_enable_timer() {
 
 # _methods_bridge_refresh CONF_DIR: one run of the bridge script outside any
 # apt lock, bounded by DOTSTEWARD_APT_BRIDGE_TIMEOUT (default 1800 s). Never
-# fatal: what it landed stays and the timer goes on from there, and the
-# repository holds a valid index either way.
+# fatal: what it landed stays, the repository holds a valid index either way,
+# and a run that did not end goes on in the background from what it fetched.
 _methods_bridge_refresh() {
-  local limit=${DOTSTEWARD_APT_BRIDGE_TIMEOUT:-1800} status=0
+  local limit=${DOTSTEWARD_APT_BRIDGE_TIMEOUT:-1800} status=0 next="the timer goes on"
+  log "apt bridge: refreshing $_bridge_repo, for $limit s at most"
   sudo timeout "$limit" bash "$_bridge_script" "$1" "$_bridge_repo" || status=$?
-  if ((status == 124)); then
-    warn "apt bridge: the refresh did not finish within $limit s; the timer goes on from what it fetched"
-  elif ((status != 0)); then
-    warn "apt bridge: the refresh failed (exit $status); the timer tries again"
+  ((status != 0)) || return 0
+  if command -v systemctl >/dev/null 2>&1 && [[ -d $_bridge_systemd ]] &&
+    sudo systemctl start --no-block "$_METHODS_BRIDGE_SERVICE_UNIT"; then
+    next="it goes on in the background (journalctl -t dotsteward-apt-bridge)"
   fi
+  if ((status == 124)); then
+    warn "apt bridge: the refresh did not finish within $limit s; $next"
+  else
+    warn "apt bridge: the refresh failed (exit $status); $next"
+  fi
+}
+
+# _methods_bridge_unlisted PACKAGE: status 0 when the index of the repository
+# does not list PACKAGE, which is what leaves APT without it: its first refresh
+# did not get that far. A file test, like the timer's.
+_methods_bridge_unlisted() {
+  ! grep -qxF -- "Package: $1" "$_bridge_repo/Packages" 2>/dev/null
 }
 
 # _methods_bridge_plan NAME: for the component of the last _methods_deb_block,
@@ -1093,6 +1107,10 @@ _methods_bridge_check() {
     _methods_set failed "the apt bridge repository $_bridge_repo has no index"
     return 1
   fi
+  if _methods_bridge_unlisted "${_deb_names[0]}"; then
+    _methods_set failed "the apt bridge repository $_bridge_repo holds no release of ${_deb_names[0]} yet"
+    return 1
+  fi
   if ! dpkg_installed curl; then
     _methods_set failed "apt package curl is not installed (the apt bridge runs it)"
     return 1
@@ -1130,7 +1148,7 @@ methods_deb_transaction() {
   local -a src_components=() src_json=() src_text=() src_key=()
   local -A component_apt=() component_deb=() component_src=() component_bridge=() src_seen=()
   local -a bridge_components=() bridge_targets=() bridge_files=() bridge_texts=()
-  local source text bridged=0 bridge_changed=0 bridge_source_text=''
+  local source text bridged=0 bridge_changed=0 bridge_retry=0 bridge_source_text=''
   METHODS_DEB_STATUS=()
   METHODS_DEB_DETAIL=()
   ((${#names[@]})) || return 0
@@ -1183,6 +1201,8 @@ methods_deb_transaction() {
         bridge_texts+=(-)
         component_bridge[$name]=$_bridge_label
       fi
+      # What a refresh that failed left out, the next install tries again.
+      _methods_bridge_unlisted "${_deb_names[0]}" && bridge_retry=1
       bridged=1
       if _methods_bridge_differs "$_bridge_conf" "$_bridge_conf_text"; then
         bridge_components+=("$name")
@@ -1191,6 +1211,8 @@ methods_deb_transaction() {
         bridge_texts+=("$_bridge_conf_text")
         component_bridge[$name]=$_bridge_label
       fi
+      # What a refresh that failed left out, the next install tries again.
+      _methods_bridge_unlisted "${_deb_names[0]}" && bridge_retry=1
       # The bridge script runs the system curl as root.
       _deb_apt+=(curl)
     fi
@@ -1225,7 +1247,8 @@ methods_deb_transaction() {
     if _methods_bridge_differs "$_bridge_source" "$text"; then
       bridge_source_text=$text
     fi
-    if ((${#bridge_targets[@]})) || [[ -n $bridge_source_text || -e $_bridge_hook || ! -f $_bridge_repo/Release ]] ||
+    if ((${#bridge_targets[@]} || bridge_retry)) ||
+      [[ -n $bridge_source_text || -e $_bridge_hook || ! -f $_bridge_repo/Release ]] ||
       _methods_bridge_timer_missing; then
       bridge_changed=1
     fi
@@ -1307,10 +1330,11 @@ methods_deb_transaction() {
           log "$name (deb): apt bridge: ${component_bridge[$name]}"
         fi
       done
-      # The source appears once the repository holds a valid index, so no
-      # apt-get update ever finds it without one. The first refresh needs the
-      # system curl; while that waits in the transaction, the script only
-      # writes the index, with a configuration directory that holds nothing.
+      # The source appears once the repository holds a valid index: over one
+      # without it, every apt-get update of the machine would fail. The first
+      # refresh needs the system curl; while that waits in the transaction,
+      # the script only writes the index, with a configuration directory that
+      # holds nothing.
       local refresh_later=0
       if ((bridge_changed)); then
         _methods_bridge_enable_timer
@@ -1318,10 +1342,11 @@ methods_deb_transaction() {
           refresh_later=1
           _methods_bridge_refresh /dev/null
         else
-          log "apt bridge: refreshing $_bridge_repo"
           _methods_bridge_refresh "$_bridge_conf_dir"
         fi
-        if [[ -n $bridge_source_text ]]; then
+        if [[ -n $bridge_source_text && ! -f $_bridge_repo/Release ]]; then
+          warn "apt bridge: $_bridge_repo has no index yet, so its APT source waits for the next install"
+        elif [[ -n $bridge_source_text ]]; then
           printf '%s\n' "$bridge_source_text" >"$tmp_dir/dotsteward-apt-bridge.sources"
           sudo install -D -o root -g root -m 0644 "$tmp_dir/dotsteward-apt-bridge.sources" "$_bridge_source" ||
             die "apt bridge: cannot write $_bridge_source"
@@ -1336,7 +1361,6 @@ methods_deb_transaction() {
         apt_install "${apt_queue[@]}" "${paths[@]}" || die "apt-get install failed"
       fi
       if ((refresh_later)); then
-        log "apt bridge: refreshing $_bridge_repo"
         _methods_bridge_refresh "$_bridge_conf_dir"
         apt_update || warn "apt-get update failed; the next one reads the refreshed apt bridge"
       fi
@@ -1347,7 +1371,12 @@ methods_deb_transaction() {
   # Verify the floors and the apt packages.
   for name in "${names[@]}"; do
     _methods_deb_block "$name"
-    [[ -z $_deb_release ]] || _deb_apt+=(curl)
+    if [[ -n $_deb_release ]]; then
+      _deb_apt+=(curl)
+      if _methods_bridge_unlisted "${_deb_names[0]}"; then
+        warn "$name (deb): the apt bridge holds no release of ${_deb_names[0]} yet, so APT does not take it from there; the timer tries again (journalctl -t dotsteward-apt-bridge), and so does this install"
+      fi
+    fi
     detail=''
     if [[ -n $_deb_pin ]]; then
       if met=$(_methods_deb_floor_met); then
