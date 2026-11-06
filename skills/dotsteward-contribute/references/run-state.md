@@ -1,6 +1,6 @@
 # Run state, resuming and recovery
 
-Every contribution is one run with one state file, `<state root>/contribute/<id>.json` (mode 0600; `state.root` of `dotsteward context --json` is the state root), where the id is `<UTC timestamp>-<slug>`. `<state root>/contribute/current` names the current run; the steps act on it unless `--id ID` names another one. Every step reads the file and updates it, so an interrupted run resumes where it stopped.
+Every contribution is one run with one state file, `<state root>/contribute/<id>.json` (mode 0600; `state.root` of `dotsteward context --json` is the state root), where the id is `<UTC timestamp>-<slug>`. `<state root>/contribute/current` names the current run; the steps act on it unless `--id ID` names another one. `<state root>/contribute/candidate-cli` is the CLI that the last trial built, a garbage collector root until the next trial. Every step reads the file and updates it, so an interrupted run resumes where it stopped.
 
 ## Reading the state
 
