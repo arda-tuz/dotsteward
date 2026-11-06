@@ -47,6 +47,7 @@ EXIT_PRIVACY = report.PRIVACY_STOP
 EXIT_OFFLINE = report.PARTIAL
 
 ASSUME_YES = "DOTSTEWARD_ASSUME_YES"
+# A file with the machine id instead of /etc/machine-id, for the tests.
 MACHINE_ID_FILE = "DOTSTEWARD_MACHINE_ID_FILE"
 
 # The application id of the machine key: systemd-id128 machine-id --app-specific=<this>.
@@ -448,7 +449,10 @@ def host_text(current: str | None, facts: Mapping[str, Any]) -> str:
     """The text of the host file: what this machine knows about itself over CURRENT,
     whose other keys and comments stay."""
     tomlkit = _tomlkit()
-    document = tomlkit.parse(current) if current is not None else tomlkit.document()
+    try:
+        document = tomlkit.parse(current) if current is not None else tomlkit.document()
+    except Exception as problem:  # tomlkit raises its own parse errors
+        raise Refusal(f"the host file of this machine on the remote is not TOML: {problem}") from problem
     if "schema_version" not in document:
         document["schema_version"] = 1
     for key in ("system", "profile", "platform"):
@@ -859,6 +863,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_REFUSAL
     except config.DotstewardError as error:
         print("\n".join(error.lines()), file=sys.stderr)
+        return EXIT_REFUSAL
+    except OSError as error:
+        _error(str(error))
         return EXIT_REFUSAL
     except KeyboardInterrupt:
         return 130
