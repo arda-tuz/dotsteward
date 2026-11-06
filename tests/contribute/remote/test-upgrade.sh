@@ -13,8 +13,8 @@
 # whose template/ the refreshed files match), only `update prepare` through
 # the running CLI. Re-runs resume after the commit;
 # --build-only rebuilds without switching and skips e2e; a red step keeps
-# the instance's changes uncommitted and reports when the recovery cannot
-# run on a dirty instance.
+# the instance's changes uncommitted and the live generation as it is
+# (test-upgrade-keeps-trial.sh).
 # shellcheck source=tests/contribute/remote/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/remote/helpers.sh"
 
@@ -119,7 +119,7 @@ assert_eq "$(
 )" "$(instance_calls)" "calls of the resumed upgrade"
 assert_call_count 0 nix
 
-# --- a red gate on a dirty instance: no commit, the recovery cannot run ----------------------
+# --- a red gate: no commit, the changes stay staged ---------------------------------------------
 
 state_set '.step = "done"'
 write_flake inline
@@ -130,10 +130,10 @@ stand_in_fail gate '--scope maintain'
 reset_calls
 assert_exit 1 run_contribute upgrade --tag v0.1.3
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: upgrade: the gate failed on the upgraded instance; the changes stay uncommitted (staged), nothing is published"
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: recovery not run: the instance $ct_inst has uncommitted changes, so it cannot be rebuilt"
+assert_contains "$DS_STDOUT" "[dotsteward] the live generation keeps the trial framework: the change is merged with the tested tree, so no recovery runs"
 assert_contains "$(cat "$ct_inst/flake.nix")" 'inputs.dotsteward = { url = "github:example-org/dotsteward/v0.1.3?dir=."; flake = true; };'
 assert_eq "$base" "$(git -C "$ct_inst" rev-parse HEAD)" "no commit after a red gate"
-state_json | assert_json - '.trial_switched == true and .recovery == "failed" and .instance_commit == null'
+state_json | assert_json - '.trial_switched == true and (.recovery // null) == null and .instance_commit == null'
 assert_call_count 0 dotsteward-rebuild
 
 # The instance moved meanwhile: refused.
