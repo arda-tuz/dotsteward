@@ -6,11 +6,14 @@
 #   flake check ...                  succeeds, or fails when the knob
 #                                    flake-check (DS_TEST_ROOT/hub/knobs/
 #                                    flake-check) holds "fail"
-#   build DIR#dotsteward ... --override-input dotsteward REF ...
+#   build DIR#dotsteward --out-link LINK ... --override-input dotsteward REF ...
 #                                    the CLI of the instance DIR with the
-#                                    framework at REF: prints the package
-#                                    DS_TEST_ROOT/candidate, or fails when
-#                                    the knob candidate-cli holds "fail"
+#                                    framework at REF: LINK points to the
+#                                    package DS_TEST_ROOT/candidate and its
+#                                    path is printed, or it fails when the
+#                                    knob candidate-cli holds "fail"; the knob
+#                                    holding "empty" makes a package without
+#                                    the command
 #   flake update dotsteward --flake DIR
 #                                    locks the dotsteward input of
 #                                    DIR/flake.nix: its url (github:O/R/REF
@@ -49,10 +52,17 @@ hub=$DS_TEST_ROOT/hub
 
 if [[ ${1:-} == build ]]; then
   [[ ${2:-} == *'#dotsteward' && " $* " == *" --override-input dotsteward "* ]] || fail "unsupported: $*"
-  if [[ -f $hub/knobs/candidate-cli && $(<"$hub/knobs/candidate-cli") == fail ]]; then
-    fail "build: the CLI does not build"
-  fi
-  printf '%s\n' "$DS_TEST_ROOT/candidate"
+  package=$DS_TEST_ROOT/candidate
+  case $(cat "$hub/knobs/candidate-cli" 2>/dev/null || true) in
+    fail) fail "build: the CLI does not build" ;;
+    empty)
+      package=$DS_TEST_ROOT/candidate-empty
+      mkdir -p "$package"
+      ;;
+  esac
+  [[ ${3:-} == --out-link && -n ${4:-} ]] || fail "unsupported: $*"
+  ln -sfn "$package" "$4"
+  printf '%s\n' "$package"
   exit 0
 fi
 

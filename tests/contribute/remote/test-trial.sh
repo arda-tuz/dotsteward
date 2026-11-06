@@ -4,9 +4,11 @@
 # gate (maintain scope), rebuild --switch and e2e, each with
 # --framework-override git+file://<clone>?rev=<checked commit> on the
 # current profile (else profiles.check), run by the candidate's own CLI (the
-# instance's dotsteward package built with that override), so the hooks of
-# the candidate's generation see the library of their own release;
-# trial_switched is set before the switch. --build-only runs gate and
+# instance's dotsteward package built with that override and kept as a garbage
+# collector root of the state directory), so the hooks of the candidate's
+# generation see the library of their own release, without the toolchain of
+# the CLI that runs the step on PATH; trial_switched is set before the
+# switch. --build-only runs gate and
 # rebuild --build-only only. A red step publishes nothing and, after a
 # switch, runs the recovery with the CLI that runs the step: rebuild --switch
 # and e2e without an override, so the live generation returns to the pinned
@@ -85,6 +87,11 @@ assert_exit 1 run_contribute trial
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: trial: the CLI of the framework at ${sha:0:12} does not build; nothing is published"
 assert_eq "" "$(instance_calls)" "instance commands without the candidate's CLI"
 assert_eq false "$(field .trial_switched)" "trial_switched without the candidate's CLI"
+hub_knob candidate-cli empty
+reset_calls
+assert_exit 1 run_contribute trial
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: trial: the build of the CLI of the framework at ${sha:0:12} has no executable bin/dotsteward; nothing is published"
+assert_eq "" "$(instance_calls)" "instance commands with a build without the command"
 rm -f -- "$rt_hub/knobs/candidate-cli"
 
 # --- the full trial ---------------------------------------------------------------------
@@ -93,8 +100,12 @@ rm -f -- "$rt_hub/knobs/candidate-cli"
 reset_calls
 DOTSTEWARD_FRAMEWORK_OVERRIDE=path:/elsewhere assert_exit 0 run_contribute trial
 assert_eq "$(trial_calls)" "$(instance_calls)" "calls of the full trial"
-assert_call_count 1 nix "*build $ct_inst#dotsteward --no-link --no-update-lock-file --no-write-lock-file --override-input dotsteward git+file://$ct_clone* --print-out-paths"
-# The candidate's CLI runs all three.
+assert_call_count 1 nix "*build $ct_inst#dotsteward --out-link $ct_runs/candidate-cli --no-update-lock-file --no-write-lock-file --override-input dotsteward git+file://$ct_clone* --print-out-paths"
+# It is built from the checked commit, and stays a garbage collector root.
+assert_contains "$(ds_calls_of nix)" "--override-input dotsteward $(printf %q "$ref") --print-out-paths"
+assert_symlink_to "$ct_runs/candidate-cli" "$DS_TEST_ROOT/candidate"
+# The candidate's CLI runs all three, and the log says so.
+assert_contains "$DS_STDOUT" "[dotsteward] dotsteward gate --scope maintain --framework-override $ref (the candidate's CLI)"
 assert_call_count 3 candidate-cli
 assert_call_count 1 candidate-cli "--instance $ct_inst gate --scope maintain --framework-override git+file://$ct_clone*"
 assert_call_count 1 candidate-cli "--instance $ct_inst rebuild --profile main --switch --framework-override git+file://$ct_clone*"
@@ -166,6 +177,16 @@ assert_call_count 2 candidate-cli
 assert_contains "$DS_STDOUT" "[dotsteward] trial passed (build-only): ${sha:0:12} builds on this machine; publish also needs clean-install.yml green on it"
 assert_eq none "$(live)" "live framework after the build-only trial"
 state_json | assert_json - ".trial == \"build-only\" and .trial_sha == \"$sha\" and .trial_switched == false"
+
+# The toolchain of the CLI that runs the step stays out of the candidate's
+# PATH, as user_path leaves it out of the user's: the candidate's own takes
+# its place, and a check of the user's environment must not find the old one.
+toolchain=$DS_TEST_ROOT/running-toolchain
+mkdir -p "$toolchain"
+reset_calls
+DOTSTEWARD_TOOLCHAIN_PATH=$toolchain PATH=$toolchain:$PATH assert_exit 0 run_contribute trial --build-only
+assert_call_count 2 candidate-cli
+assert_not_contains "$(ds_calls_of candidate-path)" "$toolchain"
 
 # A red build: nothing switched, nothing recovered.
 stand_in_fail rebuild '*--build-only*'

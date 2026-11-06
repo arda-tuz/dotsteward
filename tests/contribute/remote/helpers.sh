@@ -33,8 +33,9 @@
 #                     by the instance's flake.lock
 #   the candidate CLI <test root>/candidate/bin/dotsteward, what the fake Nix
 #                     builds for the trial: a wrapper that records
-#                     "candidate-cli ARG..." and runs rt_fw, standing in for
-#                     the CLI of the framework under trial
+#                     "candidate-cli ARG..." and "candidate-path PATH" and
+#                     runs rt_fw, standing in for the CLI of the framework
+#                     under trial
 #   ct_inst           a git clone on main (origin CT_INSTANCE_REMOTE, served
 #                     from rt_inst_bare) with flake.nix (the github form of
 #                     the dotsteward input, write_flake changes it), the
@@ -246,6 +247,7 @@ mkdir -p "$DS_TEST_ROOT/candidate/bin"
   printf 'set -euo pipefail\n'
   printf 'source %q\n' "$DS_REPO_ROOT/tests/lib/harness.sh"
   printf 'ds_record_call candidate-cli "$@"\n'
+  printf 'ds_record_call candidate-path "$PATH"\n'
   printf 'exec %q "$@"\n' "$rt_fw/cli/dotsteward"
 } >"$DS_TEST_ROOT/candidate/bin/dotsteward"
 chmod 0755 "$DS_TEST_ROOT/candidate/bin/dotsteward"
