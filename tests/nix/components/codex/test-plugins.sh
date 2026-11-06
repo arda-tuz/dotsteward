@@ -5,7 +5,8 @@
 # component's agentsPost hook, and `dotsteward agents install|check` runs it
 # against the codex stub. install adds a missing plugin with `codex plugin
 # add`; both modes then verify it: listed as installed and enabled, its
-# manifest version equals the listed one, at least the lock minimum
+# manifest version equals the listed one (the cached copy of that version
+# when there is one, else the local source), at least the lock minimum
 # (minimumAt), every required skill directory has a SKILL.md. check never
 # adds anything.
 # shellcheck source=tests/nix/components/codex/helpers.sh
@@ -131,12 +132,43 @@ assert_exit 1 agents install
 assert_call_count 2 codex "plugin add $spec"
 assert_contains "$DS_STDERR" "codex plugin $spec is still not installed and enabled after codex plugin add"
 
-# A plugin with a local source is read where the list says it lives.
+# A plugin with a local source and no cached copy is read where the list says
+# it lives.
 local_dir=$DS_TEST_ROOT/local-plugin
 listed 2.0.0 true "$(jq -cn --arg path "$local_dir" '{ source: "local", path: $path }')"
 plugin_tree "$local_dir" 2.0.0 alpha-skill beta-skill
 assert_exit 0 agents check
 assert_contains "$DS_STDOUT" "codex plugin $spec 2.0.0 verified"
+
+# A plugin at the root of a Git marketplace: the list names the marketplace
+# snapshot as its local source and takes the version from the cached copy.
+# A short `codex exec` refreshes the snapshot and may end before the cache
+# follows, so a newer snapshot is no defect: the cached copy of the listed
+# version is what Codex loads, and what is verified.
+snapshot=$HOME/.codex/.tmp/marketplaces/example-market
+listed 2.1.0 true "$(jq -cn --arg path "$snapshot" '{ source: "local", path: $path }')"
+plugin_tree "$snapshot" 2.2.0 alpha-skill beta-skill
+plugin_tree "$cache/2.1.0" 2.1.0 alpha-skill beta-skill
+for mode in check install; do
+  assert_exit 0 agents "$mode"
+  assert_contains "$DS_STDOUT" "codex plugin $spec 2.1.0 verified"
+done
+
+# The defects of the cached copy fail, whatever the snapshot holds.
+plugin_tree "$snapshot" 2.1.0 alpha-skill beta-skill
+plugin_tree "$cache/2.1.0" 2.1.1 alpha-skill beta-skill
+assert_exit 1 agents check
+assert_contains "$DS_STDERR" "codex plugin $spec is listed as 2.1.0 but $cache/2.1.0/.codex-plugin/plugin.json says 2.1.1"
+plugin_tree "$cache/2.1.0" 2.1.0 alpha-skill
+assert_exit 1 agents check
+assert_contains "$DS_STDERR" "codex plugin $spec 2.1.0 lacks the skill beta-skill ($cache/2.1.0/skills/beta-skill/SKILL.md)"
+
+# Without a cached copy of the listed version, a snapshot of another version
+# is a real mismatch.
+rm -rf -- "$cache/2.1.0"
+plugin_tree "$snapshot" 2.2.0 alpha-skill beta-skill
+assert_exit 1 agents check
+assert_contains "$DS_STDERR" "codex plugin $spec is listed as 2.1.0 but $snapshot/.codex-plugin/plugin.json says 2.2.0"
 
 # --- CODEX_HOME, codex missing ---------------------------------------------------------
 
