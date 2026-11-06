@@ -133,6 +133,12 @@ runs first.
 - Skill layout: `~/.codex/skills` is a legacy skill root (created as a
   directory when the component is enabled); its `.system` subtree belongs to
   Codex and is never touched.
+- The `skill-hooks` hook (`skill-hooks.sh`, an agentsPost hook) puts the hooks
+  of skill tracking into `${CODEX_HOME:-~/.codex}/hooks.json`, and takes them
+  out when `[skills] tracking` is off; `config.toml` stays as it is. Codex runs
+  no hook of that file before `/hooks` trusted it, once per machine, so `skills
+  hooks check` reports what waits; see
+  [skill tracking](../../../docs/skill-tracking.md).
 
 ## Plugins
 
@@ -275,5 +281,6 @@ assets list (`https://api.github.com/repos/openai/codex/releases/latest`):
 | `plugins.sh` | the agentsPost hook of the plugins option |
 | `e2e-login-path.sh` | the E2E hook `codex-login-path` |
 | `e2e-code-mode-host.sh` | the E2E hook `codex-code-mode-host` |
+| `skill-hooks.sh` | the agentsPost hook of skill tracking |
 | `seed.json` | the release pins `dotsteward init` writes into a new instance |
 | `maintenance.md` | update notes |

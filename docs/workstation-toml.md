@@ -175,7 +175,7 @@ The settings buffer (see [concepts.md](concepts.md#settings-buffer)).
 | `skills.hm_root` | `".agents/skills"` | Home-relative root where Home Manager deploys skills. |
 | `skills.installer` | the native copy | An installer argv template with `{source}`, `{name}` and `{home}`. |
 | `skills.overlays` | `{}` | An overlay file per framework skill; `agent/overlays/<skill>.md` is used when it exists and no entry is given. |
-| `skills.tracking` | `false` | Whether the skills this machine creates are tracked and published by themselves. |
+| `skills.tracking` | `false`, and `dotsteward init` writes `true` | Whether the skills this machine creates are tracked and published by themselves; see [skill tracking](skill-tracking.md). |
 | `skills.capture_delay_seconds` | `600` | How long a changed skill of this machine stays quiet before it is captured. |
 | `skills.capture_max_mib` | `100` | The size above which a skill is refused for capture, in MiB. |
 

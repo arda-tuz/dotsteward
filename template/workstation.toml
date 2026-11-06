@@ -25,6 +25,12 @@ systems = ["x86_64-linux"]
 allow_unfree = false
 state_version = "26.05"
 
+# Skills: the skills you make in an agent are tracked and pushed without a question,
+# and one you download gets a question in the session. Agent hooks do the work;
+# see docs/skill-tracking.md of the framework.
+[skills]
+tracking = true
+
 # Profiles: adopt manages your files on a machine that is already set up;
 # fresh also installs system packages on a new machine (bootstrap.sh).
 [profiles]

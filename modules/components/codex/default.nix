@@ -385,12 +385,19 @@ in
       excludedSubtrees = [ ".system" ];
     };
 
-    # The hook is read in place from the framework source, so the manifest
-    # mirror names it <dotsteward>/modules/components/codex/plugins.sh.
-    hooks.agentsPost = lib.optional (pluginList != [ ]) {
-      name = "plugins";
-      script = toString ./plugins.sh;
-    };
+    # The hooks are read in place from the framework source, so the manifest
+    # mirror names them <dotsteward>/modules/components/codex/<hook>.sh.
+    hooks.agentsPost =
+      lib.optional (pluginList != [ ]) {
+        name = "plugins";
+        script = toString ./plugins.sh;
+      }
+      ++ [
+        {
+          name = "skill-hooks";
+          script = toString ./skill-hooks.sh;
+        }
+      ];
 
     # It only reads, so it runs in parallel with the hooks next to it.
     checks.e2e =

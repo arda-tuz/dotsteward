@@ -529,6 +529,17 @@ let
         "lib/default.nix"
       ])
     ];
+    skills-tracking = fs.unions [
+      runner
+      cli
+      (paths [
+        "modules/components/claude-code/skill-hooks.sh"
+        "modules/components/codex/skill-hooks.sh"
+        "tools"
+        "tests/agents/helpers.sh"
+        "tests/skills-tracking"
+      ])
+    ];
     skills = fs.unions [
       runner
       package

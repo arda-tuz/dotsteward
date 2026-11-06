@@ -97,10 +97,11 @@ for platform in linux darwin; do
   # Codex and is never touched.
   json_check "$manifest" '.skill_layout' \
     '{"agent_roots":{},"excluded_subtrees":[".system"],"legacy_roots":["~/.codex/skills"],"link_roots":{}}'
-  # The helper hook of the official-binary method (test-code-mode-host.sh).
-  # Nothing else: no hooks without plugins, no probes, other checks, snapshots,
-  # adoption paths, detectors or resolved versions.
-  json_check "$manifest" '[.hooks[][] | select(.component == "codex")]' '[]'
+  # The hook of skill tracking and the helper hook of the official-binary method
+  # (test-code-mode-host.sh). Nothing else: without plugins no other hooks, no
+  # probes, other checks, snapshots, adoption paths, detectors or resolved
+  # versions.
+  json_check "$manifest" '[.hooks[][] | select(.component == "codex") | .name]' '["skill-hooks"]'
   json_check "$manifest" '[.probes[], .checks[][], .snapshots[] | select(.component == "codex") | .name]' '["codex-code-mode-host"]'
   json_check "$manifest" '[.adopt_paths, .preflight_detectors, .pins.resolved_versions, .pins.flake_inputs]' \
     '[[],{},{},[]]'
@@ -274,20 +275,21 @@ json_check "$(codex_entry "$manifest")" '.options' "$(jq -cS . <<'EOF'
 }
 EOF
 )"
-# One agentsPost hook, the framework's plugins.sh, read from the framework
-# source in place (the mirror names it <dotsteward>/...).
+# Two agentsPost hooks, the framework's plugins.sh and skill-hooks.sh, read
+# from the framework source in place (the mirror names them <dotsteward>/...).
 json_check "$manifest" '[.hooks.agents_post[] | select(.component == "codex")]' \
-  "[{\"component\":\"codex\",\"name\":\"plugins\",\"phase\":\"main\",\"profiles\":null,\"script\":\"$component/plugins.sh\"}]"
+  "[{\"component\":\"codex\",\"name\":\"plugins\",\"phase\":\"main\",\"profiles\":null,\"script\":\"$component/plugins.sh\"},{\"component\":\"codex\",\"name\":\"skill-hooks\",\"phase\":\"main\",\"profiles\":null,\"script\":\"$component/skill-hooks.sh\"}]"
 json_check "$manifest" '[.hooks | to_entries[] | select(.key != "agents_post") | .value[] | select(.component == "codex")]' '[]'
 [[ -x $component/plugins.sh ]] || ds_fail "plugins.sh is not executable"
+[[ -x $component/skill-hooks.sh ]] || ds_fail "skill-hooks.sh is not executable"
 codex_mirror "$plugins"
 assert_json "$plugins/.dotsteward/manifest.x86_64-linux.json" \
-  '[.hooks.agents_post[] | select(.component == "codex") | .script] == ["<dotsteward>/modules/components/codex/plugins.sh"]'
+  '[.hooks.agents_post[] | select(.component == "codex") | .script] == ["<dotsteward>/modules/components/codex/plugins.sh", "<dotsteward>/modules/components/codex/skill-hooks.sh"]'
 
-# An empty list is no hook.
+# An empty list is no plugins hook.
 empty=$(codex_instance empty '["x86_64-linux"]' 'options = { plugins = [] }')
 manifest=$(manifests "$empty" | jq -c .linux)
-json_check "$manifest" '[.hooks.agents_post[] | select(.component == "codex")]' '[]'
+json_check "$manifest" '[.hooks.agents_post[] | select(.component == "codex") | .name]' '["skill-hooks"]'
 
 # Invalid options fail the evaluation with every problem at once.
 username() {

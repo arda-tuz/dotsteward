@@ -75,7 +75,7 @@ codex_lock_set "$inst" agent_tools.example-plugin \
 # lib.mkInstance: the documented plugin list and the plugins hook.
 manifest=$(inst_json "storeless (homeOf ($(codex_expr "$inst")) \"x86_64-linux\" \"workstation\").dotsteward.manifest")
 json_check "$manifest" '.components[] | select(.name == "codex") | .options.plugins' "$expected_plugins"
-json_check "$manifest" '[.hooks.agents_post[] | select(.component == "codex") | .name]' '["plugins"]'
+json_check "$manifest" '[.hooks.agents_post[] | select(.component == "codex") | .name]' '["plugins","skill-hooks"]'
 json_check "$manifest" '[.pins.latest[] | select(.component == "codex" and .adapter == "git-compare") | .id]' \
   '["agent_tools.example-plugin"]'
 

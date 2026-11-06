@@ -77,6 +77,7 @@ let
     "settings" # the settings engine in a darwin home
     "settings-jsonc" # the JSONC reader of the settings engine
     "skeleton" # the dispatcher and the packaged CLI with its darwin toolchain
+    "skills-tracking" # the agent hooks with a fake agent, the debounce and the capture
   ];
 
   checksFor =

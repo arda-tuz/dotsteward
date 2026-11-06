@@ -123,6 +123,7 @@ real person.
 | `tests/static` | framework static contracts and these docs | `checks.static` |
 | `tests/instance` | the template and `dotsteward init` | `checks.init`, `checks.template-*` |
 | `tests/skills` | the skill contract | `checks.skills` |
+| `tests/skills-tracking` | the hooks of skill tracking with a fake agent and recorded payloads, the debounce and the capture to a bare remote | `checks.skills-tracking` |
 | `tests/contribute` | the contribution flow against local bare remotes | `checks.contribute*` |
 | `tests/host` | real Nix on the host: an instance built in a temporary home without activation (`instance-e2e.sh`), and the framework checks, which depend on the tree alone, never on its commit, and each only on the files of its source set (`test-*.sh`) | `instance-e2e.sh` locally; `test-*.sh` locally and in the host-level tests of `ci.yml` |
 | `tests/ci` | clean-machine install and the macOS smoke test with real activation | GitHub Actions only |

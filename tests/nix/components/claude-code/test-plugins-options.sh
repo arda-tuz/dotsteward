@@ -52,15 +52,16 @@ json_check "$(cc_entry "$result")" '.options' "$(jq -cS . <<'EOF'
 EOF
 )"
 
-# One agentsPost hook, the framework's plugins.sh, read from the framework
-# source in place (the mirror names it <dotsteward>/...).
+# Two agentsPost hooks, the framework's plugins.sh and skill-hooks.sh, read
+# from the framework source in place (the mirror names them <dotsteward>/...).
 json_check "$result" '[.hooks.agents_post[] | select(.component == "claude-code")]' \
-  "[{\"component\":\"claude-code\",\"name\":\"plugins\",\"phase\":\"main\",\"profiles\":null,\"script\":\"$component/plugins.sh\"}]"
+  "[{\"component\":\"claude-code\",\"name\":\"plugins\",\"phase\":\"main\",\"profiles\":null,\"script\":\"$component/plugins.sh\"},{\"component\":\"claude-code\",\"name\":\"skill-hooks\",\"phase\":\"main\",\"profiles\":null,\"script\":\"$component/skill-hooks.sh\"}]"
 json_check "$result" '[.hooks | to_entries[] | select(.key != "agents_post") | .value[] | select(.component == "claude-code")]' '[]'
 [[ -x $component/plugins.sh ]] || ds_fail "plugins.sh is not executable"
+[[ -x $component/skill-hooks.sh ]] || ds_fail "skill-hooks.sh is not executable"
 cc_mirror "$plugins"
 assert_json "$plugins/.dotsteward/manifest.x86_64-linux.json" \
-  '[.hooks.agents_post[] | select(.component == "claude-code") | .script] == ["<dotsteward>/modules/components/claude-code/plugins.sh"]'
+  '[.hooks.agents_post[] | select(.component == "claude-code") | .script] == ["<dotsteward>/modules/components/claude-code/plugins.sh", "<dotsteward>/modules/components/claude-code/skill-hooks.sh"]'
 
 # The tracked plugin is a git-compare review row of its marketplace, also
 # with the external method (which declares no install pins); the other
@@ -96,13 +97,13 @@ cp -- "$nix_instance_fixtures/example/flake.nix" "$nix_instance_fixtures/example
 cc_mirror "$tracked"
 assert_exit 0 cc_cli "$tracked" pins check
 
-# --- No plugins: no hook, no rows ---------------------------------------------------------
+# --- No plugins: only the hook of skill tracking, no rows -----------------------------------
 
 for options in '' 'options = { plugins = [] }'; do
   empty=$(cc_instance empty "method = \"external\"
 $options")
   result=$(manifest "$empty")
-  json_check "$result" '[.hooks[][] | select(.component == "claude-code")]' '[]'
+  json_check "$result" '[.hooks[][] | select(.component == "claude-code") | .name]' '["skill-hooks"]'
   json_check "$result" '[.pins.latest[] | select(.component == "claude-code")]' '[]'
 done
 

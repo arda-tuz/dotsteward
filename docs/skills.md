@@ -25,7 +25,8 @@ claude plugin install dotsteward@dotsteward
 The Codex plugin marketplace and `gh skill install` work the same way (see
 [getting-started-ubuntu.md](getting-started-ubuntu.md)). The other three
 live in `skills/` and come with the framework release an instance pins, so
-their bytes are the same for every user of that release.
+their bytes are the same for every user of that release. The skills you make or
+download yourself are a matter of [skill tracking](skill-tracking.md).
 
 ## Deployment
 

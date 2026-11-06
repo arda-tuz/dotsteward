@@ -1,6 +1,16 @@
 """The commands of ``dotsteward skills`` other than the hook.
 
     skills status [--json]        what the machine knows about the own skills of the lock
+    skills reconcile [--json] [--full]
+                                  compares the skill roots with what is known, no network
+    skills capture [--now|--wait]
+                                  publishes what waits; --wait sleeps until the deadline
+    skills hooks install|check|remove [--agent claude|codex]
+                                  the hooks in the configuration of an agent
+
+Like every command it finds the instance with --instance, DOTSTEWARD_INSTANCE or the
+working directory; since the question in a session names these commands and a session
+runs anywhere, it then falls back to the instance the hooks know.
 
 Exit status: 0 done, 1 refused or failed, 2 usage error.
 """
@@ -15,7 +25,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from dotsteward_cli import config, machine, tomlfile
-from dotsteward_cli.skills import layout, normal, state, threeway
+from dotsteward_cli.skills import capture, hooks_install, layout, normal, reconcile, sleeper, state, threeway
 
 
 def own_revisions(loaded: config.Instance) -> set[str]:
@@ -110,6 +120,115 @@ def _status(args: argparse.Namespace, loaded: config.Instance) -> int:
     return 0
 
 
+def _reconcile(args: argparse.Namespace, loaded: config.Instance) -> int:
+    context = hooks_install.build_context(loaded)
+    document = reconcile.reconcile(context, full=args.full)
+    if args.json:
+        print(json.dumps(document, indent=2, sort_keys=True))
+    return 0
+
+
+def _capture(args: argparse.Namespace, loaded: config.Instance) -> int:
+    context = hooks_install.build_context(loaded)
+    state_root = str(context["state_root"])
+    if args.wait:
+        return sleeper.wait(state_root, lambda: capture.run_now(context))
+    started = sleeper.read_deadline(state_root)
+    status = capture.run_now(context)
+    if started is not None:
+        sleeper.clear_deadline(state_root, started)
+    return status
+
+
+def _agents_of(args: argparse.Namespace, loaded: config.Instance) -> list[str]:
+    if args.agent:
+        return [args.agent]
+    components = loaded.config.get("components", {})
+    return [
+        agent
+        for agent in hooks_install.AGENTS
+        if components.get(hooks_install.COMPONENTS[agent], {}).get("enable") is True
+    ]
+
+
+def _for_a_person() -> bool:
+    """Whether a person asked: a rebuild and an E2E run (the hook of a component) hear
+    only of what needs a person."""
+    return not os.environ.get("DOTSTEWARD_COMPONENT")
+
+
+def _hooks_install(agents: Sequence[str], loaded: config.Instance) -> int:
+    if not tracking_on(loaded):
+        if _for_a_person():
+            print("[dotsteward] skills hooks: skill tracking is off ([skills] tracking)")
+        for agent in agents:
+            try:
+                if hooks_install.remove_agent(agent):
+                    print(f"[dotsteward] skills hooks: {agent}: removed, skill tracking is off")
+            except hooks_install.HooksError as error:
+                print(f"[dotsteward] skills hooks: {agent}: {error}")
+        if not _any_installed():
+            hooks_install.remove_context()
+        return 0
+    for agent in agents:
+        hooks_install.merge_agent(agent)
+    if agents:
+        hooks_install.write_context(loaded)
+    return 0
+
+
+def _any_installed() -> bool:
+    for agent in hooks_install.AGENTS:
+        try:
+            if hooks_install.installed_events(agent):
+                return True
+        except hooks_install.HooksError:
+            return True
+    return False
+
+
+def _hooks_check(agents: Sequence[str], loaded: config.Instance) -> int:
+    if not tracking_on(loaded):
+        if _for_a_person():
+            print("[dotsteward] skills hooks: skill tracking is off ([skills] tracking)")
+        else:
+            return 0
+    for agent in agents:
+        try:
+            events = hooks_install.installed_events(agent)
+            if len(events) == len(hooks_install.EVENTS[agent]):
+                if _for_a_person():
+                    print(f"[dotsteward] skills hooks: {agent}: installed")
+            else:
+                print(f"[dotsteward] skills hooks: {agent}: not installed for every event (installed: {events})")
+            untrusted = hooks_install.untrusted_codex_events() if agent == "codex" and events else []
+            if untrusted:
+                print(
+                    "[dotsteward] skills hooks: codex: waiting for trust in /hooks "
+                    f"({', '.join(untrusted)}): Codex runs no untrusted hook"
+                )
+        except hooks_install.HooksError as error:
+            print(f"[dotsteward] skills hooks: {agent}: {error}")
+    return 0
+
+
+def _hooks_remove(agents: Sequence[str]) -> int:
+    for agent in agents:
+        hooks_install.remove_agent(agent)
+    if not _any_installed():
+        hooks_install.remove_context()
+    return 0
+
+
+def _hooks(args: argparse.Namespace, loaded: config.Instance) -> int:
+    agents = _agents_of(args, loaded)
+    if args.action == "install":
+        return _hooks_install(agents, loaded)
+    if args.action == "check":
+        return _hooks_check(agents, loaded)
+    return _hooks_remove(agents)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dotsteward skills",
@@ -143,7 +262,45 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     status.add_argument("--json", action="store_true", help="print one JSON document")
+    compare = commands.add_parser(
+        "reconcile",
+        help="compare the skill roots with what is known, without network",
+        description="Finds new skills and changes of own skills and records them in pending.json.",
+    )
+    compare.add_argument("--json", action="store_true", help="print pending.json")
+    compare.add_argument("--full", action="store_true", help="digest every own skill, whatever its file times say")
+    publish = commands.add_parser(
+        "capture",
+        help="publish the skills that wait, from a separate worktree",
+        description="Publishes what waits in pending.json. The checkout stays as it is.",
+    )
+    when = publish.add_mutually_exclusive_group()
+    when.add_argument("--now", action="store_true", help="now; ends at once when nothing waits (default)")
+    when.add_argument("--wait", action="store_true", help="sleep until the deadline, as one process per machine")
+    hooks = commands.add_parser(
+        "hooks",
+        help="the hooks of skill tracking in the configuration of an agent",
+        description=(
+            "install puts the hooks into the configuration of an agent, or removes them when [skills] tracking "
+            "is off; check reports and never fails; remove takes them out until the next rebuild."
+        ),
+    )
+    hooks.add_argument("action", choices=["install", "check", "remove"])
+    hooks.add_argument("--agent", choices=list(hooks_install.AGENTS), help="default: the enabled agents")
     return parser
+
+
+def _load() -> config.Instance:
+    """The instance of the command line or the working directory, else the hooks' own."""
+    try:
+        return config.load_instance()
+    except config.ConfigError:
+        raise
+    except config.DotstewardError:
+        context = reconcile.load_context()
+        if context is None:
+            raise
+        return config.load_instance(str(context["instance"]))
 
 
 def main(argv: Sequence[str]) -> int:
@@ -151,11 +308,18 @@ def main(argv: Sequence[str]) -> int:
     if args.command == "effective":
         return machine.main(["effective", *(["--json"] if args.json else [])])
     try:
-        return _status(args, config.load_instance())
+        loaded = _load()
+        if args.command == "status":
+            return _status(args, loaded)
+        if args.command == "reconcile":
+            return _reconcile(args, loaded)
+        if args.command == "capture":
+            return _capture(args, loaded)
+        return _hooks(args, loaded)
     except config.DotstewardError as error:
         for line in error.lines():
             print(line, file=sys.stderr)
         return 1
-    except (normal.NormalFormError, OSError, ValueError, tomlfile.TomlError) as error:
+    except (normal.NormalFormError, hooks_install.HooksError, OSError, ValueError, tomlfile.TomlError) as error:
         print(f"[dotsteward] ERROR: {error}", file=sys.stderr)
         return 1

@@ -494,12 +494,19 @@ in
 
     agentRulesTargets = [ { path = ".claude/CLAUDE.md"; } ];
 
-    # The hook is read in place from the framework source, so the manifest
-    # mirror names it <dotsteward>/modules/components/claude-code/plugins.sh.
-    hooks.agentsPost = lib.optional (pluginList != [ ]) {
-      name = "plugins";
-      script = toString ./plugins.sh;
-    };
+    # The hooks are read in place from the framework source, so the manifest
+    # mirror names them <dotsteward>/modules/components/claude-code/<hook>.sh.
+    hooks.agentsPost =
+      lib.optional (pluginList != [ ]) {
+        name = "plugins";
+        script = toString ./plugins.sh;
+      }
+      ++ [
+        {
+          name = "skill-hooks";
+          script = toString ./skill-hooks.sh;
+        }
+      ];
 
     # The E2E hook runs in an interactive login zsh, so it exists only with
     # the shell component, for its profiles. It runs claude, which writes

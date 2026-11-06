@@ -18,8 +18,10 @@ assert_eq '[]' "$(PYTHONPATH=$DS_REPO_ROOT/cli/python PYTHONDONTWRITEBYTECODE=1 
   python3 -s -P -m dotsteward_cli.config --file "$toml" errors | jq -c .)" "configuration errors"
 
 document=$(python3 -c 'import json, sys, tomllib; print(json.dumps(tomllib.load(open(sys.argv[1], "rb"))))' "$toml")
-assert_eq '["identity","instance","nix","profiles","schema_version"]' "$(jq -c keys <<<"$document")" "tables"
+assert_eq '["identity","instance","nix","profiles","schema_version","skills"]' "$(jq -c keys <<<"$document")" "tables"
 assert_json - '.schema_version == 1' <<<"$document"
+# A new instance tracks the skills of its user.
+assert_json - '.skills == { tracking: true }' "skill tracking" <<<"$document"
 # The placeholder identity: valid, and obviously not a real user.
 assert_json - '.identity == { username: "user" }' "identity placeholder" <<<"$document"
 assert_json - '.instance == { name: "workstation", remote: "git@github.com:user/workstation.git", checkout: "~/workstation" }' \

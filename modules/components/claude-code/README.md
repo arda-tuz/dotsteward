@@ -122,6 +122,10 @@ start.
 - Bootstrap backup paths: `~/.claude/CLAUDE.md`, `~/.claude/settings.json`,
   `~/.claude/skills`.
 - Rollback removes the managed link `~/.claude/CLAUDE.md`.
+- The `skill-hooks` hook (`skill-hooks.sh`, an agentsPost hook) puts the hooks
+  of skill tracking into `${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json`, and
+  takes them out when `[skills] tracking` is off, keeping everything else in
+  the file; see [skill tracking](../../../docs/skill-tracking.md).
 
 ## Pins
 
