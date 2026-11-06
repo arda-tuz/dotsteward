@@ -1802,7 +1802,17 @@ contribute_cmd_upgrade() {
       _contribute_red "upgrade: rebuild --switch failed; run upgrade again once it is fixed"
     # The upgraded generation replaces whatever a failed recovery left.
     _contribute_set '.trial_switched = false | if .recovery == "failed" then .recovery = null else . end'
-    if [[ $instance_commit == "$base" ]]; then
+    # origin is the instance commit when an earlier `update publish` pushed it
+    # and its answer was lost: e2e then checks the instance against origin as
+    # it is, not against the base that origin has left.
+    local remote_now=""
+    if [[ $instance_commit != "$base" ]]; then
+      remote_now=$(contribute_git_net "cannot read origin/$DS_INSTANCE_BRANCH of the instance" 60 -C "$DS_INSTANCE_ROOT" \
+        ls-remote origin "refs/heads/$DS_INSTANCE_BRANCH") ||
+        _contribute_red "upgrade: cannot read origin/$DS_INSTANCE_BRANCH of the instance; run upgrade again once it is back"
+      remote_now=${remote_now%%[[:space:]]*}
+    fi
+    if [[ $instance_commit == "$base" || $remote_now == "$instance_commit" ]]; then
       _contribute_pinned e2e --profile "$profile" ||
         _contribute_red "upgrade: e2e failed on the upgraded instance; run upgrade again once it is fixed"
     else
