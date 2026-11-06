@@ -1,7 +1,9 @@
 # shellcheck shell=bash
 # How bash code of the framework calls the Python package (docs/python.md).
-# Commands source it next to lib.sh; component hooks do not, their library is
-# frozen (docs/hook-library.md). It only defines functions and a constant.
+# Commands source it next to lib.sh. It is no part of the library of component
+# hooks, which is frozen (docs/hook-library.md): a hook sees these functions only
+# when it sources methods.sh, and should not rely on them. It only defines functions
+# and a constant.
 #
 #   ds_python MODULE [ARG...]  python3 -m MODULE as the commands run it: the
 #                              python3 first on PATH (the package puts its

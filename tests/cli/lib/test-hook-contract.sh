@@ -119,6 +119,112 @@ while IFS= read -r name; do
   grep -qxF -- "$name" <<<"$methods" || ds_fail "methods.sh lost $name"
 done <<<"$methods_v1"
 
+# After config_load a hook may read the DS_* variables of the configuration, and the
+# catalog does. These stay; the framework may add others.
+config_names_v1='DS_AGENT_RULES_SOURCE
+DS_COMMIT_SETTINGS_SUBJECT
+DS_COMMIT_UPDATE_SUBJECT
+DS_COMMIT_UPGRADE_SUBJECT
+DS_COMPAT_CHECK_ALIASES
+DS_COMPAT_HOST_INPUT
+DS_COMPAT_LEGACY_BACKUP_LAYOUT
+DS_COMPAT_LEGACY_ENV
+DS_COMPAT_REPO_OWNED_REVISION
+DS_COMPONENTS_ENABLED
+DS_COMPONENTS_ORDER
+DS_COMPONENT_ENABLE
+DS_COMPONENT_METHOD
+DS_COMPONENT_PROFILES
+DS_COMPONENT_SOURCE
+DS_CONFIG_FILE
+DS_CONFIG_JSON
+DS_CONTRIBUTE_NIX_CORES
+DS_CONTRIBUTE_NIX_MAX_JOBS
+DS_GATE_CACHE_URL
+DS_GATE_MIN_FREE_GIB
+DS_GATE_NIX_CORES
+DS_GATE_NIX_MAX_JOBS
+DS_GATE_PREPARE_WARN_FREE_GIB
+DS_GATE_STATIC
+DS_GATE_UPDATE_ALLOWLIST
+DS_IDENTITY_DARWIN_HOME
+DS_IDENTITY_HOME
+DS_IDENTITY_USERNAME
+DS_INSTANCE_BRANCH
+DS_INSTANCE_CHECKOUT
+DS_INSTANCE_NAME
+DS_INSTANCE_REMOTE
+DS_INSTANCE_ROOT
+DS_NIX_ALLOW_UNFREE
+DS_NIX_PRIMARY_SYSTEM
+DS_NIX_STATE_VERSION
+DS_NIX_SYSTEMS
+DS_PINS_APT_ARCH
+DS_PINS_EXCLUDED_FLAKE_INPUTS
+DS_PINS_NIXPKGS_VERSIONS
+DS_PINS_VERSIONS_LOCK
+DS_PLATFORM_DARWIN_ARCHITECTURE
+DS_PLATFORM_DARWIN_MIN_VERSION
+DS_PLATFORM_LINUX_ARCHITECTURE
+DS_PLATFORM_LINUX_DESKTOP_CONTAINS
+DS_PLATFORM_LINUX_DETECTORS
+DS_PLATFORM_LINUX_OS_ID
+DS_PLATFORM_LINUX_OS_VERSION
+DS_PRIVACY_DENYLIST
+DS_PRIVACY_EXEMPTIONS_JSON
+DS_PRIVACY_FILE_RULES_JSON
+DS_PRIVACY_FORBIDDEN_PATHS
+DS_PROFILES_BOOTSTRAP
+DS_PROFILES_CHECK
+DS_PROFILES_DEFAULT
+DS_PROFILES_NAMES
+DS_PROFILE_MODE
+DS_PROTECTED
+DS_RUNTIME_PLATFORM
+DS_SETTINGS_BUFFER_DIR
+DS_SETTINGS_PUBLISHED_REF
+DS_SKILLS_HM_ROOT
+DS_SKILLS_INSTALLER
+DS_SKILLS_LOCK
+DS_SKILLS_OVERLAYS
+DS_SKILLS_VENDOR_DIR
+DS_STATE_ROOT
+DS_UPSTREAM_CONTRIBUTE
+DS_UPSTREAM_FORK
+DS_UPSTREAM_LOCAL_CLONE
+DS_UPSTREAM_PR_TO_UPSTREAM'
+
+config_names=$(
+  DOTSTEWARD_LIB=$library bash --noprofile --norc -c '
+    source "$DOTSTEWARD_LIB/lib.sh"
+    source "$DOTSTEWARD_LIB/config.sh"
+    config_load "$1"
+    compgen -v DS_
+  ' bash "$(
+    instance=$DS_TEST_ROOT/contract-instance
+    mkdir -p "$instance"
+    cat >"$instance/workstation.toml" <<'TOML'
+schema_version = 1
+
+[identity]
+username = "example"
+
+[instance]
+remote = "git@github.com:example/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]
+TOML
+    printf '%s' "$instance"
+  )"
+)
+while IFS= read -r name; do
+  grep -qxF -- "$name" <<<"$config_names" || ds_fail "config_load lost $name, which a hook may read"
+done <<<"$config_names_v1"
+
 # Sourcing keeps turning on strict mode in the hook and prints nothing.
 assert_eq 'errexit nounset pipefail errtrace' "$(
   DOTSTEWARD_LIB=$library bash --noprofile --norc -c '
@@ -181,6 +287,11 @@ source "$DOTSTEWARD_LIB/lib.sh"
   cleanup_temp_dir "$temp"
   [[ ! -e $temp ]] || die "cleanup_temp_dir"
   backup_file_private "$private/file" "$DOTSTEWARD_STATE_ROOT/contract/backup"
+  source "$DOTSTEWARD_LIB/config.sh"
+  source "$DOTSTEWARD_LIB/methods.sh"
+  config_load "$DOTSTEWARD_INSTANCE"
+  methods_manifest_load ""
+  printf 'manifest %s\n' "$(jq -r '.schema_version' <<<"$DS_MANIFEST_JSON")"
 } >"$HOOK_RESULTS"
 HOOK
 assert_exit 0 run_install --profile fresh
@@ -196,5 +307,6 @@ pin 2.1.0
 desktop https://example.invalid/term.deb
 user_path set
 user_run ran
-dpkg 2.1.0-1" "$(<"$results")"
+dpkg 2.1.0-1
+manifest 1" "$(<"$results")"
 find "$state/contract/backup" -type f -name file | grep -q . || ds_fail "backup_file_private wrote no copy"

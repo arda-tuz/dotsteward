@@ -49,10 +49,13 @@ cli.mkTestCheck {
       cat "$TMPDIR/build.log" >&2
       exit 1
     }
-    declared=$(find cli/python/dotsteward_cli engines/pins/dotsteward_pins engines/local-maintained-files \
-      -name '*.py' -printf '%f\n' | LC_ALL=C sort)
+    declared=$({
+      (cd cli/python && find dotsteward_cli -name '*.py')
+      (cd engines/pins && find dotsteward_pins -name '*.py')
+      (cd engines/local-maintained-files && find . -maxdepth 1 -name '*.py' -printf '%f\n')
+    } | LC_ALL=C sort)
     ${tools.interpreter} -m zipfile --list "$TMPDIR"/dist/*.whl >"$TMPDIR/wheel.txt"
-    built=$(awk '$1 ~ /\.py$/ { n = split($1, parts, "/"); print parts[n] }' "$TMPDIR/wheel.txt" | LC_ALL=C sort)
+    built=$(awk '$1 ~ /\.py$/ { print $1 }' "$TMPDIR/wheel.txt" | LC_ALL=C sort)
     if [[ $declared != "$built" ]]; then
       printf 'the wheel does not hold the modules of the tree:\n%s\n---\n%s\n' "$declared" "$built" >&2
       exit 1

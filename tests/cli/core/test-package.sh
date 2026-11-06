@@ -7,6 +7,9 @@
 # commands, the Nix checks and the tests of instances import from them, so
 # the entry points and module paths below keep working.
 
+# The tree stays as it is: no bytecode next to the sources.
+export PYTHONDONTWRITEBYTECODE=1
+
 pyproject=$DS_REPO_ROOT/pyproject.toml
 [[ -f $pyproject ]] || ds_fail "missing pyproject.toml"
 
