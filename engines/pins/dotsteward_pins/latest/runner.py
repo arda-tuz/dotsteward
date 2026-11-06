@@ -21,10 +21,11 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import datetime
-from pathlib import Path
+
+from dotsteward_cli import atomic
 
 from ..instance import EngineError, Instance
-from ..lockfile import dump, write_atomic
+from ..lockfile import dump
 from . import core, model
 from .adapters import PlanContext, Planned, Request, declared
 from .upstream import Upstream, UpstreamError
@@ -106,7 +107,7 @@ def run(instance: Instance, args: argparse.Namespace) -> int:
     report = model.report(rows, researched)
     if args.out:
         try:
-            write_atomic(Path(args.out), dump(report))
+            atomic.atomic_write(args.out, dump(report))
         except OSError as error:
             raise EngineError(f"cannot write {args.out}: {error.strerror or error}") from error
     attention = sum(row["status"] in model.ATTENTION for row in rows)

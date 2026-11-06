@@ -62,7 +62,6 @@ import signal
 import stat
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -74,9 +73,11 @@ except ModuleNotFoundError as missing:  # --help works without it; main() refuse
     tomlkit = None  # type: ignore[assignment]
 
 try:
+    from dotsteward_cli import atomic
     from dotsteward_cli import config as ds_config
 except ImportError:  # run as a plain script from a framework checkout
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "cli" / "python"))
+    from dotsteward_cli import atomic
     from dotsteward_cli import config as ds_config
 
 SCHEMA_VERSION = 1
@@ -871,20 +872,8 @@ def read_live_file(entry: Entry, home: str) -> tuple[Any, bytes | None, float | 
 
 
 def atomic_write(path: str, data: bytes, mode: int) -> None:
-    directory = os.path.dirname(path)
-    os.makedirs(directory, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(prefix=f".{os.path.basename(path)}.lmf-", dir=directory)
-    try:
-        with os.fdopen(handle, "wb") as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.chmod(temporary, mode)
-        os.replace(temporary, path)
-    except BaseException:
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(temporary)
-        raise
+    """The directory of a live file or a source may not exist yet."""
+    atomic.atomic_write(path, data, mode=mode, parents=True)
 
 
 # --- Machine state (base, journal, backups, lock) ------------------------------------------

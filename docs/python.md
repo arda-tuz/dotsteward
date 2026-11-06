@@ -50,6 +50,17 @@ with the framework.
 
 Every part of the framework uses these, so each answer exists once.
 
+### Atomic writes
+
+`dotsteward_cli.atomic.atomic_write(path, data, *, mode=None, parents=False)`
+replaces a file through a temporary file in its directory, fsync, rename and an
+fsync of the directory, so a reader sees the old file or the new one, also after
+a crash. A write without `mode` keeps the mode of the file it replaces, else
+0644; `parents` creates missing directories; the next write removes what a dead
+writer left. `atomic_write_json` takes the same arguments and writes indented
+JSON. From bash: `ds_internal atomic-write PATH [--mode MODE] [--parents]` writes
+its standard input.
+
 ### State root
 
 `dotsteward_cli.config.state_root(instance=None, env=None)` is the one machine

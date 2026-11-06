@@ -50,6 +50,12 @@ printf 'replaced\n' | internal atomic-write "$work/link"
 assert_eq 'replaced' "$(<"$work/link")"
 assert_eq 'linked' "$(<"$work/link-target")"
 
+# The longest file name fits, in any script.
+long=$(printf '\303\251%.0s' {1..127})
+printf 'long\n' | internal atomic-write "$work/$long"
+assert_eq 'long' "$(<"$work/$long")"
+rm -f -- "$work/$long"
+
 # Refusals: a usage error, an invalid mode, a directory that cannot be written.
 assert_exit 2 internal atomic-write
 assert_exit 1 internal atomic-write "$work/bad-mode" --mode 9999 </dev/null

@@ -32,9 +32,11 @@ import importlib
 import sys
 from collections.abc import Sequence
 
+from dotsteward_cli import atomic
+
 from .checker import GROUP_ERRORS, Checker, describe_os_error
 from .instance import EngineError, Instance, Refusal, load
-from .lockfile import SKILLS, VERSIONS, DeclarationError, dump, generated_at, write_atomic
+from .lockfile import SKILLS, VERSIONS, DeclarationError, dump, generated_at
 from .rules import Context, build_rules
 
 PREFIX = "[pins]"
@@ -156,7 +158,7 @@ def run_sync(instance: Instance, nix: bool, skills: Sequence[str]) -> int:
         if document is None or dump(document) == before[kind]:
             continue
         document["generated_at"] = generated_at(kind, now)
-        write_atomic(path, dump(document))
+        atomic.atomic_write(path, dump(document))
         written.append(label)
     if written:
         print(f"{PREFIX} Synced files: {', '.join(written)}")

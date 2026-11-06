@@ -42,9 +42,6 @@ from __future__ import annotations
 
 import datetime
 import json
-import os
-import stat
-import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -67,23 +64,6 @@ class DeclarationError(Exception):
 def dump(data: Any) -> str:
     """The exact lock file text of ``data``."""
     return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
-
-
-def write_atomic(path: Path, text: str) -> None:
-    """Replaces ``path`` with ``text`` through a temporary file in the same
-    directory, keeping the mode of the existing file."""
-    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.chmod(temporary, mode)
-        os.replace(temporary, path)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
 
 
 def generated_at(kind: str, now: datetime.datetime) -> str:
