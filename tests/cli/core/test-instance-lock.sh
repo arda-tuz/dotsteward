@@ -517,17 +517,18 @@ lock = locks.FileLock(os.path.join(state, locks.INSTANCE_LOCK_FILE))
 lock.acquire()
 gone = subprocess.Popen(["true"])
 gone.wait()
-record = {"name": "elsewhere", "pid": gone.pid, "since": "s", "token": "t"}
-os.ftruncate(lock.descriptor, 0)
-os.pwrite(lock.descriptor, json.dumps(record).encode(), 0)
-status = locks.lock_status(state)
-assert status.held and status.holder.name == "elsewhere", status
-try:
-    locks.InstanceLock(state, "upgrade").acquire()
-except locks.LockBusy:
-    pass
-else:
-    raise AssertionError("a second command took a lock that is held")
+for pid in (gone.pid, 10**40):
+    record = {"name": "elsewhere", "pid": pid, "since": "s", "token": "t"}
+    os.ftruncate(lock.descriptor, 0)
+    os.pwrite(lock.descriptor, json.dumps(record).encode(), 0)
+    status = locks.lock_status(state)
+    assert status.held and status.holder.name == "elsewhere", status
+    try:
+        locks.InstanceLock(state, "upgrade").acquire()
+    except locks.LockBusy:
+        pass
+    else:
+        raise AssertionError("a second command took a lock that is held")
 os.ftruncate(lock.descriptor, 0)
 lock.release()
 PY
