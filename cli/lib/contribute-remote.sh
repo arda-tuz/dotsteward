@@ -51,7 +51,9 @@
 #                    refs/dotsteward/carry/<id> until the upgrade is done),
 #                    remote, commits (oldest first) and applied
 #   recovery         done or failed: the last recovery after a trial switch
-#   outcome          completed (report) or aborted (abort)
+#   outcome          completed (report after the upgrade), published (report
+#                    of a run that ends at publish: no release tag and no
+#                    instance commit) or aborted (abort)
 #
 # Environment (seconds, positive integers):
 #   DOTSTEWARD_CONTRIBUTE_POLL_SECONDS    polling interval for CI (default 15),
@@ -1816,9 +1818,13 @@ contribute_cmd_report() {
     release)
       # Release trains: a run may end once it is published; a later release
       # bundles it. After a trial switch the machine first returns to the
-      # instance's pinned framework, as abort does.
+      # instance's pinned framework, as abort does. An upgrade that started
+      # (upgrade --main) left instance changes or commits behind: it is
+      # finished or aborted, never ended as a mere publish.
+      [[ -z $(_contribute_get instance_base) && -z $(_contribute_get carry) ]] ||
+        die "the upgrade of run $id has started, so the run no longer ends at publish; finish it with: $(_contribute_upgrade_command), or end the run with: dotsteward contribute abort"
       _contribute_recover || die "report stopped: the recovery did not finish; run report again once the problem is fixed"
-      _contribute_set '.step = "done" | .outcome = "completed"'
+      _contribute_set '.step = "done" | .outcome = "published"'
       ;;
     done) ;;
     *) die "run $id has no report yet; next: $(_contribute_next_command "$CT_STEP")" ;;

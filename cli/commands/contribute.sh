@@ -164,11 +164,14 @@
 #   abort                   ends the run; after a trial switch it first runs
 #                           the recovery: rebuild --switch and e2e without
 #                           an override, back to the pinned framework
-#   report [--json]         the run's result (pull request, merged commit,
-#                           release, instance commit, tests, the promoted
-#                           component); ends the run, also at step release
-#                           (a run that ends at publish), after the recovery
-#                           of a trial switch
+#   report [--json]         the run's result (outcome, pull request, merged
+#                           commit, release, instance commit, tests, the
+#                           promoted component); ends the run with the
+#                           outcome completed, or at step release with the
+#                           outcome published (a run that ends at publish,
+#                           without a release tag or an instance commit, once
+#                           the recovery of a trial switch passed; refused
+#                           after upgrade --main started)
 #   status [--json] [--wait [--timeout SECONDS]]
 #                           the run's state and its running step (--json: the
 #                           state document); once merged_sha is set also

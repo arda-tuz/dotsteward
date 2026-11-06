@@ -154,6 +154,6 @@ If the run has to end before the upgrade succeeds (a red step the user does not 
 dotsteward contribute report
 ```
 
-The report ends the run. Report to the user: the mode (and a fork fallback reason), the reproduction test, the pull request, the merged commit, the release tag, the instance commit, the gate, trial and upgrade results, and whether a recovery ran. Write the report in the language the overlay asks for, else in the user's language.
+The report ends the run; its outcome is `completed`, or `published` for a run that ends at publish (no release tag, no instance commit). Report to the user: the mode (and a fork fallback reason), the reproduction test, the pull request, the merged commit, the release tag, the instance commit, the gate, trial and upgrade results, and whether a recovery ran. Write the report in the language the overlay asks for, else in the user's language.
 
 For a mixed request, the personal part now continues with `dotsteward-maintain` on the upgraded instance, as its own transaction.

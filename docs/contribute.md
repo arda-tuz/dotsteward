@@ -34,7 +34,7 @@ names the fork and the local clone.
 | publish | `dotsteward contribute publish` | Owner: pull request, lint and privacy CI, fast-forward of `main` to the tested commits. Fork: push, CI, fast-forward of the fork's `main`. |
 | release | `dotsteward contribute release` | Once `main`'s CI is green on the merged commit: the tag of the version its release commit set; owner mode also creates the GitHub release with grouped notes. Without a release commit, nothing to release. |
 | upgrade | `dotsteward contribute upgrade --tag TAG` | Your instance moves to the release (`--main`: to the merged commit, without a release): lock, gate, commit, rebuild, `e2e`, publish. `--carry` carries unpublished instance commits across it. |
-| report | `dotsteward contribute report` | The result: pull request, merged commit, release, instance commit, tests and a promoted component. Ends the run, also right after publish. |
+| report | `dotsteward contribute report` | The result: the outcome (`completed`, or `published` for a run that ends right after publish, without a release or an instance commit), pull request, merged commit, release, instance commit, tests and a promoted component. Ends the run. |
 
 `dotsteward contribute status --json` shows the run at any time, and
 `dotsteward contribute abort` ends it (see [Recovery](#recovery)). Every
