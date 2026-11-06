@@ -532,11 +532,17 @@ let
     skills-tracking = fs.unions [
       runner
       cli
+      catalog
       (paths [
+        "engines"
+        "privacy"
+        "template/.dotsteward"
+        "template/bootstrap.sh"
         "modules/components/claude-code/skill-hooks.sh"
         "modules/components/codex/skill-hooks.sh"
         "tools"
         "tests/agents/helpers.sh"
+        "tests/static/helpers.sh"
         "tests/skills-tracking"
       ])
     ];

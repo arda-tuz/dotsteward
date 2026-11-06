@@ -19,8 +19,10 @@ sentinel (`same-as-instance-checkout` or `[compat] repo_owned_revision`).
 | a file tool of an agent wrote its `SKILL.md`, or `claude plugin init` made it | tracked, no question |
 | anything else: a tree no file tool touched | a question |
 
-Never tracked: `~/.claude/skills/synced/`, `dotsteward-*`, `~/.codex/skills/.system`,
-plugin and project skills.
+The answer is one of `dotsteward skills track <name> --all`, `--here` (this machine
+only) or `--never` (this machine, asked no more). `--own` tracks your own copy of it
+without an upstream. Never tracked: `~/.claude/skills/synced/`, `dotsteward-*`,
+`~/.codex/skills/.system`, plugin and project skills.
 
 ## Your copy is never overwritten
 
@@ -44,6 +46,39 @@ shows all of this. The normal form is what a copy carries: what git would list, 
 `__pypackages__`, `*.pyc` and `metadata.json`; a link inside the tree counts as its
 target. `skills status` names what ignore rules leave out, so that a line such as
 `state/` does not carry a skill incomplete without a word.
+
+## The capture
+
+Ten minutes after the last change of a skill (`[skills] capture_delay_seconds`), or when
+the session ends, whichever comes first, `dotsteward skills capture` publishes it. It works
+in a worktree of its own below the state root, so a dirty checkout is no obstacle and the
+checkout never moves; `agents install` knows a checkout that stayed behind, and `dotsteward
+upgrade` moves it. A file deleted here leaves the repository. An existing lock entry changes
+its digests only.
+
+A commit passes `static` (with the privacy scan and its denylist) and `pins check`, run by
+the CLI the tree pins, and goes out without force. When another machine came first, the copy
+is replayed on the new tip. The same skill changed on two machines is a conflict: no commit,
+your files stay, and `dotsteward skills diff <name> --json` names the three trees; `dotsteward
+skills resolve <name> --ours` publishes your copy, `--theirs` backs it up and installs the
+one of the repository.
+
+| What keeps a skill back | What happens | Exit |
+| --- | --- | --- |
+| a privacy finding | no commit; the rule and the place in `last-capture.json`, never the text | 4 |
+| a red check, or a refusal of the remote | no commit or no push, `blocked` | 1 |
+| a link out of the tree (`unsafe-link`), above the size limit (`too-large`), no `name` in the frontmatter (`skill-invalid`) | no commit, `blocked` | 1 |
+| a conflict | no commit | 3 |
+| no network | the name waits in `pending.json`, no commit piles up, the next hook tries again | 6 |
+
+The skill keeps working here. You hear of it once: in the next session somebody attends,
+through `notify-send` where there is one, and in `dotsteward skills status`; the same content
+is neither tried nor told again. After a day without a network the session says so too, so a
+dead credential does not stay silent.
+
+`dotsteward skills forget <name>` takes a skill from all machines. `dotsteward skills restore
+<name>` brings one you deleted back from the repository. All of this lives in
+`<state>/skills/`, which never enters the repository.
 
 ## The hooks
 

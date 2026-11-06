@@ -148,6 +148,16 @@ has to finish writes to a file. From bash:
 `ds_internal run-protected [--log FILE] -- COMMAND ARG...`, where `--log` appends both
 streams to `FILE`. Its status is the status of `COMMAND`, also when the terminal is gone.
 
+### Publishing
+
+`dotsteward_cli.publish.publish(repository, branch, scope, build)` is the one way to
+the remote of an instance: it fetches the branch into `refs/dotsteward/<scope>/tip`, calls
+`build(tip)` for a commit on that tip (`None`: nothing to publish), pushes it without force
+and starts again on the new tip when the remote moved. The result says `OK`, `NETWORK`,
+`REFUSED` or `EXHAUSTED`, with the commit that landed and what git said; a push that ends
+without an answer is settled by a fetch. `classify(result)` names a failure of git: nothing
+was decided, the remote said no, or the remote moved.
+
 ### Run reports
 
 `dotsteward_cli.report.RunReport(command, state_root, *, run=None)` collects a

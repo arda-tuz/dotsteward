@@ -3,8 +3,13 @@
     skills status [--json]        what the machine knows about the own skills of the lock
     skills reconcile [--json] [--full]
                                   compares the skill roots with what is known, no network
-    skills capture [--now|--wait]
+    skills capture [--now|--wait] [--name SKILL]... [--json]
                                   publishes what waits; --wait sleeps until the deadline
+    skills track SKILL --all|--here|--never|--own [--no-capture]
+    skills resolve SKILL --ours|--theirs
+    skills diff SKILL [--json]
+    skills forget SKILL
+    skills restore SKILL          the answers (track.py)
     skills hooks install|check|remove [--agent claude|codex]
                                   the hooks in the configuration of an agent
 
@@ -12,7 +17,8 @@ Like every command it finds the instance with --instance, DOTSTEWARD_INSTANCE or
 working directory; since the question in a session names these commands and a session
 runs anywhere, it then falls back to the instance the hooks know.
 
-Exit status: 0 done, 1 refused or failed, 2 usage error.
+Exit status: 0 done, 1 refused or failed, 2 usage error, 3 a conflict or a question
+waits, 4 a privacy stop, 6 no network.
 """
 
 from __future__ import annotations
@@ -25,7 +31,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from dotsteward_cli import config, machine, tomlfile
-from dotsteward_cli.skills import capture, hooks_install, layout, normal, reconcile, sleeper, state, threeway
+from dotsteward_cli.skills import capture, hooks_install, layout, normal, reconcile, sleeper, state, threeway, track
 
 
 def own_revisions(loaded: config.Instance) -> set[str]:
@@ -129,15 +135,29 @@ def _reconcile(args: argparse.Namespace, loaded: config.Instance) -> int:
 
 
 def _capture(args: argparse.Namespace, loaded: config.Instance) -> int:
+    if not tracking_on(loaded):
+        print("[dotsteward] skill tracking is off ([skills] tracking): nothing is captured", file=sys.stderr)
+        if args.json:
+            print(json.dumps(capture.Summary().document(), indent=2))
+        return 0
     context = hooks_install.build_context(loaded)
     state_root = str(context["state_root"])
+    tree = capture.tree_paths(loaded)
     if args.wait:
-        return sleeper.wait(state_root, lambda: capture.run_now(context))
+        return sleeper.wait(state_root, lambda: capture.run_now(context, tree).code)
     started = sleeper.read_deadline(state_root)
-    status = capture.run_now(context)
-    if started is not None:
+    summary = capture.run_now(context, tree, args.name or None)
+    if started is not None and not summary.busy:
         sleeper.clear_deadline(state_root, started)
-    return status
+    if args.json:
+        print(json.dumps(summary.document(), indent=2))
+    return summary.code
+
+
+def _track(args: argparse.Namespace, loaded: config.Instance) -> int:
+    return track.track(
+        loaded, args.name, here=args.here, never=args.never, own=args.own, capture_now=not args.no_capture
+    )
 
 
 def _agents_of(args: argparse.Namespace, loaded: config.Instance) -> list[str]:
@@ -229,6 +249,22 @@ def _hooks(args: argparse.Namespace, loaded: config.Instance) -> int:
     return _hooks_remove(agents)
 
 
+def _resolve(args: argparse.Namespace, loaded: config.Instance) -> int:
+    return track.resolve(loaded, args.name, ours=args.ours)
+
+
+def _diff(args: argparse.Namespace, loaded: config.Instance) -> int:
+    return track.diff(loaded, args.name, as_json=args.json)
+
+
+def _forget(args: argparse.Namespace, loaded: config.Instance) -> int:
+    return track.forget(loaded, args.name)
+
+
+def _restore(args: argparse.Namespace, loaded: config.Instance) -> int:
+    return track.restore(loaded, args.name)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dotsteward skills",
@@ -277,6 +313,52 @@ def _parser() -> argparse.ArgumentParser:
     when = publish.add_mutually_exclusive_group()
     when.add_argument("--now", action="store_true", help="now; ends at once when nothing waits (default)")
     when.add_argument("--wait", action="store_true", help="sleep until the deadline, as one process per machine")
+    publish.add_argument("--name", action="append", metavar="SKILL", help="only this skill; may be repeated")
+    publish.add_argument("--json", action="store_true", help="print the result as one JSON document")
+    answer = commands.add_parser(
+        "track",
+        help="answer the question about a skill: --all, --here or --never",
+        description=(
+            "--all puts the skill into the lock for every machine, --here for this machine only, --never remembers "
+            "in the host file of this machine that it stays out. A downloaded skill keeps its upstream pinned; "
+            "--own tracks your own copy without one, which also turns a pinned skill into yours."
+        ),
+    )
+    answer.add_argument("name", metavar="SKILL")
+    scope = answer.add_mutually_exclusive_group()
+    scope.add_argument("--all", action="store_true", help="for all machines")
+    scope.add_argument("--here", action="store_true", help="for this machine only")
+    scope.add_argument("--never", action="store_true", help="never on this machine")
+    answer.add_argument("--own", action="store_true", help="your own copy, without an upstream")
+    answer.add_argument("--no-capture", action="store_true", help="record the answer; the next capture takes it")
+    conflict = commands.add_parser(
+        "resolve",
+        help="settle a conflict: the local copy or the repository wins",
+        description="--ours publishes the local copy. --theirs backs it up and installs the copy of the repository.",
+    )
+    conflict.add_argument("name", metavar="SKILL")
+    side = conflict.add_mutually_exclusive_group(required=True)
+    side.add_argument("--ours", action="store_true", help="the local copy wins")
+    side.add_argument("--theirs", action="store_true", help="the repository wins")
+    trees = commands.add_parser(
+        "diff",
+        help="the three trees of a skill, to compare them",
+        description="Names the local copy, the copy on the remote and the one this machine last had in sync.",
+    )
+    trees.add_argument("name", metavar="SKILL")
+    trees.add_argument("--json", action="store_true", help="print one JSON document")
+    gone = commands.add_parser(
+        "forget",
+        help="take a skill out of the repository, for all machines",
+        description="Removes the skill from the lock and the repository. A local copy stays, and nobody asks about it.",
+    )
+    gone.add_argument("name", metavar="SKILL")
+    back = commands.add_parser(
+        "restore",
+        help="install a skill deleted here from the repository again",
+        description="Copies the skill of the remote to the canonical skill root.",
+    )
+    back.add_argument("name", metavar="SKILL")
     hooks = commands.add_parser(
         "hooks",
         help="the hooks of skill tracking in the configuration of an agent",
@@ -315,6 +397,22 @@ def main(argv: Sequence[str]) -> int:
             return _reconcile(args, loaded)
         if args.command == "capture":
             return _capture(args, loaded)
+        if args.command == "track":
+            if not (args.all or args.here or args.never or args.own):
+                print("dotsteward skills track: one of --all, --here, --never or --own is required", file=sys.stderr)
+                return 2
+            if args.never and args.own:
+                print("dotsteward skills track: --never takes no --own", file=sys.stderr)
+                return 2
+            return _track(args, loaded)
+        if args.command == "resolve":
+            return _resolve(args, loaded)
+        if args.command == "diff":
+            return _diff(args, loaded)
+        if args.command == "forget":
+            return _forget(args, loaded)
+        if args.command == "restore":
+            return _restore(args, loaded)
         return _hooks(args, loaded)
     except config.DotstewardError as error:
         for line in error.lines():

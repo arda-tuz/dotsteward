@@ -27,19 +27,18 @@ import hashlib
 import hmac
 import json
 import os
-import random
 import re
 import secrets
 import socket
 import subprocess
 import sys
 import tempfile
-import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from dotsteward_cli import atomic, config, locks, machine, report, tomlfile
+from dotsteward_cli import publish as publishing
 
 EXIT_REFUSAL = 1
 EXIT_USAGE = 2
@@ -59,19 +58,14 @@ _MACHINE_KEY_APP_ID = "5f2c8e9a41d7463fb0a6d3c17e8b9f24"
 
 _TAG = re.compile(r"[a-z0-9][a-z0-9-]*", re.ASCII)
 
-# A race ends in a new attempt on top of the new tip: at most this many.
-PUBLISH_ATTEMPTS = 5
-FETCH_SECONDS = 60
-PUSH_SECONDS = 180
-
-_PRIVATE_TIP = "refs/dotsteward/host/tip"
+# The private ref of the fetches here: refs/dotsteward/host/tip.
+PUBLISH_SCOPE = "host"
 MACHINE_TRAILER = "Dotsteward-Machine"
 
 # What git prints when the remote knows the login and says no: more tries change nothing.
 # Any other failure of a fetch is the network or a login this machine does not have yet
 # ("Permission denied (publickey)", "Repository not found"): the file waits for both.
 _REFUSED = ("permission to", "[remote rejected]")
-_RACE = ("[rejected]", "non-fast-forward", "fetch first")
 
 _INIT_DESCRIPTION = (
     "Names this machine. Without a name on the command line it asks on a terminal; without a terminal the name "
@@ -404,26 +398,9 @@ def _git_output(root: Path, *arguments: str, env: Mapping[str, str] | None = Non
     return result.stdout.strip()
 
 
-def _git_net(root: Path, seconds: int, *arguments: str) -> subprocess.CompletedProcess[str] | None:
-    """A git command that talks to the remote: batch mode, no prompt, a time limit
-    (git_net of lib.sh). None when the time ran out."""
-    environment = {
-        "GIT_SSH_COMMAND": os.environ.get("GIT_SSH_COMMAND") or "ssh -o BatchMode=yes -o ConnectTimeout=15",
-        "GIT_TERMINAL_PROMPT": "0",
-    }
-    try:
-        return _git(root, *arguments, env=environment, timeout=seconds)
-    except subprocess.TimeoutExpired:
-        return None
-
-
 def _refused(stderr: str) -> bool:
     lowered = stderr.lower()
     return any(needle in lowered for needle in _REFUSED)
-
-
-def _raced(stderr: str) -> bool:
-    return any(needle in stderr for needle in _RACE)
 
 
 def commit_identity(root: Path, tip: str) -> list[str]:
@@ -522,24 +499,26 @@ def _commit_on_tip(instance: config.Instance, tip: str, name: str, text: str) ->
     )
 
 
-def _fetch_tip(instance: config.Instance) -> subprocess.CompletedProcess[str] | None:
-    """Fetches the branch of the instance into a private ref, without the remote-tracking
-    ref of the configured refspec: concurrent fetches of that ref fail on its lock."""
-    branch = instance.config["instance"]["branch"]
-    return _git_net(
-        instance.root,
-        FETCH_SECONDS,
-        "fetch",
-        "--quiet",
-        "--no-tags",
-        "--refmap=",
-        "origin",
-        f"+refs/heads/{branch}:{_PRIVATE_TIP}",
-    )
+def declined_text(current: str | None, facts: Mapping[str, Any], skill: str | None) -> str:
+    """The text of the host file over CURRENT, with SKILL added to declined.skills; for
+    the commit of a skill, which brings the host file along. Other keys and comments stay."""
+    tomlkit = _tomlkit()
+    document = tomlkit.parse(host_text(current, facts))
+    if skill is not None:
+        if "declined" not in document:
+            document["declined"] = tomlkit.table()
+        names = sorted({*(str(name) for name in document["declined"].get("skills", [])), skill})
+        document["declined"]["skills"] = names
+    text: str = tomlkit.dumps(document)
+    return text
 
 
 def cmd_publish(args: argparse.Namespace, instance: config.Instance, env: Mapping[str, str]) -> int:
     return publish(instance, env)
+
+
+class _PrivacyFinding(Exception):
+    """The scan of a new commit found something; nothing was published."""
 
 
 def publish(instance: config.Instance, env: Mapping[str, str] | None = None) -> int:
@@ -557,48 +536,40 @@ def publish(instance: config.Instance, env: Mapping[str, str] | None = None) -> 
     facts: dict[str, Any] = recorded["host"] if isinstance(recorded.get("host"), dict) else {}
     branch = instance.config["instance"]["branch"]
     path = f"{machine.HOSTS_DIR}/{name}.toml"
-    pushed: tuple[str, str] | None = None
-    for attempt in range(1, PUBLISH_ATTEMPTS + 1):
-        fetched = _fetch_tip(instance)
-        if fetched is None or fetched.returncode != 0:
-            detail = "" if fetched is None else fetched.stderr.strip()
-            if fetched is not None and _refused(detail):
-                raise Refusal(f"the remote refused the fetch: {detail}")
-            print(f"[dotsteward] {path} waits: no network or no login ({detail or 'timeout'})", file=sys.stderr)
-            return EXIT_OFFLINE
-        tip = _git_output(root, "rev-parse", "--verify", f"{_PRIVATE_TIP}^{{commit}}")
-        if pushed is not None:
-            # The remote answers again. Either the answer to the push was lost, and the
-            # commit is there, or the push failed for a reason of its own (a pre-push
-            # hook, for example), and another try says the same.
-            if _git(root, "merge-base", "--is-ancestor", pushed[0], tip).returncode == 0:
-                _log(f"published {path}; 'git pull --ff-only' brings it to this checkout")
-                return 0
-            raise Refusal(f"the push of {path} failed: {pushed[1]}")
+
+    def build(tip: str) -> str | None:
         shown = _git(root, "show", f"{tip}:{path}")
         current = shown.stdout if shown.returncode == 0 else None
         text = host_text(current, facts)
         if current is not None and tomlfile.loads(current) == tomlfile.loads(text):
-            _log(f"{path} is on the remote; nothing to publish")
-            return 0
+            return None
         machine.parse_host(text, path, root)
         commit = _commit_on_tip(instance, tip, name, text)
         if _scan_file(instance, path, text, env) != 0:
-            _error(f"the privacy scan found something in {path}; nothing was published")
-            return EXIT_PRIVACY
-        result = _git_net(root, PUSH_SECONDS, "push", "--quiet", "origin", f"{commit}:refs/heads/{branch}")
-        if result is not None and result.returncode == 0:
-            _log(f"published {path}; 'git pull --ff-only' brings it to this checkout")
-            return 0
-        detail = "timeout" if result is None else result.stderr.strip()
-        if _refused(detail):
-            raise Refusal(f"the remote refused the push of {path}: {detail}")
-        if _raced(detail):
-            time.sleep(random.uniform(0, 2**attempt) / 4)
+            raise _PrivacyFinding(f"the privacy scan found something in {path}; nothing was published")
+        return commit
+
+    try:
+        published = publishing.publish(root, branch, PUBLISH_SCOPE, build)
+    except _PrivacyFinding as finding:
+        _error(str(finding))
+        return EXIT_PRIVACY
+    if published.outcome == publishing.OK:
+        if published.commit is None:
+            _log(f"{path} is on the remote; nothing to publish")
         else:
-            pushed = (commit, detail)
-    reason = "no network" if pushed is not None else "other machines kept pushing"
-    print(f"[dotsteward] {path} waits: {reason}", file=sys.stderr)
+            _log(f"published {path}; 'git pull --ff-only' brings it to this checkout")
+        return 0
+    if published.outcome == publishing.REFUSED and published.tip:
+        if _refused(published.detail):
+            raise Refusal(f"the remote refused the push of {path}: {published.detail}")
+        raise Refusal(f"the push of {path} failed: {published.detail}")
+    if published.outcome == publishing.REFUSED and _refused(published.detail):
+        raise Refusal(f"the remote refused the fetch: {published.detail}")
+    if published.outcome in (publishing.REFUSED, publishing.NETWORK):
+        print(f"[dotsteward] {path} waits: no network or no login ({published.detail or 'timeout'})", file=sys.stderr)
+    else:
+        print(f"[dotsteward] {path} waits: other machines kept pushing", file=sys.stderr)
     return EXIT_OFFLINE
 
 
@@ -610,12 +581,12 @@ def _refuse_behind(instance: config.Instance) -> None:
     checkout does not hold yet (the host file another run published) would stay as it
     is. Without a network the publish finds out."""
     root = instance.root
-    fetched = _fetch_tip(instance)
-    if fetched is None or fetched.returncode != 0:
+    outcome, tip, _ = publishing.fetch_tip(root, instance.config["instance"]["branch"], PUBLISH_SCOPE)
+    if outcome != publishing.OK:
         return
     if (
-        _git(root, "rev-parse", "HEAD").stdout.strip() != _git(root, "rev-parse", _PRIVATE_TIP).stdout.strip()
-        and _git(root, "merge-base", "--is-ancestor", "HEAD", _PRIVATE_TIP).returncode == 0
+        _git(root, "rev-parse", "HEAD").stdout.strip() != tip
+        and _git(root, "merge-base", "--is-ancestor", "HEAD", tip).returncode == 0
     ):
         raise Refusal("the checkout is behind the remote; 'git pull --ff-only' first")
 
