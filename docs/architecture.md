@@ -108,7 +108,7 @@ Steps: reproduce with a failing test, fix generically, run the framework gate an
 | Platform | Status |
 | --- | --- |
 | Ubuntu 24.04, x86_64 | primary: unit and end-to-end suites, and a clean-machine install in CI |
-| macOS 14 or later, Apple Silicon | evaluated by every framework check, with a smoke workflow for a real Mac; not yet claimed as tested |
+| macOS 14 or later, Apple Silicon | evaluated by every framework check, with a smoke workflow for a real Mac (macOS 15); not yet claimed as tested |
 
 Bash commands run with Nix-provided GNU tools on both platforms, so their behaviour does not depend on the host's tool versions. Only the pre-Nix bootstrap runs with the system shell, and it is written for bash 3.2. [platforms.md](platforms.md) has the details.
 

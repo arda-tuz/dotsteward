@@ -13,7 +13,9 @@ this page gives only what is different on a Mac.
 
 - macOS 14 or later on Apple Silicon (arm64), as an administrator. An older
   macOS or an Intel Mac is off the fast path: the read-only preflight stops
-  there (exit 3) before it writes anything.
+  there (exit 3) before it writes anything. The smoke workflow runs on
+  macOS 15; GitHub retired its macOS 14 runner images, so macOS 14 passes
+  the preflight but no longer runs in CI.
 - At least 4 GiB of memory (8 GiB or more recommended) and at least 15 GiB
   free on the file systems of `$HOME` and `/nix` (the Nix installer creates
   its own APFS volume).

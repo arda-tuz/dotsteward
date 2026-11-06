@@ -94,7 +94,7 @@ against the same contract. Details: [docs/catalog.md](docs/catalog.md).
 | Platform | Status |
 | --- | --- |
 | Ubuntu 24.04, x86_64 | primary: tested end to end, including a clean-machine install in CI |
-| macOS 14 or later, Apple Silicon | evaluated by every check, with a smoke workflow for a real Mac; not yet claimed as tested |
+| macOS 14 or later, Apple Silicon | evaluated by every check, with a smoke workflow for a real Mac (macOS 15); not yet claimed as tested |
 
 See [docs/platforms.md](docs/platforms.md).
 

@@ -7,7 +7,7 @@ What the machine checks of section 2 compare with.
 | Nix system | Machine | Support |
 | --- | --- | --- |
 | `x86_64-linux` | Ubuntu 24.04 on x86_64 | primary: every framework check runs on it, and a fresh machine is installed end to end on CI runners |
-| `aarch64-darwin` | macOS 14 or later on Apple silicon (arm64), standalone Home Manager | evaluated only: the framework checks evaluate every darwin configuration without building it, and a real Mac runs only in the framework's macOS smoke workflow |
+| `aarch64-darwin` | macOS 14 or later on Apple silicon (arm64), standalone Home Manager | evaluated only: the framework checks evaluate every darwin configuration without building it, and a real Mac (macOS 15) runs only in the framework's macOS smoke workflow |
 
 These are the fast path of a new instance (`[platform]` in `workstation.toml`). On another machine (another distribution or release, another architecture, an older macOS) the bootstrap's read-only preflight takes the adaptive route, exit 3, and stops before any write. Tell the user that the machine is outside the supported set; do not work around the preflight.
 

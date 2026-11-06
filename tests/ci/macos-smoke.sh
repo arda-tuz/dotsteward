@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# macOS smoke test on a GitHub-hosted macos-14 (arm64) runner: a new
+# macOS smoke test on a GitHub-hosted macos-15 (arm64) runner: a new
 # instance for aarch64-darwin with every catalog component on its darwin
 # method, built, activated in the runner's own home and checked end to end,
 # the path a Mac that is already set up takes (the adopt profile).

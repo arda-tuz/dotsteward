@@ -1,6 +1,6 @@
 name: macos-smoke
 
-# macOS on a real Mac (macos-14, arm64), in two jobs on fresh runners:
+# macOS on a real Mac (macos-15, arm64), in two jobs on fresh runners:
 # - smoke (tests/ci/macos-smoke.sh): the pinned Nix through stage 0
 #   (--install-nix-only), a new aarch64-darwin instance from `dotsteward
 #   init` with the darwin methods, rebuild --build-only and --switch in the
@@ -38,7 +38,7 @@ defaults:
 
 jobs:
   smoke:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 120
     env:
       # Authenticated GitHub fetches of the locked flake inputs. Nothing else
@@ -55,7 +55,7 @@ jobs:
         run: bash tests/ci/macos-smoke.sh
 
   checks:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 120
     env:
       # Authenticated GitHub fetches of the locked flake inputs.

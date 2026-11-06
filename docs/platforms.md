@@ -5,7 +5,7 @@ dotsteward manages a home directory on two Nix systems:
 | System | Machine | Status |
 | --- | --- | --- |
 | `x86_64-linux` | Ubuntu 24.04 on x86_64 | primary platform: every framework check runs on it, and a fresh machine is installed end to end in CI |
-| `aarch64-darwin` | macOS 14 or later on Apple silicon, standalone Home Manager | evaluated on every framework check (`checks.darwin-eval`), run on a real Mac by the macOS smoke workflow |
+| `aarch64-darwin` | macOS 14 or later on Apple silicon, standalone Home Manager | evaluated on every framework check (`checks.darwin-eval`), run on a real Mac by the macOS smoke workflow on macOS 15; macOS 14 passes the preflight, but GitHub retired its runner images, so CI no longer runs on it |
 
 An instance chooses its systems in `workstation.toml`; the first entry is the
 primary system (the one `homeConfigurations.<username>` describes):
