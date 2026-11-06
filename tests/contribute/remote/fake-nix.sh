@@ -6,6 +6,11 @@
 #   flake check ...                  succeeds, or fails when the knob
 #                                    flake-check (DS_TEST_ROOT/hub/knobs/
 #                                    flake-check) holds "fail"
+#   build DIR#dotsteward ... --override-input dotsteward REF ...
+#                                    the CLI of the instance DIR with the
+#                                    framework at REF: prints the package
+#                                    DS_TEST_ROOT/candidate, or fails when
+#                                    the knob candidate-cli holds "fail"
 #   flake update dotsteward --flake DIR
 #                                    locks the dotsteward input of
 #                                    DIR/flake.nix: its url (github:O/R/REF
@@ -41,6 +46,15 @@ while (($#)); do
 done
 
 hub=$DS_TEST_ROOT/hub
+
+if [[ ${1:-} == build ]]; then
+  [[ ${2:-} == *'#dotsteward' && " $* " == *" --override-input dotsteward "* ]] || fail "unsupported: $*"
+  if [[ -f $hub/knobs/candidate-cli && $(<"$hub/knobs/candidate-cli") == fail ]]; then
+    fail "build: the CLI does not build"
+  fi
+  printf '%s\n' "$DS_TEST_ROOT/candidate"
+  exit 0
+fi
 
 case "${1:-} ${2:-}" in
   "flake check")

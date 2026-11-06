@@ -3,9 +3,12 @@
 # `dotsteward contribute trial`: the instance's
 # gate (maintain scope), rebuild --switch and e2e, each with
 # --framework-override git+file://<clone>?rev=<checked commit> on the
-# current profile (else profiles.check); trial_switched is set before the
-# switch. --build-only runs gate and rebuild --build-only only. A red step
-# publishes nothing and, after a switch, runs the recovery: rebuild --switch
+# current profile (else profiles.check), run by the candidate's own CLI (the
+# instance's dotsteward package built with that override), so the hooks of
+# the candidate's generation see the library of their own release;
+# trial_switched is set before the switch. --build-only runs gate and
+# rebuild --build-only only. A red step publishes nothing and, after a
+# switch, runs the recovery with the CLI that runs the step: rebuild --switch
 # and e2e without an override, so the live generation returns to the pinned
 # framework. An inherited DOTSTEWARD_FRAMEWORK_OVERRIDE never reaches the
 # instance commands. Refusals: no passed check, a moved or dirty branch.
@@ -74,12 +77,28 @@ assert_eq trial "$(field .step)" "step after a red gate"
 assert_eq null "$(field .trial)" "trial after a red gate"
 stand_in_clear gate
 
+# --- the candidate's CLI does not build: nothing ran, nothing to recover ------------------
+
+hub_knob candidate-cli fail
+reset_calls
+assert_exit 1 run_contribute trial
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: trial: the CLI of the framework at ${sha:0:12} does not build; nothing is published"
+assert_eq "" "$(instance_calls)" "instance commands without the candidate's CLI"
+assert_eq false "$(field .trial_switched)" "trial_switched without the candidate's CLI"
+rm -f -- "$rt_hub/knobs/candidate-cli"
+
 # --- the full trial ---------------------------------------------------------------------
 
 # An inherited override never reaches the instance commands: only the flag.
 reset_calls
 DOTSTEWARD_FRAMEWORK_OVERRIDE=path:/elsewhere assert_exit 0 run_contribute trial
 assert_eq "$(trial_calls)" "$(instance_calls)" "calls of the full trial"
+assert_call_count 1 nix "build $ct_inst#dotsteward --no-link --no-update-lock-file --no-write-lock-file --override-input dotsteward $ref --print-out-paths"
+# The candidate's CLI runs all three.
+assert_call_count 3 candidate-cli
+assert_call_count 1 candidate-cli "--instance $ct_inst gate --scope maintain --framework-override $ref"
+assert_call_count 1 candidate-cli "--instance $ct_inst rebuild --profile main --switch --framework-override $ref"
+assert_call_count 1 candidate-cli "--instance $ct_inst e2e --profile main --framework-override $ref"
 assert_contains "$DS_STDOUT" "[dotsteward] trial passed: this machine runs the framework at ${sha:0:12}"
 assert_contains "$DS_STDOUT" "[dotsteward] next: dotsteward contribute publish"
 assert_eq "$ref" "$(live)" "live framework after the trial"
@@ -99,6 +118,8 @@ assert_exit 1 run_contribute trial
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: trial: e2e failed with the framework at ${sha:0:12}; nothing is published"
 assert_contains "$DS_STDOUT" "[dotsteward] recovery done: the live generation and its framework skills use the instance's pinned framework again"
 assert_eq "$(trial_calls; recovery_calls)" "$(instance_calls)" "calls of a red e2e"
+# The recovery runs with the CLI of the step, not the candidate's.
+assert_call_count 3 candidate-cli
 assert_eq pinned "$(live)" "live framework after the recovery"
 state_json | assert_json - '.trial_switched == false and .recovery == "done" and .trial == null and .step == "publish"'
 stand_in_clear e2e
@@ -141,6 +162,7 @@ assert_eq "$(
   call_line dotsteward-gate --scope maintain --framework-override "$ref"
   call_line dotsteward-rebuild --profile main --build-only --framework-override "$ref"
 )" "$(instance_calls)" "calls of the build-only trial"
+assert_call_count 2 candidate-cli
 assert_contains "$DS_STDOUT" "[dotsteward] trial passed (build-only): ${sha:0:12} builds on this machine; publish also needs clean-install.yml green on it"
 assert_eq none "$(live)" "live framework after the build-only trial"
 state_json | assert_json - ".trial == \"build-only\" and .trial_sha == \"$sha\" and .trial_switched == false"
