@@ -25,7 +25,7 @@ composed() {
   count=$(init_staged_count)
   assert_exit 1 env DS_INIT_NIX_FAIL='eval *' "$cli" init --dir "$DS_TEST_ROOT/instances/station" \
     --remote "$init_remote" "$@"
-  assert_contains "$DS_STDERR" "[dotsteward] ERROR: dotsteward sync --nix failed (exit 1); $DS_TEST_ROOT/instances/station was left as it was"
+  assert_contains "$DS_STDERR" "[dotsteward] ERROR: dotsteward generate --nix failed (exit 1); $DS_TEST_ROOT/instances/station was left as it was"
   assert_eq "$((count + 1))" "$(init_staged_count)" "one instance was staged"
   [[ ! -e $DS_TEST_ROOT/instances/station ]] || ds_fail "a failed init created its directory"
   init_staged

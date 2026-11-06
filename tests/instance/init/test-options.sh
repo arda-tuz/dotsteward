@@ -109,7 +109,7 @@ assert_jq - '.identity == { username: "dotsteward-test", darwin_home: $home } an
 # A user name only darwin accepts.
 assert_exit 1 env DOTSTEWARD_PLATFORM=darwin DS_INIT_NIX_FAIL='eval *' "$DS_CLI" init --dir "$dir" \
   --remote "$init_remote" --systems aarch64-darwin --username Alice.Smith
-assert_contains "$DS_STDERR" "dotsteward sync --nix failed"
+assert_contains "$DS_STDERR" "dotsteward generate --nix failed"
 assert_jq - '.identity.username == "Alice.Smith"' <<<"$(toml_json "$(init_staged)/workstation.toml")"
 assert_exit 1 "$DS_CLI" init --dir "$dir" --remote "$init_remote" --username Alice.Smith
 assert_contains "$DS_STDERR" "unsafe user name: Linux user names must match"

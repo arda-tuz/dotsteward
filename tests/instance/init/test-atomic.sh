@@ -48,10 +48,10 @@ fails_at() {
 
 for kind in missing empty template; do
   fails_at "nix flake lock" 1 "$kind" DS_INIT_NIX_FAIL='flake lock *'
-  fails_at "dotsteward sync --nix" 1 "$kind" DS_INIT_NIX_FAIL='eval *#dotstewardMirrors'
+  fails_at "dotsteward generate --nix" 1 "$kind" DS_INIT_NIX_FAIL='eval *#dotstewardMirrors'
   # The pins sync of `dotsteward sync`, then the pins check after it (the
   # pins engine exits 2 for a broken input).
-  fails_at "dotsteward sync --nix" 2 "$kind" DS_INIT_NIX_FAIL='eval *#lib.pinnedVersions'
+  fails_at "dotsteward generate --nix" 2 "$kind" DS_INIT_NIX_FAIL='eval *#lib.pinnedVersions'
   rm -f "$DS_STUB_STATE/nix/fail-matches"
   fails_at "dotsteward pins check --nix" 2 "$kind" DS_INIT_NIX_FAIL='eval *#lib.pinnedVersions' DS_INIT_NIX_FAIL_SKIP=1
   rm -f "$DS_STUB_STATE/nix/fail-matches"

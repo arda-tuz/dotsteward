@@ -4,7 +4,7 @@
 # Init of a missing and of an empty directory. The result is
 # the template with the files init writes (workstation.toml, the locks,
 # flake.nix), the flake.lock of `nix flake lock` and the .dotsteward/ mirrors
-# of `dotsteward sync --nix`, committed once on main with the user's own git
+# of `dotsteward generate --nix`, committed once on main with the user's own git
 # identity, and it passes the instance contract (static, the offline pins
 # check, settings validate, the tree scan). The Nix steps run in a temporary
 # directory, never in DIR, and that directory is gone afterwards.

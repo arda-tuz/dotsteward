@@ -21,7 +21,7 @@ composed() {
   local cli=$1
   shift
   assert_exit 1 env DS_INIT_NIX_FAIL='eval *' "$cli" init --dir "$station" --remote "$init_remote" "$@"
-  assert_contains "$DS_STDERR" "dotsteward sync --nix failed"
+  assert_contains "$DS_STDERR" "dotsteward generate --nix failed"
   init_staged
 }
 

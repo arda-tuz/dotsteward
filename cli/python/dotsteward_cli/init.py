@@ -29,7 +29,7 @@ committed there; a failed commit puts ``--dir`` back as it was):
    ``# dotsteward:inputs:begin`` and ``# dotsteward:inputs:end`` lines of
    ``flake.nix``, whose dotsteward input gets ``--framework-ref`` or
    ``--framework-url``.
-5. ``nix flake lock``, ``dotsteward sync --nix`` and ``dotsteward pins check
+5. ``nix flake lock``, ``dotsteward generate --nix`` and ``dotsteward pins check
    --nix`` on the composed instance.
 6. The instance moves into ``--dir``. Unless ``--no-git``, in ``--dir``
    itself (so git uses the identity, signing and hooks it chooses for that
@@ -70,7 +70,7 @@ from pathlib import Path
 from types import FrameType
 from typing import Any, NoReturn, TypeVar
 
-from dotsteward_cli import config, tomlfile
+from dotsteward_cli import config, machine, tomlfile
 
 PREFIX = "[dotsteward]"
 EXIT_REFUSAL = 1
@@ -194,7 +194,7 @@ def _parser() -> _Parser:
         usage="dotsteward init --dir DIR --remote URL [OPTION]...",
         description=(
             "Create a dotsteward instance from the framework template in DIR (missing, empty, or "
-            "filled by `nix flake init -t`), lock it, sync its mirrors, check its pins and commit it. "
+            "filled by `nix flake init -t`), lock it, generate its mirrors, check its pins and commit it. "
             "All or nothing: on a refusal or a failed step DIR is left as it was."
         ),
         epilog="Exit status: 0 success, 1 refusal or failed step, 2 usage error.",
@@ -259,6 +259,11 @@ def _parser() -> _Parser:
         "--framework-ref", metavar="vX.Y.Z", help="the framework release tag the dotsteward input pins"
     )
     framework.add_argument("--framework-url", metavar="URL", help="the whole flake reference of the dotsteward input")
+    parser.add_argument(
+        "--machine",
+        metavar="NAME",
+        help="hosts.producer: the machine that moves the values that come from upstream, usually this one",
+    )
     parser.add_argument("--no-git", action="store_true", help="neither initialize git nor commit")
     parser.add_argument(
         "--non-interactive", action="store_true", help="never prompt (init never prompts; accepted for scripts)"
@@ -285,6 +290,7 @@ class Options:
     contribute: str
     framework_ref: str | None
     framework_url: str | None
+    machine: str | None
     git: bool
     json: bool
 
@@ -364,6 +370,8 @@ def parse_options(argv: Sequence[str], catalog: Sequence[str]) -> Options:
         _plain(args.framework_url, "--framework-url")
     if not args.dir:
         raise UsageError("--dir must not be empty")
+    if args.machine is not None and not machine.valid_name(args.machine):
+        raise UsageError(f"--machine expects a name matching ^[a-z0-9][a-z0-9-]{{0,31}}$, got {args.machine!r}")
 
     return Options(
         dir=Path(os.path.abspath(args.dir)),
@@ -382,6 +390,7 @@ def parse_options(argv: Sequence[str], catalog: Sequence[str]) -> Options:
         contribute=args.contribute,
         framework_ref=args.framework_ref,
         framework_url=args.framework_url,
+        machine=args.machine,
         git=not args.no_git,
         json=args.json,
     )
@@ -863,6 +872,9 @@ def compose_config(text: str, options: Options, identity: Identity, env: Mapping
             table["mode"] = mode
             profiles[name] = table
 
+    if options.machine is not None:
+        _table(document, "hosts")["producer"] = options.machine
+
     # The tables init appends follow the template's trailing comment.
     for key in ("components", "upstream"):
         if key in document:
@@ -1116,6 +1128,13 @@ def next_steps(options: Options, commit: str | None) -> list[dict[str, str]]:
             "command": f"git -C {directory} push -u origin {BRANCH}",
         }
     )
+    if options.machine is not None:
+        steps.append(
+            {
+                "description": "Give this machine its name (a bootstrap asks for it)",
+                "command": f"cd {directory} && ./.dotsteward/cli.sh host init --name {options.machine}",
+            }
+        )
     steps.append(
         {
             "description": "On a new machine: install everything with the fresh profile (bootstrap ends with e2e)",
@@ -1211,10 +1230,14 @@ def build_and_place(
         log("Locking the flake inputs, syncing the mirrors and checking the pins", options.json)
         run_step("nix flake lock", ["nix", *NIX_FEATURES, "flake", "lock", str(stage)], stage, step_env, options.json)
         if is_repository:
-            # The new flake.lock too: sync refuses files Nix would not see.
+            # The new flake.lock too: generate refuses files Nix would not see.
             git_output(["add", "-A"], stage, step_env)
         run_step(
-            "dotsteward sync --nix", [cli, "--instance", str(stage), "sync", "--nix"], stage, step_env, options.json
+            "dotsteward generate --nix",
+            [cli, "--instance", str(stage), "generate", "--nix"],
+            stage,
+            step_env,
+            options.json,
         )
         run_step(
             "dotsteward pins check --nix",

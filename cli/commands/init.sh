@@ -7,13 +7,13 @@
 #          [--method-platform COMPONENT=linux:METHOD,darwin:METHOD]...
 #          [--systems x86_64-linux[,aarch64-darwin]] [--profiles ADOPT,FRESH]
 #          [--allow-unfree] [--contribute fork|owner]
-#          [--framework-ref vX.Y.Z | --framework-url URL] [--no-git]
-#          [--non-interactive] [--json]
+#          [--framework-ref vX.Y.Z | --framework-url URL] [--machine NAME]
+#          [--no-git] [--non-interactive] [--json]
 #
 # Copies the framework template into DIR (missing, empty, or filled by
 # `nix flake init -t`), writes workstation.toml, merges the chosen catalog
 # components' seeds into the locks and their flake inputs into flake.nix,
-# then runs `nix flake lock`, `dotsteward sync --nix` and `dotsteward pins
+# then runs `nix flake lock`, `dotsteward generate --nix` and `dotsteward pins
 # check --nix` in a temporary directory, moves the instance into DIR and
 # commits it there with the user's git identity. All or
 # nothing: DIR changes only when every step passed, and a failed commit puts
