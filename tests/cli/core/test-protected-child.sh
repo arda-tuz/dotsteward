@@ -89,6 +89,10 @@ assert result.returncode == 4 and result.interrupted == ("SIGINT",), result
 assert signal.getsignal(signal.SIGINT) is mine, "the handler is not restored"
 result = procs.run_protected(["true"])
 assert result.returncode == 0 and result.interrupted == (), result
+# The default without subprocess is the value of subprocess.
+import subprocess
+
+assert procs.DEVNULL == subprocess.DEVNULL
 PY
 
 # --- the terminal goes away ------------------------------------------------------------

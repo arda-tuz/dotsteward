@@ -471,6 +471,44 @@ assert_json - '.held == false' <<<"$DS_STDOUT"
 assert_not_contains "$DS_STDERR" "Traceback"
 assert_exit 0 internal lock run --holder upgrade --state-root "$state" -- true
 
+# The lock of the file decides, not the number in it: a holder in another PID namespace
+# has a process id that means nothing here.
+core_python - "$state" <<'PY' || ds_fail "a holder this process cannot see"
+import json
+import os
+import subprocess
+import sys
+
+from dotsteward_cli import locks
+
+state = sys.argv[1]
+lock = locks.FileLock(os.path.join(state, locks.INSTANCE_LOCK_FILE))
+lock.acquire()
+gone = subprocess.Popen(["true"])
+gone.wait()
+record = {"name": "elsewhere", "pid": gone.pid, "since": "s", "token": "t"}
+os.ftruncate(lock.descriptor, 0)
+os.pwrite(lock.descriptor, json.dumps(record).encode(), 0)
+status = locks.lock_status(state)
+assert status.held and status.holder.name == "elsewhere", status
+try:
+    locks.InstanceLock(state, "upgrade").acquire()
+except locks.LockBusy:
+    pass
+else:
+    raise AssertionError("a second command took a lock that is held")
+os.ftruncate(lock.descriptor, 0)
+lock.release()
+PY
+
+# An instance named in the environment that does not exist stays that error.
+gone_instance() (
+  unset DOTSTEWARD_STATE_ROOT XDG_STATE_HOME
+  DOTSTEWARD_INSTANCE=$work/no-such-instance internal lock status
+)
+assert_exit 1 gone_instance
+assert_contains "$DS_STDERR" "DOTSTEWARD_INSTANCE"
+
 # A lock file nobody can open is an error, not a free lock.
 chmod 000 "$state/instance.lock"
 ds_defer chmod 600 "$state/instance.lock"

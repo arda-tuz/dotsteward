@@ -291,9 +291,10 @@ def _now() -> str:
 
 def _give_back(claimed: str, marker: str) -> None:
     """A claimed request is a request again, unless a newer one of its name came."""
-    with contextlib.suppress(FileExistsError):
-        os.link(claimed, marker)
-    os.unlink(claimed)
+    if os.path.exists(marker):
+        os.unlink(claimed)
+    else:
+        os.rename(claimed, marker)
 
 
 def _recover_claimed(state_root: str) -> None:
