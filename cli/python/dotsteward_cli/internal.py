@@ -180,8 +180,13 @@ def _report_write(args: argparse.Namespace) -> int:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="dotsteward_cli.internal", description=__doc__, allow_abbrev=False)
-    commands = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(
+        prog="dotsteward_cli.internal",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    commands = parser.add_subparsers(dest="subcommand", required=True)
 
     compare = commands.add_parser("version-compare", allow_abbrev=False)
     compare.add_argument("left")
@@ -229,15 +234,17 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    from dotsteward_cli import config
-
     args = _parser().parse_args(argv)
     try:
         code: int = args.handler(args)
-    except config.DotstewardError as error:
-        print("\n".join(error.lines()), file=sys.stderr)
-        return 1
-    except OSError as error:
+    except Exception as error:
+        # Hooks compare versions often: the configuration module loads only when used.
+        config = sys.modules.get("dotsteward_cli.config")
+        if config is not None and isinstance(error, config.DotstewardError):
+            print("\n".join(error.lines()), file=sys.stderr)
+            return 1
+        if not isinstance(error, OSError):
+            raise
         print(f"[dotsteward] ERROR: {error}", file=sys.stderr)
         return 1
     return code

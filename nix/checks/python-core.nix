@@ -4,8 +4,8 @@
 # Then shellcheck over the tests and the one lint of all Python: ruff and
 # ruff format over every Python file of the source set, mypy in strict mode
 # over the package (rules and paths: pyproject.toml), and a wheel build that
-# proves the declaration holds every module. The lint job of ci.yml builds
-# this check on every event.
+# proves the declaration holds every module. The lint job of ci.yml builds this
+# check on every event.
 {
   pkgs,
   dsLib,

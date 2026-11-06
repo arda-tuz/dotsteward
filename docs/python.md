@@ -24,6 +24,11 @@ the package with `python3 -s -P -m <module>` and `PYTHONPATH` naming the source
 roots it needs; the wheel exists only to prove the declaration holds every
 module.
 
+The Python tests of instances put `engines/pins` and `cli/python` on `sys.path`
+and import `dotsteward_pins.checker`, `.instance`, `.lockfile`, `.rules`,
+`.latest.core` and `.latest.adapters`; `tests/cli/core/test-package.sh` keeps the
+names they use.
+
 ## Checks
 
 `pyproject.toml` holds the one configuration of ruff and of mypy in strict
@@ -38,11 +43,28 @@ nix build -L --no-link .#checks.x86_64-linux.python-core
 Fix a finding or type the code; an ignore is narrow, names its rule and says
 why on the same line.
 
+## A new command
+
+A command is a module of `cli/python/dotsteward_cli` with a thin file
+`cli/commands/<name>.sh`, which the dispatcher finds by its name:
+
+```text
+#!/usr/bin/env bash
+# summary: What the command does
+# shellcheck source=cli/lib/python.sh
+source "$DOTSTEWARD_LIB/python.sh"
+ds_python_exec dotsteward_cli.example "$@"
+```
+
+Docs follow as for every command: `docs/exit-codes.md` gets a row, and
+`tools/gen-docs.sh` writes `docs/cli.md`.
+
 ## Calling the package from bash
 
 `cli/lib/python.sh` holds the glue for the bash commands, which source it next
-to `lib.sh`. `ds_python MODULE [ARG...]` runs a module of the package and
-`ds_internal ARG...` the internal command line of the primitives
+to `lib.sh`. `ds_python MODULE [ARG...]` runs a module of the package with every
+source root on its path, `ds_python_exec` does so in place of the shell, and
+`ds_internal ARG...` runs the internal command line of the primitives
 (`dotsteward_cli.internal`), which is no command of the CLI and may change
 with the framework.
 
@@ -74,9 +96,10 @@ another that asks for it, which runs nested. A process a command leaves behind
 does not keep the lock. The gate's own lock nests inside.
 `lock_status(state_root)` tells who holds it; to act on a free lock, acquire it.
 `FileLock(path)` is the same primitive for a lock of another file, for example
-one that only skill capture takes. From bash:
+one that only skill capture takes: `try_acquire(wait=0.0)`, a blocking `acquire()`
+and `release()`. From bash:
 
-```sh
+```text
 ds_internal lock run --holder NAME --state-root "$(state_root)" -- COMMAND ARG...
 ```
 

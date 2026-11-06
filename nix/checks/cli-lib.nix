@@ -4,7 +4,9 @@
 # exporter, and the Nix parity test, which evaluates lib/config.nix with
 # nix-instantiate against an isolated store (as checks.nix-lib does), so
 # the sandbox needs Nix and the nixpkgs source. Then shellcheck over the
-# library and its tests, and checks of the installed package's catalog.
+# library and its tests, checks of the installed package's catalog, and its
+# primitives with nothing but their python: the instance lock needs no flock
+# binary.
 {
   pkgs,
   dsLib,
@@ -62,5 +64,12 @@ cli.mkTestCheck {
     order=$(cd "$instance" && PYTHONPATH=$share/cli/python ${cli.passthru.python.interpreter} -s -P \
       -m dotsteward_cli.config resolve | jq -c '[.components.order[]] | sort')
     [[ $order == "$expected" ]] || fail "the packaged reader resolves the catalog $order, expected $expected"
+
+    packaged() {
+      env -i PYTHONPATH="$share/cli/python" ${cli.passthru.python.interpreter} -s -P -m dotsteward_cli.internal "$@"
+    }
+    [[ $(packaged version-compare 1.2.3-rc1 1.2.3) == -1 ]] || fail "the packaged version order"
+    packaged lock run --holder example --state-root "$instance/state" -- ${pkgs.coreutils}/bin/true ||
+      fail "the packaged instance lock"
   '';
 }

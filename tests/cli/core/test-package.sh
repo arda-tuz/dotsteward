@@ -74,6 +74,25 @@ for failure in failures:
 sys.exit(1 if failures else 0)
 PY
 
+# --- the glue of bash -------------------------------------------------------------
+
+# Every source root is on the module path, and the file of a command becomes
+# the module.
+# shellcheck source=cli/lib/python.sh
+source "$DS_REPO_ROOT/cli/lib/python.sh"
+assert_exit 0 ds_python dotsteward_pins --help
+assert_exit 0 ds_python local_maintained_files --help
+assert_eq 3 "$(ds_python dotsteward_cli.internal report combine 3 0)" "ds_python"
+command_file=$DS_TEST_ROOT/command.sh
+cat >"$command_file" <<EOF
+#!/usr/bin/env bash
+source $(printf %q "$DS_REPO_ROOT/cli/lib/python.sh")
+ds_python_exec dotsteward_cli.internal report combine 6 0
+printf 'the shell went on\n'
+EOF
+assert_exit 0 bash "$command_file"
+assert_eq 6 "$DS_STDOUT" "ds_python_exec replaces the shell"
+
 # --- entry points and module paths ----------------------------------------------
 
 # python_at ROOTS ARG...: python3 as the commands run it, with the colon

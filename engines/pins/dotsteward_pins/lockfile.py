@@ -1,4 +1,4 @@
-"""Lock files: serializer, atomic writes, lock paths and templates.
+"""Lock files: serializer, lock paths and templates.
 
 Serializer: ``json.dumps(data, indent=2, ensure_ascii=False)``
 plus a final newline, keys in insertion order, values updated in place.
