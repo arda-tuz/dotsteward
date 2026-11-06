@@ -1,0 +1,1 @@
+{"session_id":"@SESSION@","transcript_path":"@HOME@/.claude/projects/-work/@SESSION@.jsonl","cwd":"@CWD@","permission_mode":"bypassPermissions","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"printf hello > @FILE@"},"tool_response":{"stdout":"","stderr":"","interrupted":false},"tool_use_id":"toolu_example_4","duration_ms":10}

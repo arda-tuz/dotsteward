@@ -1,0 +1,1 @@
+{"session_id":"@SESSION@","transcript_path":"@HOME@/.claude/projects/-work/@SESSION@.jsonl","cwd":"@CWD@","hook_event_name":"SessionEnd","reason":"other"}

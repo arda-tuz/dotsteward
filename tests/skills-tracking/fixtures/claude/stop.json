@@ -1,0 +1,1 @@
+{"session_id":"@SESSION@","transcript_path":"@HOME@/.claude/projects/-work/@SESSION@.jsonl","cwd":"@CWD@","prompt_id":"ad8ed49d-0000-4000-8000-000000000002","permission_mode":"bypassPermissions","effort":{"level":"xhigh"},"hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"done","background_tasks":[],"session_crons":[]}
