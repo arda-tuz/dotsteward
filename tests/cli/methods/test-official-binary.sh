@@ -112,7 +112,21 @@ assert_eq 1 "${#backups[@]}"
 assert_eq "$newer_sha" "$(sha256sum "${backups[0]}" | awk '{print $1}')"
 assert_file_mode "${backups[0]}" 600
 assert_file_mode "${backups[0]%%/files/*}" 700
+# What a binary prints has no build metadata (the default regular expression
+# stops before +), so the pin 1.0.0+build5 and the printed 1.0.0 are one version,
+# for both policies.
+lock_edit_build() {
+  jq --arg version "$1" '.agent_tools["example-term"].minimum_version = $version' \
+    "$methods_inst/versions.lock.json" >"$DS_TEST_ROOT/lock.new"
+  mv -- "$DS_TEST_ROOT/lock.new" "$methods_inst/versions.lock.json"
+}
+lock_edit_build 1.0.0+build5
+assert_exit 0 install_term
+assert_eq "satisfied: example-term 1.0.0" "$DS_STDOUT"
 set_block '.policy = "at-least"'
+assert_exit 0 install_term
+assert_eq "satisfied: example-term 1.0.0" "$DS_STDOUT"
+lock_edit_build 1.0.0
 
 # A command found elsewhere on PATH counts (the installer's semantics).
 rm -f "$dest"
