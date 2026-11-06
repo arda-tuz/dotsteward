@@ -1464,10 +1464,11 @@ _contribute_carry_ref() {
   printf 'refs/dotsteward/carry/%s\n' "$CT_RUN_ID"
 }
 
-# _contribute_upgrade_command: the command that continues the upgrade.
+# _contribute_upgrade_command: the command that continues the upgrade (the
+# running upgrade --main sets CT_UPGRADE_MAIN before upgrade_to is recorded).
 _contribute_upgrade_command() {
   local command="dotsteward contribute upgrade"
-  if [[ $(_contribute_get upgrade_to) == main ]]; then
+  if [[ $(_contribute_get upgrade_to) == main || ${CT_UPGRADE_MAIN:-0} == 1 ]]; then
     command+=" --main"
   else
     command+=" --tag $(_contribute_get tag)"
@@ -1655,6 +1656,7 @@ contribute_cmd_upgrade() {
   [[ -n $(_contribute_get carry) ]] || [[ -z $(_contribute_get instance_base) ]] || ((carry == 0)) ||
     die "the upgrade of run $id started without --carry; run: $(_contribute_upgrade_command)"
   [[ -z $(_contribute_get carry) ]] || carry=1
+  CT_UPGRADE_MAIN=$main
   contribute_is_clone "$CT_CLONE" || die "the clone $CT_CLONE of run $id is missing"
   if ((main)); then
     # K4: the instance may follow the main commit that this run's check and
