@@ -13,16 +13,23 @@ failed write stops half way. A child that has to finish writes to a file.
 
 ``run_attached`` is for a child under a lock: the child decides about Ctrl-C, and
 the parent stays to let go of the lock.
+
+The hot path of a hook loads this module for ``process_exists``, so what only a
+child needs loads with the first child.
 """
 
 from __future__ import annotations
 
 import os
-import signal
-import subprocess
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from typing import IO
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    import subprocess
+    from collections.abc import Mapping, Sequence
+    from typing import IO
+
+# subprocess.DEVNULL, without loading subprocess for a default value.
+DEVNULL = -3
 
 
 def process_exists(pid: int) -> bool:
@@ -49,6 +56,9 @@ def run_attached(argv: Sequence[str], env: Mapping[str, str] | None = None) -> i
     SIGINT from the terminal reaches the child by itself; SIGTERM and SIGHUP reach
     it through this process. A signal before the child exists waits for it. Raises
     the OSError of a command that cannot start."""
+    import signal
+    import subprocess
+
     child: subprocess.Popen[bytes] | None = None
     early: list[int] = []
 
@@ -72,13 +82,18 @@ def run_attached(argv: Sequence[str], env: Mapping[str, str] | None = None) -> i
     return _status_of(returncode)
 
 
-@dataclass(frozen=True)
 class ProtectedResult:
     """The status of the child (128 + N after signal N) and the names of the
     signals that reached the parent while it ran, in order, each once."""
 
-    returncode: int
-    interrupted: tuple[str, ...]
+    __slots__ = ("interrupted", "returncode")
+
+    def __init__(self, returncode: int, interrupted: tuple[str, ...]) -> None:
+        self.returncode = returncode
+        self.interrupted = interrupted
+
+    def __repr__(self) -> str:
+        return f"ProtectedResult(returncode={self.returncode}, interrupted={self.interrupted})"
 
 
 def run_protected(
@@ -86,13 +101,16 @@ def run_protected(
     *,
     cwd: str | os.PathLike[str] | None = None,
     env: Mapping[str, str] | None = None,
-    stdin: int | IO[bytes] | None = subprocess.DEVNULL,
+    stdin: int | IO[bytes] | None = DEVNULL,
     stdout: int | IO[bytes] | None = None,
     stderr: int | IO[bytes] | None = None,
 ) -> ProtectedResult:
     """Runs ARGV to its end and returns its result; raises the OSError of a
     command that cannot start. STDOUT and STDERR are files or descriptors; nothing
     reads a pipe while it runs. Call it in the main thread."""
+    import signal
+    import subprocess
+
     received: list[str] = []
 
     def note(signum: int, frame: object) -> None:

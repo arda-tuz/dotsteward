@@ -75,13 +75,16 @@ Every part of the framework uses these, so each answer exists once.
 ### Atomic writes
 
 `dotsteward_cli.atomic.atomic_write(path, data, *, mode=None, parents=False)`
-replaces a file through a temporary file in its directory, fsync, rename and an
-fsync of the directory, so a reader sees the old file or the new one, also after
-a crash. A write without `mode` keeps the mode of the file it replaces, else
-0644; `parents` creates missing directories; the next write removes what a dead
-writer left. `atomic_write_json` takes the same arguments and writes indented
-JSON. From bash: `ds_internal atomic-write PATH [--mode MODE] [--parents]` writes
-its standard input.
+replaces a file through a temporary file in its directory, a sync, rename and a
+sync of the directory, so a reader sees the old file or the new one, also after a
+crash, and after a power cut as far as the disk keeps what a sync asks of it (macOS:
+`F_FULLFSYNC` where the file system knows it). A write without `mode` keeps the mode of
+the file it replaces, else 0644, but not its owner: the file belongs to the user who
+writes it. `parents` creates missing directories; the next write removes what a dead
+writer left. `atomic_write_json` takes the same arguments and writes indented JSON.
+`make_private_dirs(path)` creates a directory with mode 0700; parents it has to create
+follow the umask, so call it for the state root first when that may be new too. From
+bash: `ds_internal atomic-write PATH [--mode MODE] [--parents]` writes its standard input.
 
 ### Locks
 

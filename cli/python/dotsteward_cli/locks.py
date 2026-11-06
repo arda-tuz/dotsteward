@@ -35,33 +35,33 @@ child that asks for the lock while its holder still holds it runs nested: it
 gets no lock and starts nothing on release. A stale token opens nothing, since
 the token must be the one in the lock file of a lock that is held. Other locks,
 such as the gate's, nest inside; the order is always this lock first.
+
+The hot path of a hook loads this module for ``FileLock``, so what only the instance
+lock or a pending command needs loads when it is used.
 """
 
 from __future__ import annotations
 
 import contextlib
-import datetime
 import fcntl
-import json
 import os
-import re
-import secrets
-import subprocess
 import sys
 import time
-from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any
 
 from dotsteward_cli import atomic, procs
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping, Sequence
+    from typing import Any
 
 INSTANCE_LOCK_FILE = "instance.lock"
 PENDING_DIRECTORY = "instance.pending"
 HELD_VARIABLE = "DOTSTEWARD_INSTANCE_LOCK_HELD"
 _SCHEMA_VERSION = 1
-_HOLDER_NAME = re.compile(r"[a-z0-9][a-z0-9._-]*")
+_NAME_START = frozenset("abcdefghijklmnopqrstuvwxyz0123456789")
+_NAME_REST = _NAME_START | frozenset("._-")
 _POLL_SECONDS = 0.01
 # How long a busy lock whose holder has not named itself is tried again.
 _UNNAMED_GRACE_SECONDS = 0.1
@@ -95,7 +95,7 @@ class FileLock:
     """An exclusive lock of the file at PATH; see the module documentation."""
 
     def __init__(self, path: str | os.PathLike[str]) -> None:
-        self.path = Path(path)
+        self.path = os.fspath(path)
         self._descriptor: int | None = None
 
     @property
@@ -112,7 +112,7 @@ class FileLock:
         """Creates the file (0600) and missing directories (0700)."""
         if self.held:
             raise ValueError(f"{self.path} is already held")
-        atomic.make_private_dirs(self.path.parent)
+        atomic.make_private_dirs(os.path.dirname(self.path))
         return os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
 
     def acquire(self) -> None:
@@ -149,25 +149,35 @@ class FileLock:
                 os.close(descriptor)
 
 
-@dataclass(frozen=True)
 class Holder:
     """Who holds the instance lock."""
 
-    name: str
-    pid: int
-    since: str
-    token: str = field(default="", repr=False)
+    __slots__ = ("name", "pid", "since", "token")
+
+    def __init__(self, name: str, pid: int, since: str, token: str = "") -> None:
+        self.name = name
+        self.pid = pid
+        self.since = since
+        self.token = token
+
+    def __repr__(self) -> str:
+        return f"Holder(name={self.name!r}, pid={self.pid}, since={self.since!r})"
 
 
-@dataclass(frozen=True)
 class LockStatus:
     """HOLDER is None when a held lock names nobody; PENDING_SINCE gives when each
     pending command asked, as far as its marker says."""
 
-    held: bool
-    holder: Holder | None
-    pending: list[str]
-    pending_since: dict[str, str]
+    __slots__ = ("held", "holder", "pending", "pending_since")
+
+    def __init__(self, held: bool, holder: Holder | None, pending: list[str], pending_since: dict[str, str]) -> None:
+        self.held = held
+        self.holder = holder
+        self.pending = pending
+        self.pending_since = pending_since
+
+    def __repr__(self) -> str:
+        return f"LockStatus(held={self.held}, holder={self.holder!r}, pending={self.pending})"
 
 
 class LockBusy(Exception):
@@ -181,7 +191,9 @@ class LockBusy(Exception):
         super().__init__(f"another command holds the instance lock: {who}")
 
 
-def _read_holder(path: Path) -> Holder | None:
+def _read_holder(path: str) -> Holder | None:
+    import json
+
     try:
         with open(path, "rb") as handle:
             record = json.loads(handle.read(_RECORD_BYTES))
@@ -190,11 +202,11 @@ def _read_holder(path: Path) -> Holder | None:
         return None
 
 
-def _pending_directory(state_root: Path) -> Path:
-    return state_root / PENDING_DIRECTORY
+def _pending_directory(state_root: str) -> str:
+    return os.path.join(state_root, PENDING_DIRECTORY)
 
 
-def _pending_names(state_root: Path) -> list[str]:
+def _pending_names(state_root: str) -> list[str]:
     try:
         names = os.listdir(_pending_directory(state_root))
     except OSError:
@@ -202,11 +214,13 @@ def _pending_names(state_root: Path) -> list[str]:
     return sorted(name.removesuffix(".json") for name in names if name.endswith(".json"))
 
 
-def _pending_since(state_root: Path, names: Sequence[str]) -> dict[str, str]:
+def _pending_since(state_root: str, names: Sequence[str]) -> dict[str, str]:
+    import json
+
     since = {}
     for name in names:
         try:
-            with open(_pending_directory(state_root) / f"{name}.json", encoding="utf-8") as handle:
+            with open(os.path.join(_pending_directory(state_root), f"{name}.json"), encoding="utf-8") as handle:
                 created = json.load(handle)["created_at"]
         except (OSError, ValueError, KeyError, TypeError):
             continue
@@ -215,7 +229,7 @@ def _pending_since(state_root: Path, names: Sequence[str]) -> dict[str, str]:
     return since
 
 
-def _live_holder(path: Path) -> Holder | None:
+def _live_holder(path: str) -> Holder | None:
     """The holder the lock file names, unless it died without letting go."""
     holder = _read_holder(path)
     return holder if holder is not None and procs.process_exists(holder.pid) else None
@@ -227,11 +241,12 @@ def lock_status(state_root: str | os.PathLike[str]) -> LockStatus:
     acquire it. A file nobody can open raises the OSError. An empty file is not
     checked with a lock of the file, so that asking almost never disturbs a command
     that is about to take it."""
-    root = Path(state_root)
+    root = os.fspath(state_root)
+    path = os.path.join(root, INSTANCE_LOCK_FILE)
     holder = None
     held = False
     try:
-        descriptor = os.open(root / INSTANCE_LOCK_FILE, os.O_RDONLY | os.O_CLOEXEC)
+        descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
     except FileNotFoundError:
         pass
     else:
@@ -240,7 +255,7 @@ def lock_status(state_root: str | os.PathLike[str]) -> LockStatus:
                 fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
         except BlockingIOError:
             held = True
-            holder = _read_holder(root / INSTANCE_LOCK_FILE)
+            holder = _read_holder(path)
         finally:
             os.close(descriptor)
     names = _pending_names(root)
@@ -259,9 +274,9 @@ def pending_environment(env: Mapping[str, str] | None = None) -> dict[str, str]:
     }
 
 
-def pending_log(state_root: str | os.PathLike[str], name: str) -> Path:
+def pending_log(state_root: str | os.PathLike[str], name: str) -> str:
     """The file with the output of the last pending run of NAME."""
-    return _pending_directory(Path(state_root)) / f"{name}.log"
+    return os.path.join(_pending_directory(os.fspath(state_root)), f"{name}.log")
 
 
 def _warn(text: str) -> None:
@@ -271,17 +286,17 @@ def _warn(text: str) -> None:
 
 
 def _now() -> str:
-    return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def _give_back(claimed: Path, marker: Path) -> None:
+def _give_back(claimed: str, marker: str) -> None:
     """A claimed request is a request again, unless a newer one of its name came."""
     with contextlib.suppress(FileExistsError):
         os.link(claimed, marker)
     os.unlink(claimed)
 
 
-def _recover_claimed(state_root: Path) -> None:
+def _recover_claimed(state_root: str) -> None:
     """Gives back the requests of claimers that died before they started them."""
     directory = _pending_directory(state_root)
     with contextlib.suppress(OSError):
@@ -289,12 +304,15 @@ def _recover_claimed(state_root: Path) -> None:
             if name.startswith(".") and name.endswith(".claimed"):
                 marker, _, pid = name[1 : -len(".claimed")].rpartition(".")
                 if marker.endswith(".json") and pid.isdecimal() and not procs.process_exists(int(pid)):
-                    _give_back(directory / name, directory / marker)
+                    _give_back(os.path.join(directory, name), os.path.join(directory, marker))
 
 
-def _start_request(state_root: Path, marker: Path, claimed: Path) -> None:
+def _start_request(state_root: str, name: str, claimed: str) -> None:
     """Starts the command of the CLAIMED request as a process of its own, with the
     output of this run in a log next to the markers."""
+    import json
+    import subprocess
+
     with open(claimed, encoding="utf-8") as handle:
         request: Any = json.load(handle)
     if os.stat(claimed).st_uid != os.geteuid():
@@ -310,8 +328,8 @@ def _start_request(state_root: Path, marker: Path, claimed: Path) -> None:
     env.pop(HELD_VARIABLE, None)
     directory = request.get("cwd")
     if not (isinstance(directory, str) and os.path.isdir(directory)):
-        directory = str(state_root)
-    log = os.open(marker.with_suffix(".log"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC, 0o600)
+        directory = state_root
+    log = os.open(pending_log(state_root, name), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC, 0o600)
     try:
         subprocess.Popen(
             argv,
@@ -326,19 +344,20 @@ def _start_request(state_root: Path, marker: Path, claimed: Path) -> None:
         os.close(log)
 
 
-def _start_pending(state_root: Path, marker: Path) -> str | None:
-    """Claims MARKER by renaming it and starts its command; the name, if it started.
-    A request that can never start is dropped with a warning. One that met a passing
-    failure, such as a full disk or no more processes, stays for the next holder."""
-    name = marker.name.removesuffix(".json")
-    claimed = marker.with_name(f".{marker.name}.{os.getpid()}.claimed")
+def _start_pending(state_root: str, name: str) -> str | None:
+    """Claims the marker of NAME by renaming it and starts its command; the name, if
+    it started. A request that can never start is dropped with a warning. One that met
+    a passing failure, such as a full disk or no more processes, stays for the next
+    holder."""
+    marker = os.path.join(_pending_directory(state_root), f"{name}.json")
+    claimed = os.path.join(_pending_directory(state_root), f".{name}.json.{os.getpid()}.claimed")
     try:
         os.rename(marker, claimed)
     except OSError:  # another process claimed it
         return None
     started = None
     try:
-        _start_request(state_root, marker, claimed)
+        _start_request(state_root, name, claimed)
     except (FileNotFoundError, NotADirectoryError, PermissionError, ValueError, TypeError) as error:
         _warn(f"the pending command {name} did not start: {error}")
     except OSError as error:
@@ -358,25 +377,27 @@ class InstanceLock:
     NAME names the holder (a command name) in messages and in markers."""
 
     def __init__(self, state_root: str | os.PathLike[str], name: str) -> None:
-        if not _HOLDER_NAME.fullmatch(name):
+        if not (name and name[0] in _NAME_START and _NAME_REST.issuperset(name)):
             raise ValueError(f"invalid lock holder name: {name}")
-        self.state_root = Path(state_root)
+        self.state_root = os.fspath(state_root)
         self.name = name
         self.nested = False
-        self._lock = FileLock(self.state_root / INSTANCE_LOCK_FILE)
+        self._lock = FileLock(os.path.join(self.state_root, INSTANCE_LOCK_FILE))
         self._previous_token: str | None = None
 
     @property
     def held(self) -> bool:
         return self.nested or self._lock.held
 
-    def _marker(self) -> Path:
-        return _pending_directory(self.state_root) / f"{self.name}.json"
+    def _marker(self) -> str:
+        return os.path.join(_pending_directory(self.state_root), f"{self.name}.json")
 
     def _take(self) -> None:
         """The lock is this object's: names the holder and shares the token with
         children. When that fails, it lets go again."""
-        token = secrets.token_hex(16)
+        import json
+
+        token = os.urandom(16).hex()
         record = json.dumps({"name": self.name, "pid": os.getpid(), "since": _now(), "token": token}) + "\n"
         descriptor = self._lock.descriptor
         try:
@@ -392,7 +413,7 @@ class InstanceLock:
     def _answer_marker(self) -> bool:
         """Removes the request of this name. False when there is none (any more)."""
         try:
-            self._marker().unlink()
+            os.unlink(self._marker())
         except FileNotFoundError:
             return False
         return True
@@ -470,10 +491,9 @@ class InstanceLock:
             os.environ[HELD_VARIABLE] = self._previous_token
         self._lock.release()
         _recover_claimed(self.state_root)
-        directory = _pending_directory(self.state_root)
         started = []
         for name in _pending_names(self.state_root):
-            command = _start_pending(self.state_root, directory / f"{name}.json")
+            command = _start_pending(self.state_root, name)
             if command is not None:
                 started.append(command)
         return started
