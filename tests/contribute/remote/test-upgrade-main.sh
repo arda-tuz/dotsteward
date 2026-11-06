@@ -9,7 +9,9 @@
 # template-owned files come from it, and the commit subject names
 # main@<commit>. Everything else is the upgrade of a release. --tag before a
 # release is refused and names --main; a commit that did not pass check
-# and trial is never followed; an interrupted upgrade continues on main.
+# and trial is never followed; an interrupted upgrade continues on main, and
+# report no longer ends that run at publish. A finished upgrade ends with
+# the outcome completed, although the run has no release tag.
 # release refuses a run without a pending release and names --main too.
 # shellcheck source=tests/contribute/remote/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/remote/helpers.sh"
@@ -69,6 +71,7 @@ assert_contains "$DS_STDOUT" "[dotsteward] upgraded the instance to main@${merge
 state_json | assert_json - '.upgrade_to == "main" and .tag == null and .step == "report" and .upgrade == "full"'
 
 assert_exit 0 run_contribute report
+assert_contains "$DS_STDOUT" "[dotsteward] contribute run $id: completed"
 assert_contains "$DS_STDOUT" "  release: none"
 assert_contains "$DS_STDOUT" "  instance commit: $(git -C "$ct_inst" rev-parse HEAD)"
 git -C "$ct_inst" push -q origin HEAD:main
@@ -90,6 +93,9 @@ jq -e --arg sha "$merged" '.nodes.dotsteward.locked.rev == $sha and .nodes.dotst
 stand_in_clear gate
 assert_exit 1 run_contribute upgrade --tag v0.1.0
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: the upgrade of run $(current_id) follows its merged commit on main; run: dotsteward contribute upgrade --main"
+assert_exit 1 run_contribute report
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: the upgrade of run $(current_id) has started, so the run no longer ends at publish; finish it with: dotsteward contribute upgrade --main, or end the run with: dotsteward contribute abort"
+assert_eq release "$(field .step)" "step after the refused report"
 reset_calls
 assert_exit 0 run_contribute upgrade
 assert_eq "chore(dotsteward): upgrade to main@${merged:0:12}" "$(git -C "$ct_inst" log -1 --format=%s)" "subject of the resumed upgrade"

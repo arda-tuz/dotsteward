@@ -3,8 +3,9 @@
 # Release trains in owner mode. A run that keeps VERSION at the release it
 # is based on releases nothing: publish accepts it, release refuses and
 # names `contribute upgrade --main` and `contribute report`, which ends the
-# run at publish (after the recovery when its trial switched the
-# machine). A later run with a release
+# run at publish with the outcome published, without a tag or an instance
+# commit (after the recovery when its trial switched the machine). A later
+# run with a release
 # commit (VERSION set to the next version) is released with semantic
 # versioning from the conventional commits since the last release (any
 # feat: the next minor, otherwise the next patch), and the release bundles
@@ -58,7 +59,7 @@ assert_eq "" "$(instance_calls)" "a refusal runs no recovery"
 
 reset_calls
 assert_exit 0 run_contribute report
-assert_contains "$DS_STDOUT" "[dotsteward] contribute run $id: completed"
+assert_contains "$DS_STDOUT" "[dotsteward] contribute run $id: published"
 assert_contains "$DS_STDOUT" "  merged commit: $first"
 assert_contains "$DS_STDOUT" "  release: none"
 assert_contains "$DS_STDOUT" "  instance commit: none"
@@ -67,7 +68,11 @@ assert_eq "$(
   call_line dotsteward-e2e --profile main
 )" "$(instance_calls)" "the recovery before the run ends at publish"
 assert_eq pinned "$(live)" "live framework after the run ended at publish"
-state_json | assert_json - '.step == "done" and .outcome == "completed" and .tag == null and .recovery == "done"'
+state_json | assert_json - '.step == "done" and .outcome == "published" and .tag == null and .instance_commit == null
+  and .recovery == "done"'
+assert_exit 0 run_contribute report --json
+assert_json - ".outcome == \"published\" and .merged_sha == \"$first\" and .tag == null and .release_url == null
+  and .instance_commit == null" <<<"$DS_STDOUT"
 
 # --- a feature with a release commit: the next minor, bundling both runs ----------------------
 
