@@ -895,6 +895,26 @@ def discovered_state_root(env: Mapping[str, str] | None = None) -> str:
     return state_root(load_instance(str(root), env=env), env)
 
 
+def required_state_root(env: Mapping[str, str] | None = None) -> str:
+    """The state root that commands agree on, for what they share there such as
+    the instance lock: the one of the instance that discovery finds, or
+    DOTSTEWARD_STATE_ROOT. Without either raises DotstewardError: a default would
+    be another lock than the state.root of the instance a second command runs in."""
+    env = os.environ if env is None else env
+    try:
+        root = discover_instance(env=env)
+    except DotstewardError:
+        if _env_get(env, "DOTSTEWARD_INSTANCE") is not None:
+            raise
+        if _env_get(env, _STATE_ROOT_OVERRIDE.name) is not None:
+            return state_root(None, env)
+        raise DotstewardError(
+            "no instance found, so no state root: "
+            f"run this in an instance, or set DOTSTEWARD_INSTANCE or {_STATE_ROOT_OVERRIDE.name}"
+        ) from None
+    return state_root(load_instance(str(root), env=env), env)
+
+
 # The Nix parallelism of the gate when workstation.toml sets none: the total
 # memory minus a reserve for the evaluation and the system is the budget;
 # one job per full share of it, at most one per CPU; the cores of a job are

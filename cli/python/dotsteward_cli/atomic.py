@@ -27,16 +27,14 @@ _STEM_BYTES = 200
 
 
 def make_private_dirs(path: str | os.PathLike[str]) -> None:
-    """Creates the directory PATH and its missing parents with mode 0700; the
-    directories that exist stay as they are."""
-    current = os.path.abspath(path)
-    missing = []
-    while not os.path.isdir(current):
-        missing.append(current)
-        current = os.path.dirname(current)
-    for directory in reversed(missing):
+    """Creates the directory PATH with mode 0700. Missing parents follow the umask:
+    a first command must not close ~/.local to everyone. The directories that exist
+    stay as they are."""
+    target = os.path.abspath(path)
+    if not os.path.isdir(target):
+        os.makedirs(os.path.dirname(target), exist_ok=True)
         with contextlib.suppress(FileExistsError):
-            os.mkdir(directory, 0o700)
+            os.mkdir(target, 0o700)
 
 
 def _remove_leftovers(directory: str, stem: str) -> None:

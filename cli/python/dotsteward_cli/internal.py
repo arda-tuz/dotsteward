@@ -12,7 +12,9 @@ refused or failed, 2 usage error, unless a subcommand says otherwise.
     lock run --holder NAME [--state-root DIR] [--wait SECONDS] [--pending] -- COMMAND...
                                  runs COMMAND under the instance lock (locks); its
                                  status is the status; busy: exit 1, or with
-                                 --pending a marker and exit 0
+                                 --pending a marker and exit 3; with --pending the
+                                 command has locks.pending_environment, also when
+                                 the lock is free
     lock status [--state-root DIR]
                                  prints the state of the lock as JSON
     run-protected -- COMMAND...  runs COMMAND so that signals wait for its end
@@ -28,6 +30,7 @@ refused or failed, 2 usage error, unless a subcommand says otherwise.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -81,7 +84,13 @@ def _given_state_root(args: argparse.Namespace) -> str:
     from dotsteward_cli import config
 
     root: str | None = args.state_root
-    return root if root is not None else config.discovered_state_root()
+    return root if root is not None else config.required_state_root()
+
+
+def _say(text: str) -> None:
+    # The terminal may be gone by now, which is no reason to change a status.
+    with contextlib.suppress(OSError):
+        print(text, file=sys.stderr)
 
 
 def _lock_run(args: argparse.Namespace) -> int:
@@ -90,14 +99,11 @@ def _lock_run(args: argparse.Namespace) -> int:
     command = _command_of(args)
     root = _given_state_root(args)
     pending = None
-    pending_env = None
+    pending_env = {name: os.environ[name] for name in ("PYTHONPATH", "PYTHONDONTWRITEBYTECODE") if name in os.environ}
     if args.pending:
         # The marker starts this same call again, which waits its turn the same way.
         pending = [sys.executable, "-s", "-P", "-m", "dotsteward_cli.internal", "lock", "run"]
         pending += ["--holder", args.holder, "--pending", "--state-root", root, "--", *command]
-        pending_env = {
-            name: os.environ[name] for name in ("PYTHONPATH", "PYTHONDONTWRITEBYTECODE") if name in os.environ
-        }
     try:
         lock = locks.InstanceLock(root, args.holder)
         lock.acquire(pending=pending, pending_env=pending_env, wait=args.wait)
@@ -107,17 +113,26 @@ def _lock_run(args: argparse.Namespace) -> int:
         if not busy.pending_recorded:
             raise config.DotstewardError(str(busy)) from busy
         who = "another command" if busy.holder is None else busy.holder.name
-        print(f"[dotsteward] the instance lock is held by {who}; {args.holder} runs when it is free", file=sys.stderr)
-        return 0
+        _say(f"[dotsteward] the instance lock is held by {who}; {args.holder} runs when it is free")
+        return 3
     except OSError as error:
         raise config.DotstewardError(f"cannot take the instance lock in {root}: {error.strerror}") from error
+    child_env = None
+    if args.pending:
+        # What the run from a marker has, so that a free lock changes nothing.
+        child_env = {
+            **locks.pending_environment(),
+            **pending_env,
+            locks.HELD_VARIABLE: os.environ[locks.HELD_VARIABLE],
+        }
     try:
-        return procs.run_attached(command)
+        return procs.run_attached(command, env=child_env)
     except OSError as error:
-        print(f"[dotsteward] ERROR: cannot run {command[0]}: {error.strerror}", file=sys.stderr)
+        _say(f"[dotsteward] ERROR: cannot run {command[0]}: {error.strerror}")
         return 127
     finally:
-        lock.release()
+        for name in lock.release():
+            _say(f"[dotsteward] started the pending command {name}; its output is in {locks.pending_log(root, name)}")
 
 
 def _lock_status(args: argparse.Namespace) -> int:
@@ -127,7 +142,8 @@ def _lock_status(args: argparse.Namespace) -> int:
     holder = None
     if status.holder is not None:
         holder = {"name": status.holder.name, "pid": status.holder.pid, "since": status.holder.since}
-    print(json.dumps({"held": status.held, "holder": holder, "pending": status.pending}))
+    document = {"held": status.held, "holder": holder, "pending": status.pending, "pending_since": status.pending_since}
+    print(json.dumps(document))
     return 0
 
 

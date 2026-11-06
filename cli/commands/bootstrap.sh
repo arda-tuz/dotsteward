@@ -48,8 +48,13 @@ EOF
 
 profile=''
 stage=''
+under_lock=''
 while (($#)); do
   case $1 in
+    --under-lock) # internal: the process above holds the lock for this one
+      under_lock=1
+      shift
+      ;;
     --profile | --stage)
       if (($# < 2)) || [[ -z $2 ]]; then
         die "bootstrap: $1 requires a value"
@@ -93,11 +98,12 @@ require_safe_identity
 mode=${DS_PROFILE_MODE[$profile]}
 
 # Stage 1 holds the instance lock, so a second bootstrap or an upgrade is refused
-# until it ends: it runs itself again under the lock.
-if [[ -z ${DS_BOOTSTRAP_UNDER_LOCK:-} ]]; then
+# until it ends: it runs itself again under the lock. An argument says so, since
+# an environment variable would reach every process started under this one.
+if [[ -z $under_lock ]]; then
   lock_status=0
-  DS_BOOTSTRAP_UNDER_LOCK=1 ds_internal lock run --holder bootstrap --state-root "$(state_root)" -- \
-    "$BASH" "${BASH_SOURCE[0]}" --profile "$profile" --stage "$stage" || lock_status=$?
+  ds_internal lock run --holder bootstrap --state-root "$(state_root)" -- \
+    "$BASH" "${BASH_SOURCE[0]}" --under-lock --profile "$profile" --stage "$stage" || lock_status=$?
   exit "$lock_status"
 fi
 

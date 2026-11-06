@@ -96,55 +96,57 @@ assert_contains "$DS_STDERR" "[dotsteward] ERROR: invalid lock holder name: "
 # Without an instance and without DOTSTEWARD_STATE_ROOT there is nothing to agree
 # on: a default here and an instance's state.root there would be two locks, and two
 # commands that both believe they hold the only one.
-no_root() {
-  env -u DOTSTEWARD_STATE_ROOT -u XDG_STATE_HOME "$@"
-}
-no_root_lock() {
+no_root() (
   unset DOTSTEWARD_STATE_ROOT XDG_STATE_HOME
-  internal lock run --holder upgrade -- touch "$work/no-root-ran"
-}
-assert_exit 1 no_root_lock
+  cd "$work" || exit 1
+  "$@"
+)
+assert_exit 1 no_root internal lock run --holder upgrade -- touch "$work/no-root-ran"
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: no instance found, so no state root: "
 [[ ! -e $work/no-root-ran ]] || ds_fail "a command ran under a lock nobody else would find"
 [[ ! -e $HOME/.local/state/dotsteward ]] || ds_fail "a lock appeared at the default state root"
-no_root_status() {
-  unset DOTSTEWARD_STATE_ROOT XDG_STATE_HOME
-  internal lock status
-}
-assert_exit 1 no_root_status
+assert_exit 1 no_root internal lock status
 assert_contains "$DS_STDERR" "no instance found, so no state root"
-assert_exit 1 no_root python3 -s -P -c '
+assert_exit 7 no_root core_python -c '
 from dotsteward_cli import config, locks
 
 try:
     with locks.instance_lock("upgrade"):
         raise SystemExit("a lock without a state root")
-except config.DotstewardError as error:
-    raise SystemExit(1) from error
+except config.DotstewardError:
+    raise SystemExit(7) from None
 '
 [[ ! -e $HOME/.local/state/dotsteward ]] || ds_fail "the Python interface made a lock at the default state root"
 # Printing what the default would be is another matter.
-assert_eq "$HOME/.local/state/dotsteward" "$(no_root python3 -s -P -m dotsteward_cli.internal state-root)" "state-root"
+assert_eq "$HOME/.local/state/dotsteward" "$(no_root internal state-root)" "state-root"
 [[ ! -e $HOME/.local/state/dotsteward ]] || ds_fail "state-root created something"
 
 # An instance, however it is found, and the override all name one lock.
 inst=$DS_TEST_ROOT/lock-instance
 core_instance "$inst" "[state]
 root = \"$work/instance-state\""
-in_instance() {
+in_instance() (
   unset DOTSTEWARD_STATE_ROOT XDG_STATE_HOME
-  cd "$inst" || return 1
-  internal lock run --holder upgrade -- "${inner[@]}" lock status --state-root "$work/instance-state"
-}
+  cd "$inst" || exit 1
+  internal lock run --holder upgrade -- bash -c '
+    python3 -s -P -m dotsteward_cli.internal lock status' bash
+)
 assert_exit 0 in_instance
 assert_json - '.held == true and .holder.name == "upgrade"' <<<"$DS_STDOUT"
-named_instance() {
+named_instance() (
   unset DOTSTEWARD_STATE_ROOT XDG_STATE_HOME
-  DOTSTEWARD_INSTANCE=$inst internal lock status
-}
+  DOTSTEWARD_INSTANCE=$inst
+  export DOTSTEWARD_INSTANCE
+  internal lock status
+)
 assert_exit 0 named_instance
 assert_json - '.held == false' <<<"$DS_STDOUT"
-assert_exit 0 env DOTSTEWARD_STATE_ROOT="$work/override-state" python3 -s -P -m dotsteward_cli.internal lock run --holder upgrade -- true
+overridden() (
+  unset XDG_STATE_HOME
+  cd "$work" || exit 1
+  DOTSTEWARD_STATE_ROOT=$work/override-state internal lock run --holder upgrade -- true
+)
+assert_exit 0 overridden
 [[ -e $work/override-state/instance.lock ]] || ds_fail "the override names no lock"
 
 # --- busy: refused at once, and the holder is named -------------------------------------
@@ -246,7 +248,7 @@ assert_contains "$(<"$work/holder-stderr")" "[dotsteward] started the pending co
 # whether the lock is free or busy.
 env_child=(bash -c 'env | LC_ALL=C sort >"$1"; : >"$1.done"' bash)
 rm -f -- "$work/started" "$work/release"
-DOTSTEWARD_ASSUME_YES=1 HOLDER_ONLY=from-holder LANG=C.holder internal lock run --holder upgrade --state-root "$state" -- bash -c '
+DOTSTEWARD_ASSUME_YES=1 HOLDER_ONLY=from-holder LANG=POSIX internal lock run --holder upgrade --state-root "$state" -- bash -c '
   : >"$1"
   until [[ -e $2 ]]; do
     sleep 0.02
@@ -254,7 +256,7 @@ DOTSTEWARD_ASSUME_YES=1 HOLDER_ONLY=from-holder LANG=C.holder internal lock run 
 holder_pid=$!
 core_wait "$work/started"
 ask_pending() {
-  ASKER_ONLY=from-asker DOTSTEWARD_HOOKS_OFF=1 LANG=C.asker internal lock run --holder observe --pending \
+  ASKER_ONLY=from-asker DOTSTEWARD_HOOKS_OFF=1 LANG=C internal lock run --holder observe --pending \
     --state-root "$state" -- "${env_child[@]}" "$1"
 }
 assert_exit 3 ask_pending "$work/env-busy"
@@ -268,14 +270,14 @@ for file in "$work/env-busy" "$work/env-free"; do
   for leak in HOLDER_ONLY= ASKER_ONLY= DOTSTEWARD_ASSUME_YES= DOTSTEWARD_HOOKS_OFF=; do
     assert_not_contains "$(<"$file")" "$leak" "$file"
   done
-  assert_contains "$(<"$file")" "LANG=C.asker" "$file"
+  assert_eq 'LANG=C' "$(grep '^LANG=' "$file")" "$file"
   assert_contains "$(<"$file")" "HOME=$HOME" "$file"
 done
 assert_eq "$(cut -d= -f1 "$work/env-free")" "$(cut -d= -f1 "$work/env-busy")" "the names of the variables, free and busy"
 
 # A transient failure keeps the request for the next holder; a marker a dead holder
 # had claimed goes back to the queue; a command that is gone is dropped.
-python3 -s -P - "$state" "$work" <<'PY' || ds_fail "a pending command that could not start"
+core_python - "$state" "$work" <<'PY' || ds_fail "a pending command that could not start"
 import errno
 import json
 import os
@@ -292,7 +294,7 @@ pending.mkdir(mode=0o700, exist_ok=True)
 
 
 def request(name, argv):
-    return json.dumps({"schema_version": 1, "name": name, "argv": argv, "cwd": work})
+    return json.dumps({"schema_version": 1, "name": name, "argv": argv, "cwd": work, "env": dict(os.environ)})
 
 
 (pending / "busy.json").write_text(request("busy", ["touch", f"{work}/after-emfile"]), encoding="utf-8")
@@ -432,7 +434,7 @@ assert_json - '.pending == []' <<<"$(status_of)"
 # --- a lock file or a holder that are not what they should be -----------------------------
 
 # A failure while the holder names itself does not leave the lock taken.
-python3 -s -P - "$state" <<'PY' || ds_fail "a failure while taking the lock"
+core_python - "$state" <<'PY' || ds_fail "a failure while taking the lock"
 import errno
 import os
 import sys
@@ -482,7 +484,7 @@ chmod 600 "$state/instance.lock"
 
 # A child that was forked and never exec'ed shares the open file: release lets go
 # all the same.
-python3 -s -P - "$state" <<'PY' || ds_fail "a forked child kept the lock"
+core_python - "$state" <<'PY' || ds_fail "a forked child kept the lock"
 import os
 import signal
 import sys

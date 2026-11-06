@@ -24,10 +24,13 @@ from typing import IO
 
 
 def process_exists(pid: int) -> bool:
-    """Whether a process with this id exists, whoever it belongs to."""
+    """Whether a process with this id exists, whoever it belongs to. A number no
+    process can have (a damaged record) is an answer too."""
+    if pid <= 0:
+        return False
     try:
         os.kill(pid, 0)
-    except ProcessLookupError:
+    except (ProcessLookupError, OverflowError):
         return False
     except OSError:
         return True
@@ -43,7 +46,7 @@ def _do_nothing(signum: int, frame: object) -> None:
     """A handler, not SIG_IGN: exec resets a handler for the child, SIG_IGN stays."""
 
 
-def run_attached(argv: Sequence[str]) -> int:
+def run_attached(argv: Sequence[str], env: Mapping[str, str] | None = None) -> int:
     """Runs ARGV in this process group with this terminal and returns its status.
     SIGINT from the terminal reaches the child by itself; SIGTERM and SIGHUP reach
     it through this process. Raises the OSError of a command that cannot start."""
@@ -59,7 +62,7 @@ def run_attached(argv: Sequence[str]) -> int:
         signal.SIGHUP: signal.signal(signal.SIGHUP, forward),
     }
     try:
-        child = subprocess.Popen(argv)
+        child = subprocess.Popen(argv, env=env)
         returncode = child.wait()
     finally:
         for number, handler in previous.items():

@@ -87,13 +87,33 @@ its standard input.
 
 `dotsteward_cli.locks.instance_lock(name, *, state_root=None, pending=None, pending_env=None, wait=0.0)`
 holds `<state>/instance.lock`, which `apply`, `upgrade`, `bootstrap` and `observe`
-share, for the block of a `with` statement. It uses `fcntl.flock`, so it needs no
-flock binary, and the kernel drops the lock of a dead holder. When another
-command holds it, `LockBusy` names the holder at once. With `pending=ARGV` a
-marker stays in `<state>/instance.pending/`, and the holder starts `ARGV` when it
-lets go; that command asks for the lock itself. A command under the lock can run
-another that asks for it, which runs nested. A process a command leaves behind
-does not keep the lock. The gate's own lock nests inside.
+share, for the block of a `with` statement. Without `state_root` it is
+`config.required_state_root()`: the state root of the instance that discovery finds,
+or `DOTSTEWARD_STATE_ROOT`. Without either it raises `DotstewardError`, since a default
+would be another lock than the one of the instance. It uses `fcntl.flock`, so it needs
+no flock binary, and the kernel drops the lock of a dead holder. When another command
+holds it, `LockBusy` names the holder at once. A command under the lock can run another
+that asks for it, which runs nested. A process a command leaves behind does not keep the
+lock: when a holder dies from SIGKILL, its child goes on without the lock and the next
+command can start beside it. The gate's own lock nests inside.
+
+With `pending=ARGV` a marker stays in `<state>/instance.pending/`, and the holder starts
+`ARGV` when it lets go, with the output in `instance.pending/NAME.log`; that command asks
+for the lock itself. A holder that dies starts nothing, so the next holder does. A marker
+has no expiry: `lock_status` gives its age in `pending_since`. `ARGV` runs when its paths
+may be gone or belong to an older framework, so give it a path that stays, such as the
+`dotsteward` of the profile. A command that can never start is dropped with a warning; a
+passing failure, such as a full disk, leaves the marker for the next holder.
+
+A pending command gets the variables of `pending_environment()` from the command that
+asked, and `pending_env`. They are `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`,
+`LANGUAGE`, `LC_*`, `TZ`, `TMPDIR`, `XDG_*`, `SSH_AUTH_SOCK`, `DISPLAY`, `WAYLAND_DISPLAY`,
+`DBUS_SESSION_BUS_ADDRESS`, `DOTSTEWARD_INSTANCE`, `DOTSTEWARD_STATE_ROOT`, `DOTFILES_ROOT`
+and `DOTFILES_STATE_ROOT`. Nothing of the holder's reaches it, and the whole environment
+is never written to a marker, so no secret lands on disk. What decides how a command
+behaves, such as `DOTSTEWARD_ASSUME_YES` or a `DS_*` variable, stays out unless it is in
+`pending_env`.
+
 `lock_status(state_root)` tells who holds it; to act on a free lock, acquire it.
 `FileLock(path)` is the same primitive for a lock of another file, for example
 one that only skill capture takes: `try_acquire(wait=0.0)`, a blocking `acquire()`
@@ -103,8 +123,11 @@ and `release()`. From bash:
 ds_internal lock run --holder NAME --state-root "$(state_root)" -- COMMAND ARG...
 ```
 
-Busy, it exits 1; with `--pending` it leaves a marker and exits 0; with
-`--wait SECONDS` it tries for a while. `ds_internal lock status` prints JSON.
+Its status is the status of `COMMAND`. Busy, it exits 1, which a `COMMAND` can also do: the
+Python interface keeps the two apart with `LockBusy`. With `--pending` it leaves a marker
+and exits 3, and `COMMAND` has the same environment whether the lock is free or busy. With
+`--wait SECONDS` it tries for a while. Without `--state-root` the state root is the required
+one above. `ds_internal lock status` prints JSON, also the `pending_since` of each marker.
 
 ### Protected children
 
@@ -136,9 +159,12 @@ and exits with its code.
 state root: `DOTSTEWARD_STATE_ROOT`, then `DOTFILES_STATE_ROOT` with
 `compat.legacy_env`, then `state.root` of the instance, then the default of
 `schema/workstation.schema.json`. `discovered_state_root(env=None)` looks the
-instance up first. From bash: `ds_internal state-root [--instance DIR]`, and
-`state_root` of `lib.sh` after `config_load`, which a test holds to the same
-answer.
+instance up first. `required_state_root(env=None)` does too, and has no default: outside
+an instance and without `DOTSTEWARD_STATE_ROOT` it raises `DotstewardError`. It is for what
+commands share at the state root, such as a lock: the default would be another place than
+the `state.root` of the instance a second command runs in. From bash:
+`ds_internal state-root [--instance DIR]`, and `state_root` of `lib.sh` after `config_load`,
+which a test holds to the same answer.
 
 ### TOML
 
