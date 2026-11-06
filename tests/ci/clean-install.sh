@@ -21,7 +21,9 @@
 #      version check, then stage 1 (system install, rebuild --switch, login
 #      shell, desktop apply hooks, e2e);
 #   4. rebuild --switch again over the existing generation, then
-#      e2e --keep-going, so a single run reports every failing check;
+#      e2e --keep-going, so a single run reports every failing check; the
+#      bootstrap named this machine, left the checkout clean and published
+#      its host file, so the checkout is behind and passes, and then pulls;
 #   5. the settings round trip: a Claude Code setting is tracked, published
 #      to the bare remote, applied, edited, flushed and published again;
 #      a second home of the same runner user ($RUNNER_TEMP/home2, with
@@ -266,6 +268,22 @@ settings_round_second_home() {
   log "the second home got $setting_key = $value; the first home's profile stayed $before"
 }
 
+# host_file_landed: stage 1 named this machine from its host name and published
+# hosts/<name>.toml without a commit in the checkout, which the e2e before this step
+# passed behind the remote.
+host_file_landed() {
+  local name
+  name=$(cli host show --json | jq -r .name)
+  [[ -n $name && $name != null ]] || die "the bootstrap did not name this machine"
+  [[ -z $(git -C "$instance" status --porcelain --untracked-files=normal) ]] ||
+    die "the bootstrap left the checkout dirty"
+  git -C "$remote" cat-file -e "refs/heads/main:hosts/$name.toml" ||
+    die "hosts/$name.toml is not on the remote after the bootstrap"
+  git -C "$instance" merge-base --is-ancestor HEAD refs/remotes/origin/main ||
+    die "the checkout is not behind the remote after the bootstrap"
+  git -C "$instance" pull --ff-only --quiet origin main
+}
+
 rollback_dry_run() {
   local link count
   cli rollback --latest --dry-run --json >"$plan"
@@ -317,6 +335,7 @@ step "Publish the instance to a local bare remote" publish_instance
 step "./bootstrap.sh --profile $fresh_profile (stage 0 and stage 1)" bootstrap_instance
 step "rebuild --switch over the existing generation" cli rebuild --profile "$fresh_profile" --switch
 step "e2e" cli e2e --profile "$fresh_profile" --keep-going
+step "The host file of this machine" host_file_landed
 step "Settings round: track, publish, apply, edit, flush, publish" settings_round_first_home
 step "Settings round: activation and apply in a second home" settings_round_second_home
 step "rollback --latest --dry-run --json" rollback_dry_run

@@ -5,7 +5,7 @@
 # identity is needed; and a publish that cannot reach the remote does not fail the
 # bootstrap. An instance that names no machine and has nobody to ask goes on as today.
 # The install, rebuild and login-shell steps are recording stand-ins (their own suites
-# cover them); hosts, e2e and the instance lock are real.
+# cover them); agents, hosts, e2e and the instance lock are real.
 # shellcheck source=tests/cli/host/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/host/helpers.sh"
 
@@ -14,6 +14,10 @@ for command in install rebuild login-shell; do
     printf '# summary: stand-in %s of the bootstrap tests\n' "$command"
     printf 'source %q\n' "$DS_REPO_ROOT/tests/lib/harness.sh"
     printf 'ds_record_call dotsteward-%s "$@"\n' "$command"
+    # A rebuild installs the skills of this machine, as the real one does.
+    if [[ $command == rebuild ]]; then
+      printf '%q --instance %q agents install --profile fresh --skip-validation\n' "$agents_fw/cli/dotsteward" "$agents_inst"
+    fi
   } >"$agents_fw/cli/commands/$command.sh"
 done
 real_e2e=$DS_TEST_ROOT/e2e.real
@@ -107,9 +111,9 @@ assert_exit 0 run_host init --name laptop --reuse
 assert_eq '"laptop"' "$(effective .name)"
 assert_eq '["beta"]' "$(effective .skip.skills)"
 : >"$DS_CALL_LOG"
-bare_before=$(remote_tip)
-mkdir -p "$DS_TEST_ROOT/inst-state"
 assert_exit 0 run_bootstrap
+[[ -f $HOME/.agents/skills/alpha/SKILL.md && ! -e $HOME/.agents/skills/beta ]] ||
+  ds_fail "agents install does not follow the name"
 assert_contains "$DS_STDOUT" "this machine is laptop"
 assert_contains "$DS_STDOUT" "published hosts/laptop.toml"
 assert_contains "$(git -C "$e2e_bare" show refs/heads/main:hosts/laptop.toml)" 'declined = { skills = ["beta"] }'
@@ -126,12 +130,16 @@ rm -- "$(machine_file)"
 # --- on a terminal ---------------------------------------------------------------------------
 
 # The question comes through the instance lock and the steps, standard input intact.
+# Another machine gets neither what is scoped to the laptop nor a question about it.
+rm -rf -- "$HOME/.agents/skills/alpha" "$HOME/.claude/skills/alpha"
 : >"$DS_CALL_LOG"
 assert_exit 0 on_tty 'second' bootstrap --profile fresh --stage 1
 assert_contains "$DS_STDOUT" "Machines of this instance: laptop."
 assert_contains "$DS_STDOUT" "published hosts/second.toml"
 assert_eq '"second"' "$(record .name)"
 assert_eq '"fresh"' "$(record .host.profile)"
+[[ ! -e $HOME/.agents/skills/alpha && -f $HOME/.agents/skills/beta/SKILL.md ]] ||
+  ds_fail "another machine does not follow its own name"
 assert_calls \
   "dotsteward-install --profile fresh" \
   "dotsteward-rebuild --profile fresh --switch" \

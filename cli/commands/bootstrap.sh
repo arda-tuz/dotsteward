@@ -6,16 +6,27 @@
 # backups, prerequisites and the verified Nix install, then
 # `exec .dotsteward/cli.sh bootstrap --profile P --stage 1`. Stage 1 runs,
 # in this order, each through the dotsteward CLI of this framework:
-#   1. install --profile P          the system-install phase (fresh mode:
+#   1. host init --profile P        the name of this machine, in the state root
+#                                   only: nothing is committed. A terminal
+#                                   asks. Without one the name comes from
+#                                   DOTSTEWARD_MACHINE or the host name
+#                                   (DOTSTEWARD_ASSUME_YES=1), else stage 1
+#                                   stops when hosts/ names machines, and goes
+#                                   on without a name when it does not
+#   2. install --profile P          the system-install phase (fresh mode:
 #                                   preflight, the deb transaction, the
 #                                   systemInstall, postInstall and forbid
 #                                   hooks; adopt mode skips it)
-#   2. rebuild --profile P --switch
-#   3. login-shell set --profile P
-#   4. the desktopApply hooks of the switched generation's manifest (fresh
+#   3. rebuild --profile P --switch
+#   4. login-shell set --profile P
+#   5. the desktopApply hooks of the switched generation's manifest (fresh
 #      mode; adopt mode skips them with one line)
-#   5. e2e --profile P
-#   6. the final message
+#   6. e2e --profile P
+#   7. host publish                 hosts/<name>.toml to the remote, when the
+#                                   machine has a name; no failure stops stage
+#                                   1 here: it says so and the next `host
+#                                   publish` works it out again
+#   8. the final message
 # The first failing step stops stage 1 with its exit status (3 from the
 # system-install phase is the adaptive route). P must be profiles.bootstrap.
 set -Eeuo pipefail
@@ -34,9 +45,10 @@ usage() {
 Usage: dotsteward bootstrap --profile PROFILE --stage 1
 
 Stage 1 of a fresh-machine bootstrap, run by the instance's ./bootstrap.sh
-(stage 0) once Nix is installed: the system-install phase, rebuild
---switch, the login shell, the desktop apply hooks (fresh mode) and the
-E2E checks. Start a bootstrap with ./bootstrap.sh --profile PROFILE.
+(stage 0) once Nix is installed: the name of this machine, the
+system-install phase, rebuild --switch, the login shell, the desktop apply
+hooks (fresh mode), the E2E checks and the host file of this machine. Start a
+bootstrap with ./bootstrap.sh --profile PROFILE.
 
   --profile PROFILE   the instance's bootstrap profile (profiles.bootstrap)
   --stage 1           the stage to run (internal; stage 0 is ./bootstrap.sh)
@@ -148,9 +160,32 @@ desktop_apply() {
   done
 }
 
+# name_machine: the name of this machine comes first. With nobody to ask and no name
+# to take, an instance whose hosts/ names no machine goes on as it always did.
+name_machine() {
+  if [[ -z $DS_MACHINE_NAME && ! -t 0 && ${DOTSTEWARD_ASSUME_YES:-0} != 1 ]] &&
+    ! compgen -G "$DS_INSTANCE_ROOT/hosts/*.toml" >/dev/null; then
+    log "this machine stays without a name for now; 'dotsteward host init --name NAME' names it"
+    return 0
+  fi
+  step host init --profile "$profile"
+}
+
+# publish_machine: tries to bring the host file to the remote. Without a network or a
+# login nothing is lost, so nothing here stops the bootstrap.
+publish_machine() {
+  local status=0
+  [[ -n ${DOTSTEWARD_MACHINE:-} || -f $(state_root)/machine.json ]] || return 0
+  "${dotsteward[@]}" host publish || status=$?
+  ((status == 0)) ||
+    warn "the host file of this machine is not on the remote yet (exit $status); 'dotsteward host publish' tries again"
+}
+
+name_machine
 step install --profile "$profile"
 step rebuild --profile "$profile" --switch
 step login-shell set --profile "$profile"
 desktop_apply
 step e2e --profile "$profile"
+publish_machine
 log "bootstrap complete for profile $profile; log out and back in once so the new login shell and desktop session take effect"
