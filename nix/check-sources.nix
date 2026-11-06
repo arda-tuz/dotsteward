@@ -216,6 +216,7 @@ let
       catalog
       (paths [
         "engines"
+        "privacy"
         "tools"
         "tests/cli/host"
         "tests/cli/e2e/helpers.sh"

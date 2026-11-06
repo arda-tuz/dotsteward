@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
+# shellcheck disable=SC2016 # jq programs are single-quoted on purpose
 # Helpers for the tests of machine names and scopes (tests/cli/host). Not a test
 # file.
 #
@@ -23,6 +24,9 @@
 
 # shellcheck source=tests/cli/e2e/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/e2e/helpers.sh"
+
+# `host publish` scans what it publishes with the policy of the framework.
+cp -R "$DS_REPO_ROOT/privacy" "$agents_fw/"
 
 run_host() {
   "$agents_fw/cli/dotsteward" --instance "$agents_inst" host "$@" </dev/null
