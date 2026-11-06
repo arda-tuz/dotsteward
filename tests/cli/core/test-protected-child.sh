@@ -90,3 +90,122 @@ assert signal.getsignal(signal.SIGINT) is mine, "the handler is not restored"
 result = procs.run_protected(["true"])
 assert result.returncode == 0 and result.interrupted == (), result
 PY
+
+# --- the terminal goes away ------------------------------------------------------------
+
+# closed_terminal NAME CHILD ARG...: `internal ARG...` as the foreground job of a real
+# terminal. Waits for NAME.started from the command it runs and for NAME.ready from
+# this test, closes the terminal and then lets the command go on with NAME.closed.
+# CHILD is the bash text of the command after that. Prints what happened.
+closed_terminal() {
+  core_python - "$work/$1" "$2" "${@:3}" <<'PY'
+import json
+import os
+import pty
+import sys
+import time
+
+base, child, *arguments = sys.argv[1:]
+body = f': >"{base}.started"; until [[ -e "{base}.closed" ]]; do sleep 0.02; done; {child}'
+argv = [sys.executable, "-s", "-P", "-m", "dotsteward_cli.internal", *arguments, "--", "bash", "-c", body]
+pid, terminal = pty.fork()
+if pid == 0:
+    os.execv(sys.executable, argv)
+deadline = time.monotonic() + 30
+while not (os.path.exists(f"{base}.started") and os.path.exists(f"{base}.ready")):
+    assert time.monotonic() < deadline, "the command did not start"
+    time.sleep(0.01)
+os.close(terminal)
+open(f"{base}.closed", "w").close()
+_, raw = os.waitpid(pid, 0)
+print(json.dumps({"status": os.waitstatus_to_exitcode(raw), "finished": os.path.exists(f"{base}.finished")}))
+PY
+}
+for name in tolerant strict logged; do
+  : >"$work/$name.ready"
+done
+
+# The status of the child is the status, even though the warning about the signal
+# has nowhere to go. A child that takes a failed write in its stride finishes.
+result=$(closed_terminal tolerant "echo progress; printf '%s' \"\$?\" >\"$work/tolerant.write\"; : >\"$work/tolerant.finished\"; exit 5" run-protected)
+assert_json - '.status == 5 and .finished == true' <<<"$result"
+assert_eq 1 "$(<"$work/tolerant.write")" "the write to the closed terminal"
+
+# The comparison that gives --log its teeth: a child that stops on a failed write
+# stops half way when it writes to the terminal.
+result=$(closed_terminal strict "set -e; echo progress; : >\"$work/strict.finished\"; exit 5" run-protected)
+assert_json - '.status == 1 and .finished == false' <<<"$result"
+
+# With its streams in a file it finishes. The file also says what the terminal
+# could not, and it is private.
+result=$(closed_terminal logged "set -e; echo progress; echo problem >&2; : >\"$work/logged.finished\"; exit 5" run-protected --log "$work/child.log")
+assert_json - '.status == 5 and .finished == true' <<<"$result"
+log=$(<"$work/child.log")
+assert_contains "$log" "progress"
+assert_contains "$log" "problem"
+assert_contains "$log" "[dotsteward] WARNING: interrupted while a protected command ran; it finished: SIGHUP"
+assert_file_mode "$work/child.log" 600
+
+# The file grows: a second command with the same file keeps what is there.
+assert_exit 0 internal run-protected --log "$work/child.log" -- bash -c 'echo second'
+assert_eq '' "$DS_STDOUT"
+assert_contains "$(<"$work/child.log")" "progress"
+assert_contains "$(<"$work/child.log")" "second"
+assert_exit 1 internal run-protected --log "$work/no-such-directory/child.log" -- touch "$work/log-refused"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: cannot write $work/no-such-directory/child.log: "
+[[ ! -e $work/log-refused ]] || ds_fail "a command ran without the file it was to write to"
+
+# The same goes for a lock around a command: the message about a pending command has
+# nowhere to go, the status stays.
+state=$work/state
+closed_terminal locked "trap '' HUP; : >\"$work/locked.finished\"; exit 5" lock run --holder upgrade --state-root "$state" >"$work/locked.result" &
+driver=$!
+core_wait "$work/locked.started"
+assert_exit 3 internal lock run --holder observe --pending --state-root "$state" -- touch "$work/after-closed"
+: >"$work/locked.ready"
+wait "$driver"
+assert_json "$work/locked.result" '.status == 5 and .finished == true'
+core_wait "$work/after-closed"
+
+# The Python interface takes the streams too.
+core_python - "$work" <<'PY' || ds_fail "the streams of run_protected"
+import sys
+
+from dotsteward_cli import procs
+
+work = sys.argv[1]
+with open(f"{work}/out", "wb") as out, open(f"{work}/err", "wb") as err:
+    result = procs.run_protected(["bash", "-c", "echo to-out; echo to-err >&2"], stdout=out, stderr=err)
+assert result.returncode == 0, result
+assert open(f"{work}/out").read() == "to-out\n"
+assert open(f"{work}/err").read() == "to-err\n"
+PY
+
+# --- a signal before the child exists ------------------------------------------------------
+
+# run_attached gives it to the child, which would otherwise never hear of it.
+core_python - <<'PY' || ds_fail "a signal before the child of run_attached exists"
+import os
+import signal
+import subprocess
+import time
+
+from dotsteward_cli import procs
+
+real_popen = subprocess.Popen
+
+
+def after_a_signal(*args, **kwargs):
+    os.kill(os.getpid(), signal.SIGTERM)
+    return real_popen(*args, **kwargs)
+
+
+subprocess.Popen = after_a_signal
+start = time.monotonic()
+status = procs.run_attached(["sleep", "30"])
+subprocess.Popen = real_popen
+assert status == 128 + signal.SIGTERM, status
+assert time.monotonic() - start < 20, "the child did not hear of the signal"
+env_status = procs.run_attached(["bash", "-c", '[[ $ONLY == this ]]'], env={"ONLY": "this", "PATH": os.environ["PATH"]})
+assert env_status == 0, env_status
+PY
