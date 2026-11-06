@@ -39,7 +39,9 @@
 #   concurrent commit lands on main first, so the push no longer
 #   fast-forwards; once); with the knob push-tag (any value), the next push
 #   of a tag finds that the release workflow cut that tag on main just
-#   before (a lightweight tag) and fails (once)
+#   before (a lightweight tag) and fails (once); with the knob push-lost
+#   (a ref), the next push of that ref lands, but the connection breaks
+#   before its answer reaches the client (once)
 #
 #   run_contribute ARG...      the dispatcher of rt_fw on the instance
 #   rt_setup MODE [TOML...]    the denylist, workstation.toml in MODE (owner
@@ -77,6 +79,11 @@
 #   reset_calls                empties the call log
 #   live                       rt_live (none before any switch)
 #   upstream_tree, fork_tree   the tree of main of the bare repositories
+#   network_plan PLAN          the fate of the next SSH connections (one
+#                              character each: x drops it, any other serves
+#                              it; see DS_FAKESSH_DROPS in tests/lib/fakessh.sh)
+#   pushes_served              how many pushes the remotes served since the
+#                              fake SSH log was emptied
 
 # shellcheck source=tests/contribute/local/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/local/helpers.sh"
@@ -246,6 +253,21 @@ done
 EOF
   } >"$rt_bare/hooks/pre-receive"
   chmod 0755 "$rt_bare/hooks/pre-receive"
+  # The ref is updated, the answer to the client is not written yet: ending
+  # receive-pack here breaks the connection of a push that landed.
+  {
+    printf '#!%s\n' "$BASH"
+    printf 'knob=%q\n' "$rt_hub/knobs/push-lost"
+    cat <<'EOF'
+updates=$(cat)
+[[ $1 == committed && -f $knob ]] || exit 0
+ref=$(<"$knob")
+[[ $updates == *" $ref"* ]] || exit 0
+rm -f -- "$knob"
+kill -9 "$PPID"
+EOF
+  } >"$rt_bare/hooks/reference-transaction"
+  chmod 0755 "$rt_bare/hooks/reference-transaction"
 done
 
 hub_knob() {
@@ -413,6 +435,15 @@ live() {
   else
     printf 'none\n'
   fi
+}
+
+network_plan() {
+  export DS_FAKESSH_DROPS=$DS_TEST_ROOT/fakessh.drops
+  printf '%s' "$1" >"$DS_FAKESSH_DROPS"
+}
+
+pushes_served() {
+  grep -c ' git-receive-pack ' "$DS_FAKESSH_LOG" || true
 }
 
 upstream_tree() {

@@ -57,6 +57,17 @@ DS_FAKESSH_SLEEP=5 assert_exit 124 timeout 1 git ls-remote "$url"
 DS_FAKESSH_FAIL=1 assert_exit 128 git ls-remote "$url"
 assert_contains "$DS_STDERR" "Connection refused"
 
+# A plan of the next connections: x drops one, anything else serves it.
+export DS_FAKESSH_DROPS=$DS_TEST_ROOT/drops
+printf 'x.x' >"$DS_FAKESSH_DROPS"
+assert_exit 128 git ls-remote "$url"
+assert_contains "$DS_STDERR" "Connection timed out"
+assert_exit 0 git ls-remote "$url"
+assert_exit 128 git ls-remote "$url"
+assert_eq "" "$(<"$DS_FAKESSH_DROPS")" "the plan after its connections"
+assert_exit 0 git ls-remote "$url"
+unset DS_FAKESSH_DROPS
+
 # git's OpenSSH detection (-G) succeeds, so ports and options work; any
 # command other than the git transport commands is refused.
 assert_exit 0 "$DS_REPO_ROOT/tests/lib/fakessh.sh" -G github.com

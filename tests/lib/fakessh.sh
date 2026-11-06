@@ -13,7 +13,10 @@
 # mapped repository and appends "USER@HOST COMMAND PATH" to DS_FAKESSH_LOG.
 # An unmapped repository fails like a missing GitHub repository. Test knobs
 # (environment): DS_FAKESSH_SLEEP=SECONDS delays the connection,
-# DS_FAKESSH_FAIL=1 refuses it (exit 255).
+# DS_FAKESSH_FAIL=1 refuses it (exit 255), DS_FAKESSH_DROPS=FILE plans the
+# next connections: each one takes the first character of FILE, x makes it
+# time out as on a dropped network (exit 255) and any other serves it; an
+# empty or missing FILE serves them all.
 
 _ds_fakessh_self=$(readlink -f "${BASH_SOURCE[0]}")
 
@@ -95,6 +98,15 @@ _ds_fakessh_main() {
   if [[ ${DS_FAKESSH_FAIL:-0} == 1 ]]; then
     printf 'ssh: connect to host %s port 22: Connection refused\n' "${host#*@}" >&2
     exit 255
+  fi
+  if [[ -n ${DS_FAKESSH_DROPS:-} && -s $DS_FAKESSH_DROPS ]]; then
+    local plan
+    plan=$(<"$DS_FAKESSH_DROPS")
+    printf '%s' "${plan:1}" >"$DS_FAKESSH_DROPS"
+    if [[ ${plan:0:1} == x ]]; then
+      printf 'ssh: connect to host %s port 22: Connection timed out\n' "${host#*@}" >&2
+      exit 255
+    fi
   fi
   local service path
   if [[ $command =~ ^(git-upload-pack|git-receive-pack|git-upload-archive)\ +\'([^\']*)\'$ ]] ||

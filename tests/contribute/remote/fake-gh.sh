@@ -40,6 +40,8 @@
 #                  the network is down (it cannot connect to GitHub)
 #   run-flaky      a count: the next that many reads of a workflow run by id
 #                  (api repos/R/actions/runs/ID) fail the same way
+#   pr-flaky       a count: the next that many reads of pull requests (pr
+#                  list, pr view) fail the same way
 #   clean-install  conclusion of a dispatched clean-install.yml run
 #                  (default success)
 #   ci-moves-main  a file name: while the checks run (at the green
@@ -354,6 +356,9 @@ case "${1:-} ${2:-}" in
         html_url: "https://github.com/\($repo)/actions/runs/\($id)"}' >"$hub/runs/$id.json"
     ;;
   "pr list")
+    if consume pr-flaky; then
+      network_down
+    fi
     repo=$(repo_option)
     head=$(option --head) || fail "fake gh: pr list needs --head"
     find "$hub/prs" -name '*.json' -exec cat {} + |
@@ -384,6 +389,9 @@ case "${1:-} ${2:-}" in
     printf '%s\n' "$url"
     ;;
   "pr view")
+    if consume pr-flaky; then
+      network_down
+    fi
     file=$(pr_file_of "$3")
     bare=$(bare_of "$(jq -r .head_repo "$file")")
     head=$(tip_of "$bare" "$(jq -r .head_branch "$file")")
