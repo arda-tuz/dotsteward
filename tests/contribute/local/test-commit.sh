@@ -197,6 +197,22 @@ chmod 0755 "$DS_TEST_ROOT/editor"
 assert_exit 0 env GIT_EDITOR="$DS_TEST_ROOT/editor" git -C "$ct_clone" commit -q
 assert_eq 'docs(example): b' "$(git -C "$ct_clone" log -1 --format=%B)" "message written in the editor"
 
+# A merge commit with git's default subject is refused too: a run brings
+# other commits in with a rebase (references/publish-and-release.md).
+branch=$(git -C "$ct_clone" symbolic-ref --short HEAD)
+git -C "$ct_clone" switch -q -c example-side HEAD~1
+printf 'side\n' >"$ct_clone/side.txt"
+git -C "$ct_clone" add side.txt
+git -C "$ct_clone" commit -q -m 'docs(example): side'
+git -C "$ct_clone" switch -q "$branch"
+head=$(git -C "$ct_clone" rev-parse HEAD)
+assert_exit 1 git -C "$ct_clone" merge -q --no-edit example-side
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: commit-msg: the subject is not a conventional commit (TYPE(AREA): text, TYPE one of"
+assert_contains "$DS_STDERR" ": Merge branch 'example-side' into $branch"
+git -C "$ct_clone" merge --abort
+assert_eq "$head" "$(git -C "$ct_clone" rev-parse HEAD)" "the refused merge commit does not exist"
+git -C "$ct_clone" branch -q -D example-side
+
 # The hooks refuse when their rules are missing next to them.
 rm -f "$ct_clone/cli/lib/commit-rules.sh"
 printf 'c\n' >"$ct_clone/c.txt"

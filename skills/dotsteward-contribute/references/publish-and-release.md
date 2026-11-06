@@ -23,7 +23,7 @@ A closed pull request stops the run: reopen it, or end the run with `dotsteward 
 ## Fork mode
 
 1. Pushes `fix/<slug>` to the fork and waits for the fork's CI on the checked commit.
-2. Fast-forwards the fork's `main` to the checked commit and verifies that it has the tested tree (a mismatch stops the run red; nothing is released). If the fork's `main` has commits the branch lacks, merge them into the fork's `main` by hand first.
+2. Fast-forwards the fork's `main` to the checked commit and verifies that it has the tested tree (a mismatch stops the run red; nothing is released). If the fork's `main` has commits the branch lacks, the fast-forward is refused: rebase the branch onto the fork's `main` in the clone (with `TZ=UTC`), then `check`, `trial` and `publish` again. A merge commit is no way around it: the clone's commit-msg hook refuses git's default merge subject, on purpose.
 3. Opens a pull request to the upstream only when `upstream.pr_to_upstream` is true in `workstation.toml` or the user asks for it; ask before opening one on someone else's repository:
 
    ```bash

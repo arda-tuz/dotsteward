@@ -997,7 +997,7 @@ _contribute_publish_fork() {
   main=$(_contribute_remote_ref origin refs/heads/main) || _contribute_red "cannot read main of $CT_PUBLISH_SLUG"
   if [[ $main != "$CT_TEST_SHA" ]]; then
     git_net 180 -C "$CT_CLONE" push --quiet origin "$CT_TEST_SHA:refs/heads/main" </dev/null ||
-      _contribute_red "main of $CT_PUBLISH_SLUG (${main:0:12}) cannot be fast-forwarded to ${CT_TEST_SHA:0:12}: it has commits that $CT_BRANCH lacks; merge them into the fork's main by hand"
+      _contribute_red "main of $CT_PUBLISH_SLUG (${main:0:12}) cannot be fast-forwarded to ${CT_TEST_SHA:0:12}: it has commits that $CT_BRANCH lacks; rebase $CT_BRANCH onto it in $CT_CLONE (with TZ=UTC; the commit-msg hook refuses a merge commit with git's default subject), then run: dotsteward contribute check"
     log "fast-forwarded main of $CT_PUBLISH_SLUG to ${CT_TEST_SHA:0:12}"
   fi
   _contribute_verify_tree "$CT_TEST_SHA" origin
