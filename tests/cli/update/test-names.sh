@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
+# shellcheck disable=SC2016 # the stand-ins are written with their literal $(...)
+# shellcheck disable=SC2030,SC2031 # ds_record_line writes one line to a log of its own
 # The command names: `generate` writes the mirrors and `txn` runs the steps of a
 # transaction, while `sync` and `update` stay through 1.x as their old names:
 # one warning line on standard error, then the new command with the same
