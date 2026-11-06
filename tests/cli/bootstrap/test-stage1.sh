@@ -115,6 +115,14 @@ done
 assert_exit 1 run_bootstrap --profile fresh --stage 1
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: another command holds the instance lock: upgrade (pid "
 assert_calls
+# Nothing inherited opens the lock: a process started under an earlier stage 1
+# has only an environment, and that says nothing about who holds the lock now.
+under_lock_env() {
+  DS_BOOTSTRAP_UNDER_LOCK=1 run_bootstrap "$@"
+}
+assert_exit 1 under_lock_env --profile fresh --stage 1
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: another command holds the instance lock: upgrade (pid "
+assert_calls
 : >"$DS_TEST_ROOT/holder-release"
 wait "$holder"
 : >"$DS_CALL_LOG"

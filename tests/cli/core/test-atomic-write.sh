@@ -149,6 +149,13 @@ kill "$live"
 wait "$live" 2>/dev/null || true
 rm -f -- "$work/.crash.$live.abcdefgh.tmp"
 
+# A name that holds no process id a kernel knows is no reason to fail.
+absurd=$(printf '9%.0s' {1..40})
+printf 'partial' >"$work/.crash.$absurd.abcdefgh.tmp"
+printf 'newer\n' | internal atomic-write "$work/crash"
+assert_eq 'newer' "$(<"$work/crash")"
+[[ ! -e $work/.crash.$absurd.abcdefgh.tmp ]] || ds_fail "the leftover of a process that cannot exist stayed"
+
 # --- a failure between the write and the rename ----------------------------------------
 
 printf 'old\n' >"$work/failing"
