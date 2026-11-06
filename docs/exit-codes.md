@@ -42,4 +42,41 @@ status as a failure.
 `--json` never changes the exit code: a command that prints a failed result
 document also exits non-zero.
 
+## Run reports and review.json
+
+A command with many steps can end in several ways at once. It reports the
+heaviest outcome of the run, in the order 4, 1, 3, 6, 0:
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| 4 | `privacy-stop` | a privacy stop: nothing may be published |
+| 1 | `failed` | a refusal or a failed step, a red check that could not be rolled back among them |
+| 3 | `pending` | a decision or a sudo step waits: see `review.json` |
+| 6 | `partial` | no network, or the network steps were skipped; the checks ran |
+| 0 | `ok` | done |
+
+`2` stays a usage error, and `5` keeps its meaning in `contribute`. 3 and 4 mean
+the same here as in `settings` and `contribute` above.
+
+Each run leaves a report in `<state>/runs/<command>/<run>.json`
+(`schema/run-report.schema.json`), and what needs a person or an agent in
+`<state>/review.json` (`schema/review.schema.json`), for example:
+
+```json
+{
+  "schema_version": 1,
+  "run": "2026-11-03T080000Z-1a2b",
+  "command": "upgrade",
+  "status": "pending",
+  "exit_code": 3,
+  "items": [
+    { "code": "sudo-required", "run": "dotsteward upgrade" }
+  ]
+}
+```
+
+Both stay on the machine and are never published. The next run of the command
+replaces its review, and removes it when nothing is left; [python.md](python.md)
+has the interface.
+
 See [cli.md](cli.md) for the options of every command.

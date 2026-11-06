@@ -17,6 +17,12 @@ refused or failed, 2 usage error, unless a subcommand says otherwise.
                                  prints the state of the lock as JSON
     run-protected -- COMMAND...  runs COMMAND so that signals wait for its end
                                  (procs.run_protected); its status is the status
+    report combine [CODE...]     prints the heaviest exit code (report.combine)
+    report write --command NAME [--state-root DIR] [--run NAME]
+                                 writes a run report from the JSON on standard input,
+                                 {"steps": [{"name": N, "code": C, ...}], "items":
+                                 [{"code": C, "pending": P, ...}], "data": {...}};
+                                 prints where as JSON; its exit code is the run's
 """
 
 from __future__ import annotations
@@ -140,6 +146,39 @@ def _run_protected(args: argparse.Namespace) -> int:
     return result.returncode
 
 
+def _report_combine(args: argparse.Namespace) -> int:
+    from dotsteward_cli import config, report
+
+    try:
+        print(report.combine(int(code) for code in args.codes))
+    except ValueError as error:
+        raise config.DotstewardError(str(error)) from error
+    return 0
+
+
+def _report_write(args: argparse.Namespace) -> int:
+    from dotsteward_cli import config, report
+
+    try:
+        document = json.load(sys.stdin)
+        if not isinstance(document, dict):
+            raise ValueError("expected a JSON object on standard input")
+        run = report.RunReport(args.command, _given_state_root(args), run=args.run)
+        for step in document.get("steps", []):
+            details = {key: value for key, value in step.items() if key not in ("name", "code")}
+            run.step(step["name"], step.get("code", report.OK), **details)
+        for item in document.get("items", []):
+            fields = {key: value for key, value in item.items() if key not in ("code", "pending")}
+            run.item(item["code"], pending=item.get("pending", True), **fields)
+        run.data.update(document.get("data", {}))
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        raise config.DotstewardError(f"invalid run report: {error}") from error
+    paths = run.write()
+    review = None if paths.review is None else str(paths.review)
+    print(json.dumps({"report": str(paths.report), "review": review, "status": run.status, "exit_code": run.exit_code}))
+    return run.exit_code
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dotsteward_cli.internal", description=__doc__, allow_abbrev=False)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -147,17 +186,17 @@ def _parser() -> argparse.ArgumentParser:
     compare = commands.add_parser("version-compare", allow_abbrev=False)
     compare.add_argument("left")
     compare.add_argument("right")
-    compare.set_defaults(run=_version_compare)
+    compare.set_defaults(handler=_version_compare)
 
     root = commands.add_parser("state-root", allow_abbrev=False)
     root.add_argument("--instance")
-    root.set_defaults(run=_state_root)
+    root.set_defaults(handler=_state_root)
 
     write = commands.add_parser("atomic-write", allow_abbrev=False)
     write.add_argument("path")
     write.add_argument("--mode")
     write.add_argument("--parents", action="store_true")
-    write.set_defaults(run=_atomic_write)
+    write.set_defaults(handler=_atomic_write)
 
     lock = commands.add_parser("lock", allow_abbrev=False)
     lock_commands = lock.add_subparsers(dest="lock_command", required=True)
@@ -167,14 +206,25 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--wait", type=float, default=0.0)
     run.add_argument("--pending", action="store_true")
     run.add_argument("command", nargs=argparse.REMAINDER)
-    run.set_defaults(run=_lock_run, subparser=run)
+    run.set_defaults(handler=_lock_run, subparser=run)
     status = lock_commands.add_parser("status", allow_abbrev=False)
     status.add_argument("--state-root")
-    status.set_defaults(run=_lock_status)
+    status.set_defaults(handler=_lock_status)
 
     protected = commands.add_parser("run-protected", allow_abbrev=False)
     protected.add_argument("command", nargs=argparse.REMAINDER)
-    protected.set_defaults(run=_run_protected, subparser=protected)
+    protected.set_defaults(handler=_run_protected, subparser=protected)
+
+    reports = commands.add_parser("report", allow_abbrev=False)
+    report_commands = reports.add_subparsers(dest="report_command", required=True)
+    combine = report_commands.add_parser("combine", allow_abbrev=False)
+    combine.add_argument("codes", nargs="*")
+    combine.set_defaults(handler=_report_combine)
+    write_report = report_commands.add_parser("write", allow_abbrev=False)
+    write_report.add_argument("--command", required=True)
+    write_report.add_argument("--state-root")
+    write_report.add_argument("--run")
+    write_report.set_defaults(handler=_report_write)
     return parser
 
 
@@ -183,7 +233,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args = _parser().parse_args(argv)
     try:
-        code: int = args.run(args)
+        code: int = args.handler(args)
     except config.DotstewardError as error:
         print("\n".join(error.lines()), file=sys.stderr)
         return 1

@@ -92,6 +92,19 @@ result has its `returncode` and the names of the signals in `interrupted`. The
 child must not read the terminal: ask for credentials before. From bash:
 `ds_internal run-protected -- COMMAND ARG...`.
 
+### Run reports
+
+`dotsteward_cli.report.RunReport(command, state_root, *, run=None)` collects a
+run: `step(name, code=OK, **details)`, `item(code, *, pending=True, **fields)` for
+`review.json`, `data` for what the next run needs, `mark_interrupted(signals)`.
+`exit_code` and `status` give the heaviest outcome, in the order 4, 1, 3, 6, 0
+(`combine(codes)`), `write()` writes the files atomically, and `load_last(state_root,
+command)` and `load_review(state_root)` read them back. The outcomes are `OK`,
+`FAILED`, `PENDING`, `PRIVACY_STOP` and `PARTIAL`; [exit-codes.md](exit-codes.md)
+explains them and the files. From bash: `ds_internal report combine CODE...` prints
+the heaviest code, and `ds_internal report write --command NAME` writes a report
+from JSON on standard input and exits with its code.
+
 ### State root
 
 `dotsteward_cli.config.state_root(instance=None, env=None)` is the one machine

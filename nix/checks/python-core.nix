@@ -14,6 +14,16 @@
 let
   cli = dsLib.mkCli pkgs;
 
+  jsonschemaPython = pkgs.python3.withPackages (ps: [ ps.jsonschema ]);
+
+  testEnv = pkgs.writeTextFile {
+    name = "dotsteward-python-core-test-env";
+    destination = "/nix-support/setup-hook";
+    text = ''
+      export DS_JSONSCHEMA_PYTHON=${jsonschemaPython.interpreter}
+    '';
+  };
+
   # mypy sees the dependencies of the package; the build tools build it.
   tools = pkgs.python3.withPackages (ps: [
     ps.mypy
@@ -28,6 +38,7 @@ cli.mkTestCheck {
   nativeBuildInputs = [
     pkgs.shellcheck
     pkgs.ruff
+    testEnv
   ];
   postCheck = ''
     shellcheck -x cli/lib/python.sh tests/cli/core/*.sh

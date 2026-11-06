@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/arda-tuz/dotsteward/schema/run-report.schema.json",
+  "title": "dotsteward run report",
+  "description": "What one run of a command did: <state>/runs/<command>/<run>.json (schema_version 1), written by dotsteward_cli.report. It stays on the machine and is never published.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "run": {
+      "type": "string",
+      "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]*$"
+    },
+    "command": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "status": {
+      "enum": ["ok", "failed", "pending", "privacy-stop", "partial"]
+    },
+    "exit_code": {
+      "enum": [0, 1, 3, 4, 6],
+      "description": "The exit code of the run (docs/exit-codes.md)."
+    },
+    "started_at": {
+      "type": "string"
+    },
+    "finished_at": {
+      "type": "string"
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "enum": ["ok", "failed", "pending", "privacy-stop", "partial"]
+          }
+        },
+        "required": ["name", "status"]
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          }
+        },
+        "required": ["code"]
+      }
+    },
+    "data": {
+      "type": "object",
+      "description": "What the command keeps for its next run."
+    },
+    "interrupted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The signals that arrived while a protected child ran."
+    }
+  },
+  "required": ["schema_version", "run", "command", "status", "exit_code", "started_at", "finished_at", "steps", "items"],
+  "additionalProperties": false
+}
