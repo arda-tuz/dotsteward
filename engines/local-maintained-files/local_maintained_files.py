@@ -49,7 +49,6 @@ import collections.abc
 import contextlib
 import dataclasses
 import datetime
-import fcntl
 import hashlib
 import importlib
 import json
@@ -73,11 +72,11 @@ except ModuleNotFoundError as missing:  # --help works without it; main() refuse
     tomlkit = None  # type: ignore[assignment]
 
 try:
-    from dotsteward_cli import atomic
+    from dotsteward_cli import atomic, locks
     from dotsteward_cli import config as ds_config
 except ImportError:  # run as a plain script from a framework checkout
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "cli" / "python"))
-    from dotsteward_cli import atomic
+    from dotsteward_cli import atomic, locks
     from dotsteward_cli import config as ds_config
 
 SCHEMA_VERSION = 1
@@ -879,13 +878,13 @@ def atomic_write(path: str, data: bytes, mode: int) -> None:
 # --- Machine state (base, journal, backups, lock) ------------------------------------------
 
 
-def acquire_lock(directory: str) -> Any:
+def acquire_lock(directory: str) -> locks.FileLock:
     """Creates the state directory (0700) and blocks until this process holds its lock."""
     os.makedirs(directory, exist_ok=True)
     os.chmod(directory, 0o700)
-    handle = open(os.path.join(directory, "lock"), "w")  # noqa: SIM115 # held until the command ends
-    fcntl.flock(handle, fcntl.LOCK_EX)
-    return handle
+    lock = locks.FileLock(os.path.join(directory, "lock"))
+    lock.acquire()
+    return lock
 
 
 class State:
@@ -1491,7 +1490,7 @@ def command_untrack(context: Context, args: argparse.Namespace) -> int:
             return EXIT_OK
         raise LmfError(f"unknown id: {args.id}")
     finally:
-        lock.close()
+        lock.release()
 
 
 def command_validate(context: Context, args: argparse.Namespace) -> int:

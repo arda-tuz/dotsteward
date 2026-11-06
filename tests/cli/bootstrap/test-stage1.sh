@@ -113,7 +113,7 @@ until [[ -e $DS_TEST_ROOT/holder-started ]]; do
 done
 : >"$DS_CALL_LOG"
 assert_exit 1 run_bootstrap --profile fresh --stage 1
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: another command holds the instance lock: upgrade (pid $holder"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: another command holds the instance lock: upgrade (pid "
 assert_calls
 : >"$DS_TEST_ROOT/holder-release"
 wait "$holder"

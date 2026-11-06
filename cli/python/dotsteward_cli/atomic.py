@@ -19,34 +19,42 @@ import stat
 import tempfile
 from typing import Any
 
+from dotsteward_cli import procs
+
 DEFAULT_MODE = 0o644
 # A file name has at most 255 bytes, and the temporary name adds to the target's.
 _STEM_BYTES = 200
 
 
-def _process_exists(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except OSError:  # someone else's process
-        return True
-    return True
+def make_private_dirs(path: str | os.PathLike[str]) -> None:
+    """Creates the directory PATH and its missing parents with mode 0700; the
+    directories that exist stay as they are."""
+    current = os.path.abspath(path)
+    missing = []
+    while not os.path.isdir(current):
+        missing.append(current)
+        current = os.path.dirname(current)
+    for directory in reversed(missing):
+        with contextlib.suppress(FileExistsError):
+            os.mkdir(directory, 0o700)
 
 
 def _remove_leftovers(directory: str, stem: str) -> None:
-    """Removes the temporary files of the target with this STEM that dead writers left."""
+    """Removes the temporary files of the target with this STEM that dead writers
+    left, as far as it can: a directory it cannot list is no reason to fail."""
     pattern = re.compile(rf"\.{re.escape(stem)}\.([0-9]+)\.[^.]*\.tmp")
-    with os.scandir(directory) as entries:
+    with contextlib.suppress(OSError), os.scandir(directory) as entries:
         for entry in entries:
             match = pattern.fullmatch(entry.name)
-            if match and not _process_exists(int(match.group(1))):
-                with contextlib.suppress(FileNotFoundError):
-                    os.unlink(entry.path)
+            if match and not procs.process_exists(int(match.group(1))):
+                os.unlink(entry.path)
 
 
 def _sync_directory(directory: str) -> None:
-    descriptor = os.open(directory, os.O_RDONLY)
+    try:
+        descriptor = os.open(directory, os.O_RDONLY)
+    except PermissionError:  # a directory that can be written but not read
+        return
     try:
         os.fsync(descriptor)
     except OSError as error:

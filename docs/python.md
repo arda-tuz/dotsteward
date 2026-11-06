@@ -61,6 +61,37 @@ writer left. `atomic_write_json` takes the same arguments and writes indented
 JSON. From bash: `ds_internal atomic-write PATH [--mode MODE] [--parents]` writes
 its standard input.
 
+### Locks
+
+`dotsteward_cli.locks.instance_lock(name, *, state_root=None, pending=None, pending_env=None, wait=0.0)`
+holds `<state>/instance.lock`, which `apply`, `upgrade`, `bootstrap` and `observe`
+share, for the block of a `with` statement. It uses `fcntl.flock`, so it needs no
+flock binary, and the kernel drops the lock of a dead holder. When another
+command holds it, `LockBusy` names the holder at once. With `pending=ARGV` a
+marker stays in `<state>/instance.pending/`, and the holder starts `ARGV` when it
+lets go; that command asks for the lock itself. A command under the lock can run
+another that asks for it, which runs nested. A process a command leaves behind
+does not keep the lock. The gate's own lock nests inside.
+`lock_status(state_root)` tells who holds it; to act on a free lock, acquire it.
+`FileLock(path)` is the same primitive for a lock of another file, for example
+one that only skill capture takes. From bash:
+
+```sh
+ds_internal lock run --holder NAME --state-root "$(state_root)" -- COMMAND ARG...
+```
+
+Busy, it exits 1; with `--pending` it leaves a marker and exits 0; with
+`--wait SECONDS` it tries for a while. `ds_internal lock status` prints JSON.
+
+### Protected children
+
+`dotsteward_cli.procs.run_protected(argv, *, cwd=None, env=None, stdin=DEVNULL)`
+runs a child that must not stop half way, such as a package manager, in a process
+group of its own, and keeps SIGINT, SIGTERM and SIGHUP until it has ended. The
+result has its `returncode` and the names of the signals in `interrupted`. The
+child must not read the terminal: ask for credentials before. From bash:
+`ds_internal run-protected -- COMMAND ARG...`.
+
 ### State root
 
 `dotsteward_cli.config.state_root(instance=None, env=None)` is the one machine

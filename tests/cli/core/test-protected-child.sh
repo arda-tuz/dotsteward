@@ -25,9 +25,11 @@ import sys
 import time
 from pathlib import Path
 
+# A background job of a shell starts with SIGINT ignored, which a child inherits.
+signal.signal(signal.SIGINT, signal.SIG_DFL)
 mode, work = sys.argv[1], Path(sys.argv[2])
 started, finished = work / f"{mode}.started", work / f"{mode}.finished"
-script = f'trap "" TSTP; : >"{started}"; sleep 1; : >"{finished}"; exit 5'
+script = f': >"{started}"; sleep 1; : >"{finished}"; exit 5'
 if mode == "protected":
     argv = [sys.executable, "-s", "-P", "-m", "dotsteward_cli.internal", "run-protected", "--", "bash", "-c", script]
 else:
@@ -51,8 +53,10 @@ assert_json - '.finished == false and .status != 5' <<<"$(scenario plain)"
 
 result=$(scenario protected)
 assert_json - '.finished == true and .status == 5' <<<"$result"
-assert_contains "$(jq -r .stderr <<<"$result")" \
-  "[dotsteward] WARNING: interrupted while a protected command ran; it finished: SIGINT, SIGTERM"
+warning=$(jq -r .stderr <<<"$result")
+assert_contains "$warning" "[dotsteward] WARNING: interrupted while a protected command ran; it finished: "
+assert_contains "$warning" "SIGINT"
+assert_contains "$warning" "SIGTERM"
 
 # The status of the child, and no warning without a signal.
 assert_exit 3 internal run-protected -- bash -c 'exit 3'

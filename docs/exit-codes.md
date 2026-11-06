@@ -17,7 +17,7 @@ status as a failure.
 | Command | Exit codes | Additions to the convention |
 | --- | --- | --- |
 | `agents` | 0, 1, child | |
-| `bootstrap` | 0, 1, 3, child | 3: the preflight took the adaptive route; nothing was written |
+| `bootstrap` | 0, 1, 3, child | 1 also when another command holds the instance lock; 3: the preflight took the adaptive route; nothing was written |
 | `component` | the hook's status, 1 | 1 also when the component or hook is unknown or inactive |
 | `context` | 0, 1 | |
 | `contribute` | 0, 1, 3, 4, 5 | 3: `status --wait --timeout` returned while a step still runs; 4: privacy hard stop, nothing may be published; 5: upstream main moved, the run goes back to `check` |

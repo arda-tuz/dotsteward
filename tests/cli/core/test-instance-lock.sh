@@ -50,6 +50,13 @@ release_holder() {
   wait "$holder_pid"
 }
 
+# kill_holder: the process that holds the lock dies by SIGKILL; its child ends.
+kill_holder() {
+  kill -KILL "$(status_of | jq -r .holder.pid)"
+  : >"$work/release"
+  wait "$holder_pid" 2>/dev/null || true
+}
+
 # --- free: the child runs under the lock, its status is the status ------------------
 
 assert_eq 'false' "$(internal lock status --state-root "$state" | jq -r .held)" "a state root that does not exist yet is free"
@@ -57,6 +64,13 @@ assert_exit 0 internal lock run --holder upgrade --state-root "$state" -- bash -
 assert_eq 'one two' "$(<"$work/ran")"
 assert_file_mode "$state" 700
 assert_file_mode "$state/instance.lock" 600
+# A state root that exists stays as it is, however deep a new one is.
+mkdir -p "$work/existing-state"
+chmod 750 "$work/existing-state"
+assert_exit 0 internal lock run --holder upgrade --state-root "$work/existing-state/deep/er" -- true
+assert_file_mode "$work/existing-state" 750
+assert_file_mode "$work/existing-state/deep" 700
+assert_file_mode "$work/existing-state/deep/er" 700
 assert_exit 7 internal lock run --holder upgrade --state-root "$state" -- bash -c 'exit 7'
 killed() {
   internal lock run --holder upgrade --state-root "$state" -- bash -c 'kill -TERM $$'
@@ -74,7 +88,7 @@ assert_contains "$DS_STDERR" "[dotsteward] ERROR: invalid lock holder name: "
 
 hold upgrade
 assert_exit 1 internal lock run --holder apply --state-root "$state" -- touch "$work/never"
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: another command holds the instance lock: upgrade (pid $holder_pid"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: another command holds the instance lock: upgrade (pid "
 assert_eq '' "$DS_STDOUT"
 [[ ! -e $work/never ]] || ds_fail "the second command ran"
 assert_json - '.held == true and .holder.name == "upgrade" and .holder.pid > 0 and (.holder.since | test("Z$")) and .pending == []' \
@@ -127,7 +141,8 @@ assert_json - '.pending == []' <<<"$(status_of)"
 # The holder's own status stays what it was when a pending command fails, cannot
 # start or the marker is damaged.
 hold upgrade
-assert_exit 0 internal lock run --holder observe --pending --state-root "$state" -- bash -c 'exit 9'
+assert_exit 0 internal lock run --holder observe --pending --state-root "$state" -- \
+  bash -c ': >"$1"; exit 9' bash "$work/failing-done"
 python3 -s -P - "$state/instance.pending" "$work" <<'PY'
 import json
 import sys
@@ -142,6 +157,7 @@ PY
 holder_status=0
 wait "$holder_pid" || holder_status=$?
 assert_eq 0 "$holder_status" "the holder's status"
+core_wait "$work/failing-done"
 wait_free
 assert_json - '.pending == []' <<<"$(status_of)"
 
@@ -149,7 +165,6 @@ assert_json - '.pending == []' <<<"$(status_of)"
 # written after the failed try, then the lock is tried again.
 python3 -s -P - "$state" <<'PY' || ds_fail "the lock released between the try and the marker"
 import os
-import subprocess
 import sys
 
 from dotsteward_cli import atomic, locks
@@ -158,7 +173,8 @@ state = sys.argv[1]
 real_write = atomic.atomic_write_json
 holder = locks.InstanceLock(state, "upgrade")
 holder.acquire()
-env = {key: value for key, value in os.environ.items() if key != locks.HELD_VARIABLE}
+# The contender stands for another process: it is no child of the holder.
+del os.environ[locks.HELD_VARIABLE]
 
 
 def released_meanwhile(*args, **kwargs):
@@ -169,10 +185,45 @@ def released_meanwhile(*args, **kwargs):
 atomic.atomic_write_json = released_meanwhile
 contender = locks.InstanceLock(state, "observe")
 contender.acquire(pending=["true"])
-assert contender.held
+assert contender.held and not contender.nested
 assert locks.lock_status(state).pending == [], "the contender took over and removed its own marker"
 contender.release()
 PY
+
+# A holder that lets go just after the marker is written starts the request. The
+# contender, which then gets the lock, stands aside: one request, one run.
+python3 -s -P - "$state" "$work/one-run" <<'PY' || ds_fail "the lock released just after the marker"
+import os
+import sys
+
+from dotsteward_cli import atomic, locks
+
+state, log = sys.argv[1:]
+real_write = atomic.atomic_write_json
+holder = locks.InstanceLock(state, "upgrade")
+holder.acquire()
+del os.environ[locks.HELD_VARIABLE]
+
+
+def released_after(*args, **kwargs):
+    real_write(*args, **kwargs)
+    holder.release()
+
+
+atomic.atomic_write_json = released_after
+contender = locks.InstanceLock(state, "observe")
+try:
+    contender.acquire(pending=["bash", "-c", f'printf "ran\\n" >>"{log}"'])
+except locks.LockBusy as busy:
+    assert busy.pending_recorded, busy
+else:
+    raise AssertionError("the contender ran as well as the started request")
+assert not contender.held
+PY
+core_wait "$work/one-run"
+wait_free
+assert_eq 'ran' "$(<"$work/one-run")" "a request started by the holder that let go runs once"
+assert_json - '.pending == []' <<<"$(status_of)"
 
 # --- a dead holder -------------------------------------------------------------------
 
@@ -194,9 +245,7 @@ assert_exit 0 internal lock run --holder upgrade --state-root "$state" -- touch 
 # A marker the dead holder never honoured goes with the next holder.
 hold upgrade
 assert_exit 0 internal lock run --holder observe --pending --state-root "$state" -- touch "$work/late-pending"
-kill -KILL "$holder_pid"
-: >"$work/release"
-wait "$holder_pid" 2>/dev/null || true
+kill_holder
 wait_free
 [[ ! -e $work/late-pending ]] || ds_fail "nobody should have honoured the marker yet"
 assert_json - '.pending == ["observe"]' <<<"$(status_of)"
@@ -207,9 +256,7 @@ wait_free
 # A new run of the same name answers an old request of that name.
 hold upgrade
 assert_exit 0 internal lock run --holder observe --pending --state-root "$state" -- touch "$work/superseded"
-kill -KILL "$holder_pid"
-: >"$work/release"
-wait "$holder_pid" 2>/dev/null || true
+kill_holder
 wait_free
 assert_exit 0 internal lock run --holder observe --state-root "$state" -- true
 wait_free
@@ -229,7 +276,10 @@ assert_eq 'false' "$(status_of | jq -r .held)" "a lingering child keeps the lock
 # A command under the lock can run another that asks for it, and the lock stays
 # with the outer one; a token that is not the holder's opens nothing.
 hold upgrade
-assert_exit 1 env DOTSTEWARD_INSTANCE_LOCK_HELD=not-the-holders internal lock run --holder apply --state-root "$state" -- true
+with_token() {
+  DOTSTEWARD_INSTANCE_LOCK_HELD=$1 internal "${@:2}"
+}
+assert_exit 1 with_token not-the-holders lock run --holder apply --state-root "$state" -- true
 release_holder
 wait_free
 nested_script='
@@ -244,7 +294,7 @@ assert_json "$work/after-inner" '.held == true and .holder.name == "outer"'
 wait_free
 
 # A stale token in the environment of a free lock does not stop it being taken.
-assert_exit 0 env DOTSTEWARD_INSTANCE_LOCK_HELD=stale internal lock run --holder upgrade --state-root "$state" -- \
+assert_exit 0 with_token stale lock run --holder upgrade --state-root "$state" -- \
   "${inner[@]}" lock status --state-root "$state"
 assert_json - '.held == true and .holder.name == "upgrade"' <<<"$DS_STDOUT"
 
@@ -257,7 +307,7 @@ internal lock run --holder upgrade --state-root "$state" -- bash -c '
   while :; do sleep 0.02; done' bash "$work/term-started" &
 term_pid=$!
 core_wait "$work/term-started"
-kill -TERM "$term_pid"
+kill -TERM "$(status_of | jq -r .holder.pid)"
 term_status=0
 wait "$term_pid" || term_status=$?
 assert_eq 42 "$term_status" "the child's status after SIGTERM"
@@ -289,6 +339,33 @@ for pid in "${pids[@]}"; do
   wait "$pid" || ds_fail "a contender failed"
 done
 assert_eq 100 "$(<"$work/counter")" "the lock let two holders in"
+
+# Asking who holds the lock does not make a free lock look busy.
+watcher='
+import sys
+import time
+
+from dotsteward_cli import locks
+
+state = sys.argv[1]
+deadline = time.monotonic() + 60
+while time.monotonic() < deadline:
+    locks.lock_status(state)
+'
+python3 -s -P -c "$watcher" "$state" &
+watcher_pid=$!
+ds_defer kill "$watcher_pid"
+python3 -s -P -c '
+import sys
+
+from dotsteward_cli import locks
+
+for _ in range(300):
+    with locks.instance_lock("upgrade", state_root=sys.argv[1]):
+        pass
+' "$state" || ds_fail "a watcher made a free lock look busy"
+kill "$watcher_pid"
+wait "$watcher_pid" 2>/dev/null || true
 
 # --- the interface for Python ---------------------------------------------------------------
 

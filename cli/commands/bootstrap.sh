@@ -92,6 +92,15 @@ require_profile "$profile"
 require_safe_identity
 mode=${DS_PROFILE_MODE[$profile]}
 
+# Stage 1 holds the instance lock, so a second bootstrap or an upgrade is refused
+# until it ends: it runs itself again under the lock.
+if [[ -z ${DS_BOOTSTRAP_UNDER_LOCK:-} ]]; then
+  lock_status=0
+  DS_BOOTSTRAP_UNDER_LOCK=1 ds_internal lock run --holder bootstrap --state-root "$(state_root)" -- \
+    "$BASH" "${BASH_SOURCE[0]}" --profile "$profile" --stage "$stage" || lock_status=$?
+  exit "$lock_status"
+fi
+
 dotsteward=("$DOTSTEWARD_FRAMEWORK_ROOT/cli/dotsteward" --instance "$DS_INSTANCE_ROOT")
 
 # step COMMAND [ARG...]: dotsteward COMMAND ARG...; a failure stops stage 1
