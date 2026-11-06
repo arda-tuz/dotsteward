@@ -184,6 +184,21 @@ modules that edit TOML files and keep their comments (`init` and the settings
 engine) use tomlkit. `privacy/policy.toml` is read in bash, because the pre-push
 hook runs before any Python is available.
 
+### Machines
+
+`dotsteward_cli.machine` holds the name of this machine and what applies to it
+([machines.md](machines.md)). `effective(instance, env=None)` is the one answer: `{name,
+profile, tags, skip: {components, skills, plugins}, reasons}`. Nothing stores it, and a new
+reason to leave something out goes there, so every command follows. `name_taken` lists the
+skills of the lock that are for other machines while this one has a skill of that name.
+`read_machine`, `write_machine` and `current_name` read and write `<state>/machine.json`,
+and `known_names`, `read_host` and `parse_host` read `hosts/<name>.toml`, which
+`check_problems` holds to its rules. `config.schema_errors(document, raw)` checks a TOML
+document against any schema of the keyword subset, and `config.newer_tree_hint(root,
+problems)` words the way out of a tree newer than the CLI. From bash, every command that
+ran `config_load` has `DS_MACHINE_NAME` and the JSON lists `DS_SKIP_COMPONENTS_JSON`,
+`DS_SKIP_SKILLS_JSON` and `DS_SKIP_PLUGINS_JSON`.
+
 ### Versions
 
 `dotsteward_cli.versions` is the one version order: `compare(left, right)`,

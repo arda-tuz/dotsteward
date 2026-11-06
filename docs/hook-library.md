@@ -63,7 +63,9 @@ The comments of `cli/lib/lib.sh` document each function.
 A hook that needs the instance configuration sources `config.sh` after
 `lib.sh` and calls `config_load`: `config_query`, `config_instance_path`,
 `config_profile_mode`, `config_component_active` and the `DS_*` variables that
-the comments of `cli/lib/config.sh` list.
+the comments of `cli/lib/config.sh` list. A hook that reads the skills lock itself
+leaves out what this machine leaves out: `DS_SKIP_SKILLS_JSON`, the list of
+`dotsteward skills effective` ([machines.md](machines.md)).
 
 `methods.sh` is the engine of the install methods, sourced after `config.sh`.
 It may grow, but these stay: `methods_system`, `methods_manifest_load`,

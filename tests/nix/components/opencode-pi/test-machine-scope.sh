@@ -6,6 +6,11 @@
 # shellcheck source=tests/nix/components/opencode-pi/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/components/opencode-pi/helpers.sh"
 
+# Every script of the catalog that reads the skills lock itself follows this machine.
+while IFS= read -r reader; do
+  grep -q 'DS_SKIP_SKILLS_JSON' "$reader" || ds_fail "${reader#"$DS_REPO_ROOT"/} reads the skills lock and misses DS_SKIP_SKILLS_JSON"
+done < <(grep -rlE 'DS_SKILLS_LOCK|skills\.lock\.json' "$DS_REPO_ROOT/modules" --include='*.sh' --include='*.py')
+
 op_hermetic_path
 ds_use_stubs opencode pi
 ds_stub_set pi version "$(jq -r '.versions_lock.agent_tools.pi.version' "$op_seed")"

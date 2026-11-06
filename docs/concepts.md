@@ -154,5 +154,11 @@ under `~/.local/state/dotsteward` by default (`state.root`). Backups are
 taken before any managed file is replaced, and `dotsteward rollback` uses
 them to undo the setup.
 
+## Machines
+
+One instance can describe several machines. Each one has a name of your choice,
+and an entry of the skills lock can be for some of them only. An instance that names
+no machine behaves as if there were one: [machines.md](machines.md).
+
 See [architecture.md](architecture.md) for how the pieces fit together and
 [workstation-toml.md](workstation-toml.md) for every configuration key.

@@ -181,11 +181,11 @@ The settings buffer (see [concepts.md](concepts.md#settings-buffer)).
 
 ## `[hosts]`
 
-The machines of the instance.
+The machines of the instance: [machines.md](machines.md).
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `hosts.producer` | none | The machine that moves the values that come from upstream: `flake.lock`, the pins and the third-party skills. |
+| `hosts.producer` | none | The machine that moves the values that come from upstream: `flake.lock`, the pins and the third-party skills. `dotsteward host producer` writes it. |
 
 ## `[policy]`
 

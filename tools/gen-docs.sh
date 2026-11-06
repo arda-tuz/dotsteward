@@ -158,6 +158,7 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | `DOTSTEWARD_APT_BRIDGE_TIMEOUT` | Seconds the deb transaction lets one refresh of the local APT bridge take before it leaves the rest to the bridge's timer (default 1800). |
 | `DOTSTEWARD_ASSUME_YES` | `1` answers installer and package manager confirmations; meant for CI runners only. |
 | `DOTSTEWARD_CLI` | A CLI that `.dotsteward/cli.sh` runs instead of building the pinned one. |
+| `DOTSTEWARD_MACHINE` | The name of this machine, instead of `machine.json` of the state root ([machines.md](machines.md)). |
 
 ## Commands
 

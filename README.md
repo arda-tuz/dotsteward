@@ -118,6 +118,7 @@ See [docs/platforms.md](docs/platforms.md).
 | [Concepts](docs/concepts.md) | instance, components, profiles, methods, the manifest, pins, the gate, the settings buffer, skills |
 | [Architecture](docs/architecture.md) | how the layers, engines, skills and the privacy model fit together |
 | [workstation.toml](docs/workstation-toml.md) | every configuration key with its default |
+| [Machines](docs/machines.md) | the names of machines, their host files and what applies to each |
 | [Command line](docs/cli.md) | every command and option, generated from the help text |
 | [Exit codes](docs/exit-codes.md) | the exit status of every command |
 | [Catalog](docs/catalog.md) | the components the framework ships |
