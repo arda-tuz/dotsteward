@@ -90,6 +90,20 @@ declare_latest "{\"component\":\"example-viewer\",\"id\":\"desktop_packages.exam
 assert_exit 0 latest --out "$report"
 assert_eq '"2.3.0"' "$(row desktop_packages.example-viewer .latest)"
 
+# A pre-release of the pinned version is older than the pin, and the release
+# of a pinned pre-release is newer.
+mkdir -p "$www/viewer5"
+printf 'synthetic viewer package 2.0.0-rc1\n' >"$www/viewer5/download"
+printf 'Content-Disposition: attachment; filename="example-viewer_2.0.0-rc1_amd64.deb"\n' >"$www/viewer5/download.headers"
+declare_latest "{\"component\":\"example-viewer\",\"id\":\"desktop_packages.example-viewer\",\"adapter\":\"deb-url\",\"latest_url\":\"$url/viewer5/download\"}"
+assert_exit 0 latest --out "$report"
+assert_eq '["2.0.0","2.0.0-rc1","current"]' "$(row desktop_packages.example-viewer '[.current, .latest, .status]')"
+json_edit "$versions" 'data["desktop_packages"]["example-viewer"]["version"] = "2.0.0-rc1"'
+printf 'Content-Disposition: attachment; filename="example-viewer_2.0.0_amd64.deb"\n' >"$www/viewer5/download.headers"
+assert_exit 0 latest --out "$report"
+assert_eq '["2.0.0-rc1","2.0.0","update"]' "$(row desktop_packages.example-viewer '[.current, .latest, .status]')"
+json_edit "$versions" 'data["desktop_packages"]["example-viewer"]["version"] = "2.0.0"'
+
 # No version in the resolved file name: an error row, never a silent pass.
 mkdir -p "$www/viewer4/files"
 printf '/viewer4/files/latest.bin\n' >"$www/viewer4/download.location"

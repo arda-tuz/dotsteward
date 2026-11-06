@@ -270,6 +270,15 @@ pins_fresh
 json_edit "$versions" 'data["example_policy"]["minimum_versions"]["example-term"] = "1.10"'
 check_fails 1 "${E}example_policy.minimum_versions.example-term: expected at least '1.10', found '1.2.0'"
 
+# A pre-release is below its release: it meets no floor of that release, and
+# the release meets a floor of its pre-release.
+pins_fresh
+json_edit "$versions" 'data["example_policy"]["minimum_versions"]["example-cli"] = "2.0.0-rc1"'
+assert_exit 0 pins check
+pins_fresh
+json_edit "$versions" 'data["example_policy"]["minimum_versions"]["example-cli"] = "2.0.1-rc1"'
+check_fails 1 "${E}example_policy.minimum_versions.example-cli: expected at least '2.0.1-rc1', found '2.0.0'"
+
 # --- asset-digest ---------------------------------------------------------------
 
 pins_fresh
