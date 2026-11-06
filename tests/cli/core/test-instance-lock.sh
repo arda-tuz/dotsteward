@@ -36,11 +36,7 @@ wait_free() {
 # child has started when this returns.
 hold() {
   rm -f -- "$work/started" "$work/release"
-  internal lock run --holder "$1" --state-root "$state" -- bash -c '
-    : >"$1"
-    until [[ -e $2 ]]; do
-      sleep 0.02
-    done' bash "$work/started" "$work/release" &
+  internal lock run --holder "$1" --state-root "$state" -- bash "$DS_REPO_ROOT/tests/lib/hold.sh" "$work/started" "$work/release" &
   holder_pid=$!
   core_wait "$work/started"
 }
@@ -230,11 +226,7 @@ assert_json - '.pending == []' <<<"$(status_of)"
 
 # A holder says which pending commands it started.
 rm -f -- "$work/started" "$work/release"
-internal lock run --holder upgrade --state-root "$state" -- bash -c '
-  : >"$1"
-  until [[ -e $2 ]]; do
-    sleep 0.02
-  done' bash "$work/started" "$work/release" 2>"$work/holder-stderr" &
+internal lock run --holder upgrade --state-root "$state" -- bash "$DS_REPO_ROOT/tests/lib/hold.sh" "$work/started" "$work/release" 2>"$work/holder-stderr" &
 holder_pid=$!
 core_wait "$work/started"
 assert_exit 3 internal lock run --holder observe --pending --state-root "$state" -- touch "$work/reported-pending"
@@ -248,11 +240,7 @@ assert_contains "$(<"$work/holder-stderr")" "[dotsteward] started the pending co
 # whether the lock is free or busy.
 env_child=(bash -c 'env | LC_ALL=C sort >"$1"; : >"$1.done"' bash)
 rm -f -- "$work/started" "$work/release"
-DOTSTEWARD_ASSUME_YES=1 HOLDER_ONLY=from-holder LANG=POSIX internal lock run --holder upgrade --state-root "$state" -- bash -c '
-  : >"$1"
-  until [[ -e $2 ]]; do
-    sleep 0.02
-  done' bash "$work/started" "$work/release" &
+DOTSTEWARD_ASSUME_YES=1 HOLDER_ONLY=from-holder LANG=POSIX internal lock run --holder upgrade --state-root "$state" -- bash "$DS_REPO_ROOT/tests/lib/hold.sh" "$work/started" "$work/release" &
 holder_pid=$!
 core_wait "$work/started"
 ask_pending() {
@@ -277,11 +265,7 @@ assert_eq "$(cut -d= -f1 "$work/env-free")" "$(cut -d= -f1 "$work/env-busy")" "t
 
 # The same through the Python interface, where the marker's own run is the command.
 rm -f -- "$work/started" "$work/release"
-HOLDER_ONLY=from-holder internal lock run --holder upgrade --state-root "$state" -- bash -c '
-  : >"$1"
-  until [[ -e $2 ]]; do
-    sleep 0.02
-  done' bash "$work/started" "$work/release" &
+HOLDER_ONLY=from-holder internal lock run --holder upgrade --state-root "$state" -- bash "$DS_REPO_ROOT/tests/lib/hold.sh" "$work/started" "$work/release" &
 holder_pid=$!
 core_wait "$work/started"
 ASKER_ONLY=from-asker core_python - "$state" "$work/env-python" <<'PY' || ds_fail "a pending command of the Python interface"
@@ -620,7 +604,7 @@ assert_json - '.held == true and .holder.name == "upgrade"' <<<"$DS_STDOUT"
 internal lock run --holder upgrade --state-root "$state" -- bash -c '
   trap "exit 42" TERM
   : >"$1"
-  while :; do sleep 0.02; done' bash "$work/term-started" &
+  while [[ -e $1 ]] && ((SECONDS < 900)); do sleep 0.02; done' bash "$work/term-started" &
 term_pid=$!
 core_wait "$work/term-started"
 kill -TERM "$(status_of | jq -r .holder.pid)"

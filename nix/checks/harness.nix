@@ -15,7 +15,7 @@ cli.mkTestCheck {
   paths = [ "tests/harness" ];
   nativeBuildInputs = [ pkgs.shellcheck ];
   postCheck = ''
-    shellcheck -x tests/lib/harness.sh tests/lib/assert.sh tests/lib/bare-remote.sh \
+    shellcheck -x tests/lib/harness.sh tests/lib/assert.sh tests/lib/bare-remote.sh tests/lib/hold.sh \
       tests/lib/fakessh.sh tests/lib/stubs/* tests/harness/*.sh
     python3 -c 'import sys; compile(open(sys.argv[1]).read(), sys.argv[1], "exec")' tests/lib/httpfix.py
   '';

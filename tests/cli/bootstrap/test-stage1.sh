@@ -102,15 +102,13 @@ cp "$DS_TEST_ROOT/e2e-stand-in" "$bs_fw/cli/commands/e2e.sh"
 
 # A second command is refused before any step, whoever holds the lock.
 PYTHONPATH=$bs_fw/cli/python PYTHONDONTWRITEBYTECODE=1 python3 -s -P -m dotsteward_cli.internal \
-  lock run --holder upgrade --state-root "$DOTSTEWARD_STATE_ROOT" -- bash -c '
-    : >"$1"
-    until [[ -e $2 ]]; do
-      sleep 0.02
-    done' bash "$DS_TEST_ROOT/holder-started" "$DS_TEST_ROOT/holder-release" &
+  lock run --holder upgrade --state-root "$DOTSTEWARD_STATE_ROOT" -- bash "$DS_REPO_ROOT/tests/lib/hold.sh" "$DS_TEST_ROOT/holder-started" "$DS_TEST_ROOT/holder-release" &
 holder=$!
-until [[ -e $DS_TEST_ROOT/holder-started ]]; do
+for _ in $(seq 1500); do
+  [[ ! -e $DS_TEST_ROOT/holder-started ]] || break
   sleep 0.02
 done
+[[ -e $DS_TEST_ROOT/holder-started ]] || ds_fail "the lock holder did not start"
 : >"$DS_CALL_LOG"
 assert_exit 1 run_bootstrap --profile fresh --stage 1
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: another command holds the instance lock: upgrade (pid "

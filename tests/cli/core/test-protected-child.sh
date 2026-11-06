@@ -110,7 +110,8 @@ import sys
 import time
 
 base, child, *arguments = sys.argv[1:]
-body = f': >"{base}.started"; until [[ -e "{base}.closed" ]]; do sleep 0.02; done; {child}'
+hold = os.path.join(os.environ["DS_REPO_ROOT"], "tests/lib/hold.sh")
+body = f'bash "{hold}" "{base}.started" "{base}.closed"; {child}'
 argv = [sys.executable, "-s", "-P", "-m", "dotsteward_cli.internal", *arguments, "--", "bash", "-c", body]
 pid, terminal = pty.fork()
 if pid == 0:

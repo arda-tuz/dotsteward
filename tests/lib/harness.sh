@@ -41,6 +41,8 @@
 # DOTSTEWARD_CPU_COUNT) describe a machine with 32768 MiB and 16 CPUs.
 #
 # Tests must not replace the EXIT trap; register cleanup work with ds_defer.
+# A process a test keeps running on purpose waits with tests/lib/hold.sh, which
+# ends by itself when the test is gone.
 #
 # Stubs (tests/lib/stubs, one executable per command named in the spec):
 #   ds_use_stubs --all | NAME...   puts the named stubs first on PATH (never

@@ -70,6 +70,7 @@ loaded, under `set -Eeuo pipefail`, in its own temporary root:
   points.
 
 Register cleanup with `ds_defer`; never replace the `EXIT` trap.
+A process a test keeps running on purpose, a lock holder for example, waits with `tests/lib/hold.sh`: nothing stays behind when the test fails or is killed.
 
 ### Assertions
 

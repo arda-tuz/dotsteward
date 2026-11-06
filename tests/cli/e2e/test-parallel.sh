@@ -36,7 +36,7 @@ probe_hook() {
   printf 'name=%q\nprobe=%q\n' "$1" "$probe"
   cat <<'SH'
 target=${E2E_PROBE_TARGET:-1}
-lock() { until mkdir "$probe/lock" 2>/dev/null; do sleep 0.01; done; }
+lock() { until mkdir "$probe/lock" 2>/dev/null; do [[ -d $probe ]] || exit 1; sleep 0.01; done; }
 unlock() { rmdir "$probe/lock"; }
 lock
 running=$(($(<"$probe/running") + 1))

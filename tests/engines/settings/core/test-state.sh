@@ -94,9 +94,7 @@ assert_eq 12 "$(toml_get "$copy" agents.max_threads)"
 # The lock: a command waits while another process holds the state lock.
 holder_ready=$DS_TEST_ROOT/holder-ready
 release=$DS_TEST_ROOT/release
-# shellcheck disable=SC2016 # the script is expanded by the child bash
-flock -x "$b_state/lock" bash -c 'touch "$1"; while [[ ! -e $2 ]]; do sleep 0.1; done' \
-  bash "$holder_ready" "$release" &
+flock -x "$b_state/lock" bash "$DS_REPO_ROOT/tests/lib/hold.sh" "$holder_ready" "$release" &
 holder=$!
 ds_defer kill "$holder"
 for _ in $(seq 100); do
