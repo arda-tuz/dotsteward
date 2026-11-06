@@ -48,7 +48,8 @@
 #   skills_framework_entries, skills_instance_entries
 #       one compact JSON object per line: the framework skills of the
 #       manifest ({name, entry}, entry from skills.framework_manifest or
-#       null) and the instance lock entries in file order
+#       null) and the instance lock entries this machine does not leave out
+#       (DS_SKIP_SKILLS_JSON), in file order
 #   skills_process_framework NAME ENTRY_JSON
 #       a framework skill: ~/<hm_root>/<directory> must be a link that
 #       resolves to the generation's home-files/<hm_root>/<directory> (the
@@ -585,7 +586,8 @@ skills_framework_entries() {
 }
 
 skills_instance_entries() {
-  jq -c '.skills[]' "$SKILLS_LOCK"
+  jq -c --argjson skip "${DS_SKIP_SKILLS_JSON:-[]}" \
+    '.skills[] | select(.name as $name | $skip | index($name) | not)' "$SKILLS_LOCK"
 }
 
 skills_process_framework() {

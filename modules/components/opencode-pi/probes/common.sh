@@ -6,8 +6,8 @@
 #   opencode_pi_expected_skills AGENT
 #       prints the sorted JSON array of the skill names AGENT (opencode or
 #       pi) must discover: the entries of the instance skills lock without
-#       agents or with AGENT among them, and the framework skills of the
-#       instance manifest mirror
+#       agents or with AGENT among them that this machine does not leave out,
+#       and the framework skills of the instance manifest mirror
 #   opencode_pi_scoped_store
 #       prints the scoped skill store,
 #       ${XDG_DATA_HOME:-~/.local/share}/dotsteward/scoped-skills
@@ -38,8 +38,8 @@ config_load "$DOTSTEWARD_INSTANCE"
 opencode_pi_expected_skills() {
   local agent=$1 lock instance framework
   lock=$(config_instance_path "${DS_SKILLS_LOCK:-agent/skills.lock.json}") || exit 1
-  instance=$(jq -ce --arg agent "$agent" \
-    '[.skills[] | select(.agents == null or (.agents | index($agent)) != null) | .name]' "$lock" 2>/dev/null) ||
+  instance=$(jq -ce --arg agent "$agent" --argjson skip "${DS_SKIP_SKILLS_JSON:-[]}" \
+    '[.skills[] | select(.agents == null or (.agents | index($agent)) != null) | .name] - $skip' "$lock" 2>/dev/null) ||
     die "cannot read the skill names of the skills lock $lock"
   methods_manifest_load ""
   framework=$(jq -c '[(.skills.framework // [])[]]' <<<"$DS_MANIFEST_JSON")

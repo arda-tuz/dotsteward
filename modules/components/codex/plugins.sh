@@ -210,9 +210,12 @@ ensure_plugin() {
   log "codex plugin $spec $version verified"
 }
 
-# shellcheck disable=SC2016 # a jq program: $component is a jq variable
-listed=$(config_query -c --arg component "$component" \
-  '.components[$component].options.plugins // [] | if type == "array" then .[] else error("not a list") end')
+# The entries this machine does not leave out (a plugin for other machines, or one
+# hosts/<name>.toml declines).
+# shellcheck disable=SC2016 # a jq program: $component and $skip are jq variables
+listed=$(config_query -c --arg component "$component" --argjson skip "${DS_SKIP_PLUGINS_JSON:-[]}" \
+  '.components[$component].options.plugins // [] | if type == "array" then .[] else error("not a list") end
+    | select((.spec? // "") as $spec | $skip | index($spec) | not)')
 plugins=()
 if [[ -n $listed ]]; then
   mapfile -t plugins <<<"$listed"

@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/arda-tuz/dotsteward/schema/host.schema.json",
+  "title": "dotsteward hosts/<name>.toml",
+  "description": "What the instance says about one machine, schema version 1. The file name is the machine name: ^[a-z0-9][a-z0-9-]{0,31}$. Only that machine writes the file. Unknown keys are errors.",
+  "$comment": "Readers interpret the keyword subset of workstation.schema.json.",
+  "type": "object",
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Host file schema version."
+    },
+    "system": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+-[a-z0-9_]+$",
+      "description": "The Nix system of the machine, one of nix.systems."
+    },
+    "profile": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+      "description": "The profile this machine runs, one of profiles.names."
+    },
+    "platform": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.-]*$",
+      "description": "The operating system and its version, for example ubuntu-24.04."
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/tag"
+      },
+      "uniqueItems": true,
+      "description": "The tags of the machine."
+    },
+    "declined": {
+      "type": "object",
+      "description": "What this machine never takes, kept across a reinstall with the same name.",
+      "properties": {
+        "components": {
+          "$ref": "#/$defs/names"
+        },
+        "skills": {
+          "$ref": "#/$defs/names"
+        },
+        "plugins": {
+          "$ref": "#/$defs/names"
+        }
+      },
+      "additionalProperties": false
+    },
+    "holds": {
+      "type": "object",
+      "description": "Versions this machine keeps, by component.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "reason": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "since": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "required": ["version", "reason"],
+        "additionalProperties": false
+      }
+    },
+    "apt": {
+      "type": "object",
+      "description": "The apt settings of this machine.",
+      "properties": {
+        "gated": {
+          "type": "object",
+          "description": "The kernel and driver classes only `dotsteward upgrade` moves.",
+          "properties": {
+            "enable": {
+              "type": "boolean",
+              "description": "false leaves those classes to apt on this machine."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "tag": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "A tag; the prefixes machine: and no: are reserved for the framework."
+    },
+    "names": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      },
+      "uniqueItems": true
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

@@ -21,8 +21,9 @@
 #       "components" list, which follows [components] order), then in
 #       declaration order. PROFILE scopes the registry: a probe runs when its
 #       component's profiles and its own profiles are null or list PROFILE
-#       (an empty PROFILE scopes nothing) and its component's platforms are
-#       null or list the manifest's "platform". The probe commands search
+#       (an empty PROFILE scopes nothing), its component's platforms are
+#       null or list the manifest's "platform", and this machine does not leave
+#       its component out (DS_SKIP_COMPONENTS_JSON). The probe commands search
 #       PATH_PREFIX, then the user's PATH (user_path: without the CLI's own
 #       toolchain); the runner's own tools keep the inherited PATH. Every
 #       probe runs with its "env" exported, its argv word for word and
@@ -182,6 +183,7 @@ else
           | def position: if $components == null then 0 else $components[.component].position end;
             [.probes | to_entries[] | .key as $i | .value | normalize($i)]
           | map(select(allows(.profiles; $profile)
+              and (.component as $name | $skip | index($name) | not)
               and ($components == null
                 or ($components[.component] as $c
                   | allows($c.profiles; $profile) and allows($c.platforms; $platform)))))
@@ -206,7 +208,8 @@ _probes_load() {
   if ! jq empty "$manifest" >/dev/null 2>&1; then
     die "invalid manifest $manifest: not valid JSON"
   fi
-  document=$(jq -c -s --arg profile "$profile" "$_PROBES_JQ_PROGRAM" "$manifest") ||
+  document=$(jq -c -s --arg profile "$profile" --argjson skip "${DS_SKIP_COMPONENTS_JSON:-[]}" \
+    "$_PROBES_JQ_PROGRAM" "$manifest") ||
     die "cannot read the manifest: $manifest"
   local errors=() status where re
   mapfile -t errors < <(jq -r '.errors[]' <<<"$document")

@@ -31,8 +31,9 @@ any other refusal; messages go to standard error as ``[dotsteward] ERROR:``
 lines.
 
 Python API (for the other engines): ``read_toml``, ``errors``, ``resolve``,
-``framework_catalog``, ``discover_instance``, ``load_instance``,
-``export_variables``, ``ConfigError`` and ``DotstewardError``.
+``schema_errors``, ``framework_catalog``, ``discover_instance``,
+``load_instance``, ``newer_tree_hint``, ``export_variables``, ``ConfigError``
+and ``DotstewardError``.
 """
 
 from __future__ import annotations
@@ -615,6 +616,12 @@ def errors(
     return _semantic_errors(document, raw, catalog)
 
 
+def schema_errors(document: dict[str, Any], raw: dict[str, Any]) -> list[str]:
+    """The messages of a parsed TOML document against a schema of the keyword
+    subset of schema/workstation.schema.json, such as schema/host.schema.json."""
+    return _Validator(document).validate([], document, raw)
+
+
 def _build(
     document: dict[str, Any], raw: dict[str, Any], catalog: Sequence[str], instance_name: str | None
 ) -> dict[str, Any]:
@@ -792,8 +799,67 @@ def load_instance(
     """Discovers, reads and resolves the instance configuration."""
     instance_root = discover_instance(explicit, env=env, cwd=cwd)
     file = instance_root / CONFIG_FILE
-    config = resolve(read_toml(file), catalog, instance_root.name, root=root)
+    try:
+        config = resolve(read_toml(file), catalog, instance_root.name, root=root)
+    except ConfigError as error:
+        raise _with_newer_tree_hint(error, instance_root, env, root) from error
     return Instance(instance_root, file, config)
+
+
+def _running_revision(root: Path) -> str | None:
+    """The revision the package of this CLI bakes in, None in a checkout."""
+    try:
+        text = (root / "source-info").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        if line.startswith("rev="):
+            return line.removeprefix("rev=") or None
+    return None
+
+
+def _pinned_revision(instance_root: Path) -> str | None:
+    """The framework revision that flake.lock of the instance pins, or None when it
+    does not say."""
+    try:
+        with open(instance_root / "flake.lock", encoding="utf-8") as handle:
+            nodes = json.load(handle)["nodes"]
+        revision = nodes[nodes["root"]["inputs"]["dotsteward"]]["locked"]["rev"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return revision if isinstance(revision, str) and revision else None
+
+
+def newer_tree_hint(
+    instance_root: Path,
+    problems: Sequence[str],
+    env: Mapping[str, str] | None = None,
+    root: Path = FRAMEWORK_ROOT,
+) -> str | None:
+    """The message that names the way out when a file of the tree uses a key this CLI
+    does not read while flake.lock pins another framework, which may read it. Without
+    two revisions to compare, or with an explicit choice of the CLI or the framework,
+    the key is what the problem says it is. A key this release knows but refuses
+    (const null: only a later release acts on it) counts as well."""
+    env = os.environ if env is None else env
+    if not any(problem.startswith("unknown key ") or ": expected null, got " in problem for problem in problems):
+        return None
+    if _env_get(env, "DOTSTEWARD_CLI") is not None or _env_get(env, "DOTSTEWARD_FRAMEWORK_OVERRIDE") is not None:
+        return None
+    running, pinned = _running_revision(root), _pinned_revision(instance_root)
+    if running is None or pinned is None or running == pinned:
+        return None
+    return (
+        f"this CLI is revision {running[:12]}, while flake.lock pins the framework at {pinned[:12]}, which may "
+        f"know that key; run the command with the pinned CLI: {instance_root}/.dotsteward/cli.sh <command>"
+    )
+
+
+def _with_newer_tree_hint(
+    error: ConfigError, instance_root: Path, env: Mapping[str, str] | None, root: Path = FRAMEWORK_ROOT
+) -> ConfigError:
+    hint = newer_tree_hint(instance_root, error.messages, env, root)
+    return ConfigError(*error.messages, hint) if hint is not None else error
 
 
 def runtime_platform(env: Mapping[str, str] | None = None) -> str:
@@ -1128,7 +1194,11 @@ def export_variables(instance: Instance, env: Mapping[str, str] | None = None) -
     documents every name), one per line: exported scalars
     (``declare -gx``), indexed arrays (``declare -ga``) and associative
     arrays (``declare -gA``)."""
+    # Late: the module of the machine reads the configuration through this one.
+    from dotsteward_cli import machine
+
     values = runtime_values(instance, env)
+    scope = machine.effective(instance, env)
     c = instance.config
     names = c["profiles"]["names"]
     order = c["components"]["order"]
@@ -1151,6 +1221,10 @@ def export_variables(instance: Instance, env: Mapping[str, str] | None = None) -
         ("DS_INSTANCE_BRANCH", c["instance"]["branch"]),
         ("DS_INSTANCE_CHECKOUT", values["checkout"]),
         ("DS_STATE_ROOT", values["state_root"]),
+        ("DS_MACHINE_NAME", scope["name"]),
+        ("DS_SKIP_COMPONENTS_JSON", to_json(scope["skip"]["components"])),
+        ("DS_SKIP_SKILLS_JSON", to_json(scope["skip"]["skills"])),
+        ("DS_SKIP_PLUGINS_JSON", to_json(scope["skip"]["plugins"])),
         ("DS_NIX_PRIMARY_SYSTEM", c["nix"]["systems"][0]),
         ("DS_NIX_ALLOW_UNFREE", c["nix"]["allow_unfree"]),
         ("DS_NIX_STATE_VERSION", c["nix"]["state_version"]),
@@ -1295,6 +1369,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.file is not None and args.instance is not None:
         parser.error("--file and --instance are mutually exclusive")
     catalog = _parse_catalog(parser, args.catalog)
+    instance_root = None
     try:
         if args.command == "discover":
             _write(str(discover_instance(args.instance)))
@@ -1323,6 +1398,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         _write("\n".join(export_variables(instance)))
         return 0
     except DotstewardError as error:
+        if isinstance(error, ConfigError) and instance_root is not None:
+            error = _with_newer_tree_hint(error, instance_root, None)
         for line in error.lines():
             _write(line, sys.stderr)
         return 1

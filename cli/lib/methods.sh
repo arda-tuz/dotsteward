@@ -141,10 +141,12 @@ _methods_manifest() {
 
 methods_components() {
   (($# == 1)) || die "usage: methods_components PROFILE"
-  _methods_manifest | jq -r --arg profile "$1" --arg platform "$DS_RUNTIME_PLATFORM" '
+  _methods_manifest | jq -r --arg profile "$1" --arg platform "$DS_RUNTIME_PLATFORM" \
+    --argjson skip "${DS_SKIP_COMPONENTS_JSON:-[]}" '
     .components[]
     | select((.modes // {}) | has($profile))
     | select(.platforms == null or (.platforms | index($platform)))
+    | select(.name as $name | $skip | index($name) | not)
     | .name'
 }
 

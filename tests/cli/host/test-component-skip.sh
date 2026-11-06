@@ -68,5 +68,6 @@ assert_exit 1 run_component run example post --profile workstation
 assert_contains "$DS_STDERR" "component example is not active in profile workstation"
 
 # The probes command skips its probes too.
+mkdir -p "$DS_TEST_ROOT/no-commands"
 assert_exit 0 "$agents_fw/cli/dotsteward" --instance "$agents_inst" probes --manifest "$agents_manifest" \
-  --path-prefix "$DS_TEST_ROOT/no-such-directory" </dev/null
+  --path-prefix "$DS_TEST_ROOT/no-commands" </dev/null

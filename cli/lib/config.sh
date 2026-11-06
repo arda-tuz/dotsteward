@@ -21,8 +21,9 @@
 #   config_profile_mode PROFILE
 #                              fresh or adopt
 #   config_component_active NAME PROFILE
-#                              status 0 when the component is enabled and
-#                              PROFILE is in its profiles (or it has none)
+#                              status 0 when the component is enabled,
+#                              PROFILE is in its profiles (or it has none) and
+#                              this machine does not leave it out
 # The query helpers read DS_CONFIG_JSON, which is exported, so they also work
 # in child processes (component hooks) of a command that loaded the
 # configuration.
@@ -43,6 +44,13 @@
 #                                        DOTFILES_STATE_ROOT with
 #                                        compat.legacy_env, else state.root
 #                                        (expanded)
+#   DS_MACHINE_NAME                      the name of this machine; empty
+#                                        without one (`dotsteward host init`)
+#   DS_SKIP_COMPONENTS_JSON, DS_SKIP_SKILLS_JSON, DS_SKIP_PLUGINS_JSON
+#                                        what this machine leaves out, as JSON
+#                                        lists of names: skip of `dotsteward
+#                                        skills effective`; every list is empty
+#                                        when the instance names no machine
 #   DS_NIX_PRIMARY_SYSTEM, DS_NIX_ALLOW_UNFREE, DS_NIX_STATE_VERSION
 #   DS_PROFILES_DEFAULT, DS_PROFILES_CHECK, DS_PROFILES_BOOTSTRAP
 #   DS_PLATFORM_LINUX_OS_ID, DS_PLATFORM_LINUX_OS_VERSION,
@@ -163,10 +171,10 @@ config_component_active() {
   (($# == 2)) || die "usage: config_component_active NAME PROFILE"
   local json state
   json=$(_config_json) || exit 1
-  state=$(jq -r --arg n "$1" --arg p "$2" '
+  state=$(jq -r --arg n "$1" --arg p "$2" --argjson skip "${DS_SKIP_COMPONENTS_JSON:-[]}" '
     .components[$n] as $c
     | if ($c | type) != "object" then "unknown"
-      elif $c.enable != true then "off"
+      elif $c.enable != true or ($skip | index($n)) != null then "off"
       elif $c.profiles == null or any($c.profiles[]; . == $p) then "on"
       else "off" end' <<<"$json")
   case $state in
