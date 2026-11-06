@@ -9,6 +9,9 @@
 #   core_python ARG...    python3 as the commands run it, with the package on
 #                         its module path (a driver reads its script from
 #                         standard input with `-`)
+#   core_instance DIR [TOML]
+#                         a synthetic instance at DIR: the smallest valid
+#                         workstation.toml, then the text TOML
 
 # shellcheck source=cli/lib/python.sh
 source "$DS_REPO_ROOT/cli/lib/python.sh"
@@ -19,4 +22,25 @@ internal() {
 
 core_python() {
   PYTHONPATH=$DS_REPO_ROOT/cli/python PYTHONDONTWRITEBYTECODE=1 python3 -s -P "$@"
+}
+
+core_instance() {
+  mkdir -p "$1"
+  cat >"$1/workstation.toml" <<TOML
+schema_version = 1
+
+[identity]
+username = "example"
+
+[instance]
+remote = "git@github.com:example/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]
+
+${2:-}
+TOML
 }
