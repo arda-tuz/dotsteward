@@ -128,9 +128,12 @@ ds_internal lock run --holder NAME --state-root "$(state_root)" -- COMMAND ARG..
 
 Its status is the status of `COMMAND`. Busy, it exits 1, which a `COMMAND` can also do: the
 Python interface keeps the two apart with `LockBusy`. With `--pending` it leaves a marker
-and exits 3, and `COMMAND` has the same environment whether the lock is free or busy. With
-`--wait SECONDS` it tries for a while. Without `--state-root` the state root is the required
-one above. `ds_internal lock status` prints JSON, also the `pending_since` of each marker.
+and exits 3, and `COMMAND` has the same environment whether the lock is free or busy. That
+marker names the Python of this framework: after an upgrade it still runs the older framework,
+and after a garbage collection it is dropped with a warning. For a long wait, use the Python
+interface with a path that stays. With `--wait SECONDS` it tries for a while. Without
+`--state-root` the state root is the required one above. `ds_internal lock status` prints JSON,
+also the `pending_since` of each marker.
 
 ### Protected children
 

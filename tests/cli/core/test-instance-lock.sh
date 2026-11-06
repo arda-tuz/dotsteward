@@ -275,6 +275,37 @@ for file in "$work/env-busy" "$work/env-free"; do
 done
 assert_eq "$(cut -d= -f1 "$work/env-free")" "$(cut -d= -f1 "$work/env-busy")" "the names of the variables, free and busy"
 
+# The same through the Python interface, where the marker's own run is the command.
+rm -f -- "$work/started" "$work/release"
+HOLDER_ONLY=from-holder internal lock run --holder upgrade --state-root "$state" -- bash -c '
+  : >"$1"
+  until [[ -e $2 ]]; do
+    sleep 0.02
+  done' bash "$work/started" "$work/release" &
+holder_pid=$!
+core_wait "$work/started"
+ASKER_ONLY=from-asker core_python - "$state" "$work/env-python" <<'PY' || ds_fail "a pending command of the Python interface"
+import sys
+
+from dotsteward_cli import locks
+
+state, answer = sys.argv[1:]
+command = ["bash", "-c", 'env | LC_ALL=C sort >"$1"; : >"$1.done"', "bash", answer]
+try:
+    with locks.instance_lock("observe", state_root=state, pending=command, pending_env={"GIVEN": "by-asker"}):
+        raise AssertionError("the lock is busy")
+except locks.LockBusy as busy:
+    assert busy.pending_recorded, busy
+PY
+release_holder
+core_wait "$work/env-python.done"
+wait_free
+for leak in HOLDER_ONLY= ASKER_ONLY= DOTSTEWARD_INSTANCE_LOCK_HELD=; do
+  assert_not_contains "$(<"$work/env-python")" "$leak" "the environment of a pending command"
+done
+assert_contains "$(<"$work/env-python")" "GIVEN=by-asker"
+assert_contains "$(<"$work/env-python")" "HOME=$HOME"
+
 # A transient failure keeps the request for the next holder; a marker a dead holder
 # had claimed goes back to the queue; a command that is gone is dropped.
 core_python - "$state" "$work" <<'PY' || ds_fail "a pending command that could not start"
