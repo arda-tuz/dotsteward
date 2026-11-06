@@ -155,16 +155,17 @@ assert_exit 1 internal run-protected --log "$work/no-such-directory/child.log" -
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: cannot write $work/no-such-directory/child.log: "
 [[ ! -e $work/log-refused ]] || ds_fail "a command ran without the file it was to write to"
 
-# The same goes for a lock around a command: the message about a pending command has
-# nowhere to go, the status stays.
+# A command under a lock is not protected: it stays with the terminal and ends with it.
+# Its status is the status all the same, while the message about the pending command
+# it started has nowhere to go.
 state=$work/state
-closed_terminal locked "trap '' HUP; : >\"$work/locked.finished\"; exit 5" lock run --holder upgrade --state-root "$state" >"$work/locked.result" &
+closed_terminal locked "exit 5" lock run --holder upgrade --state-root "$state" >"$work/locked.result" &
 driver=$!
 core_wait "$work/locked.started"
 assert_exit 3 internal lock run --holder observe --pending --state-root "$state" -- touch "$work/after-closed"
 : >"$work/locked.ready"
 wait "$driver"
-assert_json "$work/locked.result" '.status == 5 and .finished == true'
+assert_json "$work/locked.result" '.status == 129'
 core_wait "$work/after-closed"
 
 # The Python interface takes the streams too.

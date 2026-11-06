@@ -7,7 +7,9 @@ and SIGHUP in the parent until the child has ended. The caller writes "interrupt
 into its report. The child is in the background of the terminal: its standard
 input is empty unless the caller gives one, and a read of the terminal fails
 instead of stopping it, so a password prompt cannot hang the run. Ask for
-credentials before.
+credentials before. It writes to the terminal unless the caller gives other
+streams, and when the terminal closes such a write fails: a child that stops on a
+failed write stops half way. A child that has to finish writes to a file.
 
 ``run_attached`` is for a child under a lock: the child decides about Ctrl-C, and
 the parent stays to let go of the lock.
@@ -42,27 +44,27 @@ def _status_of(returncode: int) -> int:
     return 128 - returncode if returncode < 0 else returncode
 
 
-def _do_nothing(signum: int, frame: object) -> None:
-    """A handler, not SIG_IGN: exec resets a handler for the child, SIG_IGN stays."""
-
-
 def run_attached(argv: Sequence[str], env: Mapping[str, str] | None = None) -> int:
     """Runs ARGV in this process group with this terminal and returns its status.
     SIGINT from the terminal reaches the child by itself; SIGTERM and SIGHUP reach
-    it through this process. Raises the OSError of a command that cannot start."""
+    it through this process. A signal before the child exists waits for it. Raises
+    the OSError of a command that cannot start."""
     child: subprocess.Popen[bytes] | None = None
+    early: list[int] = []
 
+    # A handler for SIGINT too, not SIG_IGN: exec resets a handler for the child,
+    # SIG_IGN stays. The terminal has told a child that exists already.
     def forward(signum: int, frame: object) -> None:
-        if child is not None:
+        if child is None:
+            early.append(signum)
+        elif signum != signal.SIGINT:
             child.send_signal(signum)
 
-    previous = {
-        signal.SIGINT: signal.signal(signal.SIGINT, _do_nothing),
-        signal.SIGTERM: signal.signal(signal.SIGTERM, forward),
-        signal.SIGHUP: signal.signal(signal.SIGHUP, forward),
-    }
+    previous = {number: signal.signal(number, forward) for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     try:
         child = subprocess.Popen(argv, env=env)
+        for signum in early:
+            child.send_signal(signum)
         returncode = child.wait()
     finally:
         for number, handler in previous.items():
@@ -85,9 +87,12 @@ def run_protected(
     cwd: str | os.PathLike[str] | None = None,
     env: Mapping[str, str] | None = None,
     stdin: int | IO[bytes] | None = subprocess.DEVNULL,
+    stdout: int | IO[bytes] | None = None,
+    stderr: int | IO[bytes] | None = None,
 ) -> ProtectedResult:
     """Runs ARGV to its end and returns its result; raises the OSError of a
-    command that cannot start. Call it in the main thread."""
+    command that cannot start. STDOUT and STDERR are files or descriptors; nothing
+    reads a pipe while it runs. Call it in the main thread."""
     received: list[str] = []
 
     def note(signum: int, frame: object) -> None:
@@ -100,7 +105,9 @@ def run_protected(
     # gets an error rather than being stopped for good.
     previous.update({number: signal.signal(number, signal.SIG_IGN) for number in (signal.SIGTTIN, signal.SIGTTOU)})
     try:
-        with subprocess.Popen(argv, cwd=cwd, env=env, stdin=stdin, process_group=0) as child:
+        with subprocess.Popen(
+            argv, cwd=cwd, env=env, stdin=stdin, stdout=stdout, stderr=stderr, process_group=0
+        ) as child:
             returncode = child.wait()
     finally:
         for number, handler in previous.items():

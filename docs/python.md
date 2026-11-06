@@ -131,12 +131,16 @@ one above. `ds_internal lock status` prints JSON, also the `pending_since` of ea
 
 ### Protected children
 
-`dotsteward_cli.procs.run_protected(argv, *, cwd=None, env=None, stdin=DEVNULL)`
+`dotsteward_cli.procs.run_protected(argv, *, cwd=None, env=None, stdin=DEVNULL, stdout=None, stderr=None)`
 runs a child that must not stop half way, such as a package manager, in a process
 group of its own, and keeps SIGINT, SIGTERM and SIGHUP until it has ended. The
 result has its `returncode` and the names of the signals in `interrupted`. The
-child must not read the terminal: ask for credentials before. From bash:
-`ds_internal run-protected -- COMMAND ARG...`.
+child must not read the terminal: ask for credentials before. It writes to the
+terminal unless `stdout` and `stderr` say otherwise, and once the terminal has closed
+such a write fails, so a child that stops on a failed write stops half way. A child that
+has to finish writes to a file. From bash:
+`ds_internal run-protected [--log FILE] -- COMMAND ARG...`, where `--log` appends both
+streams to `FILE`. Its status is the status of `COMMAND`, also when the terminal is gone.
 
 ### Run reports
 

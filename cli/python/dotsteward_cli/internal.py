@@ -17,8 +17,11 @@ refused or failed, 2 usage error, unless a subcommand says otherwise.
                                  the lock is free
     lock status [--state-root DIR]
                                  prints the state of the lock as JSON
-    run-protected -- COMMAND...  runs COMMAND so that signals wait for its end
-                                 (procs.run_protected); its status is the status
+    run-protected [--log FILE] -- COMMAND...
+                                 runs COMMAND so that signals wait for its end
+                                 (procs.run_protected); its status is the status;
+                                 --log appends both its streams to FILE (0600), so
+                                 that a terminal that closes does not stop it
     report combine [CODE...]     prints the heaviest exit code (report.combine)
     report write --command NAME [--state-root DIR] [--run NAME]
                                  writes a run report from the JSON on standard input,
@@ -151,14 +154,29 @@ def _run_protected(args: argparse.Namespace) -> int:
     from dotsteward_cli import procs
 
     command = _command_of(args)
+    log = None
+    if args.log is not None:
+        try:
+            log = os.open(args.log, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_CLOEXEC, 0o600)
+        except OSError as error:
+            from dotsteward_cli import config
+
+            raise config.DotstewardError(f"cannot write {args.log}: {error.strerror}") from error
     try:
-        result = procs.run_protected(command)
+        result = procs.run_protected(command, stdout=log, stderr=log)
+        if result.interrupted:
+            names = ", ".join(result.interrupted)
+            warning = f"[dotsteward] WARNING: interrupted while a protected command ran; it finished: {names}"
+            _say(warning)
+            if log is not None:  # the terminal may be why, and the file stays
+                with contextlib.suppress(OSError):
+                    os.write(log, f"{warning}\n".encode())
     except OSError as error:
-        print(f"[dotsteward] ERROR: cannot run {command[0]}: {error.strerror}", file=sys.stderr)
+        _say(f"[dotsteward] ERROR: cannot run {command[0]}: {error.strerror}")
         return 127
-    if result.interrupted:
-        names = ", ".join(result.interrupted)
-        print(f"[dotsteward] WARNING: interrupted while a protected command ran; it finished: {names}", file=sys.stderr)
+    finally:
+        if log is not None:
+            os.close(log)
     return result.returncode
 
 
@@ -233,6 +251,7 @@ def _parser() -> argparse.ArgumentParser:
     status.set_defaults(handler=_lock_status)
 
     protected = commands.add_parser("run-protected", allow_abbrev=False)
+    protected.add_argument("--log")
     protected.add_argument("command", nargs=argparse.REMAINDER)
     protected.set_defaults(handler=_run_protected, subparser=protected)
 
@@ -257,14 +276,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Hooks compare versions often: the configuration module loads only when used.
         config = sys.modules.get("dotsteward_cli.config")
         if config is not None and isinstance(error, config.DotstewardError):
-            print("\n".join(error.lines()), file=sys.stderr)
+            _say("\n".join(error.lines()))
             return 1
         if not isinstance(error, OSError):
             raise
-        print(f"[dotsteward] ERROR: {error}", file=sys.stderr)
+        _say(f"[dotsteward] ERROR: {error}")
         return 1
     return code
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    status = main()
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except OSError:
+        # The terminal is gone. Leaving the normal way would change the status to 120.
+        os._exit(status)
+    sys.exit(status)
