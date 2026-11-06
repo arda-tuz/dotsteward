@@ -34,9 +34,11 @@
 #     rename; the index that lists it follows.
 #   - The rename of Release commits an index. APT reads Release first and
 #     then takes Packages by the hash it read (Acquire-By-Hash) from
-#     by-hash/SHA256/, which keeps the index of before the commit: Packages
-#     and Release in two renames alone would fail an update that falls between
-#     them with "Hash Sum mismatch".
+#     by-hash/SHA256/, which keeps the indexes of before the commit for a day:
+#     Packages and Release in two renames alone would fail an update that falls
+#     between them with "Hash Sum mismatch".
+#   - What a commit names reaches the disk before Release does, and a power
+#     cut that still empties a file is taken for no index by the next run.
 #   - A DEB the index no longer lists stays, marked <deb>.superseded, until
 #     the next version of the package lands: `apt upgrade` still finds what
 #     lists from before the commit promise.
@@ -104,7 +106,7 @@ list_only() {
 update_package() {
   local conf=$1 package arch url asset checksums prefix suffix
   local sums line sha name version found_sha='' found_name='' matches=0 status
-  local deb field current
+  local deb field current other stray
   package=$(conf_value "$conf" package)
   arch=$(conf_value "$conf" architecture)
   url=$(conf_value "$conf" url)
@@ -150,15 +152,22 @@ update_package() {
   fi
 
   # Already held: nothing to download. A superseded DEB is listed again: the
-  # vendor went back to that release.
+  # vendor went back to that release. Another DEB that is not marked comes from
+  # a run killed between the rename of this one and marking that one.
   for current in "$repo/${package}_"*.deb; do
     [[ -f $current ]] || continue
     [[ $(sha256_of "$current") == "$found_sha" ]] || continue
+    stray=0
+    for other in "$repo/${package}_"*.deb; do
+      [[ $other != "$current" && ! -e $other.superseded ]] && stray=1
+    done
     if [[ -e $current.superseded ]]; then
-      list_only "$package" "$current"
-      landed=1
       say "$package: back to $found_name"
+    elif ((!stray)); then
+      return 0
     fi
+    list_only "$package" "$current"
+    landed=1
     return 0
   done
 
@@ -192,6 +201,7 @@ update_package() {
 
   # The new DEB becomes the only listed version of the package.
   name=${package}_${version//:/%3a}_${field}.deb
+  sync -- "$deb"
   mv -f -- "$deb" "$repo/$name" || {
     reason="cannot move $found_name into $repo; keeping the current package"
     return 1
@@ -205,7 +215,7 @@ update_package() {
 # already commits that index.
 write_index() {
   local deb packages=$work/Packages release=$work/Release copy=$work/by-hash
-  local sha size stamp previous kept entry
+  local sha size stamp previous kept
   : >"$packages"
   for deb in "$repo"/*.deb; do
     [[ -f $deb && ! -e $deb.superseded ]] || continue
@@ -221,8 +231,8 @@ write_index() {
   if [[ -f $repo/Release ]]; then
     kept=$(sed -n 's/^ \([0-9a-f]\{64\}\) [0-9]* Packages$/\1/p' "$repo/Release")
   fi
-  if [[ $kept == "$sha" && -f $repo/by-hash/SHA256/$sha && -f $repo/Packages &&
-    $(<"$packages") == "$(<"$repo/Packages")" ]]; then
+  if [[ $kept == "$sha" && $(sha256_of "$repo/by-hash/SHA256/$sha" 2>/dev/null) == "$sha" &&
+    $(sha256_of "$repo/Packages" 2>/dev/null) == "$sha" ]]; then
     return 0
   fi
 
@@ -241,15 +251,15 @@ write_index() {
     printf 'SHA256:\n %s %s Packages\n' "$sha" "$size"
   } >"$release" || return 1
 
-  # by-hash keeps the index Release names until now and gets the new one; the
-  # rename of Release is the commit.
+  # by-hash keeps what Release names until now and what a day of commits named,
+  # for an APT that read one of them, and gets the new index; the rename of
+  # Release is the commit.
   mkdir -p -- "$repo/by-hash/SHA256" || return 1
-  for entry in "$repo/by-hash/SHA256"/*; do
-    [[ -f $entry && ${entry##*/} != "$kept" && ${entry##*/} != "$sha" ]] && rm -f -- "$entry"
-  done
+  find "$repo/by-hash/SHA256" -type f -mtime +0 ! -name "$kept" ! -name "$sha" -delete
   cp -- "$packages" "$copy" || return 1
   mv -f -- "$copy" "$repo/by-hash/SHA256/$sha" || return 1
   mv -f -- "$packages" "$repo/Packages" || return 1
+  sync -- "$repo/by-hash/SHA256/$sha" "$repo/by-hash/SHA256" "$repo/Packages" "$release" "$repo"
   mv -f -- "$release" "$repo/Release"
 }
 
@@ -270,8 +280,10 @@ fi
 # Holding the lock, whatever is still there comes from a run that was killed.
 rm -rf -- "$repo"/.partial.*
 work=$(mktemp -d "$repo/.partial.XXXXXX") || exit 0
-# systemd and timeout signal this shell and then its whole group: the second
-# SIGTERM must not end the cleanup that the first one started.
+# timeout signals this shell and then its whole group. Without a trap, bash ends
+# at once on a second signal while it handles the first, before its EXIT trap
+# runs; and that trap must not lose its cleanup to a signal either.
+trap 'exit 143' HUP INT TERM
 trap 'trap "" HUP INT TERM; rm -rf -- "$work"' EXIT
 
 if [[ ! -f $repo/Release ]]; then

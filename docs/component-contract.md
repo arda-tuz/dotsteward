@@ -170,8 +170,8 @@ never fails the run.
 
 APT can read the repository at any moment. It reads `Release` first and takes
 `Packages` by the hash it read (`Acquire-By-Hash`) from `by-hash/SHA256/`, so
-the rename of `Release` alone commits an index and the index of before the
-commit stays reachable. A DEB the index no longer lists stays on disk, marked
+the rename of `Release` alone commits an index and the indexes of before the
+commit stay reachable for a day. A DEB the index no longer lists stays on disk, marked
 `<deb>.superseded`, until the next version of the package lands, so `apt
 upgrade` with lists from before the commit still finds what they promise. The
 source says `Trusted: yes` because the repository is local, root-owned and

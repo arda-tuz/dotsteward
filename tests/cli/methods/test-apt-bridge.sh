@@ -137,7 +137,8 @@ example-app_1.3.0_amd64.deb" "$(pool)"
 [[ -e $repo/example-app_1.2.0_amd64.deb.superseded ]] || ds_fail "the older DEB is not marked as superseded"
 assert_contains "$(<"$repo/Packages")" "Version: 1.3.0"
 assert_not_contains "$(<"$repo/Packages")" "Version: 1.2.0"
-assert_eq "$(printf '%s\n' "$first_index" "$(digest "$repo/Packages")" | sort)" "$(by_hash)"
+empty_index=$(sha256sum </dev/null | cut -d' ' -f1)
+assert_eq "$(printf '%s\n' "$empty_index" "$first_index" "$(digest "$repo/Packages")" | sort)" "$(by_hash)"
 good_index=$(<"$repo/Packages")
 second_index=$(digest "$repo/Packages")
 
@@ -211,7 +212,7 @@ assert_eq "example-app_1.7.0_amd64.deb" "$(listed)"
 assert_eq "example-app_1.3.0_amd64.deb
 example-app_1.7.0_amd64.deb" "$(pool)"
 [[ ! -e $repo/example-app_1.2.0_amd64.deb.superseded ]] || ds_fail "the marker of a removed DEB stayed"
-assert_eq "$(printf '%s\n' "$first_index" "$second_index" "$(digest "$repo/Packages")" | sort)" "$(by_hash)"
+assert_eq "$(printf '%s\n' "$empty_index" "$first_index" "$second_index" "$(digest "$repo/Packages")" | sort)" "$(by_hash)"
 
 # The vendor goes back to the release before: the DEB it still has is listed
 # again without a download, and the one it left is the superseded one now.
