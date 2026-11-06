@@ -978,7 +978,9 @@ _contribute_open_pr() {
 # the privacy scans refuse. GitHub records PR as merged once its head is on
 # main. A push that no longer fast-forwards (main moved since the last
 # check) rebases the branch and goes back to check; any other refusal is
-# red with main untouched. A network failure is made again.
+# red with main untouched. A network failure is made again. A refused push
+# whose commit is on main all the same landed earlier, with its answer lost,
+# and main moved on since.
 _contribute_fast_forward_main() {
   local pr=$1 code=0
   log "merging $pr: fast-forwarding main of $CT_PUBLISH_SLUG to ${CT_TEST_SHA:0:12}"
@@ -986,10 +988,21 @@ _contribute_fast_forward_main() {
   if ((code == CONTRIBUTE_NET_FAILED)); then
     _contribute_red "the network kept failing while ${CT_TEST_SHA:0:12} was pushed to main of $CT_PUBLISH_SLUG; run publish again once it is back"
   elif ((code)); then
+    if _contribute_landed_on_main; then
+      return 0
+    fi
     _contribute_up_to_date origin
     _contribute_red "pushing ${CT_TEST_SHA:0:12} to main of $CT_PUBLISH_SLUG was refused; main is untouched"
   fi
   ((CT_PUSHED)) || log "main of $CT_PUBLISH_SLUG is already ${CT_TEST_SHA:0:12}"
+}
+
+# _contribute_landed_on_main: after a refused push to main of origin: the
+# tested commit is on that main (fetched now), so an earlier attempt landed.
+_contribute_landed_on_main() {
+  contribute_fetch_main "$CT_CLONE" origin
+  git -C "$CT_CLONE" merge-base --is-ancestor "$CT_TEST_SHA" refs/remotes/origin/main || return 1
+  log "${CT_TEST_SHA:0:12} is on main of $CT_PUBLISH_SLUG: its push landed although its answer was lost"
 }
 
 # _contribute_publish_owner: the recorded pull request is read first, so a
@@ -1061,9 +1074,11 @@ _contribute_publish_fork() {
     _contribute_push_ref origin "$CT_TEST_SHA" refs/heads/main "$CT_TEST_SHA" || code=$?
     ((code != CONTRIBUTE_NET_FAILED)) ||
       _contribute_red "the network kept failing while ${CT_TEST_SHA:0:12} was pushed to main of $CT_PUBLISH_SLUG; run publish again once it is back"
-    ((code == 0)) ||
+    if ((code == 0)); then
+      log "fast-forwarded main of $CT_PUBLISH_SLUG to ${CT_TEST_SHA:0:12}"
+    elif ! _contribute_landed_on_main; then
       _contribute_red "main of $CT_PUBLISH_SLUG (${main:0:12}) cannot be fast-forwarded to ${CT_TEST_SHA:0:12}: it has commits that $CT_BRANCH lacks; rebase $CT_BRANCH onto it in $CT_CLONE (with TZ=UTC; the commit-msg hook refuses a merge commit with git's default subject), then run: dotsteward contribute check"
-    log "fast-forwarded main of $CT_PUBLISH_SLUG to ${CT_TEST_SHA:0:12}"
+    fi
   fi
   _contribute_verify_tree "$CT_TEST_SHA" origin
   # shellcheck disable=SC2016 # jq variables
