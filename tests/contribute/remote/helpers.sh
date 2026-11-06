@@ -22,7 +22,11 @@
 #                     with the knob sync-mirror, every
 #                     .dotsteward/manifest.*.json as "mirror of:
 #                     <components.txt>"); gate refuses untracked files, as
-#                     the real gate does
+#                     the real gate does; e2e --expected-remote-base BASE
+#                     fails unless origin main is BASE, as the real e2e does;
+#                     with the knob update-publish-lost (any value), the next
+#                     update publish pushes the instance and fails, as when
+#                     the answer of its push is lost (once)
 #   DOTSTEWARD_CLI    (exported) the CLI the instance launcher runs (its
 #                     step 1): a wrapper that records "dotsteward-launcher
 #                     ARG..." and runs rt_fw, standing in for the CLI pinned
@@ -189,6 +193,30 @@ EOF
 untracked=$(git -C "$DOTSTEWARD_INSTANCE" ls-files --others --exclude-standard)
 if [[ -n $untracked ]]; then
   printf "[dotsteward] ERROR: Nix does not see untracked files; run 'git add -A' first: %s\n" "$untracked" >&2
+  exit 1
+fi
+EOF
+        ;;
+      e2e)
+        cat <<'EOF'
+args=("$@")
+for ((i = 0; i < ${#args[@]} - 1; i++)); do
+  [[ ${args[i]} == --expected-remote-base ]] || continue
+  remote=$(git -C "$DOTSTEWARD_INSTANCE" ls-remote origin refs/heads/main | cut -f1)
+  if [[ $remote != "${args[i + 1]}" ]]; then
+    printf '[core:repo-remote] origin main is %s, not the expected publish base %s\n' "$remote" "${args[i + 1]}" >&2
+    exit 1
+  fi
+done
+EOF
+        ;;
+      update)
+        printf 'lost_knob=%q\n' "$rt_hub/knobs/update-publish-lost"
+        cat <<'EOF'
+if [[ ${1:-} == publish && -f $lost_knob ]]; then
+  rm -f -- "$lost_knob"
+  git -C "$DOTSTEWARD_INSTANCE" push -q origin HEAD:refs/heads/main
+  printf '[dotsteward] ERROR: push failed\n' >&2
   exit 1
 fi
 EOF
