@@ -103,4 +103,5 @@ def atomic_write_json(
     path: str | os.PathLike[str], value: Any, *, mode: int | None = None, parents: bool = False
 ) -> None:
     """Replaces the file at PATH with VALUE as indented JSON text and a final newline."""
-    atomic_write(path, json.dumps(value, indent=2, ensure_ascii=False) + "\n", mode=mode, parents=parents)
+    text = json.dumps(value, indent=2, ensure_ascii=False) + "\n"
+    atomic_write(path, text.encode("utf-8", "backslashreplace"), mode=mode, parents=parents)

@@ -20,7 +20,7 @@ refused or failed, 2 usage error, unless a subcommand says otherwise.
     report combine [CODE...]     prints the heaviest exit code (report.combine)
     report write --command NAME [--state-root DIR] [--run NAME]
                                  writes a run report from the JSON on standard input,
-                                 {"steps": [{"name": N, "code": C, ...}], "items":
+                                 {"steps": [{"name": N, "code": STATUS, ...}], "items":
                                  [{"code": C, "pending": P, ...}], "data": {...}};
                                  prints where as JSON; its exit code is the run's
 """

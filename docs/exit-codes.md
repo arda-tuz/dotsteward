@@ -55,28 +55,35 @@ heaviest outcome of the run, in the order 4, 1, 3, 6, 0:
 | 6 | `partial` | no network, or the network steps were skipped; the checks ran |
 | 0 | `ok` | done |
 
-`2` stays a usage error, and `5` keeps its meaning in `contribute`. 3 and 4 mean
-the same here as in `settings` and `contribute` above.
+3 is what it is in `settings`, and 4 what it is in `contribute`; the other uses of
+3 in the table above stay with their commands. `2` and `5` are no outcomes of a run:
+`2` is a usage error or broken input before anything ran, as in `init` and `pins`,
+and `5` keeps its meaning in `contribute`. A child that exits with any status but 0,
+3, 4 and 6 counts as `failed`, and its step keeps the status as `exit_status`.
 
 Each run leaves a report in `<state>/runs/<command>/<run>.json`
-(`schema/run-report.schema.json`), and what needs a person or an agent in
-`<state>/review.json` (`schema/review.schema.json`), for example:
+(`schema/run-report.schema.json`), of which the newest stay in the order of their
+`sequence`, not of the clock. What needs a person or an agent is in
+`<state>/review.json` (`schema/review.schema.json`), one file for every command, for
+example:
 
 ```json
 {
   "schema_version": 1,
-  "run": "2026-11-03T080000Z-1a2b",
-  "command": "upgrade",
   "status": "pending",
   "exit_code": 3,
+  "runs": {
+    "upgrade": { "run": "2026-11-03T080000Z-1a2b", "status": "pending", "exit_code": 3 }
+  },
   "items": [
-    { "code": "sudo-required", "run": "dotsteward upgrade" }
+    { "command": "upgrade", "code": "sudo-required", "run": "dotsteward upgrade" }
   ]
 }
 ```
 
-Both stay on the machine and are never published. The next run of the command
-replaces its review, and removes it when nothing is left; [python.md](python.md)
-has the interface.
+Both stay on the machine and are never published. A run replaces the items of its
+own command and leaves those of the others; `status` and `exit_code` are the heaviest
+of the runs, and the file goes when the last item goes. [python.md](python.md) has the
+interface.
 
 See [cli.md](cli.md) for the options of every command.

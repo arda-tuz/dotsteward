@@ -2,42 +2,99 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/arda-tuz/dotsteward/schema/review.schema.json",
   "title": "dotsteward review.json",
-  "description": "What the last run of a command leaves for a person or an agent: <state>/review.json (schema_version 1), written by dotsteward_cli.report. It stays on the machine and is never published. An item names what is needed with its code; the fields around the code depend on it.",
+  "description": "What the last runs of the commands leave for a person or an agent: <state>/review.json (schema_version 1), written by dotsteward_cli.report. One file for every command: a run replaces the items of its own command, and the status and exit_code are the heaviest of the runs. It stays on the machine and is never published. An item names what is needed with its code; the fields around the code depend on it.",
   "type": "object",
   "properties": {
     "schema_version": {
       "const": 1
     },
-    "run": {
-      "type": "string",
-      "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]*$",
-      "description": "The name of the run; <state>/runs/<command>/<run>.json is its report."
-    },
-    "command": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9._-]*$"
-    },
     "status": {
-      "enum": ["ok", "failed", "pending", "privacy-stop", "partial"]
+      "enum": [
+        "ok",
+        "failed",
+        "pending",
+        "privacy-stop",
+        "partial"
+      ]
     },
     "exit_code": {
-      "enum": [0, 1, 3, 4, 6],
-      "description": "The exit code of the run (docs/exit-codes.md)."
+      "enum": [
+        0,
+        1,
+        3,
+        4,
+        6
+      ],
+      "description": "The heaviest exit code of the runs (docs/exit-codes.md)."
+    },
+    "runs": {
+      "type": "object",
+      "description": "The run of each command that left items; <state>/runs/<command>/<run>.json is its report.",
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9._-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "run": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]*$"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "failed",
+              "pending",
+              "privacy-stop",
+              "partial"
+            ]
+          },
+          "exit_code": {
+            "enum": [
+              0,
+              1,
+              3,
+              4,
+              6
+            ],
+            "description": "The heaviest exit code of the runs (docs/exit-codes.md)."
+          }
+        },
+        "required": [
+          "run",
+          "status",
+          "exit_code"
+        ],
+        "additionalProperties": false
+      }
     },
     "items": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
+          "command": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
           "code": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]*$"
           }
         },
-        "required": ["code"]
+        "required": [
+          "command",
+          "code"
+        ]
       }
     }
   },
-  "required": ["schema_version", "run", "command", "status", "exit_code", "items"],
+  "required": [
+    "schema_version",
+    "status",
+    "exit_code",
+    "runs",
+    "items"
+  ],
   "additionalProperties": false
 }

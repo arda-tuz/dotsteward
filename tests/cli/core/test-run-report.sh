@@ -216,7 +216,8 @@ assert written["data"] == {"unpublished_commits": ["abc"]}
 assert written["interrupted"] == ["SIGINT", "SIGTERM"]
 assert written["exit_code"] == 3
 assert paths.review == state / "review.json"
-assert report.load_review(state)["items"][0] == {"command": "apply", "code": "publish-race", "commit": "abc"}
+mine = [item for item in report.load_review(state)["items"] if item["command"] == "apply"]
+assert mine[0] == {"command": "apply", "code": "publish-race", "commit": "abc"}, mine
 
 # The exit status of a child as an outcome.
 for status, outcome in ((0, 0), (3, 3), (4, 4), (6, 6), (1, 1), (2, 1), (5, 1), (127, 1), (137, 1)):
@@ -280,7 +281,7 @@ for _ in range(40):
 for number in range(report.KEEP_REPORTS + 5):
     old = report.RunReport("keep", state, run=f"2026-01-01T{number:06d}Z-aaaa")
     old.write()
-kept = sorted(path.name for path in (state / "runs" / "keep").iterdir())
+kept = sorted(path.name for path in (state / "runs" / "keep").glob("*.json"))
 assert len(kept) == report.KEEP_REPORTS, len(kept)
 assert kept[-1] == f"2026-01-01T{report.KEEP_REPORTS + 4:06d}Z-aaaa.json", kept[-1]
 
