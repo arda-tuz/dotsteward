@@ -1,8 +1,10 @@
 # Install methods (tests/cli/methods): cli/lib/methods.sh and the install
 # command against a synthetic instance with the package, download and sudo
 # stubs (deb transaction, the local APT bridge, official-binary, external,
-# phase hooks, adopt and check-only modes, named components). No Nix is needed in the sandbox; shellcheck covers
-# the engine, the command and the tests.
+# phase hooks, adopt and check-only modes, named components), and a real APT
+# over a private root for what the local APT bridge promises to it. No Nix is
+# needed in the sandbox; shellcheck covers the engine, the command and the
+# tests.
 {
   pkgs,
   dsLib,
@@ -15,6 +17,7 @@ cli.mkTestCheck {
   name = "cli-methods";
   paths = [ "tests/cli/methods" ];
   nativeBuildInputs = [
+    pkgs.apt
     pkgs.gnupg
     pkgs.shellcheck
   ];

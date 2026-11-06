@@ -199,6 +199,7 @@ let
       (paths [
         "engines"
         "tools"
+        "modules/core/github-release-deb-e2e.sh"
         "tests/cli/e2e"
         "tests/agents/helpers.sh"
       ])

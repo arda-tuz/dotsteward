@@ -15,6 +15,9 @@ unzip tar curl git gh nix nix-store nix-instantiate ssh
 # OpenPGP: the signing keys of vendor APT sources.
 gpg
 
+# systemd: the timer of the local APT bridge.
+systemctl
+
 # Toolchain and linters.
 install mktemp flock jq python3 bash shellcheck actionlint nixfmt
 

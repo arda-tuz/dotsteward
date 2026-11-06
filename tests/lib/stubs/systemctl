@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# systemctl stub over the unit files below the fixture root
+# (DS_SYSTEM_ROOT/etc/systemd/system). Like on a real machine, systemd runs
+# when DS_SYSTEM_ROOT/run/systemd/system exists; without it only what works
+# offline does (enable and disable without --now, is-enabled).
+#   daemon-reload             needs root rights (see the sudo stub) and a
+#                             running systemd; succeeds
+#   enable [--now] UNIT...    needs root rights and the unit file; links the
+#                             unit into <target>.wants of each WantedBy= of
+#                             its [Install] section; --now also starts it
+#   disable [--now] UNIT...   needs root rights; removes those links; --now
+#                             also stops it
+#   start|stop UNIT...        needs root rights and a running systemd; the
+#                             unit file must exist for start
+#   is-enabled UNIT           prints enabled or disabled; exit 0 or 1
+#   is-active UNIT            prints active or inactive; exit 0 or 3
+# A started unit is remembered in the state of the stub.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin systemctl "$@"
+
+units_dir=$DS_SYSTEM_ROOT/etc/systemd/system
+active_dir=$DS_STUB_DIR/active
+
+now=0
+words=()
+for arg in "$@"; do
+  case $arg in
+    --now) now=1 ;;
+    -*) ;;
+    *) words+=("$arg") ;;
+  esac
+done
+operation=${words[0]:-}
+units=("${words[@]:1}")
+
+require_root() {
+  ds_stub_as_root && return 0
+  printf 'Failed to %s: Access denied\n' "$1" >&2
+  exit 1
+}
+
+require_systemd() {
+  [[ -d $DS_SYSTEM_ROOT/run/systemd/system ]] && return 0
+  printf "System has not been booted with systemd as init system (PID 1). Can't operate.\n" >&2
+  printf 'Failed to connect to bus: Host is down\n' >&2
+  exit 1
+}
+
+require_unit() {
+  [[ -f $units_dir/$2 ]] && return 0
+  printf 'Failed to %s: Unit file %s does not exist.\n' "$1" "$2" >&2
+  exit 1
+}
+
+# wanted_by UNIT: the targets of the [Install] section of UNIT, one per line.
+wanted_by() {
+  sed -n 's/^WantedBy=//p' "$units_dir/$1" | tr ' ' '\n'
+}
+
+set_active() {
+  mkdir -p "$active_dir"
+  : >"$active_dir/$1"
+}
+
+case $operation in
+  daemon-reload)
+    require_root 'reload daemon'
+    require_systemd
+    ;;
+  enable)
+    require_root 'enable unit'
+    ((!now)) || require_systemd
+    for unit in "${units[@]}"; do
+      require_unit 'enable unit' "$unit"
+      while IFS= read -r target; do
+        [[ -n $target ]] || continue
+        mkdir -p "$units_dir/$target.wants"
+        ln -sfn "$units_dir/$unit" "$units_dir/$target.wants/$unit"
+        printf 'Created symlink %s/%s.wants/%s -> %s/%s.\n' "$units_dir" "$target" "$unit" "$units_dir" "$unit"
+      done < <(wanted_by "$unit")
+      ((!now)) || set_active "$unit"
+    done
+    ;;
+  disable)
+    require_root 'disable unit'
+    ((!now)) || require_systemd
+    for unit in "${units[@]}"; do
+      rm -f -- "$units_dir"/*.wants/"$unit"
+      ((!now)) || rm -f -- "$active_dir/$unit"
+    done
+    ;;
+  start)
+    require_root 'start unit'
+    require_systemd
+    for unit in "${units[@]}"; do
+      require_unit 'start unit' "$unit"
+      set_active "$unit"
+    done
+    ;;
+  stop)
+    require_root 'stop unit'
+    require_systemd
+    for unit in "${units[@]}"; do
+      rm -f -- "$active_dir/$unit"
+    done
+    ;;
+  is-enabled)
+    for link in "$units_dir"/*.wants/"${units[0]}"; do
+      if [[ -L $link ]]; then
+        printf 'enabled\n'
+        exit 0
+      fi
+    done
+    printf 'disabled\n'
+    exit 1
+    ;;
+  is-active)
+    if [[ -f $active_dir/${units[0]} ]]; then
+      printf 'active\n'
+      exit 0
+    fi
+    printf 'inactive\n'
+    exit 3
+    ;;
+  *)
+    printf 'Unknown command verb %s.\n' "$operation" >&2
+    exit 1
+    ;;
+esac
+exit 0
