@@ -155,7 +155,7 @@ stand_in_fail e2e '*--framework-override*'
 stand_in_fail rebuild '--profile main --switch'
 reset_calls
 assert_exit 1 run_contribute trial
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: recovery failed: rebuild --switch without the override failed, so the live generation may still use the trial framework; fix the problem, then run: dotsteward contribute abort"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: recovery failed: rebuild --switch without the override failed, so the live generation may still use the trial framework; fix the problem, then run: dotsteward contribute abort (when the dotsteward on PATH is the broken one: $ct_inst/.dotsteward/cli.sh contribute abort, the CLI pinned by flake.lock)"
 state_json | assert_json - '.trial_switched == true and .recovery == "failed"'
 assert_eq "$ref" "$(live)" "live framework after a failed recovery"
 stand_in_clear e2e

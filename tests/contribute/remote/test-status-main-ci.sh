@@ -68,6 +68,6 @@ assert_contains "$DS_STDOUT" "  main_ci: red $privacy_url"
 
 hub_knob logged-out true
 assert_exit 0 run_contribute status --json
-assert_json - ".main_ci == {sha: \"$merged\", state: \"unknown\", url: null, reason: \"gh is not logged in; run 'gh auth login' first\", runs: []}" <<<"$DS_STDOUT"
+assert_json - ".main_ci == {sha: \"$merged\", state: \"unknown\", url: null, reason: \"gh is not logged in, or GitHub cannot be reached; check the network, then run 'gh auth login'\", runs: []}" <<<"$DS_STDOUT"
 assert_exit 0 run_contribute status
-assert_contains "$DS_STDOUT" "  main_ci: unknown (gh is not logged in; run 'gh auth login' first)"
+assert_contains "$DS_STDOUT" "  main_ci: unknown (gh is not logged in, or GitHub cannot be reached; check the network, then run 'gh auth login')"

@@ -115,3 +115,20 @@ assert_eq "$(
 )" "$(instance_calls)" "calls of the recovery of abort"
 assert_eq pinned "$(live)" "live framework after abort"
 state_json | assert_json - '.step == "done" and .outcome == "aborted" and .trial_switched == false and .recovery == "done"'
+
+# --- abort after the upgrade committed: the unpublished commit is named -----------------------------
+
+# The recovery rebuilds the instance as it is, the upgrade commit included, so
+# the machine is on the release, not on what origin has; abort says how to get
+# back to that.
+switched_run fourth-feature 0.1.1
+base=$(git -C "$ct_inst" rev-parse HEAD)
+stand_in_fail rebuild '--profile main --switch'
+assert_exit 1 run_contribute upgrade --main
+commit=$(git -C "$ct_inst" rev-parse HEAD)
+[[ $commit != "$base" ]] || ds_fail "the upgrade made no commit"
+stand_in_clear rebuild
+reset_calls
+assert_exit 0 run_contribute abort
+assert_contains "$DS_STDERR" "[dotsteward] WARNING: the instance keeps its upgrade commit ${commit:0:12}, which origin lacks; to return to the published instance run: git -C $ct_inst reset --hard ${base:0:12}, then: dotsteward rebuild --profile main --switch"
+state_json | assert_json - '.step == "done" and .outcome == "aborted"'
