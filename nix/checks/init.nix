@@ -5,8 +5,7 @@
 # against an isolated store, so every run ends as a real instance that
 # passes the instance contract. One test runs init from the packaged CLI
 # built here (DS_INIT_PACKAGED_CLI), as `nix run <framework>#dotsteward --
-# init` does. Then ShellCheck over the command and the tests, and a lint of
-# the Python module.
+# init` does. Then ShellCheck over the command and the tests.
 #
 # The suite is the longest of the framework, so its test files run as two
 # halves (in file name order), two derivations that Nix builds in parallel;
@@ -49,7 +48,6 @@ let
       nativeBuildInputs = [
         pkgs.nix
         pkgs.shellcheck
-        pkgs.ruff
         testEnv
       ];
       inherit postCheck;
@@ -57,9 +55,6 @@ let
 
   first = part "1" (lib.take half testFiles) ''
     shellcheck -x cli/commands/init.sh tests/instance/init/*.sh
-    module=cli/python/dotsteward_cli/init.py
-    ruff check --no-cache --quiet --line-length 120 --select E,F,W,B,UP,SIM,RUF "$module"
-    ruff format --no-cache --quiet --check --line-length 120 "$module"
   '';
   second = part "2" (lib.drop half testFiles) "";
 in

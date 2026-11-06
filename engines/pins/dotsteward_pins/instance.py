@@ -74,7 +74,7 @@ class Instance:
     systems: list[str]
     excluded_flake_inputs: list[str]
     repo_owned_revisions: tuple[str, ...]
-    _manifests: dict[str, Any] = field(default_factory=dict, repr=False)
+    _manifests: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
 
     @property
     def versions_path(self) -> Path:

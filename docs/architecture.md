@@ -68,6 +68,10 @@ The `dotsteward` CLI is a Nix package built with the instance's nixpkgs. Instanc
 
 Every command has stable exit codes ([exit-codes.md](exit-codes.md)) and a JSON mode where a skill or test needs to read the result. [cli.md](cli.md) documents every option.
 
+### Python package
+
+New commands are written in Python. `pyproject.toml` declares the one package of the CLI and its engines, with one strict lint and type configuration and shared primitives ([python.md](python.md)).
+
 ### Engines
 
 - **Pins engine**: checks that every pinned version, hash and revision in `versions.lock.json`, `flake.lock` and the skills lock agree; regenerates derived mirrors; asks official sources (GitHub releases, npm, APT indexes, DEB URLs, vendor manifests, Nix releases) for newer stable versions. Component declarations provide the rules and sources; the engine contains no application names.

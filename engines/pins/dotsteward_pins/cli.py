@@ -175,7 +175,7 @@ def run_latest(instance: Instance, args: argparse.Namespace) -> int:
         if error.name not in (f"{__package__}.latest", f"{__package__}.latest.runner"):
             raise
         raise EngineError("pins latest is not available in this framework version") from error
-    return runner.run(instance, args)
+    return int(runner.run(instance, args))
 
 
 # --- entry point --------------------------------------------------------------------

@@ -155,9 +155,10 @@ class GitCompare(CompareAdapter):
             repo = locks.render(self.values["repo"], scope)
         else:
             source = self.lock_value(locks, self.values["repo_at"], scope)
-            repo = github_repo(source)
-            if repo is None:
+            parsed = github_repo(source)
+            if parsed is None:
                 raise PlanError(f"{source!r} is not a GitHub repository")
+            repo = parsed
         revision = scalar_text(self.lock_value(locks, self.values["revision_at"], scope))
         if not HEX40.fullmatch(revision):
             raise PlanError(f"the pinned revision {revision!r} is not a 40-digit commit")

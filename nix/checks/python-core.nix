@@ -34,9 +34,12 @@ cli.mkTestCheck {
     ruff check --no-cache --quiet .
     ruff format --no-cache --quiet --check .
     ${tools}/bin/mypy
-    ${tools.interpreter} -m build --no-isolation --wheel --outdir "$TMPDIR/dist" . >/dev/null
+    ${tools.interpreter} -m build --no-isolation --wheel --outdir "$TMPDIR/dist" . >"$TMPDIR/build.log" 2>&1 || {
+      cat "$TMPDIR/build.log" >&2
+      exit 1
+    }
     declared=$(find cli/python/dotsteward_cli engines/pins/dotsteward_pins engines/local-maintained-files \
-      -name '*.py' ! -path '*/build/*' -printf '%f\n' | LC_ALL=C sort)
+      -name '*.py' -printf '%f\n' | LC_ALL=C sort)
     ${tools.interpreter} -m zipfile --list "$TMPDIR"/dist/*.whl >"$TMPDIR/wheel.txt"
     built=$(awk '$1 ~ /\.py$/ { n = split($1, parts, "/"); print parts[n] }' "$TMPDIR/wheel.txt" | LC_ALL=C sort)
     if [[ $declared != "$built" ]]; then

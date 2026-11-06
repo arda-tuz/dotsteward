@@ -161,8 +161,8 @@ def main(context: Any) -> int:
             f"validate: {count} problem{'s' if count != 1 else ''} in {context.buffer_rel}; "
             f"fix the buffer (see {engine.MAINTAIN_SKILL})"
         )
-        return engine.EXIT_ERROR
+        return int(engine.EXIT_ERROR)
     engine.log(
         f"validate: {context.buffer_rel} is valid ({validation.entry_count} entries, {validation.target_count} targets)"
     )
-    return engine.EXIT_OK
+    return int(engine.EXIT_OK)

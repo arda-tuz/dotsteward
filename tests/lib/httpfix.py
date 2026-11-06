@@ -65,9 +65,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
         base = os.path.join(root, *[s for s in segments if s])
         if parsed.query:
             with_query = base + "?" + parsed.query
-            if os.path.lexists(with_query) or any(
-                os.path.exists(with_query + suffix) for suffix in SIDECARS
-            ):
+            if os.path.lexists(with_query) or any(os.path.exists(with_query + suffix) for suffix in SIDECARS):
                 base = with_query
         real = os.path.realpath(base)
         if real != root and not real.startswith(root + os.sep):
@@ -141,7 +139,7 @@ def main(argv):
     server.daemon_threads = True
     server.root = os.path.realpath(args.root)
     server.log_lock = threading.Lock()
-    server.log = open(args.log, "a", encoding="utf-8") if args.log else None
+    server.log = open(args.log, "a", encoding="utf-8") if args.log else None  # noqa: SIM115 # open until the server ends
     if args.port_file:
         temporary = args.port_file + ".tmp"
         with open(temporary, "w", encoding="utf-8") as handle:

@@ -38,6 +38,7 @@ fields) and official tags.
 from __future__ import annotations
 
 import copy
+from collections.abc import Iterator
 from typing import Any, ClassVar
 
 from ..checker import Checker
@@ -48,7 +49,7 @@ from . import Context, FieldSpec, Rule, relative_file
 def _mirrors(value: Any) -> list[tuple[str, LockPath, list[tuple[str, list[str]]]]]:
     if not isinstance(value, dict) or not value:
         raise DeclarationError(f"expected an object of dependency -> lock path, found {value!r}")
-    result = []
+    result: list[tuple[str, LockPath, list[tuple[str, list[str]]]]] = []
     for dependency, spec in value.items():
         if isinstance(spec, str):
             result.append((dependency, parse_path(spec), []))
@@ -100,7 +101,9 @@ class NpmBundle(Rule):
         package_lock = load_json(directory / "package-lock.json")
         return package, package_lock, package["dependencies"], package.get("overrides", {})
 
-    def _pins(self, ctx: Context, overrides: dict[str, Any], dependencies: dict[str, Any]):
+    def _pins(
+        self, ctx: Context, overrides: dict[str, Any], dependencies: dict[str, Any]
+    ) -> Iterator[tuple[str, Any, str, str, list[tuple[str, list[str]]], bool]]:
         """(label, pin, lock key, version, extra fields, tagged) of every
         mirrored pin."""
         for dependency, at, fields in self.values["mirrors"]:

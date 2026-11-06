@@ -31,7 +31,7 @@ class Follows(Adapter):
     }
 
     def default_source(self, request: Request) -> str:
-        return self.values["follows"]
+        return str(self.values["follows"])
 
     def immediate(self, request: Request) -> Row | None:
         return item(

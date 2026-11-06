@@ -85,7 +85,7 @@ class OfficialManifest(Adapter):
         return problems
 
     def default_source(self, request: Request) -> str:
-        return self.values["version_url"] or self.values["manifest_url"].source
+        return str(self.values["version_url"] or self.values["manifest_url"].source)
 
     def fetch(self, request: Request, upstream: Upstream) -> list[Row]:
         version = None

@@ -4,8 +4,7 @@
 # component is active), the seed with the pins engine and the README
 # verification record, and the agents checks (Pi probes, OpenCode /skill
 # API, Pi RPC, shadowed skills) end to end through the CLI against the stubs;
-# then shellcheck over the hooks and the tests, and ruff over the Python
-# probes (the /skill API probe and the shadow scan). The tests evaluate Home
+# then shellcheck over the hooks and the tests. The tests evaluate Home
 # Manager configurations and instances with nix-instantiate against an
 # isolated store, so the sandbox needs Nix itself and the nixpkgs and
 # home-manager sources; a setup hook exports their paths. Building the Pi
@@ -34,14 +33,10 @@ cli.mkTestCheck {
   paths = [ "tests/nix/components/opencode-pi" ];
   nativeBuildInputs = [
     pkgs.nix
-    pkgs.ruff
     pkgs.shellcheck
     testEnv
   ];
   postCheck = ''
     shellcheck -x modules/components/opencode-pi/probes/*.sh tests/nix/components/opencode-pi/*.sh
-    probes=(modules/components/opencode-pi/probes/*.py)
-    ruff check --no-cache --quiet --line-length 120 --select E,F,W,B,UP,SIM,RUF "''${probes[@]}"
-    ruff format --no-cache --quiet --check --line-length 120 "''${probes[@]}"
   '';
 }

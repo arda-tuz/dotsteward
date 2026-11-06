@@ -35,22 +35,12 @@ check(project["requires-python"] == ">=3.11", "requires-python is not >=3.11 (th
 check("version" in project["dynamic"], "the version is not dynamic")
 check(setuptools["dynamic"]["version"] == {"file": "VERSION"}, "the version does not come from VERSION")
 
-# Every package and module of the three source roots is declared, nothing else.
-directories = setuptools["package-dir"]
-expected_dirs = {
-    "": "engines/local-maintained-files",
-    "dotsteward_cli": "cli/python/dotsteward_cli",
-    "dotsteward_pins": "engines/pins/dotsteward_pins",
-}
-check(directories == expected_dirs, f"package-dir is {directories}")
-found_packages = set()
-for name in ("dotsteward_cli", "dotsteward_pins"):
-    base = root / directories[name]
-    found_packages.update(
-        ".".join((name, *path.parent.relative_to(base).parts)) for path in base.rglob("__init__.py")
-    )
-check(set(setuptools["packages"]) == found_packages, f"packages differ from the tree: {sorted(found_packages)}")
-modules = {path.stem for path in (root / directories[""]).glob("*.py")}
+# The three source roots: the two package roots are searched (the wheel build of
+# checks.python-core shows what that finds), the modules of the third are named.
+check(setuptools["packages"]["find"]["where"] == ["cli/python", "engines/pins"], "a package root is not searched")
+modules_dir = "engines/local-maintained-files"
+check(setuptools["package-dir"] == {"": modules_dir}, f"package-dir is {setuptools['package-dir']}")
+modules = {path.stem for path in (root / modules_dir).glob("*.py")}
 check(set(setuptools["py-modules"]) == modules, f"py-modules differ from the tree: {sorted(modules)}")
 
 # The dependencies are what the CLI package puts into its python.
@@ -69,7 +59,7 @@ check(ruff["lint"]["select"] == ["E", "F", "W", "B", "UP", "SIM", "RUF"], "the r
 mypy = document["tool"]["mypy"]
 check(mypy["strict"] is True, "mypy is not strict")
 check(mypy["python_version"] == "3.11", "mypy does not check for requires-python")
-check(mypy["mypy_path"].split(":") == ["cli/python", "engines/pins", directories[""]], "mypy_path lacks a source root")
+check(mypy["mypy_path"].split(":") == ["cli/python", "engines/pins", modules_dir], "mypy_path lacks a source root")
 check(set(mypy["packages"]) == {"dotsteward_cli", "dotsteward_pins"}, "mypy skips a package")
 check(set(mypy["modules"]) == modules, "mypy skips a module")
 

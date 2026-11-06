@@ -68,7 +68,7 @@ class ChannelHead(Adapter):
         request.values.update(channel=channel, revision=revision, prefix=prefix, url=repository)
 
     def default_source(self, request: Request) -> str:
-        return request.values["url"]
+        return str(request.values["url"])
 
     def fetch(self, request: Request, upstream: Upstream) -> list[Row]:
         values = request.values

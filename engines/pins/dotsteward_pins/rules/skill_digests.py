@@ -47,7 +47,8 @@ class SkillDigests(Rule):
         return entries
 
     def _directory(self, ctx: Context, item: dict[str, Any]) -> Path:
-        return ctx.instance.path(ctx.instance.vendor_dir) / item["directory"]
+        directory: str = item["directory"]
+        return ctx.instance.path(ctx.instance.vendor_dir) / directory
 
     def check_scope(self, ctx: Context, c: Checker, scope: Scope) -> None:
         for item in self._entries(ctx):

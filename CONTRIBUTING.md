@@ -53,6 +53,8 @@ the CI checks.
 
 - CLI commands are files: `cli/commands/<name>.sh`, discovered by the
   dispatcher `cli/dotsteward`. The first `# summary:` line is the help text.
+  A new command is a thin file of that kind over a Python module of
+  `cli/python/dotsteward_cli`, not bash ([docs/python.md](docs/python.md)).
 - Nix checks are files: `nix/checks/<name>.nix`, discovered by
   `nix/outputs.nix`. Each is a function
   `{ self, pkgs, system, lib, dsLib }` returning a derivation; most use
@@ -97,6 +99,8 @@ change; real activation runs on CI runners and virtual machines.
 
 - Bash: `set -Eeuo pipefail`, clean under `shellcheck`; a
   `# shellcheck disable=` needs a reason on the same line.
+- Python: clean under ruff, `ruff format` and mypy in strict mode, with the
+  rules in `pyproject.toml`; `checks.python-core` runs them.
 - Nix: formatted with nixfmt (RFC style):
   `git ls-files -z '*.nix' | xargs -0 nix fmt --`.
 - Output: `[dotsteward] message` on stdout, `[dotsteward] WARNING: ...` and

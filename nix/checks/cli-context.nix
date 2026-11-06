@@ -1,9 +1,9 @@
 # Context and doctor (tests/cli/context): `dotsteward context --json`, its
 # schema (validated with python jsonschema), `dotsteward doctor` and its
 # --redact report, run against synthetic instances with the toolchain python
-# on PATH. Then shellcheck over the commands and the tests, a lint of the
-# Python modules, and a run of the packaged CLI, which must find its schema,
-# catalog and VERSION in the installed tree.
+# on PATH. Then shellcheck over the commands and the tests, and a run of the
+# packaged CLI, which must find its schema, catalog and VERSION in the
+# installed tree.
 {
   pkgs,
   dsLib,
@@ -27,20 +27,10 @@ cli.mkTestCheck {
   paths = [ "tests/cli/context" ];
   nativeBuildInputs = [
     pkgs.shellcheck
-    pkgs.ruff
     testEnv
   ];
   postCheck = ''
     shellcheck -x cli/commands/context.sh cli/commands/doctor.sh tests/cli/context/*.sh
-    modules="cli/python/dotsteward_cli/context.py cli/python/dotsteward_cli/doctor.py"
-    PYTHONDONTWRITEBYTECODE=1 python3 -c '
-    import ast, pathlib, sys
-    for name in sys.argv[1:]:
-        path = pathlib.Path(name)
-        ast.parse(path.read_text(encoding="utf-8"), str(path))
-    ' $modules
-    ruff check --no-cache --quiet --line-length 120 --select E,F,W,B,UP,SIM,RUF $modules
-    ruff format --no-cache --quiet --check --line-length 120 $modules
 
     # The packaged CLI: context and doctor from the installed tree, with an
     # environment that holds only the instance and the runtime identity.

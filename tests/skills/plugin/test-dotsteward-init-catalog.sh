@@ -18,8 +18,8 @@ catalog=$DS_REPO_ROOT/$catalog_path
 assert_exit 0 bash "$generator" --check
 
 # Every catalog component, in the order of CATALOG_ORDER in the CLI.
-order=$(sed -n 's/^CATALOG_ORDER = (\(.*\))$/\1/p' "$DS_REPO_ROOT/cli/python/dotsteward_cli/config.py" |
-  tr ',' '\n' | tr -d '" ' | sed '/^$/d' | tr '\n' ' ')
+order=$(sed -n '/^CATALOG_ORDER = ($/,/^)$/s/^[[:space:]]*"\([^"]*\)",$/\1/p' "$DS_REPO_ROOT/cli/python/dotsteward_cli/config.py" |
+  tr '\n' ' ')
 [[ -n $order ]] || ds_fail "cannot read CATALOG_ORDER"
 headings=$(sed -n 's/^## \(.*\)$/\1/p' "$catalog" | tr '\n' ' ')
 assert_eq "$order" "$headings" "catalog.md sections"

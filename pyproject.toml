@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dotsteward"
+description = "Reproducible agent workstations with Nix and Home Manager"
+requires-python = ">=3.11"
+dynamic = ["version"]
+dependencies = ["tomlkit"]
+
+[tool.setuptools]
+py-modules = ["jsonc", "lmf_validate", "local_maintained_files"]
+package-dir = { "" = "engines/local-maintained-files" }
+
+[tool.setuptools.packages.find]
+where = ["cli/python", "engines/pins"]
+
+[tool.setuptools.dynamic]
+version = { file = "VERSION" }
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+cache_dir = "/dev/null"
+mypy_path = "cli/python:engines/pins:engines/local-maintained-files"
+packages = ["dotsteward_cli", "dotsteward_pins"]
+modules = ["jsonc", "lmf_validate", "local_maintained_files"]

@@ -54,7 +54,7 @@ class DebUrl(Adapter):
     }
 
     def default_source(self, request: Request) -> str:
-        return self.values["latest_url"]
+        return str(self.values["latest_url"])
 
     def fetch(self, request: Request, upstream: Upstream) -> list[Row]:
         head = upstream.http_head(self.values["latest_url"])

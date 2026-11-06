@@ -21,7 +21,8 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from email.message import Message
-from typing import Any
+from http.client import HTTPMessage
+from typing import IO, Any
 
 from .model import STABLE_TAG, newest
 
@@ -91,7 +92,15 @@ class Head:
 class _KeepHeadRedirect(urllib.request.HTTPRedirectHandler):
     """Follows redirects of HEAD requests with HEAD (urllib uses GET)."""
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: HTTPMessage,
+        newurl: str,
+    ) -> urllib.request.Request | None:
         new = super().redirect_request(req, fp, code, msg, headers, newurl)
         if new is not None and req.get_method() == "HEAD":
             new.method = "HEAD"
@@ -109,7 +118,8 @@ class Upstream:
     def http_get(self, url: str) -> bytes:
         request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
         with self._opener.open(request, timeout=HTTP_TIMEOUT) as response:
-            return response.read()
+            body: bytes = response.read()
+        return body
 
     def http_text(self, url: str) -> str:
         return self.http_get(url).decode("utf-8", "replace")

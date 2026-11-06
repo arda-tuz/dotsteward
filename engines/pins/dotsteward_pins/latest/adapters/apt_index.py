@@ -64,7 +64,7 @@ class AptIndex(Adapter):
         request.values["arch"] = self.values["arch"] or ctx.instance.config["pins"]["apt_arch"]
 
     def default_source(self, request: Request) -> str:
-        return self.values["base"]
+        return str(self.values["base"])
 
     def fetch(self, request: Request, upstream: Upstream) -> list[Row]:
         base = self.values["base"]

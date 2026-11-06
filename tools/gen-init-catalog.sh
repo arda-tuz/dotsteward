@@ -65,13 +65,13 @@ catalog=$root/$catalog_rel
 [[ -f $config_py ]] || die "no CLI configuration module: $config_py"
 [[ -d $(dirname "$catalog") ]] || die "no skill references directory: $(dirname "$catalog")"
 
-# The canonical order: CATALOG_ORDER = ("a", "b", ...) on one line.
-order_line=$(sed -n 's/^CATALOG_ORDER = (\(.*\))$/\1/p' "$config_py")
-[[ -n $order_line ]] || die "cannot read CATALOG_ORDER from cli/python/dotsteward_cli/config.py"
+# The canonical order: the tuple CATALOG_ORDER = (...), one quoted name per
+# line.
 known=()
 while IFS= read -r name; do
   [[ -n $name ]] && known+=("$name")
-done < <(tr ',' '\n' <<<"$order_line" | sed -E 's/^[[:space:]]*"([^"]*)"[[:space:]]*$/\1/')
+done < <(sed -n '/^CATALOG_ORDER = ($/,/^)$/s/^[[:space:]]*"\([^"]*\)",$/\1/p' "$config_py")
+((${#known[@]})) || die "cannot read CATALOG_ORDER from cli/python/dotsteward_cli/config.py"
 
 present=()
 while IFS= read -r -d '' path; do

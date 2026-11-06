@@ -69,7 +69,7 @@ def assets(value: Any) -> Assets:
     for key, template in value.items():
         if key not in ASSET_KEYS:
             raise DeclarationError(f"unknown system or platform {key!r} (known: {', '.join(ASSET_KEYS)})")
-        platform = SYSTEM_PLATFORMS.get(key, key)
+        platform = str(SYSTEM_PLATFORMS.get(key, key))
         if platform in owners:
             raise DeclarationError(f"{owners[platform]!r} and {key!r} name the same platform")
         owners[platform] = key
@@ -86,7 +86,8 @@ def asset_details(
     """The release asset the template names: its name, size, digest and
     URL, or ``asset_missing``."""
     name = template.render(version=version, tag=tag)
-    entries = release.get("assets") if isinstance(release.get("assets"), list) else []
+    assets = release.get("assets")
+    entries = assets if isinstance(assets, list) else []
     match = next((entry for entry in entries if isinstance(entry, dict) and entry.get("name") == name), None)
     if match is None:
         return {"asset_missing": name}

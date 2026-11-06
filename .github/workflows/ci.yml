@@ -61,17 +61,11 @@ jobs:
       # Fakes for QEMU and SSH: it never boots a virtual machine.
       - name: VM harness self-test
         run: bash tests/vm/selftest.sh
-      - name: Python syntax
-        run: |
-          dirs=()
-          for dir in cli/python engines; do
-            [[ ! -d $dir ]] || dirs+=("$dir")
-          done
-          if ((${#dirs[@]})); then
-            find "${dirs[@]}" -name '*.py' -print0 | xargs -0 -r python3 -m py_compile
-          else
-            echo "no Python sources yet"
-          fi
+      # ruff, ruff format, mypy in strict mode, a wheel build and the tests of
+      # the package: one definition, checks.python-core, with the rules in
+      # pyproject.toml and the tools pinned by flake.lock.
+      - name: Python package
+        run: nix build -L --no-link .#checks.x86_64-linux.python-core
 
   check:
     # The full check: main (push, nightly, dispatch) and pull requests from

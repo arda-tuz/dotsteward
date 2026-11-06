@@ -513,7 +513,7 @@ def redact(
     context is null when the configuration is invalid."""
     env = os.environ if env is None else env
     replace = _replacer(*_terms(report, env, raw))
-    result = json.loads(json.dumps(report))
+    result: dict[str, Any] = json.loads(json.dumps(report))
     document = result["context"]
     if document is not None:
         settings = document["settings"]

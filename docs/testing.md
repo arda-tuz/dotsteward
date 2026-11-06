@@ -115,7 +115,7 @@ real person.
 | `tests/harness` | the stubs, fixtures and fake remotes themselves | `checks.harness` |
 | `tests/privacy` | the scanner | `checks.privacy` |
 | `tests/hooks` | the pre-push hook | outside the sandbox (needs a writable bare remote): the host-level tests of `ci.yml` |
-| `tests/cli` | CLI library, context, gate, update, bootstrap, rebuild, methods, launcher, E2E runner | `checks.cli-*` |
+| `tests/cli` | CLI library, context, gate, update, bootstrap, rebuild, methods, launcher, E2E runner, and in `tests/cli/core` the Python package and its primitives | `checks.cli-*`, `checks.python-core` |
 | `tests/engines` | the pins and settings engines | `checks.pins-*`, `checks.settings*` |
 | `tests/agents`, `tests/probes` | the agents installer and the probe runner | `checks.agents`, `checks.probes` |
 | `tests/nix` | the Nix library, core modules, instances and every catalog component | `checks.nix-*`, `checks.component-<name>`, `checks.darwin-eval` |
@@ -175,7 +175,7 @@ result, so:
 
 | Workflow | What it runs |
 | --- | --- |
-| `ci.yml` | lint on every event: shellcheck (one process per CPU), actionlint, Python syntax and the VM harness self-test (`tests/vm/selftest.sh`, no VM boots); the full check (`nix flake check -L` with `--max-jobs` and `--cores` that run no more test files at once than the runner has vCPUs, and the host-level tests one file at a time: `tests/hooks`, `tests/host`, `tests/channels`) on every push to `main`, nightly, on a manual dispatch and for pull requests from forks, not on the pull requests and branches of the repository itself |
+| `ci.yml` | lint on every event: shellcheck (one process per CPU), actionlint, the Python package (`checks.python-core`: ruff, mypy in strict mode, its tests) and the VM harness self-test (`tests/vm/selftest.sh`, no VM boots); the full check (`nix flake check -L` with `--max-jobs` and `--cores` that run no more test files at once than the runner has vCPUs, and the host-level tests one file at a time: `tests/hooks`, `tests/host`, `tests/channels`) on every push to `main`, nightly, on a manual dispatch and for pull requests from forks, not on the pull requests and branches of the repository itself |
 | `privacy.yml` | the privacy scans ([privacy.md](privacy.md#where-scans-run)) |
 | `clean-install.yml` | a fresh Ubuntu runner set up end to end through `bootstrap.sh`, switched, checked, carried to a second home and rolled back |
 | `macos-smoke.yml` | a real Mac (the arm64 `macos-15` runner): stage 0, a new darwin instance, build, switch and end-to-end checks, and `nix flake check` of the darwin checks (`checks.aarch64-darwin`); on release tags (the release workflow dispatches it on the tags it makes), nightly and on demand |

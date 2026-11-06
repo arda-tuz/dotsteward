@@ -137,6 +137,7 @@ let
         ".githooks"
         ".editorconfig"
         ".gitignore"
+        "pyproject.toml"
         "plugins"
         ".claude-plugin"
         ".agents"
@@ -464,6 +465,7 @@ let
         "engines"
         "nix/checks"
         "nix/packages/dotsteward.nix"
+        "pyproject.toml"
         "tests/cli/core"
       ])
     ];

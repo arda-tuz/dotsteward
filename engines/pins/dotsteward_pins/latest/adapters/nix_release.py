@@ -54,7 +54,7 @@ class NixRelease(Adapter):
         request.values["template"] = template
 
     def default_source(self, request: Request) -> str:
-        text = request.values["template"].source
+        text = str(request.values["template"].source)
         return text[: text.rfind("/", 0, text.index("{version}")) + 1] if "{version}" in text else text
 
     def fetch(self, request: Request, upstream: Upstream) -> list[Row]:

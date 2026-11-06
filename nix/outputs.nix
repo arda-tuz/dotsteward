@@ -73,6 +73,7 @@ let
     "darwin-eval" # the darwin platform layer and the darwin instance contract, natively
     "harness" # the stubs and helpers that every test check runs on
     "privacy" # the scanner behind the pre-push hook and contribute check
+    "python-core" # the Python package and its primitives, the instance lock among them
     "settings" # the settings engine in a darwin home
     "settings-jsonc" # the JSONC reader of the settings engine
     "skeleton" # the dispatcher and the packaged CLI with its darwin toolchain

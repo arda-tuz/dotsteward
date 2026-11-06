@@ -48,7 +48,7 @@ import sys
 import tomllib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from dotsteward_cli import config
 
@@ -127,7 +127,7 @@ def _names(value: Any) -> list[str]:
     return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
 
-def _field(table: Mapping[str, Any] | None, key: str, kind: type[dict] | type[list]) -> Any:
+def _field(table: Mapping[str, Any] | None, key: str, kind: type[dict[str, Any]] | type[list[Any]]) -> Any:
     """table[key] when table is a mapping and the value has the JSON type
     kind (dict or list), else an empty value of that type."""
     value = table.get(key) if isinstance(table, Mapping) else None
@@ -524,7 +524,7 @@ error, an invalid configuration or an unreadable source."""
 class _Parser(argparse.ArgumentParser):
     """Usage errors exit 1 (the bash convention), not argparse's 2."""
 
-    def error(self, message: str) -> None:  # type: ignore[override]
+    def error(self, message: str) -> NoReturn:
         config._write(f"[dotsteward] ERROR: {message}", sys.stderr)
         config._write(f"[dotsteward] run 'dotsteward {self.prog} --help' for the usage", sys.stderr)
         sys.exit(1)

@@ -40,7 +40,7 @@ class Framework(Adapter):
     BUILT_IN = True
 
     def default_source(self, request: Request) -> str:
-        return request.values["source"]
+        return str(request.values["source"])
 
     def fetch(self, request: Request, upstream: Upstream) -> list[Row]:
         values = request.values

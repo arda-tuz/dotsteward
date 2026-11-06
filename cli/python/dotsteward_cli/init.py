@@ -185,7 +185,7 @@ def error(text: str) -> None:
 
 
 class _Parser(argparse.ArgumentParser):
-    def error(self, message: str) -> NoReturn:  # type: ignore[override]
+    def error(self, message: str) -> NoReturn:
         raise UsageError(message)
 
 

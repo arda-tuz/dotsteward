@@ -51,14 +51,26 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 FRAMEWORK_ROOT = Path(__file__).resolve().parents[3]
 
 SUPPORTED_VERSION = 1
 
 # The public catalog in its canonical order (default of components.order).
-CATALOG_ORDER = ("shell", "herdr", "claude-code", "codex", "opencode-pi", "vscode", "pdfcraft", "gridcraft", "wordcraft", "deckcraft", "craft-anything")
+CATALOG_ORDER = (
+    "shell",
+    "herdr",
+    "claude-code",
+    "codex",
+    "opencode-pi",
+    "vscode",
+    "pdfcraft",
+    "gridcraft",
+    "wordcraft",
+    "deckcraft",
+    "craft-anything",
+)
 
 # Keys of the [profiles] table that are not profile tables.
 PROFILE_KEYS = ("names", "default", "check", "bootstrap")
@@ -175,7 +187,7 @@ def nix_equal(left: Any, right: Any) -> bool:
     """Equality as Nix ``==``: numbers compare by value (1 == 1.0), booleans
     never equal numbers, lists and tables compare element-wise."""
     if _is_number(left) and _is_number(right):
-        return left == right
+        return bool(left == right)
     if _is_bool(left) or _is_bool(right):
         return _is_bool(left) and _is_bool(right) and left == right
     if isinstance(left, list) and isinstance(right, list):
@@ -184,7 +196,7 @@ def nix_equal(left: Any, right: Any) -> bool:
         return left.keys() == right.keys() and all(nix_equal(left[k], right[k]) for k in left)
     if type(left) is not type(right):
         return False
-    return left == right
+    return bool(left == right)
 
 
 def _elem(value: Any, values: Sequence[Any]) -> bool:
@@ -309,7 +321,8 @@ def _schema_path(root: Path) -> Path:
 @cache
 def _load_schema(path: str) -> dict[str, Any]:
     with open(path, encoding="utf-8") as handle:
-        return json.load(handle)
+        document: dict[str, Any] = json.load(handle)
+    return document
 
 
 def schema(root: Path = FRAMEWORK_ROOT) -> dict[str, Any]:
@@ -958,14 +971,14 @@ def runtime_values(instance: Instance, env: Mapping[str, str] | None = None) -> 
         ("nix_max_jobs", "DOTSTEWARD_CONTRIBUTE_NIX_MAX_JOBS"),
         ("nix_cores", "DOTSTEWARD_CONTRIBUTE_NIX_CORES"),
     ):
-        value = _env_get(env, name)
-        if value is None:
+        setting = _env_get(env, name)
+        if setting is None:
             continue
         minimum = gate_schema[key]["minimum"]
-        if re.fullmatch(r"[0-9]+", value, re.ASCII) and int(value) >= minimum:
-            check[key] = int(value)
+        if re.fullmatch(r"[0-9]+", setting, re.ASCII) and int(setting) >= minimum:
+            check[key] = int(setting)
         else:
-            problems.append(f"{name}: expected an integer >= {minimum}, got {to_json(value)}")
+            problems.append(f"{name}: expected an integer >= {minimum}, got {to_json(setting)}")
     memory_mib = _machine_fact(env, "DOTSTEWARD_MEMORY_MIB", problems)
     cpus = _machine_fact(env, "DOTSTEWARD_CPU_COUNT", problems)
     derive = None in (gate["nix_max_jobs"], gate["nix_cores"], check["nix_max_jobs"], check["nix_cores"])
@@ -1020,7 +1033,7 @@ def runtime_values(instance: Instance, env: Mapping[str, str] | None = None) -> 
 
 
 def _is_control(char: str) -> bool:
-    return ord(char) < 0x20 or ord(char) == 0x7F  # noqa: PLR2004 # C0 controls and DEL
+    return ord(char) < 0x20 or ord(char) == 0x7F  # C0 controls and DEL
 
 
 def _shell_quote(value: str) -> str:
@@ -1173,7 +1186,7 @@ def export_variables(instance: Instance, env: Mapping[str, str] | None = None) -
 class _Parser(argparse.ArgumentParser):
     """Usage errors exit 1 (the bash convention), not argparse's 2."""
 
-    def error(self, message: str) -> None:  # type: ignore[override]
+    def error(self, message: str) -> NoReturn:
         self.print_usage(sys.stderr)
         _write(f"[dotsteward] ERROR: {message}", sys.stderr)
         sys.exit(1)

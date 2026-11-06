@@ -4,8 +4,7 @@
 # exporter, and the Nix parity test, which evaluates lib/config.nix with
 # nix-instantiate against an isolated store (as checks.nix-lib does), so
 # the sandbox needs Nix and the nixpkgs source. Then shellcheck over the
-# library and its tests, a parse of the Python package, and checks of the
-# installed package's catalog.
+# library and its tests, and checks of the installed package's catalog.
 {
   pkgs,
   dsLib,
@@ -37,11 +36,6 @@ cli.mkTestCheck {
   postCheck = ''
     shellcheck -x cli/lib/lib.sh cli/lib/config.sh cli/lib/platform-linux.sh \
       tests/cli/lib/*.sh tests/cli/config/*.sh
-    PYTHONDONTWRITEBYTECODE=1 python3 -c '
-    import ast, pathlib
-    for path in sorted(pathlib.Path("cli/python").rglob("*.py")):
-        ast.parse(path.read_text(encoding="utf-8"), str(path))
-    '
 
     # The package: it ships no module code, only the component seeds under
     # modules/components, and its catalog.json lists the framework's catalog

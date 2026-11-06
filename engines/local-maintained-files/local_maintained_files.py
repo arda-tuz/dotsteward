@@ -157,7 +157,7 @@ def same(left: Any, right: Any) -> bool:
         return left.keys() == right.keys() and all(same(left[key], right[key]) for key in left)
     if isinstance(left, (list, tuple)):
         return len(left) == len(right) and all(same(a, b) for a, b in zip(left, right, strict=True))
-    return left == right
+    return bool(left == right)
 
 
 def check_value(value: Any, where: str, home: str) -> None:
@@ -280,13 +280,13 @@ def _resolve_repo(args: argparse.Namespace) -> str:
     baked into the local-maintained-files alias). An invalid
     DOTSTEWARD_INSTANCE stays an error."""
     if args.repo is not None:
-        return os.path.abspath(args.repo)
+        return str(os.path.abspath(args.repo))
     try:
         return str(ds_config.discover_instance())
     except ds_config.DotstewardError:
         if args.repo_default is None or os.environ.get("DOTSTEWARD_INSTANCE"):
             raise
-        return os.path.abspath(args.repo_default)
+        return str(os.path.abspath(args.repo_default))
 
 
 def resolve_context(args: argparse.Namespace) -> Context:
@@ -576,6 +576,13 @@ class Entry:
         else:
             raise LmfError(f"{self.id}: unknown kind {self.kind!r}")
 
+    @property
+    def key_target(self) -> Target:
+        """The target of a key entry; a whole-file entry has none."""
+        if self.target is None:
+            raise LmfError(f"{self.id}: a whole-file entry has no target")
+        return self.target
+
 
 def read_buffer_text(path: str) -> str:
     try:
@@ -627,6 +634,11 @@ class Buffer:
             raise LmfError(f"{entry.id}: cannot read {source}: {error.strerror}") from error
         check_file_content(data, entry.id, self.home)
         return (hashlib.sha256(data).hexdigest(), entry.mode)
+
+    def add_entry(self, item: tomlkit.items.Table) -> None:
+        """Appends an entry to the document; parse_buffer has checked that entries is an array."""
+        entries: Any = self.doc["entries"]
+        entries.append(item)
 
     def save(self) -> None:
         text = self.prefix + render_entries(self.doc["entries"])
@@ -722,7 +734,8 @@ class LiveDocument:
 
     def __init__(self, target: Target, home: str, problem: str | None = None) -> None:
         self.target = target
-        self.path = expand(target.path, home) if target.path is not None else None
+        # A target without a path on this platform has a problem: never read or written.
+        self.path = expand(target.path, home) if target.path is not None else ""
         self.exists = False
         self.error = None
         self.doc: Any = None
@@ -962,7 +975,7 @@ class State:
         if not os.path.isfile(path):
             return None
         if self.backup_root is None:
-            stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+            stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%fZ")
             self.backup_root = os.path.join(self.directory, "backups", stamp)
         destination = os.path.join(self.backup_root, path.lstrip("/"))
         if os.path.exists(destination):
@@ -975,7 +988,7 @@ class State:
 
 
 def now_iso() -> str:
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # --- State computation --------------------------------------------------------------------
@@ -1033,7 +1046,7 @@ class Session:
             row = Row(entry)
             try:
                 if entry.kind == "key":
-                    document = self.document(entry.target.name)
+                    document = self.document(entry.key_target.name)
                     if document.error:
                         raise LmfError(document.error)
                     row.repo = entry.repo_value
@@ -1086,8 +1099,8 @@ class Session:
         entry = row.entry
         backup = None
         if entry.kind == "key":
-            document = self.document(entry.target.name)
-            if document.exists and entry.target.backup:
+            document = self.document(entry.key_target.name)
+            if document.exists and entry.key_target.backup:
                 backup = self.state.backup(document.path)
             document.set(entry.key, value)
         else:
@@ -1122,7 +1135,7 @@ class Session:
                 raise LmfError(check.error)
             for row in self.rows:
                 entry = row.entry
-                if entry.kind == "key" and entry.target.name == name and not same(check.get(entry.key), row.live):
+                if entry.kind == "key" and entry.key_target.name == name and not same(check.get(entry.key), row.live):
                     raise LmfError(f"{entry.id}: the written value does not read back: {document.path}")
             hook = self.reload_hook(document.target)
             if hook is not None and hook.key not in reloaded:
@@ -1149,8 +1162,11 @@ class Session:
                 if os.path.exists(source):
                     os.unlink(source)
             else:
-                check_file_content(row.live_data, entry.id, self.home)
-                atomic_write(source, row.live_data, int(value[1], 8))
+                data = row.live_data
+                if data is None:
+                    raise LmfError(f"{entry.id}: the live file was not read: {entry.path}")
+                check_file_content(data, entry.id, self.home)
+                atomic_write(source, data, int(value[1], 8))
                 if "absent" in entry.item:
                     del entry.item["absent"]
                 entry.item["mode"] = value[1]
@@ -1233,7 +1249,7 @@ def command_status(session: Session, args: argparse.Namespace) -> int:
     width = max((len(row.entry.id) for row in session.rows), default=2)
     for row in session.rows:
         entry = row.entry
-        place = entry.target.name if entry.kind == "key" else "file"
+        place = entry.key_target.name if entry.kind == "key" else "file"
         detail = row.error if row.state == "error" else f"local={describe(row.live)} repo={describe(row.repo)}"
         print(f"{entry.id:<{width}}  {row.state:<14} {place:<16} {entry.label}  {detail}")
     counts = collections.Counter(row.state for row in session.rows)
@@ -1255,13 +1271,13 @@ def status_payload(session: Session) -> dict[str, Any]:
         entry = row.entry
         modified = None
         if row.live_mtime is not None:
-            moment = datetime.datetime.fromtimestamp(row.live_mtime, datetime.timezone.utc)
+            moment = datetime.datetime.fromtimestamp(row.live_mtime, datetime.UTC)
             modified = moment.strftime("%Y-%m-%dT%H:%M:%SZ")
         entries.append(
             {
                 "id": entry.id,
                 "kind": entry.kind,
-                "target": entry.target.name if entry.kind == "key" else None,
+                "target": entry.key_target.name if entry.kind == "key" else None,
                 "path": entry.key if entry.kind == "key" else entry.path,
                 "note": entry.note,
                 "state": row.state,
@@ -1330,7 +1346,7 @@ def command_flush(session: Session, args: argparse.Namespace) -> int:
     for row in to_write:
         if row.entry.kind == "key":
             check_value(row.live, row.entry.id, session.home)
-        else:
+        elif row.live_data is not None:
             check_file_content(row.live_data, row.entry.id, session.home)
     for row in to_write:
         old = row.repo
@@ -1397,7 +1413,8 @@ def command_verify(session: Session, args: argparse.Namespace) -> int:
 
 def parse_key(args: argparse.Namespace) -> list[str]:
     if args.key_json is None:
-        return args.key.split(".")
+        parts: list[str] = args.key.split(".")
+        return parts
     try:
         key = json.loads(args.key_json)
     except ValueError as error:
@@ -1435,7 +1452,7 @@ def command_track(session: Session, args: argparse.Namespace) -> int:
         item["absent"] = True
     else:
         item["value"] = toml_value(value)
-    session.buffer.doc["entries"].append(item)
+    session.buffer.add_entry(item)
     parse_buffer(session.buffer.doc, session.context)
     session.buffer.save()
     log(f"{args.id}: now tracked ({target.name} {'.'.join(key)} = {describe(value)})")
@@ -1458,7 +1475,7 @@ def command_track_file(session: Session, args: argparse.Namespace) -> int:
     check_file_content(data, args.id, session.home)
     mode = args.mode or f"{stat.S_IMODE(os.stat(live_path).st_mode):04o}"
     probe["mode"] = mode
-    session.buffer.doc["entries"].append(probe)
+    session.buffer.add_entry(probe)
     parse_buffer(session.buffer.doc, session.context)
     atomic_write(os.path.join(session.buffer.files_dir, args.source), data, int(mode, 8))
     session.buffer.save()
@@ -1498,7 +1515,7 @@ def command_validate(context: Context, args: argparse.Namespace) -> int:
         validator = importlib.import_module("lmf_validate")
     except ImportError as error:
         raise LmfError("validate is not installed (lmf_validate.py next to the engine)") from error
-    return validator.main(context)
+    return int(validator.main(context))
 
 
 def find_row(session: Session, identifier: str) -> Row:
