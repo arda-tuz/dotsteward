@@ -1,0 +1,39 @@
+# The keys that later parts of the framework read: the producer, skill tracking, the
+# policy, and what a component says about its updates.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]
+
+[hosts]
+producer = "laptop-1"
+
+[policy]
+official_sources_only = false
+observed_state_push = false
+
+[skills]
+tracking = true
+capture_delay_seconds = 0
+capture_max_mib = 1
+
+[components.shell]
+enable = true
+updater = "nix"
+
+[components.example-app]
+enable = true
+method = "deb"
+updater = "apt"
+track = ["example-app", "example-app-data"]
+version = "16"
+reason = "the data stays on this major version"

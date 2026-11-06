@@ -15,16 +15,22 @@
     "root": "${XDG_STATE_HOME:-~/.local/state}/dotsteward"
   },
   "nix": {
-    "systems": ["x86_64-linux"],
+    "systems": [
+      "x86_64-linux"
+    ],
     "allow_unfree": false,
     "state_version": "26.05"
   },
   "profiles": {
-    "names": ["main"],
+    "names": [
+      "main"
+    ],
     "default": "main",
     "check": "main",
     "bootstrap": "main",
-    "main": { "mode": "fresh" }
+    "main": {
+      "mode": "fresh"
+    }
   },
   "platform": {
     "linux": {
@@ -58,13 +64,116 @@
     "upgrade_subject": "chore(dotsteward): upgrade to {version}"
   },
   "components": {
-    "order": ["shell", "herdr", "claude-code", "codex", "opencode-pi", "vscode"],
-    "shell": { "enable": false, "source": "catalog", "method": null, "method_by_platform": { "linux": null, "darwin": null }, "profiles": null, "options": {} },
-    "herdr": { "enable": false, "source": "catalog", "method": null, "method_by_platform": { "linux": null, "darwin": null }, "profiles": null, "options": {} },
-    "claude-code": { "enable": false, "source": "catalog", "method": null, "method_by_platform": { "linux": null, "darwin": null }, "profiles": null, "options": {} },
-    "codex": { "enable": false, "source": "catalog", "method": null, "method_by_platform": { "linux": null, "darwin": null }, "profiles": null, "options": {} },
-    "opencode-pi": { "enable": false, "source": "catalog", "method": null, "method_by_platform": { "linux": null, "darwin": null }, "profiles": null, "options": {} },
-    "vscode": { "enable": false, "source": "catalog", "method": null, "method_by_platform": { "linux": null, "darwin": null }, "profiles": null, "options": {} }
+    "order": [
+      "shell",
+      "herdr",
+      "claude-code",
+      "codex",
+      "opencode-pi",
+      "vscode"
+    ],
+    "shell": {
+      "enable": false,
+      "source": "catalog",
+      "method": null,
+      "method_by_platform": {
+        "linux": null,
+        "darwin": null
+      },
+      "profiles": null,
+      "options": {},
+      "machines": null,
+      "tags": null,
+      "updater": null,
+      "track": null,
+      "version": null,
+      "reason": null
+    },
+    "herdr": {
+      "enable": false,
+      "source": "catalog",
+      "method": null,
+      "method_by_platform": {
+        "linux": null,
+        "darwin": null
+      },
+      "profiles": null,
+      "options": {},
+      "machines": null,
+      "tags": null,
+      "updater": null,
+      "track": null,
+      "version": null,
+      "reason": null
+    },
+    "claude-code": {
+      "enable": false,
+      "source": "catalog",
+      "method": null,
+      "method_by_platform": {
+        "linux": null,
+        "darwin": null
+      },
+      "profiles": null,
+      "options": {},
+      "machines": null,
+      "tags": null,
+      "updater": null,
+      "track": null,
+      "version": null,
+      "reason": null
+    },
+    "codex": {
+      "enable": false,
+      "source": "catalog",
+      "method": null,
+      "method_by_platform": {
+        "linux": null,
+        "darwin": null
+      },
+      "profiles": null,
+      "options": {},
+      "machines": null,
+      "tags": null,
+      "updater": null,
+      "track": null,
+      "version": null,
+      "reason": null
+    },
+    "opencode-pi": {
+      "enable": false,
+      "source": "catalog",
+      "method": null,
+      "method_by_platform": {
+        "linux": null,
+        "darwin": null
+      },
+      "profiles": null,
+      "options": {},
+      "machines": null,
+      "tags": null,
+      "updater": null,
+      "track": null,
+      "version": null,
+      "reason": null
+    },
+    "vscode": {
+      "enable": false,
+      "source": "catalog",
+      "method": null,
+      "method_by_platform": {
+        "linux": null,
+        "darwin": null
+      },
+      "profiles": null,
+      "options": {},
+      "machines": null,
+      "tags": null,
+      "updater": null,
+      "track": null,
+      "version": null,
+      "reason": null
+    }
   },
   "settings": {
     "buffer_dir": "local-maintained-files",
@@ -75,11 +184,16 @@
     "vendor_dir": "agent/skills",
     "hm_root": ".agents/skills",
     "installer": null,
-    "overlays": {}
+    "overlays": {},
+    "tracking": false,
+    "capture_delay_seconds": 600,
+    "capture_max_mib": 100
   },
   "pins": {
     "versions_lock": "versions.lock.json",
-    "excluded_flake_inputs": ["dotsteward"],
+    "excluded_flake_inputs": [
+      "dotsteward"
+    ],
     "nixpkgs_versions": {},
     "apt_arch": "amd64"
   },
@@ -105,5 +219,16 @@
     "repo_owned_revision": null,
     "host_input": "instance",
     "check_aliases": {}
+  },
+  "hosts": {
+    "producer": null
+  },
+  "policy": {
+    "official_sources_only": true,
+    "persistent_agentic_updates": false,
+    "native_application_updates": true,
+    "scheduled_repository_updates": false,
+    "major_version_review_required": true,
+    "observed_state_push": true
   }
 }

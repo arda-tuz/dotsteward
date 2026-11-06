@@ -369,6 +369,72 @@
           },
           "default": {},
           "description": "Overlay file per framework skill; agent/overlays/<skill>.md is used when it exists and no entry is given."
+        },
+        "tracking": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the skills this machine creates are tracked and published by themselves."
+        },
+        "capture_delay_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 600,
+          "description": "How long a changed skill of this machine stays quiet before it is captured."
+        },
+        "capture_max_mib": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 100,
+          "description": "The size above which a skill is refused for capture, in MiB."
+        }
+      },
+      "additionalProperties": false
+    },
+    "hosts": {
+      "type": "object",
+      "description": "The machines of the instance.",
+      "properties": {
+        "producer": {
+          "$ref": "#/$defs/machineName",
+          "default": null,
+          "description": "The machine that moves the values that come from upstream (flake.lock, pins, third-party skills); default (null): none named."
+        }
+      },
+      "additionalProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "description": "The rules of the updates. A later release reads them here; the policy of the versions lock still counts.",
+      "properties": {
+        "official_sources_only": {
+          "type": "boolean",
+          "default": true,
+          "description": "Versions come from official sources only."
+        },
+        "persistent_agentic_updates": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether an update may start an agent on its own."
+        },
+        "native_application_updates": {
+          "type": "boolean",
+          "default": true,
+          "description": "An application with its own updater keeps it."
+        },
+        "scheduled_repository_updates": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the intent and the shared locks change on a schedule."
+        },
+        "major_version_review_required": {
+          "type": "boolean",
+          "default": true,
+          "description": "A constrained component, a series change or a framework major waits for a review."
+        },
+        "observed_state_push": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether a machine publishes the state it observes to its own state branch."
         }
       },
       "additionalProperties": false
@@ -585,6 +651,11 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "machineName": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+      "description": "A machine name: the file name of hosts/<name>.toml."
+    },
     "componentName": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$",
@@ -684,6 +755,50 @@
           "additionalProperties": true,
           "default": {},
           "description": "Component-owned options, passed to the module unchanged; never validated here."
+        },
+        "machines": {
+          "const": null,
+          "default": null,
+          "description": "Reserved: the machines the component is for. A later release acts on it; until then a value is refused, because a component would stay active on every other machine."
+        },
+        "tags": {
+          "const": null,
+          "default": null,
+          "description": "Reserved: the machine tags the component is for. A later release acts on it; until then a value is refused, for the same reason."
+        },
+        "updater": {
+          "type": "string",
+          "enum": [
+            "apt",
+            "nix",
+            "dotsteward",
+            "self",
+            "none",
+            "snap",
+            "flatpak"
+          ],
+          "default": null,
+          "description": "The one thing that updates the component; a later release acts on it."
+        },
+        "track": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "default": null,
+          "description": "The package names an update follows for the deb method; a later release acts on it."
+        },
+        "version": {
+          "$ref": "#/$defs/nonEmptyString",
+          "default": null,
+          "description": "A constraint on the version; a later release acts on it."
+        },
+        "reason": {
+          "$ref": "#/$defs/nonEmptyString",
+          "default": null,
+          "description": "Why the version is constrained."
         }
       },
       "additionalProperties": false

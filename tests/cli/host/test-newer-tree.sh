@@ -45,7 +45,7 @@ stops_with_way_out txn status
 stops_with_way_out context --json
 stops_with_way_out skills effective --json
 expected_status=2 stops_with_way_out pins check
-assert_exit 1 ds settings status
+assert_exit 2 ds settings status
 assert_contains "$DS_STDERR" "$way_out"
 
 # The same revision: the key is a mistake, and the pinned CLI would say the same.

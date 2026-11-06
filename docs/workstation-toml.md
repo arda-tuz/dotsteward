@@ -150,6 +150,12 @@ catalog component (see [catalog.md](catalog.md)) or a private component in
 | `components.<name>.method_by_platform.darwin` | none | The method on macOS; wins over `method`. |
 | `components.<name>.profiles` | every profile | The profiles where the component is active. |
 | `components.<name>.options` | `{}` | Options owned by the component, passed to its module unchanged; its README documents them. |
+| `components.<name>.machines` | none | Reserved for a later release, which scopes a component to named machines. A value is refused until then, because the component would stay active on every other machine. |
+| `components.<name>.tags` | none | Reserved in the same way: the machine tags the component is for. |
+| `components.<name>.updater` | none | The one thing that updates the component: `apt`, `nix`, `dotsteward`, `self`, `none`, `snap` or `flatpak`. A later release acts on it. |
+| `components.<name>.track` | none | The package names an update follows for the `deb` method. A later release acts on it. |
+| `components.<name>.version` | none | A constraint on the version. A later release acts on it. |
+| `components.<name>.reason` | none | Why the version is constrained. |
 
 ## `[settings]`
 
@@ -169,6 +175,31 @@ The settings buffer (see [concepts.md](concepts.md#settings-buffer)).
 | `skills.hm_root` | `".agents/skills"` | Home-relative root where Home Manager deploys skills. |
 | `skills.installer` | the native copy | An installer argv template with `{source}`, `{name}` and `{home}`. |
 | `skills.overlays` | `{}` | An overlay file per framework skill; `agent/overlays/<skill>.md` is used when it exists and no entry is given. |
+| `skills.tracking` | `false` | Whether the skills this machine creates are tracked and published by themselves. |
+| `skills.capture_delay_seconds` | `600` | How long a changed skill of this machine stays quiet before it is captured. |
+| `skills.capture_max_mib` | `100` | The size above which a skill is refused for capture, in MiB. |
+
+## `[hosts]`
+
+The machines of the instance.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `hosts.producer` | none | The machine that moves the values that come from upstream: `flake.lock`, the pins and the third-party skills. |
+
+## `[policy]`
+
+The rules of the updates. A later release reads them here; until then the
+`policy` of `versions.lock.json` counts.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `policy.official_sources_only` | `true` | Versions come from official sources only. |
+| `policy.persistent_agentic_updates` | `false` | Whether an update may start an agent on its own. |
+| `policy.native_application_updates` | `true` | An application with its own updater keeps it. |
+| `policy.scheduled_repository_updates` | `false` | Whether the intent and the shared locks change on a schedule. |
+| `policy.major_version_review_required` | `true` | A constrained component, a series change or a framework major waits for a review. |
+| `policy.observed_state_push` | `true` | Whether a machine publishes the state it observes to its own state branch. |
 
 ## `[pins]`
 

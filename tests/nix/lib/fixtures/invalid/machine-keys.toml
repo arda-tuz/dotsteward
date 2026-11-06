@@ -1,0 +1,36 @@
+# expect: components.shell.track: expected at least 1 item, got 0
+# expect: components.shell.updater: expected one of "apt", "nix", "dotsteward", "self", "none", "snap", "flatpak", got "manual"
+# expect: hosts.producer: "Not_A_Name" does not match "^[a-z0-9][a-z0-9-]{0,31}$"
+# expect: policy.official_sources_only: expected a boolean, got a string
+# expect: skills.capture_delay_seconds: expected an integer >= 0, got -1
+# expect: skills.capture_max_mib: expected an integer >= 1, got 0
+# expect: skills.tracking: expected a boolean, got a string
+# jsonschema: invalid
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["main"]
+
+[hosts]
+producer = "Not_A_Name"
+
+[policy]
+official_sources_only = "yes"
+
+[skills]
+tracking = "yes"
+capture_delay_seconds = -1
+capture_max_mib = 0
+
+[components.shell]
+updater = "manual"
+track = []
