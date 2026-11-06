@@ -64,12 +64,14 @@ assert_not_contains "$DS_STDERR" "trying again"
 tools=$DS_TEST_ROOT/tools
 mkdir -p "$tools"
 real_timeout=$(command -v timeout)
-{
-  printf '#!%s\n' "$BASH"
-  printf 'first=%q\n' "$DS_TEST_ROOT/timeout-once"
-  printf 'if [[ -e $first ]]; then rm -f -- "$first"; exit 124; fi\n'
-  printf 'exec %q "$@"\n' "$real_timeout"
-} >"$tools/timeout"
+cat >"$tools/timeout" <<EOF
+#!$BASH
+if [[ -e $DS_TEST_ROOT/timeout-once ]]; then
+  rm -f -- "$DS_TEST_ROOT/timeout-once"
+  exit 124
+fi
+exec "$real_timeout" "\$@"
+EOF
 chmod 0755 "$tools/timeout"
 : >"$DS_TEST_ROOT/timeout-once"
 PATH=$tools:$PATH assert_exit 0 run_contribute start --slug timed-out
@@ -79,7 +81,10 @@ assert_contains "$DS_STDERR" "[dotsteward] WARNING: cannot fetch main from origi
 
 # A first pause of 100 s shows the limit: it is cut to what the limit leaves.
 # The pauses cost no time.
-printf '#!%s\nprintf "%%s\\n" "$1" >>%q\n' "$BASH" "$DS_TEST_ROOT/sleep.log" >"$tools/sleep"
+cat >"$tools/sleep" <<EOF
+#!$BASH
+printf '%s\n' "\$1" >>"$DS_TEST_ROOT/sleep.log"
+EOF
 chmod 0755 "$tools/sleep"
 start_slow() {
   PATH=$tools:$PATH DOTSTEWARD_CONTRIBUTE_POLL_SECONDS=100 run_contribute start --slug "$1"

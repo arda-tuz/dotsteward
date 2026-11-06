@@ -246,8 +246,10 @@ mkdir -p "$DS_TEST_ROOT/candidate/bin"
   printf '#!%s\n' "$BASH"
   printf 'set -euo pipefail\n'
   printf 'source %q\n' "$DS_REPO_ROOT/tests/lib/harness.sh"
-  printf 'ds_record_call candidate-cli "$@"\n'
-  printf 'ds_record_call candidate-path "$PATH"\n'
+  cat <<'EOF'
+ds_record_call candidate-cli "$@"
+ds_record_call candidate-path "$PATH"
+EOF
   printf 'exec %q "$@"\n' "$rt_fw/cli/dotsteward"
 } >"$DS_TEST_ROOT/candidate/bin/dotsteward"
 chmod 0755 "$DS_TEST_ROOT/candidate/bin/dotsteward"
@@ -529,6 +531,7 @@ git_http_serve() {
     sleep 0.05
   done
   [[ -n $port ]] || ds_fail "the git HTTP server did not start: $(cat "$root.server")"
+  export no_proxy=127.0.0.1 NO_PROXY=127.0.0.1
   git config --global "url.http://127.0.0.1:$port/example-org/dotsteward.git.insteadOf" "$CT_UPSTREAM_URL"
   git config --global "url.http://127.0.0.1:$port/dotsteward-test/dotsteward.git.insteadOf" "$CT_FORK_URL"
 }
