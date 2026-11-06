@@ -27,8 +27,10 @@ import urllib.error
 import urllib.parse
 from typing import Any, ClassVar
 
+from dotsteward_cli import versions
+
 from ...lockfile import Scope, parse_path, parse_template, scalar_text
-from ..model import STABLE_TAG, Row, classify, item, newest
+from ..model import STABLE_TAG, Row, classify, item
 from ..upstream import Upstream, UpstreamError
 from . import Adapter, FieldSpec, PlanContext, Request, url
 
@@ -84,7 +86,7 @@ class Pypi(Adapter):
             for version, files in releases.items()
             if isinstance(version, str) and STABLE_TAG.fullmatch(version) and not version.startswith("v")
         }
-        version = newest(version for version, files in candidates.items() if files)
+        version = versions.newest(version for version, files in candidates.items() if files)
         if version is None:
             raise UpstreamError(f"{package} has no final release with files")
         requires = [entry["requires_python"] for entry in candidates[version] if entry.get("requires_python")]

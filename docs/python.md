@@ -37,3 +37,26 @@ nix build -L --no-link .#checks.x86_64-linux.python-core
 
 Fix a finding or type the code; an ignore is narrow, names its rule and says
 why on the same line.
+
+## Calling the package from bash
+
+`cli/lib/python.sh` holds the glue for the bash commands, which source it next
+to `lib.sh`. `ds_python MODULE [ARG...]` runs a module of the package and
+`ds_internal ARG...` the internal command line of the primitives
+(`dotsteward_cli.internal`), which is no command of the CLI and may change
+with the framework.
+
+## Primitives
+
+Every part of the framework uses these, so each answer exists once.
+
+### Versions
+
+`dotsteward_cli.versions` is the one version order: `compare(left, right)`,
+`at_least(version, minimum)`, `newest(versions)` and `sort_key` for `sorted`
+and `max`. A release sorts after its pre-releases (`1.2.3-rc1`, `1.2.3~rc1`)
+and before its package revisions (`1.2.3-1`); the module documents the rest.
+From bash: `ds_internal version-compare LEFT RIGHT` prints -1, 0 or 1, and
+hooks keep `methods_version_compare` and `methods_version_at_least`. Two things
+stay outside on purpose: `dpkg --compare-versions` for installed packages,
+and stage 0, which checks operating system versions before Python exists.

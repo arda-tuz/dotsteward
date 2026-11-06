@@ -23,10 +23,12 @@ from __future__ import annotations
 import tempfile
 from typing import Any
 
+from dotsteward_cli import versions
+
 from ...checker import HEX40
 from ...instance import Instance
 from ...lockfile import load_json
-from ..model import Row, error_item, item, version_key
+from ..model import Row, error_item, item
 from ..upstream import Upstream, UpstreamError, github_url, is_stable_tag
 from . import Adapter, Planned, Request
 
@@ -55,7 +57,7 @@ class Framework(Adapter):
         details: dict[str, Any] = {"tag": tag, "upstream": values["upstream"]}
         rev = values.get("rev")
         if rev is None:
-            status = "review" if version_key(tag) > version_key(request.current) else "current"
+            status = "review" if versions.compare(tag, request.current) > 0 else "current"
         else:
             contains = commit_contains(upstream, url, tag, rev)
             status = "current" if contains else "review"

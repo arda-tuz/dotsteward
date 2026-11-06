@@ -23,9 +23,11 @@ from __future__ import annotations
 import re
 from typing import Any, ClassVar
 
+from dotsteward_cli import versions
+
 from ...lockfile import Scope
 from ...rules import string
-from ..model import Row, item, newest, version_key
+from ..model import Row, item
 from ..upstream import Upstream, github_repo, github_url
 from . import Adapter, FieldSpec, PlanContext, PlanError, Request, url
 
@@ -75,11 +77,11 @@ class ChannelHead(Adapter):
         prefix, channel = values["prefix"], values["channel"]
         heads = upstream.remote_heads(values["url"], f"refs/heads/{prefix}*")
         series = [name for name in heads if re.fullmatch(rf"{re.escape(prefix)}\d{{2}}\.\d{{2}}", name)]
-        newest_series = newest(series)
+        newest_series = versions.newest(series)
         head = heads.get(channel)
         if head is None:
             status = "error"
-        elif newest_series and version_key(newest_series) > version_key(channel):
+        elif newest_series and versions.compare(newest_series, channel) > 0:
             status = "review"
         elif head != values["revision"]:
             status = "update"

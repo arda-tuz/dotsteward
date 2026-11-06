@@ -1,0 +1,43 @@
+"""``python3 -m dotsteward_cli.internal``: the primitives for bash.
+
+The bash code of the framework calls this through ``ds_internal`` of
+``cli/lib/python.sh``; Python code imports the modules themselves. It is no
+command of the CLI and may change with the framework. Exit status: 0 done, 1
+refused or failed, 2 usage error, unless a subcommand says otherwise.
+
+    version-compare LEFT RIGHT   prints -1, 0 or 1 (dotsteward_cli.versions)
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from collections.abc import Sequence
+
+
+def _version_compare(args: argparse.Namespace) -> int:
+    from dotsteward_cli import versions
+
+    print(versions.compare(args.left, args.right))
+    return 0
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="dotsteward_cli.internal", description=__doc__, allow_abbrev=False)
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    compare = commands.add_parser("version-compare", allow_abbrev=False)
+    compare.add_argument("left")
+    compare.add_argument("right")
+    compare.set_defaults(run=_version_compare)
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    code: int = args.run(args)
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

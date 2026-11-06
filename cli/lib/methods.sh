@@ -32,9 +32,9 @@
 # Lock and versions
 #   methods_lock_get PATH COMPONENT  the value at the dotted lock PATH (JSON);
 #                                    dies like pinAt when it is missing
-#   methods_version_compare A B      prints -1, 0 or 1: dotted numeric parts,
-#                                    a missing part sorts first, a pre-release
-#                                    (after - or ~) before the release
+#   methods_version_compare A B      prints -1, 0 or 1: the one version order
+#                                    (a pre-release before its release, a
+#                                    package revision after it)
 #   methods_version_at_least V MIN
 #   methods_extract_version TEXT [REGEX]
 #                                    the first group of REGEX (default: the
@@ -97,6 +97,9 @@ METHODS_DETAIL=''
 declare -gA METHODS_DEB_STATUS=() METHODS_DEB_DETAIL=()
 
 # --- Manifest -------------------------------------------------------------
+
+# shellcheck source=cli/lib/python.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/python.sh"
 
 methods_system() {
   local platform=${DS_RUNTIME_PLATFORM:-} system joined
@@ -238,96 +241,20 @@ _methods_pin_download() {
   printf '%s\n' "$fields"
 }
 
-# _methods_version_parts VERSION: sets _vp_core (array of the dotted parts)
-# and _vp_pre (array of the pre-release identifiers). A leading "v" and
-# build metadata after "+" are ignored.
-_methods_version_parts() {
-  local version=${1#v} core pre=''
-  version=${version%%+*}
-  core=${version%%[-~]*}
-  if [[ $core != "$version" ]]; then
-    pre=${version:${#core}+1}
-  fi
-  IFS=. read -r -a _vp_core <<<"$core"
-  _vp_pre=()
-  if [[ -n $pre ]]; then
-    IFS=. read -r -a _vp_pre <<<"$pre"
-  fi
-}
-
-# _methods_compare_ids A B: one version part or pre-release identifier;
-# numbers numerically and before words, words in byte order.
-_methods_compare_ids() {
-  local a=$1 b=$2
-  if [[ $a =~ ^[0-9]+$ && $b =~ ^[0-9]+$ ]]; then
-    a=$((10#$a))
-    b=$((10#$b))
-    ((a < b)) && printf '%s\n' -1 && return
-    ((a > b)) && printf '%s\n' 1 && return
-    printf '0\n'
-  elif [[ $a =~ ^[0-9]+$ ]]; then
-    printf '%s\n' -1
-  elif [[ $b =~ ^[0-9]+$ ]]; then
-    printf '1\n'
-  elif [[ $a == "$b" ]]; then
-    printf '0\n'
-  elif [[ $(printf '%s\n%s\n' "$a" "$b" | LC_ALL=C sort | head -n 1) == "$a" ]]; then
-    printf '%s\n' -1
-  else
-    printf '1\n'
-  fi
-}
-
+# methods_version_compare A B: the one version order of the framework
+# (cli/python/dotsteward_cli/versions.py). A failure stops the caller: an
+# order nobody computed must never pass for a version check.
 methods_version_compare() {
   (($# == 2)) || die "usage: methods_version_compare A B"
-  local -a a_core a_pre b_core b_pre _vp_core _vp_pre
-  local i result
-  _methods_version_parts "$1"
-  a_core=("${_vp_core[@]}")
-  a_pre=("${_vp_pre[@]}")
-  _methods_version_parts "$2"
-  b_core=("${_vp_core[@]}")
-  b_pre=("${_vp_pre[@]}")
-  for ((i = 0; i < ${#a_core[@]} || i < ${#b_core[@]}; i++)); do
-    if ((i >= ${#a_core[@]})); then
-      printf '%s\n' -1
-      return
-    elif ((i >= ${#b_core[@]})); then
-      printf '1\n'
-      return
-    fi
-    result=$(_methods_compare_ids "${a_core[i]}" "${b_core[i]}")
-    if [[ $result != 0 ]]; then
-      printf '%s\n' "$result"
-      return
-    fi
-  done
-  # A release sorts after its pre-releases.
-  if ((${#a_pre[@]} == 0 || ${#b_pre[@]} == 0)); then
-    printf '%s\n' $(((${#a_pre[@]} == 0) - (${#b_pre[@]} == 0)))
-    return
-  fi
-  for ((i = 0; i < ${#a_pre[@]} || i < ${#b_pre[@]}; i++)); do
-    if ((i >= ${#a_pre[@]})); then
-      printf '%s\n' -1
-      return
-    elif ((i >= ${#b_pre[@]})); then
-      printf '1\n'
-      return
-    fi
-    result=$(_methods_compare_ids "${a_pre[i]}" "${b_pre[i]}")
-    if [[ $result != 0 ]]; then
-      printf '%s\n' "$result"
-      return
-    fi
-  done
-  printf '0\n'
+  ds_internal version-compare "$1" "$2" || die "cannot compare the versions $1 and $2"
 }
 
 methods_version_at_least() {
   (($# == 2)) || die "usage: methods_version_at_least VERSION MINIMUM"
   [[ -n $1 ]] || return 1
-  [[ $(methods_version_compare "$1" "$2") != -1 ]]
+  local order
+  order=$(methods_version_compare "$1" "$2") || exit 1
+  [[ $order != -1 ]]
 }
 
 methods_extract_version() {
@@ -546,7 +473,9 @@ methods_official_binary_companions() {
 _methods_official_binary_ok() {
   [[ -n $1 ]] || return 1
   if [[ $_ob_policy == exact ]]; then
-    [[ $(methods_version_compare "$1" "$_ob_version") == 0 ]]
+    local order
+    order=$(methods_version_compare "$1" "$_ob_version") || exit 1
+    [[ $order == 0 ]]
   else
     methods_version_at_least "$1" "$_ob_version"
   fi
@@ -793,7 +722,10 @@ except importlib.metadata.PackageNotFoundError:
 }
 
 _methods_pypi_version_ok() {
-  [[ -n $_py_found && $(methods_version_compare "$_py_found" "$_py_version") == 0 ]]
+  [[ -n $_py_found ]] || return 1
+  local order
+  order=$(methods_version_compare "$_py_found" "$_py_version") || exit 1
+  [[ $order == 0 ]]
 }
 
 # _methods_pypi_links_ok: every console script link points at its script in

@@ -22,16 +22,13 @@ Check-only.
 
 from __future__ import annotations
 
-import re
-from typing import Any, ClassVar
+from typing import ClassVar
+
+from dotsteward_cli import versions
 
 from ..checker import Checker
 from ..lockfile import Scope, parse_path
 from . import Context, FieldSpec, Rule, paths
-
-
-def version_key(value: Any) -> tuple[int, ...]:
-    return tuple(int(part) for part in re.findall(r"\d+", str(value)))
 
 
 class MinimumVersion(Rule):
@@ -55,6 +52,6 @@ class MinimumVersion(Rule):
                 break
             c.ok(
                 minimums.child(name).text(),
-                actual is not None and version_key(actual) >= version_key(minimum),
+                actual is not None and versions.at_least(actual, minimum),
                 f"expected at least {minimum!r}, found {actual!r}",
             )

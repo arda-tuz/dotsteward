@@ -30,7 +30,7 @@ cli.mkTestCheck {
     pkgs.ruff
   ];
   postCheck = ''
-    shellcheck -x tests/cli/core/*.sh
+    shellcheck -x cli/lib/python.sh tests/cli/core/*.sh
     ruff check --no-cache --quiet .
     ruff format --no-cache --quiet --check .
     ${tools}/bin/mypy

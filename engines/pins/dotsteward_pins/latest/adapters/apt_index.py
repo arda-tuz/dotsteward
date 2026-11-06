@@ -26,9 +26,11 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+from dotsteward_cli import versions
+
 from ...lockfile import Scope, parse_template
 from ...rules import string
-from ..model import Row, classify, item, version_key
+from ..model import Row, classify, item
 from ..upstream import Upstream, UpstreamError
 from . import Adapter, FieldSpec, PlanContext, Request, url
 
@@ -80,7 +82,7 @@ class AptIndex(Adapter):
         ]
         if not entries:
             raise UpstreamError(f"{package} is not in the index {index_url}")
-        best = max(entries, key=lambda fields: version_key(fields["Version"]))
+        best = max(entries, key=lambda fields: versions.sort_key(fields["Version"]))
         try:
             filename, size, sha256 = best["Filename"], int(best["Size"]), best.get("SHA256")
         except (KeyError, ValueError) as error:

@@ -8,8 +8,8 @@
 source "$DS_REPO_ROOT/tests/cli/core/helpers.sh"
 
 # The order, as "LEFT RIGHT EXPECTED". A release sorts after its pre-releases
-# (after ~, or after - and a letter) and before its package revisions (after
-# - and a digit); parts compare as numbers and words, numbers first; a
+# (after ~, after - and a letter, or attached like rc1) and before its package
+# revisions (after - and a digit); parts compare as numbers and words, numbers first; a
 # missing part sorts first; a leading v and an epoch are understood; build
 # metadata (after +) only separates two versions that both carry it.
 pairs=(
@@ -30,6 +30,10 @@ pairs=(
   "1.0.0-beta.2 1.0.0-beta.11 -1"
   "1.0.0-beta.11 1.0.0-rc.1 -1"
   "1.0.0-rc.1 1.0.0 -1"
+  "1.2.3rc1 1.2.3 -1"
+  "2.0.0a1 2.0.0b1 -1"
+  "2.0.0b2 2.0.0rc1 -1"
+  "1.2.3rc1 1.2.3-rc1 0"
   "1.2.3+build5 1.2.3 0"
   "1.2.3+build5 1.2.3+build6 -1"
   "1.2.3-1 1.2.3 1"
@@ -56,6 +60,9 @@ done
 
 assert_exit 2 internal version-compare 1.2.3
 assert_contains "$DS_STDERR" "usage:"
+# Digits are ASCII digits; anything else is a word, never a crash.
+assert_eq 1 "$(internal version-compare "$(printf '1.\331\243a')" 1.2)" "another script's digit"
+assert_eq 0 "$(internal version-compare "" "")" "two empty versions"
 
 # --- the bash library of hooks ---------------------------------------------------
 
@@ -93,7 +100,7 @@ import sys
 
 sys.path.insert(0, f"{sys.argv[1]}/engines/pins")
 
-from dotsteward_pins.latest.model import classify, newest
+from dotsteward_pins.latest.model import classify
 
 from dotsteward_cli import versions
 
@@ -102,9 +109,9 @@ for pair in sys.argv[2:]:
     left, right, expected = pair.split()
     if versions.compare(left, right) != int(expected):
         failures.append(f"compare {pair}")
-    if int(expected) < 0 and newest([right, left]) != right:
+    if int(expected) < 0 and versions.newest([right, left]) != right:
         failures.append(f"newest {pair}")
-    if int(expected) > 0 and newest([right, left]) != left:
+    if int(expected) > 0 and versions.newest([right, left]) != left:
         failures.append(f"newest {pair}")
 for current, latest, status in (
     ("1.2.3-rc1", "1.2.3", "update"),
@@ -144,6 +151,6 @@ preflight_version_at_least 14 14.0 || ds_fail "stage 0: a missing part is 0"
 # --- one implementation ------------------------------------------------------------
 
 # Nothing else in the package parses versions.
-cd "$DS_REPO_ROOT"
-others=$(grep -rnE 'def version_key|findall\(r"\\d\+"' cli/python engines --include='*.py' | grep -v 'cli/python/dotsteward_cli/versions.py' || true)
+others=$(grep -rnE 'def version_key|findall\(r"\\d\+"' "$DS_REPO_ROOT/cli/python" "$DS_REPO_ROOT/engines" --include='*.py' |
+  grep -v 'cli/python/dotsteward_cli/versions.py' || true)
 assert_eq "" "$others" "another version parser"

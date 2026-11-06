@@ -24,7 +24,9 @@ from email.message import Message
 from http.client import HTTPMessage
 from typing import IO, Any
 
-from .model import STABLE_TAG, newest
+from dotsteward_cli import versions
+
+from .model import STABLE_TAG
 
 HTTP_TIMEOUT = 20
 COMMAND_TIMEOUT = 60
@@ -206,7 +208,7 @@ class Upstream:
 
     def newest_tag(self, url: str, prefix: str = "") -> str | None:
         tags = self.stable_tags(url, prefix)
-        best = newest(tag_version(tag, prefix) for tag in tags)
+        best = versions.newest(tag_version(tag, prefix) for tag in tags)
         if best is None:
             return None
         return next(tag for tag in tags if tag_version(tag, prefix) == best)

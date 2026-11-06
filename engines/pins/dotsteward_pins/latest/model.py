@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import datetime
 import re
-from collections.abc import Iterable
 from typing import Any
+
+from dotsteward_cli import versions
 
 SCHEMA_VERSION = "1.0"
 ATTENTION = ("update", "review", "held", "manual", "error")
@@ -36,27 +37,16 @@ VERSION_TEXT = re.compile(r"v?\d+(?:\.\d+)+(?:[-+~][0-9A-Za-z.+~-]*)?")
 Row = dict[str, Any]
 
 
-def version_key(value: Any) -> tuple[int, ...]:
-    """The numeric parts of a version, compared as a tuple."""
-    return tuple(int(part) for part in re.findall(r"\d+", str(value)))
-
-
-def newest(versions: Iterable[str]) -> str | None:
-    """The highest version, or None for an empty set."""
-    candidates = list(versions)
-    return max(candidates, key=version_key) if candidates else None
-
-
 def classify(current: Any, latest: Any, held: bool = False) -> str:
     """The status of a version row: a newer major version (the minor one in
     0.x series) is a review, a newer one otherwise an update, unless held."""
     if latest is None:
         return "error"
-    old, new = version_key(current), version_key(latest)
-    if new <= old:
+    if versions.compare(latest, current) <= 0:
         return "current"
     if held:
         return "held"
+    old, new = versions.numeric_parts(current), versions.numeric_parts(latest)
     major = 1 if old and old[0] == 0 else 0
     if len(old) > major and len(new) > major and new[major] != old[major]:
         return "review"
