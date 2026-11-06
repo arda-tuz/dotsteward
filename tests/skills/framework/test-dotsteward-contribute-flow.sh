@@ -38,7 +38,7 @@ fenced() {
 }
 
 # Frontmatter: the skill description, word for word.
-expected_description="Change the dotsteward framework itself (a skill flow, the CLI, an engine, the gate, a catalog component, the template or framework docs) from the user's machine: reproduce, fix generically, test on this machine, then publish to the user's fork, or in owner mode to the upstream repository with a patch release, and upgrade the user's instance to it. Personal changes belong to dotsteward-maintain."
+expected_description="Change the dotsteward framework itself (a skill flow, the CLI, an engine, the gate, a catalog component, the template or framework docs) from the user's machine: reproduce, fix generically, test on this machine, then publish to the user's fork, or in owner mode to the upstream repository (a later release train releases it), and upgrade the user's instance to it. Personal changes belong to dotsteward-maintain."
 description=$(awk 'NR == 1 { next } /^---[ \t]*$/ { exit } /^description:/ { sub(/^description:[ \t]*/, ""); print }' "$skill")
 # The text holds ": ", which ends a plain YAML scalar, so the skill loaders
 # can parse the frontmatter only when the value is double-quoted.
@@ -46,6 +46,16 @@ description=$(awk 'NR == 1 { next } /^---[ \t]*$/ { exit } /^description:/ { sub
 description=${description#\"}
 description=${description%\"}
 assert_eq "$expected_description" "$description" "frontmatter description"
+# Release trains: a run publishes, and a later release bundles it, so the
+# skill promises no release of its own, neither in its intro nor in the
+# text agents show for it.
+grep -q 'publish it (a later release train releases it) and upgrade' "$skill" ||
+  ds_fail "the intro of SKILL.md does not say that a later release train releases the change"
+for file in "$skill" "$skill_dir/agents/openai.yaml"; do
+  if grep -qiE 'patch (release|version)|release it\b' "$file"; then
+    ds_fail "${file#"$DS_REPO_ROOT"/} promises a release of the run's own"
+  fi
+done
 
 # References: the shared classification plus the fix, publish and run-state
 # guides.
