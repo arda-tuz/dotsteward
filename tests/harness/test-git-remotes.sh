@@ -66,6 +66,9 @@ assert_exit 0 git ls-remote "$url"
 assert_exit 128 git ls-remote "$url"
 assert_eq "" "$(<"$DS_FAKESSH_DROPS")" "the plan after its connections"
 assert_exit 0 git ls-remote "$url"
+printf 'x' >"$DS_FAKESSH_DROPS"
+DS_FAKESSH_DROP_TEXT='git@github.com: Permission denied (publickey).' assert_exit 128 git ls-remote "$url"
+assert_contains "$DS_STDERR" "Permission denied (publickey)"
 unset DS_FAKESSH_DROPS
 
 # git's OpenSSH detection (-G) succeeds, so ports and options work; any

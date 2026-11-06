@@ -16,7 +16,8 @@
 # DS_FAKESSH_FAIL=1 refuses it (exit 255), DS_FAKESSH_DROPS=FILE plans the
 # next connections: each one takes the first character of FILE, x makes it
 # time out as on a dropped network (exit 255) and any other serves it; an
-# empty or missing FILE serves them all.
+# empty or missing FILE serves them all. DS_FAKESSH_DROP_TEXT=TEXT is what
+# such a connection prints instead of the time-out.
 
 _ds_fakessh_self=$(readlink -f "${BASH_SOURCE[0]}")
 
@@ -104,7 +105,7 @@ _ds_fakessh_main() {
     plan=$(<"$DS_FAKESSH_DROPS")
     printf '%s' "${plan:1}" >"$DS_FAKESSH_DROPS"
     if [[ ${plan:0:1} == x ]]; then
-      printf 'ssh: connect to host %s port 22: Connection timed out\n' "${host#*@}" >&2
+      printf '%s\n' "${DS_FAKESSH_DROP_TEXT:-ssh: connect to host ${host#*@} port 22: Connection timed out}" >&2
       exit 255
     fi
   fi

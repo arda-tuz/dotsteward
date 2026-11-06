@@ -88,6 +88,16 @@
 #                              it; see DS_FAKESSH_DROPS in tests/lib/fakessh.sh)
 #   pushes_served              how many pushes the remotes served since the
 #                              fake SSH log was emptied
+#   git_http_serve             the upstream and the fork over real smart HTTP
+#                              (tests/lib/githttp.py, on loopback): git reaches
+#                              their URLs through url.<base>.insteadOf of the
+#                              test's own git configuration, so the URLs the
+#                              CLI compares stay as they are
+#   git_http_fail FAILURE REF  the next push of REF, or with REF ".", the next
+#                              advertisement, fails: post-502, post-reset,
+#                              lost-502, lost-reset, get-503 or get-403 (see
+#                              tests/lib/githttp.py)
+#   http_pushes                how many pushes the server was sent
 
 # shellcheck source=tests/contribute/local/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/local/helpers.sh"
@@ -456,6 +466,35 @@ network_plan() {
 
 pushes_served() {
   grep -c ' git-receive-pack ' "$DS_FAKESSH_LOG" || true
+}
+
+git_http_serve() {
+  local root=$DS_TEST_ROOT/git-http port="" pid _
+  mkdir -p "$root/example-org" "$root/dotsteward-test"
+  ln -s "$ct_upstream_bare" "$root/example-org/dotsteward.git"
+  ln -s "$ct_fork_bare" "$root/dotsteward-test/dotsteward.git"
+  python3 "$DS_REPO_ROOT/tests/lib/githttp.py" "$root" "$root.plan" "$root.port" "$root.log" >"$root.server" 2>&1 &
+  pid=$!
+  ds_defer _ds_stop_process "$pid"
+  for _ in $(seq 1 200); do
+    if [[ -s $root.port ]]; then
+      port=$(<"$root.port")
+      break
+    fi
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.05
+  done
+  [[ -n $port ]] || ds_fail "the git HTTP server did not start: $(cat "$root.server")"
+  git config --global "url.http://127.0.0.1:$port/example-org/dotsteward.git.insteadOf" "$CT_UPSTREAM_URL"
+  git config --global "url.http://127.0.0.1:$port/dotsteward-test/dotsteward.git.insteadOf" "$CT_FORK_URL"
+}
+
+git_http_fail() {
+  printf '%s %s\n' "$1" "$2" >"$DS_TEST_ROOT/git-http.plan"
+}
+
+http_pushes() {
+  grep -c '^POST .*/git-receive-pack$' "$DS_TEST_ROOT/git-http.log" || true
 }
 
 upstream_tree() {
