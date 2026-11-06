@@ -6,7 +6,9 @@
 # else stops at once, without a pause: a remote that refused access, in
 # whatever words, and a failure on this machine, such as an ssh that does not
 # exist. Unknown words count as no network failure: one attempt, as before
-# there were pauses.
+# there were pauses. start gives a network that stays down about a minute
+# (nothing waits for it and it is safe to run again), unless
+# DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS says otherwise.
 # shellcheck source=tests/contribute/local/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/local/helpers.sh"
 
@@ -72,5 +74,24 @@ chmod 0755 "$tools/timeout"
 : >"$DS_TEST_ROOT/timeout-once"
 PATH=$tools:$PATH assert_exit 0 run_contribute start --slug timed-out
 assert_contains "$DS_STDERR" "[dotsteward] WARNING: cannot fetch main from origin; trying again in 1s"
+
+# --- the time start gives a network that stays down -------------------------------------------------
+
+# A first pause of 100 s shows the limit: it is cut to what the limit leaves.
+# The pauses cost no time.
+printf '#!%s\nprintf "%%s\\n" "$1" >>%q\n' "$BASH" "$DS_TEST_ROOT/sleep.log" >"$tools/sleep"
+chmod 0755 "$tools/sleep"
+start_slow() {
+  PATH=$tools:$PATH DOTSTEWARD_CONTRIBUTE_POLL_SECONDS=100 run_contribute start --slug "$1"
+}
+printf x >"$DS_FAKESSH_DROPS"
+unset DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS
+assert_exit 0 start_slow default-limit
+assert_contains "$DS_STDERR" "[dotsteward] WARNING: cannot fetch main from origin; trying again in 60s"
+assert_eq 60 "$(<"$DS_TEST_ROOT/sleep.log")" "the pause under the limit of start"
+printf x >"$DS_FAKESSH_DROPS"
+export DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS=300
+assert_exit 0 start_slow chosen-limit
+assert_contains "$DS_STDERR" "[dotsteward] WARNING: cannot fetch main from origin; trying again in 100s"
 
 assert_eq "" "$(temp_leftovers)" "temporary files left behind"
