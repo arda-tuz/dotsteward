@@ -163,12 +163,22 @@ fresh removed
 rm -rf "$HOME/.agents/skills/removed"
 [[ -L $HOME/.claude/skills/removed ]] || ds_fail "the link root holds the link of the skill"
 assert_check_passes deleted
+# What reads the effective scope misses it no more than `agents check` does.
+assert_exit 0 "$agents_fw/cli/dotsteward" --instance "$agents_inst" skills effective --json
+assert_json - '.skip.skills == ["removed"] and .reasons["skill:removed"] == "deleted"' <<<"$DS_STDOUT"
 assert_exit 0 run_agents install
 assert_contains "$DS_STDOUT" deleted
 [[ ! -e $HOME/.agents/skills/removed ]] || ds_fail "a deleted skill is not installed again"
 [[ ! -L $HOME/.claude/skills/removed ]] || ds_fail "the sweep removes the dangling link"
 assert_json "$state/skills/pending.json" '.items["skill:removed"].state == "deleted"'
 assert_eq deleted "$(skill_state removed)"
+# Back again, by hand: it is just another skill in sync.
+cp -a "$(vendored removed)" "$HOME/.agents/skills/removed"
+assert_exit 0 "$agents_fw/cli/dotsteward" --instance "$agents_inst" skills effective --json
+assert_json - '.skip.skills == [] and .reasons == {}' <<<"$DS_STDOUT"
+assert_exit 0 run_agents install
+assert_eq in-sync "$(skill_state removed)"
+assert_json "$state/skills/pending.json" '.items | has("skill:removed") | not'
 
 # --- no l, no b: an accepted skill of the lock is installed ------------------------
 
