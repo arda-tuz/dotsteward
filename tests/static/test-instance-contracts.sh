@@ -62,6 +62,50 @@ rm "$skill/LICENSE"
 write_skill_lock "$PWD"
 fails skills "example-skill: no license file"
 
+# A skill of the user's own (a repo-owned sentinel revision) needs no license,
+# and every other rule still holds for it.
+fresh
+rm "$skill/LICENSE"
+write_skill_lock "$PWD"
+own_filter='.skills[0].revision = "same-as-instance-checkout"'
+jq "$own_filter" agent/skills.lock.json >lock.tmp && mv lock.tmp agent/skills.lock.json
+assert_exit 0 "$DS_REPO_ROOT/cli/dotsteward" --instance "$PWD" static --only skills
+printf 'extra\n' >"$skill/references/extra.md"
+fails skills "example-skill: directory digest does not match agent/skills.lock.json"
+
+fresh
+rm "$skill/LICENSE"
+write_skill_lock "$PWD"
+printf '\n[compat]\nrepo_owned_revision = "same-as-example-checkout"\n' >>workstation.toml
+own_filter='.skills[0].revision = "same-as-example-checkout"'
+jq "$own_filter" agent/skills.lock.json >lock.tmp && mv lock.tmp agent/skills.lock.json
+assert_exit 0 "$DS_REPO_ROOT/cli/dotsteward" --instance "$PWD" static --only skills
+
+# Own plugins of the lock (own_plugins[], agent/plugins/<directory>).
+fresh
+plugin=agent/plugins/example-plugin
+mkdir -p "$plugin/.claude-plugin"
+printf '{"name": "example-plugin"}\n' >"$plugin/.claude-plugin/plugin.json"
+plugin_sha=$(dir_sha256_of "$plugin")
+write_own_plugins() {
+  jq --arg sha "$1" '.own_plugins = [{name: "example-plugin", directory: "example-plugin", agents: ["claude"], directory_sha256: $sha}]' \
+    agent/skills.lock.json >lock.tmp
+  mv lock.tmp agent/skills.lock.json
+}
+write_own_plugins "$plugin_sha"
+assert_exit 0 "$DS_REPO_ROOT/cli/dotsteward" --instance "$PWD" static --only skills
+write_own_plugins "$(printf '0%.0s' {1..64})"
+fails skills "example-plugin: directory digest does not match agent/skills.lock.json"
+write_own_plugins "$plugin_sha"
+mkdir agent/plugins/unlisted
+fails skills "agent/plugins: directories do not match the lock (expected example-plugin, found example-plugin unlisted)"
+rmdir agent/plugins/unlisted
+ln -s .claude-plugin/plugin.json "$plugin/link"
+fails skills "agent/plugins/example-plugin/link: own plugins must not contain symbolic links"
+rm "$plugin/link"
+jq '.own_plugins[0].directory = "../example-plugin"' agent/skills.lock.json >lock.tmp && mv lock.tmp agent/skills.lock.json
+fails skills "example-plugin: invalid directory ../example-plugin"
+
 fresh
 sed -i 's/^name: example-skill$/name: other-skill/' "$skill/SKILL.md"
 write_skill_lock "$PWD"
@@ -183,6 +227,17 @@ else
   chmod 0755 bootstrap.sh
   assert_exit 0 static --only bootstrap
 fi
+
+# --- hosts ---------------------------------------------------------------------
+fresh
+jq '.skills[0].machines = ["nobody"]' agent/skills.lock.json >lock.tmp && mv lock.tmp agent/skills.lock.json
+fails hosts "agent/skills.lock.json: skill example-skill: machines names nobody, which has no hosts/nobody.toml"
+mkdir -p hosts
+printf 'schema_version = 1\n' >hosts/nobody.toml
+assert_exit 0 static --only hosts
+printf 'schema_version = 1\nunknown_key = true\n' >hosts/nobody.toml
+fails hosts "hosts/nobody.toml:"
+rm -rf hosts
 
 # --- versions-lock -----------------------------------------------------------
 fresh

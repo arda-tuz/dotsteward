@@ -74,3 +74,18 @@ rm "$inst/agent/skills/example-empty/SKILL.md"
 assert_exit 1 pins sync
 assert_eq "[pins] ERROR: core/skill-digests: cannot read agent/skills/example-empty/SKILL.md: No such file or directory" \
   "$DS_STDERR"
+
+# The own plugins of the lock follow their files like repo-owned skills.
+pins_fresh
+plugin=$inst/agent/plugins/example-plugin
+mkdir -p "$plugin/.claude-plugin"
+printf '{"name": "example-plugin"}\n' >"$plugin/.claude-plugin/plugin.json"
+json_edit "$skills" "data['own_plugins'] = [{'name': 'example-plugin', 'directory': 'example-plugin', 'agents': ['claude'], 'directory_sha256': '$z64'}]"
+plugin_sha=$(lib_directory_sha256 "$plugin")
+check_fails 1 "[pins] ERROR: skills:own_plugins[name=example-plugin].directory_sha256: expected '$plugin_sha', found '$z64'"
+assert_exit 0 pins sync
+assert_eq "$plugin_sha" "$(jq -r '.own_plugins[0].directory_sha256' "$skills")"
+assert_exit 0 pins check
+printf 'changed\n' >>"$plugin/.claude-plugin/plugin.json"
+changed_sha=$(lib_directory_sha256 "$plugin")
+check_fails 1 "[pins] ERROR: skills:own_plugins[name=example-plugin].directory_sha256: expected '$changed_sha', found '$plugin_sha'"

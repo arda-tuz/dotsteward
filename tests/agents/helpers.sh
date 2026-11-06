@@ -42,10 +42,11 @@
 #                    references/guide.md, scripts/run.sh (0755),
 #                    notes/private.txt (0600, in a 0750 directory)
 #   lock_add NAME [--directory DIR] [--legacy DIR] [--deployment D]
-#            [--no-directory-digest] [--tree]
+#            [--revision REVISION] [--no-directory-digest] [--tree]
 #                    vendors agent/skills/DIR (default NAME; make_skill, or
 #                    ds_fixture_skill_tree with --tree) unless it exists and
-#                    appends a lock entry with its digests
+#                    appends a lock entry with its digests; a --revision
+#                    that names a repo-owned sentinel makes it an own skill
 #   lock_edit JQ_FILTER [JQ_OPTION...]
 #                    rewrites the skills lock (expected_skill_count follows
 #                    the number of entries)
@@ -253,13 +254,14 @@ lock_edit() {
 }
 
 lock_add() {
-  local name=$1 directory='' legacy='' deployment='' dir_digest=1 tree=0
+  local name=$1 directory='' legacy='' deployment='' revision='' dir_digest=1 tree=0
   shift
   while (($#)); do
     case $1 in
       --directory) directory=$2 && shift 2 ;;
       --legacy) legacy=$2 && shift 2 ;;
       --deployment) deployment=$2 && shift 2 ;;
+      --revision) revision=$2 && shift 2 ;;
       --no-directory-digest) dir_digest=0 && shift ;;
       --tree) tree=1 && shift ;;
       *) ds_fail "lock_add: unknown option $1" ;;
@@ -282,10 +284,11 @@ lock_add() {
   lock_edit '.skills += [{ name: $name, directory: $directory }
       + (if $legacy == "" then {} else { legacy_directory: $legacy } end)
       + (if $deployment == "" then {} else { deployment: $deployment } end)
+      + (if $revision == "" then {} else { revision: $revision } end)
       + { skill_sha256: $skill }
       + (if $dir == "" then {} else { directory_sha256: $dir } end)]' \
     --arg name "$name" --arg directory "$directory" --arg legacy "$legacy" \
-    --arg deployment "$deployment" --arg skill "$skill_sha" --arg dir "$dir_sha"
+    --arg deployment "$deployment" --arg revision "$revision" --arg skill "$skill_sha" --arg dir "$dir_sha"
 }
 
 vendored() {
