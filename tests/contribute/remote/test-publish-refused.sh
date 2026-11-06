@@ -3,9 +3,9 @@
 # `dotsteward contribute publish` makes a read or a push again only after a
 # failure of the network (test-publish-network.sh). A verdict is never made
 # again: a push the remote refuses (a protected branch, a main that moved) or
-# the pre-push hook refuses (a privacy finding), and a repository that does
-# not exist. Each is one connection and no pause, even with a long time to
-# keep trying.
+# the pre-push hook refuses (a privacy finding), a repository that does not
+# exist, and a pull request GitHub does not know. Each is one attempt and no
+# pause, even with a long time to keep trying.
 # shellcheck source=tests/contribute/remote/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/remote/helpers.sh"
 
@@ -68,3 +68,12 @@ assert_contains "$DS_STDERR" "ERROR: Repository not found."
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: cannot list the tags of origin"
 assert_not_contains "$DS_STDERR" "trying again"
 
+# --- a pull request GitHub does not know is no failure of the network ---------------------------
+
+state_set '.pr = "https://github.com/example-org/dotsteward/pull/99"'
+mark_trialled full false
+state_set '.pr = "https://github.com/example-org/dotsteward/pull/99"'
+assert_exit 1 run_contribute publish
+assert_contains "$DS_STDERR" "Could not resolve to a PullRequest"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: cannot read https://github.com/example-org/dotsteward/pull/99"
+assert_not_contains "$DS_STDERR" "reading GitHub again"

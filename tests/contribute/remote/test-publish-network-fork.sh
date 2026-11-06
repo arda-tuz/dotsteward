@@ -39,16 +39,41 @@ network_plan ''
 assert_exit 0 run_contribute release
 state_set '.step = "done"'
 
+# The network stays down at the push of the fork's main: red, the machine as
+# it is. In order, before it: the tags of both remotes, the fetch of the
+# upstream, the branch (already there), the fetch, the tags of both remotes,
+# and main, read twice.
+checked_run lasting-feature 0.1.2
+mark_trialled full true
+printf 'trial\n' >"$rt_live"
+lasting=$(git -C "$ct_clone" rev-parse HEAD)
+git -C "$ct_fork_bare" update-ref refs/heads/main "$upstream_before"
+git -C "$ct_clone" push -q origin HEAD:refs/heads/fix/lasting-feature
+network_plan .........xxxxxxxxxx
+export DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS=5
+reset_calls
+assert_exit 1 run_contribute publish
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: pushing ${lasting:0:12} to main of $CT_FORK_SLUG failed"
+assert_contains "$DS_STDOUT" "[dotsteward] the network kept failing, so the machine stays as it is; run the step again once the network is back"
+assert_eq "" "$(instance_calls)" "a network that stays down runs no recovery"
+assert_eq trial "$(live)" "live framework after a network that stayed down"
+network_plan ''
+export DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS=30
+assert_exit 0 run_contribute publish
+assert_eq "$lasting" "$(fork_main)" "fork main once the network is back"
+assert_exit 0 run_contribute release
+state_set '.step = "done"'
+
 # The fork's main holds a commit the next run lacks: a verdict, made once.
-checked_run second-feature 0.1.2
+checked_run second-feature 0.1.3
 mark_trialled full false
 second=$(git -C "$ct_clone" rev-parse HEAD)
 : >"$DS_FAKESSH_LOG"
 assert_exit 1 run_contribute publish
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: main of $CT_FORK_SLUG (${sha:0:12}) cannot be fast-forwarded to ${second:0:12}: it has commits that fix/second-feature lacks; rebase fix/second-feature onto it"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: main of $CT_FORK_SLUG (${lasting:0:12}) cannot be fast-forwarded to ${second:0:12}: it has commits that fix/second-feature lacks; rebase fix/second-feature onto it"
 assert_not_contains "$DS_STDERR" "trying again"
 assert_eq 2 "$(pushes_served)" "pushes served: the branch and the push to main that does not fast-forward, once"
-assert_eq "$sha" "$(fork_main)" "fork main after the refused fast-forward"
+assert_eq "$lasting" "$(fork_main)" "fork main after the refused fast-forward"
 
 # The answer of the push of the fork's main is lost and that main moves on:
 # the push landed, so the run is published, with no call to rebase.

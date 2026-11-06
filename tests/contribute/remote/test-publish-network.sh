@@ -4,8 +4,10 @@
 # for a moment: a `git ls-remote`, a fetch or a push that fails for the
 # network says nothing about the change, so it is made again after a pause
 # that starts at DOTSTEWARD_CONTRIBUTE_POLL_SECONDS and doubles, and only
-# failures that last DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS stop the step. A
-# push reads its ref again first: a push whose answer was lost has landed.
+# failures that last DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS stop the step, with
+# the machine as it is: no recovery, since the failure says nothing about the
+# change, and the step runs again once the network is back. A push reads its
+# ref again first: a push whose answer was lost has landed.
 # test-publish-refused.sh holds what is never made again.
 # shellcheck source=tests/contribute/remote/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/remote/helpers.sh"
@@ -133,12 +135,41 @@ state_set '.step = "done"'
 switched_run lasting-feature 0.1.6
 sha=$(git -C "$ct_clone" rev-parse HEAD)
 
-export DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS=3
+# stays_down PLAN WHAT: with the connections of PLAN, publish stops once the
+# failures lasted the appear time: red, naming WHAT and the network, with the
+# machine as it is and the run still at publish.
+stays_down() {
+  network_plan "$1"
+  export DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS=5
+  reset_calls
+  assert_exit 1 run_contribute publish
+  assert_contains "$DS_STDERR" "[dotsteward] ERROR: $2"
+  assert_contains "$DS_STDOUT" "[dotsteward] the network kept failing, so the machine stays as it is; run the step again once the network is back"
+  assert_not_contains "$DS_STDOUT" "recovery"
+  assert_eq "" "$(instance_calls)" "a network that stays down runs no recovery"
+  assert_eq trial "$(live)" "live framework after a network that stayed down"
+  state_json | assert_json - '.step == "publish" and .trial_switched == true and (.recovery // null) == null'
+  network_plan ''
+  export DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS=30
+}
+
+# The read of the branch: after the tags and the fetch of main.
+stays_down ..xxxxxxxxxx "pushing fix/lasting-feature to origin failed; nothing is published"
+# The read before the push of main: after the tags, the fetch, the branch (its
+# read and its push), the fetch and the tags again.
+stays_down ......xxxxxxxxxx "pushing ${sha:0:12} to main of $CT_UPSTREAM_SLUG failed"
+# A read of GitHub.
+hub_knob pr-flaky 1000
+stays_down '' "cannot read $(field .pr)"
+rm -f -- "$rt_hub/knobs/pr-flaky"
+# Before any of it: the tags.
+export DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS=5
 DS_FAKESSH_FAIL=1 assert_exit 1 run_contribute publish
 assert_contains "$DS_STDERR" "[dotsteward] WARNING: cannot list the tags of origin; trying again in 1s"
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: cannot list the tags of origin"
 assert_eq publish "$(field .step)" "step after a network that stayed down"
 export DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS=30
+# It is back.
 network_plan xx
 assert_exit 0 run_contribute publish
 assert_eq "$sha" "$(upstream_main)" "upstream main once the network is back"
