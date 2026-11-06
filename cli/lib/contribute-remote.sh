@@ -1120,6 +1120,8 @@ contribute_cmd_publish() {
   case $CT_STEP in
     publish) ;;
     release | upgrade | report | done)
+      [[ -n $(_contribute_get merged_sha) ]] ||
+        die "run $id ended as $(_contribute_get outcome) before it was published; a further change is a new run (dotsteward contribute start --slug SLUG)"
       log "run $id is already published: $(_contribute_get merged_sha)"
       return 0
       ;;
@@ -1195,6 +1197,11 @@ contribute_cmd_release() {
   case $CT_STEP in
     release) ;;
     upgrade | report | done)
+      if [[ -z $(_contribute_get tag) ]]; then
+        [[ -n $(_contribute_get merged_sha) ]] ||
+          die "run $id ended as $(_contribute_get outcome) before it was published; nothing is released"
+        die "run $id has no release of its own: the next release bundles its merged commit $(_contribute_get merged_sha | cut -c1-12)"
+      fi
       log "run $id is already released: $(_contribute_get tag)"
       return 0
       ;;
@@ -1680,6 +1687,8 @@ contribute_cmd_upgrade() {
   case $CT_STEP in
     upgrade | release) ;;
     report | done)
+      [[ -n $(_contribute_get instance_commit) ]] ||
+        die "run $id ended as $(_contribute_get outcome) without an upgrade of the instance; move the instance with dotsteward-update, or with a new run"
       log "run $id already upgraded the instance: $(_contribute_get instance_commit)"
       return 0
       ;;

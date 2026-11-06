@@ -52,7 +52,7 @@ The remote steps add `profile` (the profile of the trial, recovery and upgrade),
 | `release` | `dotsteward contribute release` when a release commit is pending; otherwise `dotsteward contribute upgrade --main` or `dotsteward contribute report` (the run ends at publish) |
 | `upgrade` | `dotsteward contribute upgrade --tag <tag>`, or `--main` when it follows the merged commit, with `--carry` when it carries instance commits |
 | `report` | `dotsteward contribute report` |
-| `done` | nothing: the run is finished |
+| `done` | nothing: the run is finished. A step it did not reach says so and exits 1; its change needs a new run, and the instance follows it with `dotsteward-update` or the upgrade of a new run |
 
 `dotsteward contribute start --slug SLUG` with the slug of an unfinished run switches the clone back to its branch and makes it the current run again. A step that is not the next one refuses and names the next command.
 
