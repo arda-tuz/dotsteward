@@ -84,6 +84,10 @@ assert_exit 0 run_contribute report
 assert_contains "$DS_STDOUT" "[dotsteward] contribute run $id: completed"
 assert_contains "$DS_STDOUT" "  release: none"
 assert_contains "$DS_STDOUT" "  instance commit: $(git -C "$ct_inst" rev-parse HEAD)"
+assert_exit 1 run_contribute release
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: run $id has no release of its own: the next release bundles its merged commit ${merged:0:12}"
+assert_exit 0 run_contribute upgrade --main
+assert_contains "$DS_STDOUT" "[dotsteward] run $id already upgraded the instance: $(git -C "$ct_inst" rev-parse HEAD)"
 git -C "$ct_inst" push -q origin HEAD:main
 
 # --- the git+ form, interrupted and resumed on main ----------------------------------------------

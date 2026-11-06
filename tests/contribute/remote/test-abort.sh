@@ -74,3 +74,11 @@ assert_contains "$DS_STDERR" "[dotsteward] ERROR: run $(current_id) has no repor
 # An aborted run reports its outcome.
 assert_exit 0 run_contribute report --id "$old"
 assert_contains "$DS_STDOUT" "[dotsteward] contribute run $old: aborted"
+
+# The steps it never reached say so, with status 1: they did not happen.
+assert_exit 1 run_contribute publish --id "$old"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: run $old ended as aborted before it was published; a further change is a new run"
+assert_exit 1 run_contribute release --id "$old"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: run $old ended as aborted before it was published; nothing is released"
+assert_exit 1 run_contribute upgrade --id "$old"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: run $old ended as aborted without an upgrade of the instance"

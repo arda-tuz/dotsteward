@@ -11,7 +11,9 @@
 # feat: the next minor, otherwise the next patch), and the release bundles
 # the commits of both runs; the GitHub release carries their subjects as
 # grouped notes (Features, Fixes, Other). A breaking change needs the next
-# major in VERSION, and that release is cut only with `release --major`.
+# major in VERSION, and that release is cut only with `release --major`. A run
+# that ended at publish says so to the steps it skipped, with status 1: they
+# did not happen.
 # shellcheck source=tests/contribute/remote/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/remote/helpers.sh"
 
@@ -73,6 +75,14 @@ state_json | assert_json - '.step == "done" and .outcome == "published" and .tag
 assert_exit 0 run_contribute report --json
 assert_json - ".outcome == \"published\" and .merged_sha == \"$first\" and .tag == null and .release_url == null
   and .instance_commit == null" <<<"$DS_STDOUT"
+assert_exit 0 run_contribute publish
+assert_contains "$DS_STDOUT" "[dotsteward] run $id is already published: $first"
+assert_exit 1 run_contribute release
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: run $id has no release of its own: the next release bundles its merged commit ${first:0:12}"
+assert_exit 1 run_contribute upgrade --main
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: run $id ended as published without an upgrade of the instance; move the instance with dotsteward-update, or with a new run"
+assert_exit 1 run_contribute upgrade --tag v0.1.0
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: run $id ended as published without an upgrade of the instance"
 
 # --- a feature with a release commit: the next minor, bundling both runs ----------------------
 
