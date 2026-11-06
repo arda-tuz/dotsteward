@@ -30,8 +30,9 @@ source "$DOTSTEWARD_LIB/lib.sh"
 source "$DOTSTEWARD_LIB/config.sh"
 
 # DOTSTEWARD_LIB is the library of the CLI that runs the hook, which can be
-# older than the hook: a contribute trial checks the generation of a
-# candidate framework with the CLI of the pinned release. A lib.sh that
+# older than the hook when a release from before the trial ran the
+# candidate's own CLI starts a contribute trial: it checks the generation of
+# a candidate framework with the CLI of the pinned release. A lib.sh that
 # predates user_login_zsh gets the helper of this release here.
 if ! declare -F user_login_zsh >/dev/null; then
   user_login_zsh() {

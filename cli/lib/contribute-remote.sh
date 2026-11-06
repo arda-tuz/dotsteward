@@ -28,11 +28,13 @@
 # DOTSTEWARD_FRAMEWORK_OVERRIDE removed from their environment, so a
 # framework override is exactly the --framework-override flag the trial
 # passes and never leaks into the recovery or the upgrade. They run
-# through the running CLI, except in the upgrade once flake.lock pins the
-# release: from there on they run through the instance launcher
-# (.dotsteward/cli.sh), so the release's CLI validates, rebuilds and
-# publishes the upgraded instance and `static` compares the refreshed
-# template files with the release's template/, not the running one's.
+# through the running CLI, except in two places: the trial's run through the
+# candidate's own CLI, so the hooks of the candidate's generation see the
+# library of their own release, and in the upgrade once flake.lock pins the
+# release they run through the instance launcher (.dotsteward/cli.sh), so the
+# release's CLI validates, rebuilds and publishes the upgraded instance and
+# `static` compares the refreshed template files with the release's
+# template/, not the running one's.
 #
 # Run state fields added by these steps (next to those of `start`):
 #   profile          the profile of the trial (the current profile, else
@@ -298,6 +300,30 @@ _contribute_red() {
 
 # --- trial --------------------------------------------------------------------------
 
+# _contribute_candidate_cli REF: CT_CANDIDATE_CLI, the CLI of the instance
+# with the framework at the flake reference REF (its dotsteward package with
+# the override, in memory): what the launcher of the upgraded instance will
+# run, built with the instance's nixpkgs like the CLI that runs now, so both
+# have the same toolchain, which `user_path` leaves out of the user's PATH.
+_contribute_candidate_cli() {
+  local ref=$1 output
+  log "building the CLI of the framework at ${CT_TEST_SHA:0:12}"
+  output=$(nix_cmd build "$DS_INSTANCE_ROOT#dotsteward" --no-link --no-update-lock-file --no-write-lock-file \
+    --override-input dotsteward "$ref" --print-out-paths </dev/null) ||
+    _contribute_red "trial: the CLI of the framework at ${CT_TEST_SHA:0:12} does not build; nothing is published"
+  CT_CANDIDATE_CLI=${output##*$'\n'}/bin/dotsteward
+  [[ -x $CT_CANDIDATE_CLI ]] ||
+    _contribute_red "trial: the build of the CLI of the framework at ${CT_TEST_SHA:0:12} has no executable bin/dotsteward; nothing is published"
+}
+
+# _contribute_candidate COMMAND [ARG...]: dotsteward COMMAND ARG... on the
+# instance through the candidate's CLI, without an inherited framework
+# override.
+_contribute_candidate() {
+  log "dotsteward $*"
+  env -u DOTSTEWARD_FRAMEWORK_OVERRIDE "$CT_CANDIDATE_CLI" --instance "$DS_INSTANCE_ROOT" "$@"
+}
+
 contribute_cmd_trial() {
   local id="" build_only=0
   while (($#)); do
@@ -339,20 +365,21 @@ contribute_cmd_trial() {
   _contribute_set '.profile = $profile | .trial = null | .trial_sha = null' --arg profile "$profile"
   log "trial ($kind) of ${CT_TEST_SHA:0:12} on profile $profile with --framework-override $ref"
 
-  _contribute_instance gate --scope maintain --framework-override "$ref" ||
+  _contribute_candidate_cli "$ref"
+  _contribute_candidate gate --scope maintain --framework-override "$ref" ||
     _contribute_red "trial: the gate failed with the framework at ${CT_TEST_SHA:0:12}; nothing is published"
   if ((build_only)); then
-    _contribute_instance rebuild --profile "$profile" --build-only --framework-override "$ref" ||
+    _contribute_candidate rebuild --profile "$profile" --build-only --framework-override "$ref" ||
       _contribute_red "trial: rebuild --build-only failed with the framework at ${CT_TEST_SHA:0:12}; nothing is published"
   else
     # Set before the switch: a switch that fails half way needs the recovery.
     _contribute_set '.trial_switched = true'
-    _contribute_instance rebuild --profile "$profile" --switch --framework-override "$ref" ||
+    _contribute_candidate rebuild --profile "$profile" --switch --framework-override "$ref" ||
       _contribute_red "trial: rebuild --switch failed with the framework at ${CT_TEST_SHA:0:12}; nothing is published"
     local -a remote_base=()
     _contribute_waiting_base
     [[ -z $CT_WAITING_BASE ]] || remote_base=(--expected-remote-base "$CT_WAITING_BASE")
-    _contribute_instance e2e --profile "$profile" "${remote_base[@]}" --framework-override "$ref" ||
+    _contribute_candidate e2e --profile "$profile" "${remote_base[@]}" --framework-override "$ref" ||
       _contribute_red "trial: e2e failed with the framework at ${CT_TEST_SHA:0:12}; nothing is published"
   fi
   # shellcheck disable=SC2016 # jq variables

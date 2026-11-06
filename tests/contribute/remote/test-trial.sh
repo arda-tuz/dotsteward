@@ -93,12 +93,12 @@ rm -f -- "$rt_hub/knobs/candidate-cli"
 reset_calls
 DOTSTEWARD_FRAMEWORK_OVERRIDE=path:/elsewhere assert_exit 0 run_contribute trial
 assert_eq "$(trial_calls)" "$(instance_calls)" "calls of the full trial"
-assert_call_count 1 nix "build $ct_inst#dotsteward --no-link --no-update-lock-file --no-write-lock-file --override-input dotsteward $ref --print-out-paths"
+assert_call_count 1 nix "*build $ct_inst#dotsteward --no-link --no-update-lock-file --no-write-lock-file --override-input dotsteward git+file://$ct_clone* --print-out-paths"
 # The candidate's CLI runs all three.
 assert_call_count 3 candidate-cli
-assert_call_count 1 candidate-cli "--instance $ct_inst gate --scope maintain --framework-override $ref"
-assert_call_count 1 candidate-cli "--instance $ct_inst rebuild --profile main --switch --framework-override $ref"
-assert_call_count 1 candidate-cli "--instance $ct_inst e2e --profile main --framework-override $ref"
+assert_call_count 1 candidate-cli "--instance $ct_inst gate --scope maintain --framework-override git+file://$ct_clone*"
+assert_call_count 1 candidate-cli "--instance $ct_inst rebuild --profile main --switch --framework-override git+file://$ct_clone*"
+assert_call_count 1 candidate-cli "--instance $ct_inst e2e --profile main --framework-override git+file://$ct_clone*"
 assert_contains "$DS_STDOUT" "[dotsteward] trial passed: this machine runs the framework at ${sha:0:12}"
 assert_contains "$DS_STDOUT" "[dotsteward] next: dotsteward contribute publish"
 assert_eq "$ref" "$(live)" "live framework after the trial"

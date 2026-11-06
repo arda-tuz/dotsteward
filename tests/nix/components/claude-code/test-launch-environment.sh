@@ -143,7 +143,8 @@ assert_eq '' "$(zsh -lic 'claude --version >/dev/null; print -r -- "${EXAMPLE_TO
   "the shell keeps no value after a launch"
 
 # The hook runs with the library of the CLI that runs it, which can be older
-# than the hook: a contribute trial checks the generation of a candidate
+# than the hook when a release from before the trial ran the candidate's own
+# CLI starts a contribute trial: it checks the generation of a candidate
 # framework with the CLI of the pinned release. With a lib.sh that predates
 # user_login_zsh, the hook checks the same in one login shell.
 older=$DS_TEST_ROOT/older-cli

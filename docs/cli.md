@@ -272,7 +272,9 @@ Steps:
   trial [--build-only]    the trial on this machine: gate,
                           rebuild --switch and e2e of the instance with
                           --framework-override git+file://<clone>?rev=<the
-                          checked commit>; --build-only: gate and rebuild
+                          checked commit>, run by the candidate's own CLI
+                          (the instance's dotsteward package built with
+                          that override); --build-only: gate and rebuild
                           --build-only (no switch, no e2e). Red: nothing is
                           published and a trial switch is recovered. An
                           instance HEAD ahead of origin (commits that wait

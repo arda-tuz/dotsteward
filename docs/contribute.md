@@ -114,8 +114,10 @@ the gate. `contribute check` prints the values it uses.
 
 The trial runs your own instance against the candidate framework
 (`--framework-override git+file://<clone>?rev=<commit>`): its gate, a
-switch to the resulting generation and the end-to-end checks. A red trial
-publishes nothing. `--build-only` stops after the build; publishing then
+switch to the resulting generation and the end-to-end checks, all run by the
+candidate's own CLI (your instance's `dotsteward` package built with that
+override), so the candidate's hooks see the library of their own release. A
+red trial publishes nothing. `--build-only` stops after the build; publishing then
 also requires the clean-install workflow to pass on the commit, which
 activates it on a disposable CI machine.
 

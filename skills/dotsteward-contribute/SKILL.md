@@ -123,7 +123,7 @@ It returns when the running step ends and exits with that step's status (0, 1, 4
 dotsteward contribute trial
 ```
 
-The trial runs the instance gate, `rebuild --switch` and `e2e` on this machine with the checked framework commit as a framework override, so the live generation briefly uses the candidate framework. A red trial publishes nothing and switches the machine back to the pinned framework by itself (the recovery). Fix the cause in the clone, then run `check` and `trial` again.
+The trial runs the instance gate, `rebuild --switch` and `e2e` on this machine with the checked framework commit as a framework override, through the candidate's own CLI, so the live generation briefly uses the candidate framework. A red trial publishes nothing and switches the machine back to the pinned framework by itself (the recovery). Fix the cause in the clone, then run `check` and `trial` again.
 
 When the user does not want an activation on this machine (a test instance, a machine that must not switch), ask, then run the trial without switching; publish then also requires the `clean-install.yml` workflow green on the pull request head, which activates the change on a fresh CI runner:
 
