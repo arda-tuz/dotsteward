@@ -10,7 +10,8 @@
 # without --promote and the privacy configuration are unaffected. The same
 # slug again with --promote sets it on the unfinished run; another name is
 # refused. The report of the run names the promoted component (promote in
-# --json, null without one).
+# --json, null without one). A component that is no longer private keeps its
+# name exempt for the run, and the warning of check says so.
 # shellcheck source=tests/contribute/local/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/local/helpers.sh"
 
@@ -145,3 +146,23 @@ assert_exit 0 run_contribute report
 assert_not_contains "$DS_STDOUT" "promoted component"
 assert_exit 0 run_contribute report --json
 assert_json - '.promote == null' <<<"$DS_STDOUT"
+
+# --- the promoted component is no longer private --------------------------------
+
+# The component left the instance after the run started, while another
+# instance fact still holds its name: an instance skill. The name stays
+# exempt for this run, as the warning says.
+assert_exit 0 run_contribute start --slug promote-gone --promote example-term
+sed -i '/^\[components\.example-term\]$/,/^$/d' "$ct_inst/workstation.toml"
+jq '.skills += [{name: "example-term", directory: "agent/skills/example-term"}]' \
+  "$ct_inst/agent/skills.lock.json" >"$DS_TEST_ROOT/skills.lock.json"
+cp "$DS_TEST_ROOT/skills.lock.json" "$ct_inst/agent/skills.lock.json"
+clone_commit modules/components/example-term/README.md '# example-term' \
+  'feat(components): the example-term catalog component'
+assert_exit 0 run_contribute check
+assert_contains "$DS_STDERR" "[dotsteward] WARNING: instance-leak scan: example-term is no longer a private component of the instance; the name stays exempt for this run (contribute start --promote), every other instance term still stops it"
+assert_not_contains "$DS_STDERR" "nothing is exempt"
+assert_contains "$DS_STDOUT" "[dotsteward] contribute check passed: "
+if grep -qixF example-term "$DS_TEST_ROOT/terms.copy"; then
+  ds_fail "the terms file holds the promoted name example-term"
+fi
