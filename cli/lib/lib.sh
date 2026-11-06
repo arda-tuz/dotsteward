@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 # dotsteward bash library: the generic helpers shared by the framework
-# commands and by component hooks. Hooks source it through
-# DOTSTEWARD_LIB:
+# commands and by component hooks, frozen as the hook library v1
+# (docs/hook-library.md): no function is added, removed or renamed; new shared
+# code goes into the Python package. Hooks source it through DOTSTEWARD_LIB:
 #
 #   source "$DOTSTEWARD_LIB/lib.sh"
 #

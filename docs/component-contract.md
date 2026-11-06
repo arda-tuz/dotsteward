@@ -314,7 +314,8 @@ hook (`checks.e2e`) also takes `parallel ? false`:
 | `hooks.desktopApply` | First bootstrap (`fresh` profile), after the login shell is set. |
 
 A hook script runs with `DOTSTEWARD_LIB` (the directory of the framework's
-shell helpers), `DOTSTEWARD_INSTANCE`, `DOTSTEWARD_STATE_ROOT`,
+shell helpers, frozen as [the hook library](hook-library.md)),
+`DOTSTEWARD_INSTANCE`, `DOTSTEWARD_STATE_ROOT`,
 `DOTSTEWARD_PROFILE`, `DOTSTEWARD_PROFILE_MODE`, `DOTSTEWARD_PLATFORM`,
 `DOTSTEWARD_COMPONENT`, `DOTSTEWARD_CHECK_ONLY` (`0` or `1`) and
 `DOTSTEWARD_ASSUME_YES`. It must be idempotent, change nothing when

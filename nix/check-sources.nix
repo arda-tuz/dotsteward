@@ -225,6 +225,9 @@ let
         "lib"
         "tests/cli/lib"
         "tests/cli/config"
+        # test-hook-contract.sh: the frozen interface and a real hook
+        "docs/hook-library.md"
+        "tests/cli/methods/helpers.sh"
         "tests/nix/lib/helpers.sh"
         "tests/nix/lib/prelude.nix"
         "tests/nix/lib/fixtures"
