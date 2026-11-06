@@ -267,6 +267,18 @@ contribute_recover_run() {
   _contribute_recover || true
 }
 
+# _contribute_red_for STATUS MESSAGE: a red step after a network operation
+# that ended with STATUS: the network that kept failing (CONTRIBUTE_NET_FAILED)
+# says nothing about the change, and a recovery on it would only fail its e2e,
+# so the machine stays as it is and the step runs again once the network is
+# back. Any other status is _contribute_red.
+_contribute_red_for() {
+  ((${1} == CONTRIBUTE_NET_FAILED)) || _contribute_red "$2"
+  printf '[dotsteward] ERROR: %s\n' "$2" >&2
+  log "the network kept failing, so the machine stays as it is; run the step again once the network is back"
+  exit 1
+}
+
 # _contribute_past_merge: the run is past publish, so its change is merged
 # with the tested tree (step release or later).
 _contribute_past_merge() {
@@ -450,9 +462,10 @@ _contribute_remote_ref_once() {
 }
 
 # _contribute_remote_ref REMOTE REF: the same, read again after a network
-# failure; status 1 when the remote cannot be read.
+# failure; a status other than 0 when the remote cannot be read
+# (CONTRIBUTE_NET_FAILED: the network kept failing).
 _contribute_remote_ref() {
-  _contribute_retry "cannot read $2 on $1; trying again in" _contribute_remote_ref_once "$1" "$2" || return 1
+  _contribute_retry "cannot read $2 on $1; trying again in" _contribute_remote_ref_once "$1" "$2"
 }
 
 # _contribute_push_once REMOTE SOURCE REF COMMIT LEASE(0|1): one attempt of
@@ -513,7 +526,7 @@ _contribute_up_to_date() {
 _contribute_push_branch() {
   local remote=$1
   _contribute_push_ref "$remote" "$CT_TEST_SHA" "refs/heads/$CT_BRANCH" "$CT_TEST_SHA" 1 ||
-    _contribute_red "pushing $CT_BRANCH to $remote failed; nothing is published"
+    _contribute_red_for "$?" "pushing $CT_BRANCH to $remote failed; nothing is published"
   if ((CT_PUSHED)); then
     log "pushed $CT_BRANCH (${CT_TEST_SHA:0:12}) to $remote"
   else
@@ -639,7 +652,7 @@ _contribute_require_version() {
 _contribute_runs() {
   local repo=$1 sha=$2 workflow=$3 event=$4 branch=${5:-} answer
   answer=$(_contribute_ci_read "the workflow runs of ${sha:0:12} in $repo" \
-    gh api -X GET "repos/$repo/actions/runs" -f head_sha="$sha" -F per_page=100) || return 1
+    gh api -X GET "repos/$repo/actions/runs" -f head_sha="$sha" -F per_page=100) || return
   jq -r --arg workflow "$workflow" --arg event "$event" --arg branch "$branch" '
     [.workflow_runs[]?
       | select($workflow == "" or ((.path // "") | split("@")[0]) == ".github/workflows/" + $workflow)
@@ -649,23 +662,42 @@ _contribute_runs() {
     | "\(.id) \(.status) \(.conclusion // "none") \(.html_url // "")"' <<<"$answer"
 }
 
-# _contribute_read_once COMMAND...: the output of COMMAND, a read of GitHub;
-# any failure of it counts as a failure of the network.
+# What gh prints when GitHub answered that it does not know the thing or the
+# caller: a verdict. HTTP 403 and 429 can be a rate limit, so they are read
+# again like every other failure.
+CONTRIBUTE_GH_REFUSED='HTTP 40[14]|could not resolve to a'
+
+# _contribute_read_once COMMAND...: the output of COMMAND, a read of GitHub,
+# standard error passed on. Any failure counts as a failure of the network
+# (status CONTRIBUTE_NET_FAILED), except what CONTRIBUTE_GH_REFUSED names
+# (status 1).
 _contribute_read_once() {
-  local answer
-  answer=$("$@" </dev/null) || return "$CONTRIBUTE_NET_FAILED"
+  local answer errors code=0
+  errors=$(mktemp "${TMPDIR:-/tmp}/dotsteward-gh.XXXXXX") || return 1
+  answer=$("$@" </dev/null 2>"$errors") || code=$?
+  cat -- "$errors" >&2
+  if ((code)); then
+    if grep -Eqi -e "$CONTRIBUTE_GH_REFUSED" -- "$errors"; then
+      code=1
+    else
+      code=$CONTRIBUTE_NET_FAILED
+    fi
+  fi
+  rm -f -- "$errors"
+  ((code == 0)) || return "$code"
   printf '%s\n' "$answer"
 }
 
 # _contribute_ci_read WHAT COMMAND...: the output of COMMAND, a read of GitHub
 # (WHAT names it in the warnings). A failed read is no answer (the network
 # was down for a moment, or GitHub answered HTTP 5xx): it is made again
-# (_contribute_retry), and status 1 (the caller's red) follows only once the
-# reads kept failing for DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS.
+# (_contribute_retry), and CONTRIBUTE_NET_FAILED (the caller's red) follows
+# only once the reads kept failing for DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS.
+# GitHub's answer that it does not know the thing is status 1, at once.
 _contribute_ci_read() {
   local what=$1
   shift
-  _contribute_retry "cannot read $what; reading GitHub again in" _contribute_read_once "$@" || return 1
+  _contribute_retry "cannot read $what; reading GitHub again in" _contribute_read_once "$@"
 }
 
 # _contribute_wait_run REPO ID WHAT [STAKE]: waits for run ID to complete;
@@ -679,7 +711,7 @@ _contribute_wait_run() {
   start=$SECONDS
   while :; do
     answer=$(_contribute_ci_read "run $run of $what in $repo" gh api "repos/$repo/actions/runs/$run") ||
-      _contribute_red "cannot read run $run of $what in $repo"
+      _contribute_red_for "$?" "cannot read run $run of $what in $repo"
     read -r status conclusion url < <(jq -r '"\(.status) \(.conclusion // "none") \(.html_url // "")"' <<<"$answer")
     [[ $status != completed ]] || break
     ((SECONDS - start < timeout)) || _contribute_red "$what did not finish within ${timeout}s: $url; $stake"
@@ -778,7 +810,7 @@ _contribute_wait_pr_checks() {
     else
       failures=$((failures + 1))
       ((failures < limit)) ||
-        _contribute_red "cannot read the CI checks of $pr ($failures failed answers in a row); main is untouched"
+        _contribute_red_for "$CONTRIBUTE_NET_FAILED" "cannot read the CI checks of $pr ($failures failed answers in a row); main is untouched"
     fi
     ((SECONDS - start < timeout)) ||
       _contribute_red "the CI checks ${names// / and } of $pr did not finish within ${timeout}s; main is untouched"
@@ -863,7 +895,7 @@ _contribute_clean_install() {
   interval=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_POLL_SECONDS 15)
   appear=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS 300)
   runs=$(_contribute_runs "$repo" "$CT_TEST_SHA" "$CONTRIBUTE_CLEAN_INSTALL" "") ||
-    _contribute_red "cannot list the runs of $what in $repo"
+    _contribute_red_for "$?" "cannot list the runs of $what in $repo"
   newest=$(head -n 1 <<<"$runs")
   if [[ -n $newest ]]; then
     read -r run status conclusion _ <<<"$newest"
@@ -883,7 +915,7 @@ _contribute_clean_install() {
   start=$SECONDS
   while :; do
     runs=$(_contribute_runs "$repo" "$CT_TEST_SHA" "$CONTRIBUTE_CLEAN_INSTALL" "") ||
-      _contribute_red "cannot list the runs of $what in $repo"
+      _contribute_red_for "$?" "cannot list the runs of $what in $repo"
     newest=$(head -n 1 <<<"$runs")
     run=${newest%% *}
     [[ -z $newest || $run == "$before" ]] || break
@@ -906,7 +938,7 @@ _contribute_fork_ci() {
   appear=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS 300)
   start=$SECONDS
   while :; do
-    runs=$(_contribute_runs "$repo" "$CT_TEST_SHA" "" push) || _contribute_red "cannot list the CI runs in $repo"
+    runs=$(_contribute_runs "$repo" "$CT_TEST_SHA" "" push) || _contribute_red_for "$?" "cannot list the CI runs in $repo"
     [[ -z $runs ]] || break
     ((SECONDS - start < appear)) ||
       _contribute_red "no CI run appeared in $repo for ${CT_TEST_SHA:0:12} within ${appear}s; nothing is published"
@@ -937,11 +969,11 @@ _contribute_pr_body() {
 
 # _contribute_find_pr REPO HEAD_OWNER: prints the URL of the open pull
 # request of the run's branch in REPO whose head belongs to HEAD_OWNER
-# (nothing when there is none); status 1 when gh cannot list them.
+# (nothing when there is none); a status other than 0 when gh cannot list them.
 _contribute_find_pr() {
   local repo=$1 owner=$2 answer
   answer=$(_contribute_ci_read "the pull requests of $repo" \
-    gh pr list -R "$repo" --head "$CT_BRANCH" --state open --json url,headRepositoryOwner) || return 1
+    gh pr list -R "$repo" --head "$CT_BRANCH" --state open --json url,headRepositoryOwner) || return
   jq -r --arg owner "$owner" \
     '[.[] | select((.headRepositoryOwner.login // "" | ascii_downcase) == ($owner | ascii_downcase))][0].url // empty' \
     <<<"$answer"
@@ -954,7 +986,7 @@ _contribute_open_pr() {
   local repo=$1 head=$2 remote=$3 owner answer
   owner=${head%%:*}
   [[ $head == *:* ]] || owner=${repo%%/*}
-  CT_PR=$(_contribute_find_pr "$repo" "$owner") || _contribute_red "cannot list the pull requests of $repo"
+  CT_PR=$(_contribute_find_pr "$repo" "$owner") || _contribute_red_for "$?" "cannot list the pull requests of $repo"
   if [[ -n $CT_PR ]]; then
     log "reusing $CT_PR"
   else
@@ -986,7 +1018,7 @@ _contribute_fast_forward_main() {
   log "merging $pr: fast-forwarding main of $CT_PUBLISH_SLUG to ${CT_TEST_SHA:0:12}"
   _contribute_push_ref origin "$CT_TEST_SHA" refs/heads/main "$CT_TEST_SHA" || code=$?
   if ((code == CONTRIBUTE_NET_FAILED)); then
-    _contribute_red "the network kept failing while ${CT_TEST_SHA:0:12} was pushed to main of $CT_PUBLISH_SLUG; run publish again once it is back"
+    _contribute_red_for "$code" "pushing ${CT_TEST_SHA:0:12} to main of $CT_PUBLISH_SLUG failed"
   elif ((code)); then
     if _contribute_landed_on_main; then
       return 0
@@ -1019,7 +1051,7 @@ _contribute_publish_owner() {
   pr=$(_contribute_get pr)
   state=OPEN
   if [[ -n $pr ]]; then
-    answer=$(_contribute_ci_read "$pr" gh pr view "$pr" --json state) || _contribute_red "cannot read $pr"
+    answer=$(_contribute_ci_read "$pr" gh pr view "$pr" --json state) || _contribute_red_for "$?" "cannot read $pr"
     state=$(jq -r '.state' <<<"$answer")
     [[ $state != CLOSED ]] || die "the pull request $pr is closed; reopen it, or end the run with: dotsteward contribute abort"
   fi
@@ -1045,7 +1077,7 @@ _contribute_publish_owner() {
     fi
   fi
   if [[ -z $merged ]]; then
-    answer=$(_contribute_ci_read "$pr" gh pr view "$pr" --json state,mergeCommit) || _contribute_red "cannot read $pr after the merge"
+    answer=$(_contribute_ci_read "$pr" gh pr view "$pr" --json state,mergeCommit) || _contribute_red_for "$?" "cannot read $pr after the merge"
     merged=$(jq -r 'if .state == "MERGED" then .mergeCommit.oid // empty else empty end' <<<"$answer")
     [[ -n $merged ]] || _contribute_red "$pr is not merged"
   fi
@@ -1069,11 +1101,11 @@ _contribute_publish_fork() {
   ((build_only == 0)) || _contribute_clean_install "$CT_PUBLISH_SLUG"
   _contribute_up_to_date upstream
   _contribute_require_version "$CT_TEST_SHA"
-  main=$(_contribute_remote_ref origin refs/heads/main) || _contribute_red "cannot read main of $CT_PUBLISH_SLUG"
+  main=$(_contribute_remote_ref origin refs/heads/main) || _contribute_red_for "$?" "cannot read main of $CT_PUBLISH_SLUG"
   if [[ $main != "$CT_TEST_SHA" ]]; then
     _contribute_push_ref origin "$CT_TEST_SHA" refs/heads/main "$CT_TEST_SHA" || code=$?
     ((code != CONTRIBUTE_NET_FAILED)) ||
-      _contribute_red "the network kept failing while ${CT_TEST_SHA:0:12} was pushed to main of $CT_PUBLISH_SLUG; run publish again once it is back"
+      _contribute_red_for "$code" "pushing ${CT_TEST_SHA:0:12} to main of $CT_PUBLISH_SLUG failed"
     if ((code == 0)); then
       log "fast-forwarded main of $CT_PUBLISH_SLUG to ${CT_TEST_SHA:0:12}"
     elif ! _contribute_landed_on_main; then

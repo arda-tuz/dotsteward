@@ -258,7 +258,9 @@ machine and its framework skills return to the pinned release. Red steps
 recover on their own, except `release` and `upgrade`: the change is merged
 with the tested tree, so the machine keeps the trial framework, which is
 what `main` has, until the upgrade switches on; run the red step again once
-the cause is fixed. `dotsteward contribute abort` recovers
+the cause is fixed. A step that stops because the network kept failing says
+so and leaves the machine as it is too: the failure says nothing about the
+change, so run the step again once the network is back. `dotsteward contribute abort` recovers
 first and then ends the run. Abort never undoes what is already public: a
 merged commit stays, and an open pull request stays open until you close
 it.

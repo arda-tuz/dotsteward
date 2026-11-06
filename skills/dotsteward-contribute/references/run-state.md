@@ -69,6 +69,7 @@ The remote steps add `profile` (the profile of the trial, recovery and upgrade),
 A full trial switches the live generation to the candidate framework (`trial_switched` becomes true). Until the upgrade has switched the machine to the released framework, the framework skill links and the CLI on this machine come from that trial commit. Whenever the run ends without a successful upgrade (a red step before the merge, a privacy stop, red CI, the user's decision, or `report` at step `release`, which ends a run at publish), the recovery returns the machine to the instance's pinned framework: `rebuild --switch` without an override, then `e2e`.
 
 - Red steps after a trial switch run the recovery themselves before they exit, except `release` and `upgrade`: the change is merged with the tested tree, so the trial framework is what `main` has; the machine keeps it until the upgrade switches to the release (or to the merged commit), or until `abort` or, at a run that ends at publish, `report` end the run with the recovery. Run the red step again once the cause is fixed.
+- A step that stops because the network kept failing says so and runs no recovery either: the failure says nothing about the change. Run the step again once the network is back.
 - To end a run on purpose, at any step before `done`:
 
   ```bash
