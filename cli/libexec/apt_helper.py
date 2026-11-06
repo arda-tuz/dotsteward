@@ -1,0 +1,1224 @@
+"""The apt engine of `dotsteward upgrade`: it plans in one depcache and refuses by named risk classes.
+
+This file runs under the system's /usr/bin/python3 with python3-apt, not under the
+python of the CLI, and as root when it changes something, so it holds to Python 3.10
+syntax and the standard library (Ubuntu 22.04 has apt 2.4 and Python 3.10) and imports
+nothing of the framework. dotsteward_cli.apt_plan calls it:
+
+    /usr/bin/python3 -I apt_helper.py ACTION [--output FILE] < request.json
+
+    plan      what the run would do: the shared target of kernel, module and driver,
+              the changes of the depcache and what the refusal list says about them;
+              it needs no privileges and changes nothing
+    analysis  the upgradable packages outside the tracked set, read only
+
+The answer is one JSON document on standard output or in FILE. Exit status 0: the
+action ran, whatever the plan says; 1: it could not, and the document holds `error`
+with `code` and `message`; 2: a usage error.
+
+The classes of the kernel and of the NVIDIA stack are gated: only the shared target
+moves them, kernel, module meta package and driver as one unit, all or nothing, and
+never past the phasing of any member. Everything is derived from the records of what
+is installed; no version of a kernel or a driver is data of the framework.
+"""
+
+from __future__ import annotations
+
+import datetime
+import functools
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+try:
+    import apt
+    import apt_pkg
+except ImportError:
+    apt = None
+    apt_pkg = None
+
+SCHEMA_VERSION = 1
+PIN_FILE = "60dotsteward"
+PIN_PRIORITY = 990
+PIN_HEADER = "# Managed by dotsteward: gated classes stay as dpkg has them. Only `dotsteward upgrade` moves them."
+# The Sources of the gated classes: what the pin holds. The other kernel packages
+# (linux-signed-*, linux-hwe-*) carry the ABI in their names: only these pull them in.
+GATED_SOURCE = re.compile(
+    r"^(?:linux-meta|linux-restricted-modules|linux-restricted-signatures|nvidia-graphics-drivers-)"
+)
+GATED_GLOBS = ("linux-meta*", "linux-restricted-modules*", "linux-restricted-signatures*", "nvidia-graphics-drivers-*")
+ABI = r"\d+\.\d+\.\d+-\d+"
+IMAGE_RE = re.compile(rf"^linux-image-(?:unsigned-)?({ABI})-([a-z0-9]+(?:-[a-z0-9]+)*)$")
+# A package of one kernel ABI: linux-modules-7.0.0-42-generic, linux-hwe-7.0-headers-7.0.0-42.
+ABI_PACKAGE_RE = re.compile(rf"^linux-(?:[a-z0-9.-]*-)?({ABI})(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?$")
+# Packages of one kernel flavour, the ones a new flavour brings along.
+FLAVOUR_RE = re.compile(
+    rf"^linux-(?:image|modules|modules-extra|headers)-(?:unsigned-)?{ABI}-([a-z0-9]+(?:-[a-z0-9]+)*)$"
+)
+DRIVER_RE = re.compile(r"^nvidia-driver-(\d+)(-server)?(-open)?$")
+DKMS_RE = re.compile(r"^nvidia-dkms-")
+BOOT_LOW_MIB = 200
+# The refusals a person can lift with `--accept install:<package>`.
+ACCEPTABLE = {"constrained-major", "kernel-flavour", "dkms"}
+UBUNTU_DRIVERS_RE = re.compile(r"^driver\s*:\s*(nvidia-driver-\S+)\s+-\s+(.*)$")
+
+
+class HelperError(Exception):
+    """The action could not run; `code` names the reason for a report."""
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def vcmp(left, right):
+    return apt_pkg.version_compare(left, right)
+
+
+def newest_first(versions):
+    return sorted(versions, key=functools.cmp_to_key(lambda a, b: vcmp(a.version, b.version)), reverse=True)
+
+
+def deps(version):
+    """The Pre-Depends and Depends of a version as (name, relation, version), or-groups flattened."""
+    return [(dep.name, dep.relation, dep.version) for group in version.dependencies for dep in group.or_dependencies]
+
+
+def series_of(version):
+    """The series of a kernel: the first two numbers of the version of its meta package (7.0.0-42 is 7.0)."""
+    match = re.match(r"(?:\d+:)?(\d+)\.(\d+)", version)
+    return f"{match.group(1)}.{match.group(2)}" if match else ""
+
+
+def series_key(series):
+    return tuple(int(part) for part in series.split("."))
+
+
+def source_class(name, source):
+    """The named class of a package, by its Source; None for every other package."""
+    if source.startswith("nvidia-graphics-drivers-"):
+        return "nvidia-driver"
+    if source.startswith("linux-restricted-"):
+        return "nvidia-module"
+    if source.startswith("linux-meta"):
+        return "kernel"
+    if source.startswith("linux-firmware"):
+        return "firmware"
+    if (source == "linux" or source.startswith("linux-")) and ABI_PACKAGE_RE.match(name):
+        return "kernel"
+    return None
+
+
+def pin_text(pairs):
+    """The pin file: each (source, version) at 990, every other version of a gated Source at -1.
+    `:any` because a `src:` pin without it holds only packages of the native architecture,
+    and the driver stack has i386 libraries."""
+    body = [
+        f"Package: src:{source}:any\nPin: version {version}\nPin-Priority: {PIN_PRIORITY}\n"
+        for source, version in pairs
+    ]
+    glob = " ".join(f"src:{name}:any" for name in GATED_GLOBS)
+    body.append(f"Package: {glob}\nPin: version *\nPin-Priority: -1\n")
+    return PIN_HEADER + "\n" + "\n".join(body)
+
+
+class Session:
+    """One action: its request, the temporary pin directories and the caches."""
+
+    def __init__(self, request):
+        self.request = request
+        self.mode = request.get("mode", "tracked")
+        self.tracked = set(request.get("tracked") or [])
+        self.gated = request.get("gated", True) is not False
+        self.running_kernel = request.get("running_kernel") or os.uname().release
+        self.codename = request.get("codename") or os_release_codename()
+        self.constraints = {name: str(value) for name, value in (request.get("constraints") or {}).items()}
+        self.accept_install = set()
+        self.accept_kernel = None
+        self.accept_nvidia = None
+        for key in request.get("accept") or []:
+            if key.startswith("install:"):
+                self.accept_install.add(key[len("install:") :])
+            elif key.startswith("series:kernel="):
+                self.accept_kernel = key[len("series:kernel=") :]
+            elif key.startswith("series:nvidia="):
+                self.accept_nvidia = key[len("series:nvidia=") :]
+        self.stable_suites = {self.codename, f"{self.codename}-updates", f"{self.codename}-security"}
+        apt_pkg.init_config()
+        apt_pkg.init_system()
+        self.real_parts = apt_pkg.config.find_dir("Dir::Etc::PreferencesParts")
+        self.preferences = apt_pkg.config.find("Dir::Etc::Preferences")
+        self.scratch = tempfile.mkdtemp(prefix="dotsteward-apt-")
+        self.pin_dirs = 0
+
+    def close(self):
+        shutil.rmtree(self.scratch, ignore_errors=True)
+
+    def pin_dir(self, text):
+        """A directory for Dir::Etc::PreferencesParts: the files of others as they are, ours with TEXT."""
+        self.pin_dirs += 1
+        directory = os.path.join(self.scratch, f"pins-{self.pin_dirs}")
+        os.mkdir(directory)
+        if os.path.isdir(self.real_parts):
+            for name in os.listdir(self.real_parts):
+                if name != PIN_FILE:
+                    os.symlink(os.path.join(self.real_parts, name), os.path.join(directory, name))
+        if text is not None:
+            with open(os.path.join(directory, PIN_FILE), "w", encoding="utf-8") as handle:
+                handle.write(text)
+        return directory
+
+    def open_cache(self, text):
+        """A cache under the other's pins and the pin TEXT; the real file of ours is never read."""
+        apt_pkg.config.set("Dir::Etc::PreferencesParts", self.pin_dir(text))
+        return apt.Cache()
+
+    def open_pinless(self):
+        """A cache without any pin: every version in the archive is a candidate for the records."""
+        directory = os.path.join(self.scratch, "no-pins")
+        os.makedirs(directory, exist_ok=True)
+        apt_pkg.config.set("Dir::Etc::PreferencesParts", directory)
+        apt_pkg.config.set("Dir::Etc::Preferences", "/dev/null")
+        cache = apt.Cache()
+        apt_pkg.config.set("Dir::Etc::Preferences", self.preferences)
+        return cache
+
+    def stable(self, version):
+        """Ubuntu's own release, -updates or -security; not -proposed, not -backports, not a PPA."""
+        return any(origin.origin == "Ubuntu" and origin.archive in self.stable_suites for origin in version.origins)
+
+    def suite_of(self, version):
+        for origin in version.origins:
+            if origin.origin == "Ubuntu" and origin.archive in self.stable_suites:
+                return origin.archive
+        return version.origins[0].archive if version.origins else ""
+
+
+def os_release_codename():
+    path = os.environ.get("DOTSTEWARD_OS_RELEASE") or "/etc/os-release"
+    values = {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                if "=" in line:
+                    key, value = line.strip().split("=", 1)
+                    values[key] = value.strip("\"'")
+    except OSError:
+        return ""
+    return values.get("VERSION_CODENAME") or values.get("UBUNTU_CODENAME") or ""
+
+
+# --- the gated classes, derived from what is installed ------------------------------
+
+
+def abi_of_meta(cache, version):
+    """(abi, flavour base) of a kernel meta package version, through its Depends, never its version string."""
+    pending = [version]
+    seen = set()
+    while pending:
+        current = pending.pop()
+        for name, _relation, _value in deps(current):
+            match = IMAGE_RE.match(name)
+            if match:
+                return match.group(1), match.group(2)
+        for name, _relation, _value in deps(current):
+            if name.startswith("linux-image-") and name in cache and name not in seen:
+                seen.add(name)
+                pending.extend(v for v in cache[name].versions if v.version == current.version)
+    return None
+
+
+def read_classes(cache):
+    """What is gated on this machine: the kernel meta package, the driver and its module meta package."""
+    pairs = set()
+    metas = []
+    drivers = []
+    images = []
+    for pkg in cache:
+        installed = pkg.installed
+        if installed is None:
+            continue
+        source = installed.source_name
+        if GATED_SOURCE.match(source):
+            pairs.add((source, installed.version))
+        if source.startswith("linux-meta"):
+            found = abi_of_meta(cache, installed)
+            if found:
+                metas.append((pkg, found))
+        match = DRIVER_RE.match(pkg.shortname)
+        if match:
+            drivers.append((int(match.group(1)), pkg, match))
+        image = IMAGE_RE.match(pkg.shortname)
+        if image:
+            images.append((image.group(1), image.group(2)))
+    needed = {name for pkg, _found in metas for name, _relation, _value in deps(pkg.installed)}
+    tops = [(pkg, found) for pkg, found in metas if pkg.shortname not in needed] or metas
+    tops.sort(key=functools.cmp_to_key(lambda a, b: vcmp(a[0].installed.version, b[0].installed.version)), reverse=True)
+    classes = {
+        "pairs": sorted(pairs),
+        "kernel": None,
+        "nvidia": None,
+        "other_metas": [pkg.shortname for pkg, _found in tops[1:]],
+        "bases": sorted({base for _abi, base in images}),
+        "abis": sorted({abi for abi, _base in images}),
+    }
+    flavour = None
+    if tops:
+        pkg, (abi, base) = tops[0]
+        flavour = pkg.shortname[len("linux-") :]
+        if flavour.startswith("image-"):
+            flavour = flavour[len("image-") :]
+        classes["kernel"] = {
+            "meta": pkg.shortname,
+            "version": pkg.installed.version,
+            "series": series_of(pkg.installed.version),
+            "flavour": flavour,
+            "abi": abi,
+            "base": base,
+        }
+    if drivers:
+        _n, pkg, match = max(drivers, key=lambda row: row[0])
+        kind = (match.group(2) or "") + (match.group(3) or "")
+        classes["nvidia"] = driver_line(cache, match.group(1), kind, flavour, pkg.installed.version)
+        classes["nvidia"]["source"] = pkg.installed.source_name
+    return classes
+
+
+def driver_line(cache, number, kind, flavour, installed_version):
+    """The names of one driver series: the driver, its module packages, the package that holds the range."""
+    server = "-server" if kind.startswith("-server") else ""
+    module_meta = f"linux-modules-nvidia-{number}{kind}-{flavour}"
+    line = {
+        "series": f"{number}{kind}",
+        "number": number,
+        "kind": kind,
+        "driver": f"nvidia-driver-{number}{kind}",
+        "version": installed_version,
+        "common": f"nvidia-kernel-common-{number}{server}",
+        "module_prefix": f"linux-modules-nvidia-{number}{kind}",
+        "module_meta": module_meta,
+        "module_version": None,
+    }
+    if module_meta in cache and cache[module_meta].installed is not None:
+        line["module_version"] = cache[module_meta].installed.version
+    return line
+
+
+def is_transitional(version, driver):
+    """A version whose Depends names another nvidia-driver-*: the series is retired, however
+    much the same name and Source look like an update of this series."""
+    return any(name.startswith("nvidia-driver-") and name != driver for name, _relation, _value in deps(version))
+
+
+def accepts(version, common, driver_version):
+    """Whether a module version takes this driver: its range on the package that holds the upstream version."""
+    bound = False
+    for name, relation, value in deps(version):
+        if name == common and relation:
+            bound = True
+            if not apt_pkg.check_dep(driver_version, relation, value):
+                return False
+    return bound
+
+
+def version_of(cache, name, wanted):
+    if name not in cache:
+        return None
+    return next((v for v in cache[name].versions if v.version == wanted), None)
+
+
+def abi_of_release(release):
+    """The ABI of `uname -r`: 7.0.0-42-generic is 7.0.0-42."""
+    match = re.match(rf"^{ABI}", release)
+    return match.group(0) if match else release
+
+
+def report_item(code, *, pending=False, **fields):
+    return {"code": code, "pending": pending, **fields}
+
+
+def joint_target(session, cache, classes):
+    """One shared target for kernel, module meta and driver, read from the records.
+    The answer has `pairs`, the (source, version) that may move, and `losses`, the module packages
+    of other ABIs that apt removes because nothing in the archive takes the new driver; None when
+    there is no target, with the reasons in `items`."""
+    items = []
+    kernel = classes["kernel"]
+    target = {
+        "pairs": [],
+        "losses": [],
+        "kernel": None,
+        "module": None,
+        "abi_module": None,
+        "driver": None,
+        "abi": None,
+    }
+    if kernel is None and classes["nvidia"] is None:
+        return None, items
+
+    kernels = []
+    if kernel:
+        meta = cache[kernel["meta"]]
+        kernels = [
+            v
+            for v in newest_first(meta.versions)
+            if v.version == kernel["version"] or (session.stable(v) and vcmp(v.version, kernel["version"]) > 0)
+        ]
+        target["kernel"] = kernel["version"]
+    wanted_series = session.accept_kernel or (kernel["series"] if kernel else None)
+    candidates = [v for v in kernels if series_of(v.version) == wanted_series]
+    if session.accept_kernel and not candidates:
+        items.append(
+            report_item(
+                "apt-denied",
+                pending=True,
+                **{"class": "series-unknown"},
+                packages=[kernel["meta"]] if kernel else [],
+                message=f"no stable kernel of series {session.accept_kernel} for this machine",
+            )
+        )
+        return None, items
+
+    line = classes["nvidia"]
+    changing_driver = False
+    if session.accept_nvidia:
+        number, kind = parse_series_key(session.accept_nvidia, line)
+        if line is None or number != line["number"] or kind != line["kind"]:
+            changing_driver = True
+            line = driver_line(cache, number, kind, kernel["flavour"] if kernel else "generic", None)
+
+    if line is None:
+        chosen = candidates[0] if candidates else None
+        if chosen is None:
+            return None, items
+        target.update(kernel=chosen.version, pairs=[(chosen.source_name, chosen.version)])
+        return target, items
+
+    driver_name = line["driver"]
+    if driver_name not in cache:
+        items.append(
+            report_item(
+                "apt-denied",
+                pending=True,
+                **{"class": "series-unknown"},
+                packages=[driver_name],
+                message=f"no driver {driver_name} in the archive",
+            )
+        )
+        return None, items
+    driver_pkg = cache[driver_name]
+    drivers = []
+    retired = False
+    for version in newest_first(driver_pkg.versions):
+        if line["version"] is not None and vcmp(version.version, line["version"]) < 0:
+            continue
+        if version.version != line["version"] and not session.stable(version):
+            continue
+        if is_transitional(version, driver_name):
+            retired = True
+            continue
+        drivers.append(version)
+    target["retired"] = retired
+
+    module_version = line["module_version"]
+    if line["version"] is not None and module_version is None:
+        # DKMS: no module package to pair with; the kernel and the driver move on their own.
+        chosen = candidates[0] if candidates else None
+        pairs = []
+        if chosen is not None:
+            target["kernel"] = chosen.version
+            pairs.append((chosen.source_name, chosen.version))
+        if drivers:
+            target["driver"] = drivers[0].version
+            pairs.append((drivers[0].source_name, drivers[0].version))
+        target["pairs"] = pairs
+        items.append(report_item("module-through-dkms", driver=driver_name))
+        return target, items
+
+    module_meta = line["module_meta"]
+    if module_meta not in cache:
+        modules = []
+    else:
+        modules = [
+            v
+            for v in newest_first(cache[module_meta].versions)
+            if v.version == module_version
+            or (session.stable(v) and (module_version is None or vcmp(v.version, module_version) > 0))
+        ]
+    chosen = None
+    for kv in candidates:
+        found = abi_of_meta(cache, kv)
+        if not found:
+            continue
+        abi, base = found
+        abi_module = f"{line['module_prefix']}-{abi}-{base}"
+        here = []
+        for mv in modules:
+            here += [(mv, value) for name, _relation, value in deps(mv) if name == abi_module]
+        if not here:
+            if kernel is None or kv.version != kernel["version"]:
+                items.append(report_item("kernel-waiting", kernel=kv.version, reason="no-module"))
+            continue
+        for mv, value in here:
+            av = version_of(cache, abi_module, value)
+            if av is None:
+                continue
+            for dv in drivers:
+                if accepts(av, line["common"], dv.version):
+                    chosen = (kv, mv, av, dv, abi)
+                    break
+            if chosen:
+                break
+        if chosen:
+            break
+        if kernel is None or kv.version != kernel["version"]:
+            items.append(report_item("kernel-waiting", kernel=kv.version, reason="no-driver"))
+    if chosen is None:
+        if session.accept_kernel:
+            items.append(
+                report_item(
+                    "apt-denied",
+                    pending=True,
+                    **{"class": "series-needs-nvidia"},
+                    packages=[kernel["meta"]],
+                    message=(
+                        f"the kernel series {session.accept_kernel} has no module of the NVIDIA series "
+                        f"{line['series']}: change the NVIDIA series first"
+                    ),
+                )
+            )
+        if changing_driver:
+            items.append(
+                report_item(
+                    "apt-denied",
+                    pending=True,
+                    **{"class": "series-unknown"},
+                    packages=[driver_name],
+                    message=f"no module of the NVIDIA series {line['series']} for this kernel",
+                )
+            )
+        if drivers and line["version"] is not None and drivers[0].version != line["version"]:
+            items.append(report_item("driver-waiting", driver=drivers[0].version))
+        return None, items
+
+    kv, mv, av, dv, abi = chosen
+    pairs = {
+        (kv.source_name, kv.version),
+        (mv.source_name, mv.version),
+        (av.source_name, av.version),
+        (dv.source_name, dv.version),
+    }
+    if drivers and dv.version != drivers[0].version:
+        items.append(report_item("driver-waiting", driver=drivers[0].version))
+    # The modules of the other ABIs: kept when the new driver suits them, else a respin, else lost.
+    losses = []
+    other = re.compile(rf"^{re.escape(line['module_prefix'])}-({ABI})-[a-z0-9-]+$")
+    for pkg in cache:
+        match = other.match(pkg.shortname)
+        if not (match and pkg.is_installed) or match.group(1) == abi:
+            continue
+        if accepts(pkg.installed, line["common"], dv.version):
+            pairs.add((pkg.installed.source_name, pkg.installed.version))
+            continue
+        respins = [
+            v for v in newest_first(pkg.versions) if session.stable(v) and accepts(v, line["common"], dv.version)
+        ]
+        if respins:
+            pairs.add((respins[0].source_name, respins[0].version))
+        else:
+            losses.append(pkg.name)
+    target.update(
+        kernel=kv.version,
+        module=mv.version,
+        abi_module=av.version,
+        driver=dv.version,
+        abi=abi,
+        pairs=sorted(pairs),
+        losses=sorted(losses),
+    )
+    if changing_driver:
+        # The module first: its Provides satisfies the driver, which otherwise pulls the DKMS package.
+        target["installs"] = [module_meta, driver_name]
+        target["old_series"] = classes["nvidia"]
+    return target, items
+
+
+def parse_series_key(key, line):
+    """615-open or 615; a bare number keeps the kind of the installed driver."""
+    match = re.match(r"^(\d+)((?:-server)?(?:-open)?)$", key)
+    if not match:
+        raise HelperError("usage", f"not a series of NVIDIA: {key}")
+    kind = match.group(2)
+    if not kind and line is not None:
+        kind = line["kind"]
+    return match.group(1), kind
+
+
+def ubuntu_devices(session):
+    """What `ubuntu-drivers devices` says for this hardware under no pin at all, as (drivers,
+    recommended); None when it does not answer. Its noise goes to standard error."""
+    if not shutil.which("ubuntu-drivers"):
+        return None
+    empty = os.path.join(session.scratch, "no-pins")
+    os.makedirs(empty, exist_ok=True)
+    config = os.path.join(session.scratch, "ubuntu-drivers.conf")
+    with open(config, "w", encoding="utf-8") as handle:
+        original = os.environ.get("APT_CONFIG")
+        if original:
+            handle.write(f'#include "{original}";\n')
+        handle.write(f'Dir::Etc::Preferences "/dev/null";\nDir::Etc::PreferencesParts "{empty}";\n')
+    try:
+        done = subprocess.run(
+            ["ubuntu-drivers", "devices"],
+            env={**os.environ, "APT_CONFIG": config},
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    drivers = set()
+    recommended = None
+    for text in done.stdout.splitlines():
+        match = UBUNTU_DRIVERS_RE.match(text.strip())
+        if match:
+            drivers.add(match.group(1))
+            if "recommended" in match.group(2).split():
+                recommended = match.group(1)[len("nvidia-driver-") :]
+    return drivers, recommended
+
+
+def newer_nvidia_series(session, cache, line, flavour):
+    """The series above the installed one, highest first: same kind, no server series, a stable
+    driver that is no transitional package and a stable module for this kernel flavour."""
+    rows = []
+    names = cache.keys()
+    for name in names:
+        match = DRIVER_RE.match(name)
+        if not match or match.group(2) or (match.group(3) or "") != line["kind"]:
+            continue
+        number = int(match.group(1))
+        module = f"linux-modules-nvidia-{number}{line['kind']}-{flavour}"
+        if number <= int(line["number"]) or module not in cache:
+            continue
+        drivers = [v for v in newest_first(cache[name].versions) if session.stable(v)]
+        if (
+            not drivers
+            or is_transitional(drivers[0], name)
+            or not any(session.stable(v) for v in cache[module].versions)
+        ):
+            continue
+        rows.append(
+            {
+                "number": number,
+                "driver": name,
+                "series": f"{number}{line['kind']}",
+                "version": drivers[0].version,
+                "suite": session.suite_of(drivers[0]),
+                "module": module,
+            }
+        )
+    rows.sort(key=lambda row: row["number"], reverse=True)
+    return rows
+
+
+def series_items(session, cache, classes, target):
+    """A new series is found and named, and nothing moves until the owner says so."""
+    items = []
+    kernel = classes["kernel"]
+    line = classes["nvidia"]
+    if kernel and not session.accept_kernel:
+        newer = [
+            v
+            for v in newest_first(cache[kernel["meta"]].versions)
+            if session.stable(v) and series_key(series_of(v.version)) > series_key(kernel["series"])
+        ]
+        if newer:
+            top = newer[0]
+            series = series_of(top.version)
+            ready = False
+            if line and line["module_version"] is not None:
+                found = abi_of_meta(cache, top)
+                module_meta = line["module_meta"]
+                if found and module_meta in cache:
+                    abi_module = f"{line['module_prefix']}-{found[0]}-{found[1]}"
+                    ready = any(
+                        name == abi_module for mv in cache[module_meta].versions for name, _relation, _value in deps(mv)
+                    )
+            items.append(
+                report_item(
+                    "series-available",
+                    **{"class": "kernel"},
+                    series=series,
+                    version=top.version,
+                    suite=session.suite_of(top),
+                    nvidia_ready=ready if line else None,
+                    accept=f"dotsteward upgrade --accept series:kernel={series}",
+                    message=f"kernel {series} ({session.suite_of(top)}) is available",
+                )
+            )
+    if line and not session.accept_nvidia:
+        rows = newer_nvidia_series(session, cache, line, kernel["flavour"] if kernel else "generic")
+        retired = bool(target and target.get("retired"))
+        driver_pkg = cache.get(line["driver"])
+        if driver_pkg is not None and not any(session.stable(v) for v in driver_pkg.versions):
+            retired = True
+        recommended = None
+        if rows or retired:
+            # The tool knows the hardware and takes seconds: only when there is something to say.
+            devices = ubuntu_devices(session)
+            if devices is not None:
+                listed, recommended = devices
+                if listed:
+                    rows = [row for row in rows if row["driver"] in listed]
+        if rows or retired:
+            item = {"class": "nvidia", "retired": retired, "recommended": recommended, "installed": line["series"]}
+            if rows:
+                best = rows[0]
+                item.update(
+                    series=best["series"],
+                    version=best["version"],
+                    suite=best["suite"],
+                    module=best["module"],
+                    accept=f"dotsteward upgrade --accept series:nvidia={best['series']}",
+                )
+                text = f"NVIDIA {best['series']} ({best['suite']}, module {best['module']}) is available"
+                if recommended:
+                    text += f"; recommended {recommended}"
+            else:
+                text = f"no newer NVIDIA series for {line['series']}"
+            if retired:
+                text += f"; the series {line['series']} gets no more updates"
+            items.append(report_item("series-available", message=text, **item))
+    return items
+
+
+# --- one plan in one depcache --------------------------------------------------------
+
+
+def phased_percentage(version):
+    value = version.record.get("Phased-Update-Percentage")
+    return int(value) if value not in (None, "") and str(value).isdigit() else None
+
+
+def upgradable(cache):
+    """The packages this cache could upgrade, by name. Read it before the marks: when the
+    resolver keeps a package back, the depcache no longer calls it upgradable."""
+    rows = {}
+    for pkg in cache:
+        if pkg.installed is None or pkg.candidate is None or not pkg.is_upgradable:
+            continue
+        rows[pkg.name] = {
+            "name": pkg.name,
+            "short": pkg.shortname,
+            "current": pkg.installed.version,
+            "candidate": pkg.candidate.version,
+            "source": pkg.candidate.source_name,
+            "origin": origin_text(pkg.candidate),
+            "percentage": phased_percentage(pkg.candidate),
+            "held": pkg._pkg.selected_state == apt_pkg.SELSTATE_HOLD,
+        }
+    return rows
+
+
+def upgrade_all(cache, extra=()):
+    """The full upgrade of this cache, which keeps to pins, holds and phasing, plus EXTRA new
+    packages. Answers the packages it keeps or brings in, by name."""
+    cache.upgrade(dist_upgrade=True)
+    if extra:
+        with cache.actiongroup():
+            for name in extra:
+                cache[name].mark_install()
+    return {pkg.name for pkg in cache.get_changes() if not pkg.marked_delete}
+
+
+def mark_tracked(cache, names, extra=()):
+    """The tracked mode marks by hand; every name comes from the full upgrade, because a mark
+    goes through phasing where a full upgrade does not."""
+    cache.clear()
+    with cache.actiongroup():
+        for name in sorted(names):
+            cache[name].mark_upgrade()
+        for name in extra:
+            cache[name].mark_install()
+
+
+def origin_text(version):
+    if version is None or not version.origins:
+        return ""
+    first = version.origins[0]
+    return f"{first.origin}/{first.archive}"
+
+
+def pulled_by(cache, wanted, changes):
+    """The first package of the plan that needs WANTED, for the person who reads the refusal."""
+    shortname = wanted.split(":")[0]
+    for pkg in changes:
+        version = pkg.candidate
+        if pkg.marked_delete or version is None or pkg.name == wanted:
+            continue
+        names = {name for name, _relation, _value in deps(version)}
+        names |= {dep.name for group in version.recommends for dep in group.or_dependencies}
+        if shortname in names:
+            return pkg.name
+    return None
+
+
+def removal_allowed(pkg, new_sources, protected, losses, old_series_sources, old_series_prefix):
+    """A removal is refused unless it is a named case; the protected kernels never are one."""
+    installed = pkg.installed
+    match = ABI_PACKAGE_RE.match(pkg.shortname)
+    if pkg.name in losses or pkg.shortname in losses:
+        return "module-loss"
+    if match and source_class(pkg.shortname, installed.source_name) == "kernel":
+        if match.group(1) in protected:
+            return None
+        return "old-abi"
+    if installed.source_name in old_series_sources:
+        return "series-change"
+    if old_series_prefix and pkg.shortname.startswith(old_series_prefix):
+        return "series-change"
+    # A module of another ABI is no transition of a name: only `losses` lets it go.
+    if installed.source_name in new_sources and source_class(pkg.shortname, installed.source_name) != "nvidia-module":
+        return "same-source"
+    return None
+
+
+def evaluate(session, cache, classes, target):
+    """The refusal list over the changes of the depcache: default allow, named risk classes."""
+    changes = sorted(cache.get_changes(), key=lambda pkg: pkg.name)
+    rows = {"install": [], "upgrade": [], "remove": [], "downgrade": []}
+    denied = []
+    losses = set(target["losses"]) if target else set()
+    line = classes["nvidia"]
+    accepted_nvidia = None
+    if session.accept_nvidia and line is not None:
+        number, kind = parse_series_key(session.accept_nvidia, line)
+        accepted_nvidia = f"nvidia-driver-{number}{kind}"
+    planned_new = {pkg.shortname for pkg in changes if pkg.marked_install}
+    new_sources = {pkg.candidate.source_name for pkg in changes if pkg.marked_install and pkg.candidate is not None}
+    dkms_installed = any(DKMS_RE.match(pkg.shortname) and pkg.is_installed for pkg in cache)
+    allowed_bases = set(classes["bases"])
+
+    def deny(cls, package, *, message=None):
+        item = {"class": cls, "packages": [package]}
+        if pulled := pulled_by(cache, package, changes):
+            item["pulled_by"] = pulled
+        if cls in ACCEPTABLE:
+            if package in session.accept_install or package.split(":")[0] in session.accept_install:
+                return
+            item["accept"] = f"dotsteward upgrade --accept install:{package}"
+        if message:
+            item["message"] = message
+        denied.append(item)
+
+    def module_ready(abi, base):
+        return f"{line['module_prefix']}-{abi}-{base}" in planned_new
+
+    for pkg in changes:
+        name = pkg.name
+        short = pkg.shortname
+        if pkg.marked_delete:
+            source = pkg.installed.source_name
+            rows["remove"].append({"name": name, "version": pkg.installed.version, "source": source})
+            continue
+        version = pkg.candidate
+        source = version.source_name
+        cls = source_class(short, source)
+        row = {
+            "name": name,
+            "source": source,
+            "version": version.version,
+            "origin": origin_text(version),
+            "auto": pkg.is_auto_installed,
+        }
+        if cls:
+            row["class"] = cls
+        if pkg.marked_install:
+            rows["install"].append(row)
+        elif pkg.marked_downgrade:
+            row["from"] = pkg.installed.version
+            rows["downgrade"].append(row)
+            deny("downgrade", name)
+        else:
+            row["from"] = pkg.installed.version
+            rows["upgrade"].append(row)
+        if cls in {"kernel", "nvidia-driver", "nvidia-module"} and not session.stable(version):
+            deny(
+                "origin",
+                name,
+                message=f"{name} {version.version} comes from {origin_text(version)}, not a stable suite",
+            )
+        if pkg.marked_install:
+            match = FLAVOUR_RE.match(short)
+            if cls == "kernel" and match and allowed_bases and match.group(1) not in allowed_bases:
+                deny("kernel-flavour", name)
+            if DKMS_RE.match(short) and not dkms_installed:
+                deny("dkms", name)
+            driver = DRIVER_RE.match(short)
+            if driver and line is not None and short != line["driver"] and short != accepted_nvidia:
+                deny("driver-series", name)
+            for constrained, wanted in session.constraints.items():
+                major = re.match(rf"^{re.escape(constrained)}-(\d+)$", source)
+                if major and major.group(1) != wanted.split(".")[0]:
+                    deny("constrained-major", name)
+            image = IMAGE_RE.match(short)
+            if (
+                image
+                and line is not None
+                and line.get("module_version") is not None
+                and not module_ready(image.group(1), image.group(2))
+                and not session.accept_nvidia
+                and short not in session.accept_install
+            ):
+                deny(
+                    "module-missing",
+                    name,
+                    message=f"the new kernel {image.group(1)} has no module of the installed driver",
+                )
+
+    # The kernels that never go: the running one, the newest, the newest with a module.
+    protected = {abi_of_release(session.running_kernel)}
+    all_abis = list(classes["abis"]) + [
+        match.group(1) for pkg in changes if pkg.marked_install and (match := IMAGE_RE.match(pkg.shortname))
+    ]
+    if all_abis:
+        protected.add(max(all_abis, key=functools.cmp_to_key(vcmp)))
+    if line is not None:
+        with_module = []
+        prefix = re.compile(rf"^{re.escape(line['module_prefix'])}-({ABI})-")
+        for pkg in cache:
+            match = prefix.match(pkg.shortname)
+            if match and (pkg.is_installed or pkg.marked_install) and not pkg.marked_delete:
+                with_module.append(match.group(1))
+        if with_module:
+            protected.add(max(with_module, key=functools.cmp_to_key(vcmp)))
+    old_sources = set()
+    old_prefix = None
+    if target and target.get("old_series"):
+        old_sources.add(target["old_series"]["source"])
+        old_prefix = target["old_series"]["module_prefix"] + "-"
+    for row in rows["remove"]:
+        pkg = cache[row["name"]]
+        reason = removal_allowed(pkg, new_sources, protected, losses, old_sources, old_prefix)
+        if reason:
+            row["reason"] = reason
+        else:
+            deny("removal", row["name"], message=f"the plan removes {row['name']}, which no rule allows")
+    return rows, denied
+
+
+def waiting_reason(row):
+    if row is None:
+        return "kept"
+    if row["held"]:
+        return "held"
+    return "phased" if row["percentage"] is not None else "kept"
+
+
+def make_plan(session):
+    """The plan of one run. The answer holds the depcache that a later commit applies."""
+    pinless = session.open_pinless()
+    classes = read_classes(pinless)
+    items = []
+    target = None
+    gated_info = {
+        "enabled": session.gated,
+        "kernel": classes["kernel"],
+        "nvidia": classes["nvidia"],
+        "other_metas": classes["other_metas"],
+        "installed_pairs": classes["pairs"],
+        "pin": pin_text(classes["pairs"]),
+        "decision": "off" if not session.gated else "no-move",
+        "target": None,
+    }
+    moved = False
+    if session.gated:
+        if classes["other_metas"]:
+            items.append(
+                report_item(
+                    "kernel-meta-held",
+                    packages=classes["other_metas"],
+                    message="only the newest kernel meta package moves; the others stay where they are",
+                )
+            )
+        target, target_items = joint_target(session, pinless, classes)
+        items += target_items
+        items += series_items(session, pinless, classes, target)
+        moved = target is not None and bool({tuple(pair) for pair in target["pairs"]} - set(classes["pairs"]))
+        if target is not None:
+            gated_info["target"] = {key: value for key, value in target.items() if key != "old_series"}
+    del pinless
+
+    cache = None
+    moves = set()
+    extra = ()
+    upgrades = set()
+    candidates = {}
+    if not session.gated:
+        cache = session.open_cache(None)
+        candidates = upgradable(cache)
+        upgrades = upgrade_all(cache)
+    else:
+        if moved:
+            cache = session.open_cache(pin_text(target["pairs"]))
+            candidates = upgradable(cache)
+            moves = {name for name, row in candidates.items() if GATED_SOURCE.match(row["source"])}
+            extra = tuple(target.get("installs") or ())
+            upgrades = upgrade_all(cache, extra)
+            left = moves - upgrades
+            if left:
+                # The set stays together; the pin of what is installed takes over.
+                reasons = {name: waiting_reason(candidates.get(name)) for name in sorted(left)}
+                code = "phased-waiting" if "phased" in reasons.values() else "gated-kept-back"
+                items.append(
+                    report_item(
+                        code,
+                        scope="gated",
+                        packages=sorted(left),
+                        reasons=reasons,
+                        target=target["kernel"],
+                        message="the kernel and driver set waits as one unit",
+                    )
+                )
+                gated_info["decision"] = "waiting"
+                moved = False
+                moves = set()
+                extra = ()
+                target = None
+            else:
+                gated_info["decision"] = "move"
+        if not moved:
+            cache = session.open_cache(gated_info["pin"])
+            candidates = upgradable(cache)
+            upgrades = upgrade_all(cache)
+
+    if session.mode == "tracked":
+        names = {
+            name
+            for name, row in candidates.items()
+            if name in upgrades
+            and (name in session.tracked or row["short"] in session.tracked)
+            and not GATED_SOURCE.match(row["source"])
+        }
+        mark_tracked(cache, names | moves, extra)
+        outside = [pkg.name for pkg in cache.get_changes() if pkg.marked_upgrade and pkg.name not in upgrades]
+        for name in outside:
+            items.append(
+                report_item(
+                    "apt-denied",
+                    pending=True,
+                    **{"class": "outside-upgrade"},
+                    packages=[name],
+                    message=f"a tracked upgrade pulls {name}, which a full upgrade leaves alone",
+                )
+            )
+    if cache.broken_count:
+        items.append(report_item("apt-denied", pending=True, **{"class": "unsolvable"}, packages=[]))
+
+    rows, denied = evaluate(session, cache, classes, target)
+    items += [report_item("apt-denied", pending=True, **entry) for entry in denied]
+
+    # What waits, seen from the mode of this run.
+    phased = []
+    kept = []
+    planned = {row["name"] for rows_of in rows.values() for row in rows_of}
+    for name, row in sorted(candidates.items()):
+        if name in planned or (
+            session.mode == "tracked" and name not in session.tracked and row["short"] not in session.tracked
+        ):
+            continue
+        entry = {"name": name, "current": row["current"], "candidate": row["candidate"]}
+        if waiting_reason(row) == "phased" and name not in upgrades:
+            entry["percentage"] = row["percentage"]
+            phased.append(entry)
+        else:
+            kept.append(entry)
+    if phased:
+        items.append(
+            report_item(
+                "phased-waiting",
+                scope=session.mode,
+                packages=[entry["name"] for entry in phased],
+                message="upgrades deferred by phasing come by themselves",
+            )
+        )
+    if kept:
+        items.append(report_item("kept-back", packages=[entry["name"] for entry in kept]))
+    if target and target["losses"]:
+        running = abi_of_release(session.running_kernel)
+        items.append(
+            report_item(
+                "module-loss",
+                packages=target["losses"],
+                running=any(running in name for name in target["losses"]),
+                message=loss_message(target["losses"], running),
+            )
+        )
+    plan = {
+        "schema_version": SCHEMA_VERSION,
+        "apt": apt_pkg.VERSION,
+        "mode": session.mode,
+        "codename": session.codename,
+        "gated": gated_info,
+        "changes": rows,
+        "phased": phased,
+        "kept_back": kept,
+        "items": items,
+        "applicable": not any(item["pending"] for item in items),
+    }
+    return cache, plan
+
+
+def loss_message(losses, running):
+    text = "NVIDIA modules of older kernels go: " + ", ".join(losses)
+    if any(running in name for name in losses):
+        text += "; the running kernel is one of them, so driver and user space do not match until a reboot"
+    return text
+
+
+# --- read only analysis ---------------------------------------------------------------
+
+
+def action_analysis(session):
+    pinless = session.open_pinless()
+    classes = read_classes(pinless)
+    del pinless
+    cache = session.open_cache(pin_text(classes["pairs"]) if session.gated else None)
+    candidates = upgradable(cache)
+    upgrades = upgrade_all(cache)
+    packages = [
+        {
+            "name": name,
+            "current": row["current"],
+            "candidate": row["candidate"],
+            "origin": row["origin"],
+            "phased": name not in upgrades and row["percentage"] is not None,
+            "held": row["held"],
+        }
+        for name, row in sorted(candidates.items())
+        if name not in session.tracked and row["short"] not in session.tracked
+    ]
+    boot = session.request.get("boot_path") or "/boot"
+    boot_low_mib = session.request.get("boot_low_mib") or BOOT_LOW_MIB
+    try:
+        boot_free = shutil.disk_usage(boot).free // (1024 * 1024)
+    except OSError:
+        boot_free = None
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "available": True,
+        "count": len(packages),
+        "packages": packages,
+        "kernels": len(classes["abis"]),
+        "boot_free_mib": boot_free,
+        "boot_low": boot_free is not None and boot_free < boot_low_mib,
+        "last_update": last_update(),
+    }
+
+
+def last_update():
+    """When the lists were last fetched, in UTC, or None when there are none."""
+    directory = apt_pkg.config.find_dir("Dir::State::lists")
+    newest = None
+    try:
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if entry.is_file():
+                    stamp = entry.stat().st_mtime
+                    newest = stamp if newest is None else max(newest, stamp)
+    except OSError:
+        return None
+    if newest is None:
+        return None
+    moment = datetime.datetime.fromtimestamp(newest, datetime.timezone.utc)
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# --- the command line ------------------------------------------------------------------
+
+
+def action_plan(session):
+    _cache, plan = make_plan(session)
+    return plan
+
+
+ACTIONS = {"plan": action_plan, "analysis": action_analysis}
+
+
+def write_answer(answer, output):
+    text = json.dumps(answer, indent=2, sort_keys=True) + "\n"
+    if output is None:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+        return
+    directory = os.path.dirname(output) or "."
+    handle, temporary = tempfile.mkstemp(prefix=".apt-helper-", dir=directory)
+    with os.fdopen(handle, "w", encoding="utf-8") as stream:
+        stream.write(text)
+        stream.flush()
+        os.fsync(stream.fileno())
+    # Under sudo the caller reads its own answer; the file is private to it.
+    uid = os.environ.get("SUDO_UID")
+    gid = os.environ.get("SUDO_GID")
+    if os.geteuid() == 0 and uid and gid:
+        os.chown(temporary, int(uid), int(gid))
+    os.replace(temporary, output)
+
+
+def main(argv):
+    arguments = argv[1:]
+    output = None
+    if "--output" in arguments:
+        at = arguments.index("--output")
+        if at + 1 >= len(arguments):
+            sys.stderr.write("apt_helper: --output needs a file\n")
+            return 2
+        output = arguments[at + 1]
+        del arguments[at : at + 2]
+    if len(arguments) != 1 or arguments[0] not in ACTIONS:
+        sys.stderr.write("usage: apt_helper.py ACTION [--output FILE] < request.json; ACTION: ")
+        sys.stderr.write(", ".join(sorted(ACTIONS)) + "\n")
+        return 2
+    if apt is None or apt_pkg is None:
+        write_answer(
+            {"schema_version": SCHEMA_VERSION, "error": {"code": "python3-apt-missing", "message": "no python3-apt"}},
+            output,
+        )
+        return 1
+    session = None
+    try:
+        request = json.load(sys.stdin)
+        session = Session(request)
+        answer = ACTIONS[arguments[0]](session)
+    except HelperError as error:
+        write_answer(
+            {"schema_version": SCHEMA_VERSION, "error": {"code": error.code, "message": error.message}}, output
+        )
+        return 1
+    except (apt_pkg.Error, SystemError, OSError, ValueError, KeyError) as error:
+        write_answer(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "error": {"code": "apt-error", "message": f"{type(error).__name__}: {error}"},
+            },
+            output,
+        )
+        return 1
+    finally:
+        if session is not None:
+            session.close()
+    write_answer(answer, output)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
