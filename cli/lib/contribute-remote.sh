@@ -315,13 +315,13 @@ _contribute_red() {
 # _contribute_candidate_cli REF: CT_CANDIDATE_CLI, the CLI of the instance
 # with the framework at the flake reference REF (its dotsteward package with
 # the override, in memory): what the launcher of the upgraded instance will
-# run, built with the instance's nixpkgs like the CLI that runs now, so both
-# have the same toolchain, which `user_path` leaves out of the user's PATH.
+# run. The link in the runs directory is its garbage collector root until the
+# next trial: a build-only trial links it to no generation.
 _contribute_candidate_cli() {
   local ref=$1 output
   log "building the CLI of the framework at ${CT_TEST_SHA:0:12}"
-  output=$(nix_cmd build "$DS_INSTANCE_ROOT#dotsteward" --no-link --no-update-lock-file --no-write-lock-file \
-    --override-input dotsteward "$ref" --print-out-paths </dev/null) ||
+  output=$(nix_cmd build "$DS_INSTANCE_ROOT#dotsteward" --out-link "$(contribute_runs_dir)/candidate-cli" \
+    --no-update-lock-file --no-write-lock-file --override-input dotsteward "$ref" --print-out-paths </dev/null) ||
     _contribute_red "trial: the CLI of the framework at ${CT_TEST_SHA:0:12} does not build; nothing is published"
   CT_CANDIDATE_CLI=${output##*$'\n'}/bin/dotsteward
   [[ -x $CT_CANDIDATE_CLI ]] ||
@@ -330,10 +330,13 @@ _contribute_candidate_cli() {
 
 # _contribute_candidate COMMAND [ARG...]: dotsteward COMMAND ARG... on the
 # instance through the candidate's CLI, without an inherited framework
-# override.
+# override, and without the toolchain of the CLI that runs now on PATH: the
+# candidate's wrapper puts its own first and names only that one in
+# DOTSTEWARD_TOOLCHAIN_PATH, so the old one would answer for the user's
+# commands in the checks of the user's environment.
 _contribute_candidate() {
-  log "dotsteward $*"
-  env -u DOTSTEWARD_FRAMEWORK_OVERRIDE "$CT_CANDIDATE_CLI" --instance "$DS_INSTANCE_ROOT" "$@"
+  log "dotsteward $* (the candidate's CLI)"
+  env -u DOTSTEWARD_FRAMEWORK_OVERRIDE PATH="$(user_path)" "$CT_CANDIDATE_CLI" --instance "$DS_INSTANCE_ROOT" "$@"
 }
 
 contribute_cmd_trial() {
