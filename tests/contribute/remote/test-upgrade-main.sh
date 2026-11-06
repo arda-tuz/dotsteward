@@ -47,6 +47,16 @@ assert_contains "$DS_STDERR" "[dotsteward] ERROR: the merged commit ${merged:0:1
 state_set '.tested_tree = $tree' --arg tree "$(git -C "$ct_clone" rev-parse "$merged^{tree}")"
 assert_eq "" "$(instance_calls)" "instance commands of the refusals"
 
+# An instance commit that waits for the fix: the refusal names the command
+# that carries it, on main.
+printf 'waiting\n' >"$ct_inst/waiting.txt"
+git -C "$ct_inst" add waiting.txt
+git -C "$ct_inst" commit -q -m 'feat: a commit that waits for the fix'
+assert_exit 1 run_contribute upgrade --main
+assert_contains "$DS_STDERR" "carry them across the upgrade with: dotsteward contribute upgrade --main --carry"
+git -C "$ct_inst" reset -q --hard "$base"
+state_json | assert_json - '(.upgrade_to // null) == null'
+
 # --- the github form ---------------------------------------------------------------------------
 
 reset_calls
