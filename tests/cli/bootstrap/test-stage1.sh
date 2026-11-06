@@ -9,6 +9,7 @@
 # the final message. The first failing step stops it with its exit status.
 # The profile must be profiles.bootstrap; without --stage 1 the command
 # refuses and points at ./bootstrap.sh (stage-0 is the instance script).
+# Stage 1 holds the instance lock, so a second one, or an upgrade, waits.
 # The four commands it runs are recording stand-ins here; their own suites
 # cover them.
 # shellcheck source=tests/cli/bootstrap/helpers.sh
@@ -82,6 +83,41 @@ assert_calls \
   "hook-apply-desktop fresh fresh example 0 $bs_inst" \
   "dotsteward-e2e --profile fresh"
 assert_eq "$final" "$(tail -n 1 <<<"$DS_STDOUT")"
+
+# --- the instance lock -----------------------------------------------------------------
+# Every step runs under the lock, and the lock is free afterwards.
+lock_status() {
+  PYTHONPATH=$bs_fw/cli/python PYTHONDONTWRITEBYTECODE=1 python3 -s -P -m dotsteward_cli.internal \
+    lock status --state-root "$DOTSTEWARD_STATE_ROOT"
+}
+cp "$bs_fw/cli/commands/e2e.sh" "$DS_TEST_ROOT/e2e-stand-in"
+{
+  printf 'PYTHONPATH=%q PYTHONDONTWRITEBYTECODE=1 python3 -s -P -m dotsteward_cli.internal ' "$bs_fw/cli/python"
+  printf 'lock status --state-root %q >%q\n' "$DOTSTEWARD_STATE_ROOT" "$DS_TEST_ROOT/lock-during-e2e"
+} >>"$bs_fw/cli/commands/e2e.sh"
+assert_exit 0 run_bootstrap --profile fresh --stage 1
+assert_json "$DS_TEST_ROOT/lock-during-e2e" '.held == true and .holder.name == "bootstrap"'
+assert_json - '.held == false' <<<"$(lock_status)"
+cp "$DS_TEST_ROOT/e2e-stand-in" "$bs_fw/cli/commands/e2e.sh"
+
+# A second command is refused before any step, whoever holds the lock.
+PYTHONPATH=$bs_fw/cli/python PYTHONDONTWRITEBYTECODE=1 python3 -s -P -m dotsteward_cli.internal \
+  lock run --holder upgrade --state-root "$DOTSTEWARD_STATE_ROOT" -- bash -c '
+    : >"$1"
+    until [[ -e $2 ]]; do
+      sleep 0.02
+    done' bash "$DS_TEST_ROOT/holder-started" "$DS_TEST_ROOT/holder-release" &
+holder=$!
+until [[ -e $DS_TEST_ROOT/holder-started ]]; do
+  sleep 0.02
+done
+: >"$DS_CALL_LOG"
+assert_exit 1 run_bootstrap --profile fresh --stage 1
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: another command holds the instance lock: upgrade (pid $holder"
+assert_calls
+: >"$DS_TEST_ROOT/holder-release"
+wait "$holder"
+: >"$DS_CALL_LOG"
 
 # --- failures stop it with the step's status ----------------------------------------
 # step_fails COMMAND STATUS CALLS...: COMMAND exits STATUS; bootstrap exits

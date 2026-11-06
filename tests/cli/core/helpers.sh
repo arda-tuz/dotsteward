@@ -9,6 +9,7 @@
 #   core_python ARG...    python3 as the commands run it, with the package on
 #                         its module path (a driver reads its script from
 #                         standard input with `-`)
+#   core_wait PATH        waits for PATH to exist (30 seconds at most)
 #   core_instance DIR [TOML]
 #                         a synthetic instance at DIR: the smallest valid
 #                         workstation.toml, then the text TOML
@@ -43,4 +44,13 @@ names = ["main"]
 
 ${2:-}
 TOML
+}
+
+core_wait() {
+  local tries=0
+  until [[ -e $1 ]]; do
+    tries=$((tries + 1))
+    ((tries < 1500)) || ds_fail "$1 did not appear"
+    sleep 0.02
+  done
 }
