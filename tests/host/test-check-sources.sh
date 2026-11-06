@@ -42,11 +42,24 @@ git -C "$repo" init -q
 git -C "$repo" add -A
 git -C "$repo" commit -q -m "test: the framework tree"
 
-# checks_of FILE: {name: drvPath} of checks.x86_64-linux at HEAD.
+# checks_of REV FILE: {name: drvPath} of checks.x86_64-linux at commit REV.
 checks_of() {
-  nix_flakes eval --json "git+file://$repo?rev=$(git -C "$repo" rev-parse HEAD)#checks.x86_64-linux" \
-    --apply 'checks: builtins.mapAttrs (name: check: check.drvPath) checks' >"$1" ||
-    ds_fail "the checks of '$(git -C "$repo" log -1 --format=%s)' do not evaluate"
+  nix_flakes eval --json "git+file://$repo?rev=$1#checks.x86_64-linux" \
+    --apply 'checks: builtins.mapAttrs (name: check: check.drvPath) checks' >"$2" ||
+    ds_fail "the checks of '$(git -C "$repo" log -1 --format=%s "$1")' do not evaluate"
+}
+
+# checks_of_pair REV FILE REV FILE: both at once. An evaluation takes a
+# minute of one core and over 2 GiB, so two at a time halve this test's
+# time, and more would crowd the memory of a small machine.
+checks_of_pair() {
+  local first second
+  checks_of "$1" "$2" &
+  first=$!
+  checks_of "$3" "$4" &
+  second=$!
+  wait "$first" || ds_fail "the checks of $1 do not evaluate"
+  wait "$second" || ds_fail "the checks of $3 do not evaluate"
 }
 
 # changed A B: the checks whose derivation differs between the files A and B.
@@ -64,20 +77,21 @@ extend() {
   done
 }
 
-# commit SUBJECT: commits every change of the tree.
+# commit SUBJECT: commits every change of the tree, and prints the commit.
 commit() {
   git -C "$repo" add -A
   git -C "$repo" commit -q -m "$1"
+  git -C "$repo" rev-parse HEAD
 }
 
-checks_of "$DS_TEST_ROOT/base.json"
+# --- the commits ------------------------------------------------------------------
+
+base_rev=$(git -C "$repo" rev-parse HEAD)
 count=$(find "$repo/nix/checks" -maxdepth 1 -type f -name '*.nix' | wc -l)
-assert_eq "$((count))" "$(jq length "$DS_TEST_ROOT/base.json")" "every check evaluated"
 
-# --- a fix of the documentation and of one suite ------------------------------
-
-# Files outside the sets of most checks: a file that is in a check's set
-# would hide that the check also depends on the others.
+# A fix of the documentation and of one suite: files outside the sets of most
+# checks, since a file that is in a check's set would hide that the check
+# also depends on the others.
 docs=(
   README.md
   docs/testing.md
@@ -86,31 +100,17 @@ docs=(
   tests/vm/README.md
 )
 extend "${docs[@]}"
-commit "test: documentation and one suite"
-checks_of "$DS_TEST_ROOT/docs.json"
-rebuilt=$(changed "$DS_TEST_ROOT/base.json" "$DS_TEST_ROOT/docs.json")
+docs_rev=$(commit "test: documentation and one suite")
 
 # The source sets, from the map of the tree under test.
 sources=$DS_TEST_ROOT/sources.json
-[[ -f $repo/nix/check-sources.nix ]] ||
-  ds_fail "$(wc -w <<<"$rebuilt" | tr -d ' ') of $((count)) checks change for a commit to ${docs[*]}: $rebuilt; the checks have no source sets (nix/check-sources.nix)"
+[[ -f $repo/nix/check-sources.nix ]] || ds_fail "the checks have no source sets (nix/check-sources.nix)"
 nix_flakes eval --json --expr "
-  let flake = builtins.getFlake \"git+file://$repo?rev=$(git -C "$repo" rev-parse HEAD~1)\";
+  let flake = builtins.getFlake \"git+file://$repo?rev=$base_rev\";
   in (import (flake.outPath + \"/nix/check-sources.nix\") { inherit (flake.inputs.nixpkgs) lib; }).report" \
   >"$sources" || ds_fail "nix/check-sources.nix does not evaluate"
-assert_eq "$(jq -r '.sources | keys | join(" ")' "$sources")" "$(jq -r 'keys | join(" ")' "$DS_TEST_ROOT/base.json")" \
-  "the checks with a source set"
 
-# predicted FILE...: the checks whose source set holds one of FILE.
-predicted() {
-  jq -r '[.sources | to_entries[] | select(any(.value[]; IN($ARGS.positional[]))) | .key] | join(" ")' \
-    --args "$@" <"$sources"
-}
-
-assert_eq "$(predicted "${docs[@]}")" "$rebuilt" "the checks rebuilt for a commit to ${docs[*]}"
-
-# --- a release ------------------------------------------------------------------
-
+# A release.
 version=$(<"$repo/VERSION")
 [[ $version =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || ds_fail "unexpected VERSION [$version]"
 next=${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))
@@ -125,19 +125,35 @@ for file in "${release[@]}"; do
   grep -qF "$version" "$repo/$file" || ds_fail "$file does not carry the version $version"
   sed -i "s/${version//./\\.}/$next/g" "$repo/$file"
 done
-commit "test: release $next"
-checks_of "$DS_TEST_ROOT/release.json"
+release_rev=$(commit "test: release $next")
+
+# One file of every set: a file of each set that the evaluation reads as data
+# never takes an extra line; VERSION is the only one whose format would break.
+mapfile -t touched < <(jq -r '[.sources[] | map(select(. != "VERSION"))[0] | values] | unique[]' "$sources")
+extend "${touched[@]}"
+every_rev=$(commit "test: one file of every set")
+
+checks_of_pair "$base_rev" "$DS_TEST_ROOT/base.json" "$docs_rev" "$DS_TEST_ROOT/docs.json"
+checks_of_pair "$release_rev" "$DS_TEST_ROOT/release.json" "$every_rev" "$DS_TEST_ROOT/every.json"
+
+assert_eq "$((count))" "$(jq length "$DS_TEST_ROOT/base.json")" "every check evaluated"
+assert_eq "$(jq -r '.sources | keys | join(" ")' "$sources")" "$(jq -r 'keys | join(" ")' "$DS_TEST_ROOT/base.json")" \
+  "the checks with a source set"
+
+# predicted FILE...: the checks whose source set holds one of FILE.
+predicted() {
+  jq -r '[.sources | to_entries[] | select(any(.value[]; IN($ARGS.positional[]))) | .key] | join(" ")' \
+    --args "$@" <"$sources"
+}
+
+# --- what each commit rebuilds ------------------------------------------------------
+
+rebuilt=$(changed "$DS_TEST_ROOT/base.json" "$DS_TEST_ROOT/docs.json")
+assert_eq "$(predicted "${docs[@]}")" "$rebuilt" "the checks rebuilt for a commit to ${docs[*]}"
+
 rebuilt=$(changed "$DS_TEST_ROOT/docs.json" "$DS_TEST_ROOT/release.json")
 assert_eq "$(predicted "${release[@]}")" "$rebuilt" "the checks rebuilt for the release commit"
 
-# --- one file of every set ------------------------------------------------------
-
-# A file of each set that the evaluation reads as data never takes an extra
-# line; VERSION is the only one whose format would break.
-mapfile -t touched < <(jq -r '[.sources[] | map(select(. != "VERSION"))[0] | values] | unique[]' "$sources")
-extend "${touched[@]}"
-commit "test: one file of every set"
-checks_of "$DS_TEST_ROOT/every.json"
 rebuilt=$(changed "$DS_TEST_ROOT/release.json" "$DS_TEST_ROOT/every.json")
 assert_eq "$(predicted "${touched[@]}")" "$rebuilt" "the checks rebuilt for one file of every set"
 assert_eq "$(jq -r '[.sources | to_entries[] | select(.value != []) | .key] | join(" ")' "$sources")" "$rebuilt" \
