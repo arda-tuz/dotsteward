@@ -9,6 +9,10 @@ What `dotsteward contribute publish`, `release` and `upgrade` do in each mode, w
 - `gh` is installed and logged in (`gh auth login` otherwise).
 - After a build-only trial, the `clean-install.yml` workflow must also be green on the checked commit; publish dispatches it on the branch when it has not run. If GitHub Actions are disabled on the target repository, run a full trial instead.
 
+## A network that drops
+
+A `git ls-remote`, fetch or push that fails for the network (a connection that times out, a name that does not resolve, an answer that never comes) and a read of GitHub that fails (`gh`) say nothing about the change: `publish`, `release` and `upgrade` make them again after a pause that starts at `DOTSTEWARD_CONTRIBUTE_POLL_SECONDS` and doubles, with a warning each time, and stop red only when the failures lasted `DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS`. A push reads its ref again first, because a push whose answer was lost has landed. A push the remote refuses (a protected branch, a `main` that moved), a finding of the pre-push hook, a refused login and a repository that does not exist are verdicts: never made again. Writes through `gh` (creating a pull request, dispatching a workflow) are made once; a rerun of `publish` finds what they left.
+
 ## Owner mode
 
 1. Pushes `fix/<slug>` to the upstream (the pre-push hook scans the pushed commits and tree with the denylist).

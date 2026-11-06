@@ -57,12 +57,13 @@
 #
 # Environment (seconds, positive integers):
 #   DOTSTEWARD_CONTRIBUTE_POLL_SECONDS    polling interval for CI (default 15),
-#                                         and the first pause before a
-#                                         failed read of a CI run is made
-#                                         again (the pause doubles)
+#                                         and the first pause before a read
+#                                         of GitHub, a git read or a push
+#                                         that failed for the network is
+#                                         made again (the pause doubles)
 #   DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS  how long CI may take to appear on a
-#                                         pushed commit, and how long the
-#                                         reads of a CI run may keep failing
+#                                         pushed commit, and how long those
+#                                         operations may keep failing
 #                                         (default 300)
 #   DOTSTEWARD_CONTRIBUTE_CI_TIMEOUT_SECONDS
 #                                         how long CI may take to finish
@@ -141,13 +142,6 @@ _contribute_require_tested() {
   head=$(git -C "$CT_CLONE" rev-parse HEAD)
   [[ $head == "$CT_TEST_SHA" ]] ||
     die "$CT_BRANCH moved after the framework gate (HEAD ${head:0:12}, checked ${CT_TEST_SHA:0:12}); run: dotsteward contribute check"
-}
-
-# _contribute_seconds NAME DEFAULT: a positive integer from the environment.
-_contribute_seconds() {
-  local value=${!1:-$2}
-  [[ $value =~ ^[1-9][0-9]*$ ]] || die "$1 must be a positive number of seconds"
-  printf '%s\n' "$value"
 }
 
 # --- instance -----------------------------------------------------------------------
@@ -395,12 +389,12 @@ _contribute_require_gh() {
   gh auth status >/dev/null 2>&1 || die "gh is not logged in; run 'gh auth login' first"
 }
 
-# _contribute_remote_ref REMOTE REF: the commit REF has on REMOTE (peeled for
-# an annotated tag), empty when it does not exist; status 1 when the remote
-# cannot be read.
-_contribute_remote_ref() {
+# _contribute_remote_ref_once REMOTE REF: the commit REF has on REMOTE (peeled
+# for an annotated tag), empty when it does not exist; read once, the status
+# of _contribute_git_once.
+_contribute_remote_ref_once() {
   local remote=$1 ref=$2 answer line peeled="" plain=""
-  answer=$(git_net 60 -C "$CT_CLONE" ls-remote "$remote" "$ref" "$ref^{}") || return 1
+  answer=$(_contribute_git_once 60 -C "$CT_CLONE" ls-remote "$remote" "$ref" "$ref^{}") || return
   while IFS=$'\t' read -r sha name; do
     [[ -n ${sha:-} ]] || continue
     if [[ $name == "$ref^{}" ]]; then
@@ -411,6 +405,39 @@ _contribute_remote_ref() {
   done <<<"$answer"
   line=${peeled:-$plain}
   printf '%s\n' "$line"
+}
+
+# _contribute_remote_ref REMOTE REF: the same, read again after a network
+# failure; status 1 when the remote cannot be read.
+_contribute_remote_ref() {
+  _contribute_retry "cannot read $2 on $1; trying again in" _contribute_remote_ref_once "$1" "$2" || return 1
+}
+
+# _contribute_push_once REMOTE SOURCE REF COMMIT LEASE(0|1): one attempt of
+# _contribute_push_ref: REF is read first and pushed from SOURCE unless it
+# already is COMMIT; with LEASE=1 the push replaces only what the read found.
+_contribute_push_once() {
+  local remote=$1 source=$2 ref=$3 commit=$4 lease=$5 current
+  local -a options=()
+  current=$(_contribute_remote_ref_once "$remote" "$ref") || return
+  CT_PUSHED=0
+  [[ $current != "$commit" ]] || return 0
+  ((lease == 0)) || options+=("--force-with-lease=$ref:$current")
+  _contribute_git_once 180 -C "$CT_CLONE" push --quiet "${options[@]}" "$remote" "$source:$ref" || return
+  CT_PUSHED=1
+}
+
+# _contribute_push_ref REMOTE SOURCE REF COMMIT [LEASE]: REF on REMOTE is
+# COMMIT, pushed from SOURCE (the commit, or a local tag that peels to it;
+# LEASE=1: replacing only what the remote had when it was read). A network
+# failure makes the attempt again, and every attempt reads REF first: a push
+# whose answer was lost has landed, so it is not pushed twice and its lease
+# is not stale. A push the remote or a hook refused is a verdict: never made
+# again, whatever the network did before. CT_PUSHED: 1 when this call pushed,
+# 0 when REF already was COMMIT. Status: 0, git's status of a refused push,
+# or CONTRIBUTE_NET_FAILED when the network kept failing.
+_contribute_push_ref() {
+  _contribute_retry "cannot read or push $3 on $1; trying again in" _contribute_push_once "$1" "$2" "$3" "$4" "${5:-0}"
 }
 
 # --- publish: branch and upstream main --------------------------------------------
@@ -442,17 +469,14 @@ _contribute_up_to_date() {
 # _contribute_push_branch REMOTE: the tested commit as the run's branch on
 # REMOTE, replacing only what the remote had when it was read.
 _contribute_push_branch() {
-  local remote=$1 current
-  current=$(_contribute_remote_ref "$remote" "refs/heads/$CT_BRANCH") ||
-    _contribute_red "cannot read $CT_BRANCH on $remote"
-  if [[ $current == "$CT_TEST_SHA" ]]; then
-    log "$CT_BRANCH is already ${CT_TEST_SHA:0:12} on $remote"
-    return 0
-  fi
-  git_net 180 -C "$CT_CLONE" push --quiet --force-with-lease="refs/heads/$CT_BRANCH:$current" \
-    "$remote" "$CT_TEST_SHA:refs/heads/$CT_BRANCH" </dev/null ||
+  local remote=$1
+  _contribute_push_ref "$remote" "$CT_TEST_SHA" "refs/heads/$CT_BRANCH" "$CT_TEST_SHA" 1 ||
     _contribute_red "pushing $CT_BRANCH to $remote failed; nothing is published"
-  log "pushed $CT_BRANCH (${CT_TEST_SHA:0:12}) to $remote"
+  if ((CT_PUSHED)); then
+    log "pushed $CT_BRANCH (${CT_TEST_SHA:0:12}) to $remote"
+  else
+    log "$CT_BRANCH is already ${CT_TEST_SHA:0:12} on $remote"
+  fi
 }
 
 # _contribute_rebase_onto_merged REMOTE: after a pull request merged on GitHub
@@ -517,7 +541,7 @@ _contribute_release_tags() {
   local -a remotes=(origin)
   [[ $CT_RUN_MODE != fork ]] || remotes+=(upstream)
   for remote in "${remotes[@]}"; do
-    answer=$(git_net 60 -C "$CT_CLONE" ls-remote --tags "$remote" 'refs/tags/v*') ||
+    answer=$(contribute_git_net "cannot list the tags of $remote" 60 -C "$CT_CLONE" ls-remote --tags "$remote" 'refs/tags/v*') ||
       die "cannot list the tags of $remote"
     # Peeled lines (TAG^{}) first, so they win over the tag objects.
     while IFS=$'\t' read -r sha name; do
@@ -572,7 +596,8 @@ _contribute_require_version() {
 # yet.
 _contribute_runs() {
   local repo=$1 sha=$2 workflow=$3 event=$4 branch=${5:-} answer
-  answer=$(gh api -X GET "repos/$repo/actions/runs" -f head_sha="$sha" -F per_page=100 </dev/null) || return 1
+  answer=$(_contribute_ci_read "the workflow runs of ${sha:0:12} in $repo" \
+    gh api -X GET "repos/$repo/actions/runs" -f head_sha="$sha" -F per_page=100) || return 1
   jq -r --arg workflow "$workflow" --arg event "$event" --arg branch "$branch" '
     [.workflow_runs[]?
       | select($workflow == "" or ((.path // "") | split("@")[0]) == ".github/workflows/" + $workflow)
@@ -582,29 +607,23 @@ _contribute_runs() {
     | "\(.id) \(.status) \(.conclusion // "none") \(.html_url // "")"' <<<"$answer"
 }
 
-# _contribute_ci_read WHAT COMMAND...: the output of COMMAND, a read of CI
-# runs on GitHub (WHAT names them in the warnings). A failed read is not a
-# CI result (the network was down for a moment, or GitHub answered HTTP
-# 5xx): it is made again after a pause that starts at
-# DOTSTEWARD_CONTRIBUTE_POLL_SECONDS and doubles, and status 1 (the
-# caller's red) follows only once the reads kept failing for
-# DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS.
-_contribute_ci_read() {
-  local what=$1 interval window start pause elapsed answer
-  shift
-  interval=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_POLL_SECONDS 15)
-  window=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS 300)
-  start=$SECONDS
-  pause=$interval
-  until answer=$("$@" </dev/null); do
-    elapsed=$((SECONDS - start))
-    ((elapsed < window)) || return 1
-    ((pause <= window - elapsed)) || pause=$((window - elapsed))
-    warn "cannot read $what; reading GitHub again in ${pause}s"
-    sleep "$pause"
-    pause=$((pause * 2))
-  done
+# _contribute_read_once COMMAND...: the output of COMMAND, a read of GitHub;
+# any failure of it counts as a failure of the network.
+_contribute_read_once() {
+  local answer
+  answer=$("$@" </dev/null) || return "$CONTRIBUTE_NET_FAILED"
   printf '%s\n' "$answer"
+}
+
+# _contribute_ci_read WHAT COMMAND...: the output of COMMAND, a read of GitHub
+# (WHAT names it in the warnings). A failed read is no answer (the network
+# was down for a moment, or GitHub answered HTTP 5xx): it is made again
+# (_contribute_retry), and status 1 (the caller's red) follows only once the
+# reads kept failing for DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS.
+_contribute_ci_read() {
+  local what=$1
+  shift
+  _contribute_retry "cannot read $what; reading GitHub again in" _contribute_read_once "$@" || return 1
 }
 
 # _contribute_wait_run REPO ID WHAT [STAKE]: waits for run ID to complete;
@@ -879,8 +898,8 @@ _contribute_pr_body() {
 # (nothing when there is none); status 1 when gh cannot list them.
 _contribute_find_pr() {
   local repo=$1 owner=$2 answer
-  answer=$(gh pr list -R "$repo" --head "$CT_BRANCH" --state open --json url,headRepositoryOwner </dev/null) ||
-    return 1
+  answer=$(_contribute_ci_read "the pull requests of $repo" \
+    gh pr list -R "$repo" --head "$CT_BRANCH" --state open --json url,headRepositoryOwner) || return 1
   jq -r --arg owner "$owner" \
     '[.[] | select((.headRepositoryOwner.login // "" | ascii_downcase) == ($owner | ascii_downcase))][0].url // empty' \
     <<<"$answer"
@@ -917,19 +936,18 @@ _contribute_open_pr() {
 # the privacy scans refuse. GitHub records PR as merged once its head is on
 # main. A push that no longer fast-forwards (main moved since the last
 # check) rebases the branch and goes back to check; any other refusal is
-# red with main untouched.
+# red with main untouched. A network failure is made again.
 _contribute_fast_forward_main() {
-  local pr=$1 main
-  main=$(_contribute_remote_ref origin refs/heads/main) || _contribute_red "cannot read main of $CT_PUBLISH_SLUG"
-  if [[ $main == "$CT_TEST_SHA" ]]; then
-    log "main of $CT_PUBLISH_SLUG is already ${CT_TEST_SHA:0:12}"
-    return 0
-  fi
+  local pr=$1 code=0
   log "merging $pr: fast-forwarding main of $CT_PUBLISH_SLUG to ${CT_TEST_SHA:0:12}"
-  if ! git_net 180 -C "$CT_CLONE" push --quiet origin "$CT_TEST_SHA:refs/heads/main" </dev/null; then
+  _contribute_push_ref origin "$CT_TEST_SHA" refs/heads/main "$CT_TEST_SHA" || code=$?
+  if ((code == CONTRIBUTE_NET_FAILED)); then
+    _contribute_red "the network kept failing while ${CT_TEST_SHA:0:12} was pushed to main of $CT_PUBLISH_SLUG; run publish again once it is back"
+  elif ((code)); then
     _contribute_up_to_date origin
     _contribute_red "pushing ${CT_TEST_SHA:0:12} to main of $CT_PUBLISH_SLUG was refused; main is untouched"
   fi
+  ((CT_PUSHED)) || log "main of $CT_PUBLISH_SLUG is already ${CT_TEST_SHA:0:12}"
 }
 
 # _contribute_publish_owner: the recorded pull request is read first, so a
@@ -946,7 +964,7 @@ _contribute_publish_owner() {
   pr=$(_contribute_get pr)
   state=OPEN
   if [[ -n $pr ]]; then
-    answer=$(gh pr view "$pr" --json state </dev/null) || _contribute_red "cannot read $pr"
+    answer=$(_contribute_ci_read "$pr" gh pr view "$pr" --json state) || _contribute_red "cannot read $pr"
     state=$(jq -r '.state' <<<"$answer")
     [[ $state != CLOSED ]] || die "the pull request $pr is closed; reopen it, or end the run with: dotsteward contribute abort"
   fi
@@ -972,7 +990,7 @@ _contribute_publish_owner() {
     fi
   fi
   if [[ -z $merged ]]; then
-    answer=$(gh pr view "$pr" --json state,mergeCommit </dev/null) || _contribute_red "cannot read $pr after the merge"
+    answer=$(_contribute_ci_read "$pr" gh pr view "$pr" --json state,mergeCommit) || _contribute_red "cannot read $pr after the merge"
     merged=$(jq -r 'if .state == "MERGED" then .mergeCommit.oid // empty else empty end' <<<"$answer")
     [[ -n $merged ]] || _contribute_red "$pr is not merged"
   fi
@@ -983,7 +1001,7 @@ _contribute_publish_owner() {
 }
 
 _contribute_publish_fork() {
-  local to_upstream=$1 main pr build_only=0
+  local to_upstream=$1 main pr build_only=0 code=0
   [[ $(_contribute_get trial) != build-only ]] || build_only=1
   if ((build_only)) &&
     [[ $(gh api "repos/$CT_PUBLISH_SLUG/actions/permissions" </dev/null 2>/dev/null | jq -r '.enabled') == false ]]; then
@@ -998,7 +1016,10 @@ _contribute_publish_fork() {
   _contribute_require_version "$CT_TEST_SHA"
   main=$(_contribute_remote_ref origin refs/heads/main) || _contribute_red "cannot read main of $CT_PUBLISH_SLUG"
   if [[ $main != "$CT_TEST_SHA" ]]; then
-    git_net 180 -C "$CT_CLONE" push --quiet origin "$CT_TEST_SHA:refs/heads/main" </dev/null ||
+    _contribute_push_ref origin "$CT_TEST_SHA" refs/heads/main "$CT_TEST_SHA" || code=$?
+    ((code != CONTRIBUTE_NET_FAILED)) ||
+      _contribute_red "the network kept failing while ${CT_TEST_SHA:0:12} was pushed to main of $CT_PUBLISH_SLUG; run publish again once it is back"
+    ((code == 0)) ||
       _contribute_red "main of $CT_PUBLISH_SLUG (${main:0:12}) cannot be fast-forwarded to ${CT_TEST_SHA:0:12}: it has commits that $CT_BRANCH lacks; rebase $CT_BRANCH onto it in $CT_CLONE (with TZ=UTC; the commit-msg hook refuses a merge commit with git's default subject), then run: dotsteward contribute check"
     log "fast-forwarded main of $CT_PUBLISH_SLUG to ${CT_TEST_SHA:0:12}"
   fi
@@ -1192,8 +1213,11 @@ contribute_cmd_release() {
       TZ=UTC git -C "$CT_CLONE" tag -a "$tag" -m "dotsteward $tag" "$merged" ||
         _contribute_red "cannot create the tag $tag"
     fi
-    if git_net 180 -C "$CT_CLONE" push --quiet origin "refs/tags/$tag:refs/tags/$tag" </dev/null; then
+    if _contribute_push_ref origin "refs/tags/$tag" "refs/tags/$tag" "$merged"; then
       log "tagged ${merged:0:12} as $tag on $CT_PUBLISH_SLUG"
+      # Not pushed by this call: its tag is the one on origin (an answer that
+      # was lost, or the release workflow's tag since the last read).
+      ((CT_PUSHED)) || remote_tag=$merged
     else
       _contribute_origin_tag "$tag" "$merged"
       remote_tag=$CT_ORIGIN_TAG
@@ -1204,7 +1228,7 @@ contribute_cmd_release() {
   if [[ -n $remote_tag ]]; then
     # origin's tag replaces a local one on the same commit (the workflow's
     # tag is a lightweight one), so later fetches of the tags agree.
-    git_net 60 -C "$CT_CLONE" fetch --quiet origin "+refs/tags/$tag:refs/tags/$tag" </dev/null ||
+    contribute_git_net "cannot fetch the tag $tag" 60 -C "$CT_CLONE" fetch --quiet origin "+refs/tags/$tag:refs/tags/$tag" ||
       _contribute_red "cannot fetch the tag $tag"
   fi
   if [[ $CT_RUN_MODE == owner ]]; then
@@ -1450,8 +1474,8 @@ _contribute_upgrade_command() {
 _contribute_carry_prepare() {
   local carry=$1 branch=$DS_INSTANCE_BRANCH head remote count commits
   head=$(git -C "$DS_INSTANCE_ROOT" rev-parse HEAD)
-  git_net 60 -C "$DS_INSTANCE_ROOT" fetch --quiet origin "$branch" </dev/null ||
-    die "could not fetch origin/$branch of the instance within 60 s"
+  contribute_git_net "cannot fetch origin/$branch of the instance" 60 -C "$DS_INSTANCE_ROOT" fetch --quiet origin "$branch" ||
+    die "could not fetch origin/$branch of the instance"
   remote=$(git -C "$DS_INSTANCE_ROOT" rev-parse --verify --quiet "refs/remotes/origin/$branch^{commit}") ||
     die "origin/$branch of the instance is missing after the fetch"
   [[ $head != "$remote" ]] || return 0

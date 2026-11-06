@@ -77,6 +77,10 @@ CT_FORK_URL=git@github.com:dotsteward-test/dotsteward.git
 CT_INSTANCE_REMOTE=git@github.com:alice/workstation.git
 CT_NOREPLY=1000+dotsteward-test@users.noreply.github.com
 
+# A network failure is made again; these tests do not wait for it.
+export DOTSTEWARD_CONTRIBUTE_POLL_SECONDS=1
+export DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS=1
+
 ct_fixtures=$DS_REPO_ROOT/tests/contribute/local/fixtures
 ct_upstream_src=$DS_TEST_ROOT/upstream-src
 ct_upstream_bare=$DS_TEST_ROOT/upstream.git

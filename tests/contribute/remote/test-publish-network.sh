@@ -29,7 +29,11 @@ switched_run() {
 
 switched_run add-feature 0.1.1
 sha=$(git -C "$ct_clone" rev-parse HEAD)
-network_plan x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.
+# A read takes x. (dropped, served); a push x.x.. (its read dropped and
+# served, the push dropped, the read served, the push served). In order: the
+# tags and the fetch of main; the branch; the fetch and the tags again; main;
+# the fetch of the verification and the tags of the last line.
+network_plan x.x.x.x..x.x.x.x..x.x.
 : >"$DS_FAKESSH_LOG"
 reset_calls
 assert_exit 0 run_contribute publish
@@ -48,7 +52,9 @@ state_json | assert_json - ".step == \"release\" and .merged_sha == \"$sha\" and
 
 # --- the same for release: the tags, the push of the tag, its fetch ----------------------------
 
-network_plan x.x.x.x.x.x.x.x.x.x.
+# The tags, the tag on origin before and after main's CI, the tag, and the
+# tags of the release notes.
+network_plan x.x.x.x.x..x.
 : >"$DS_FAKESSH_LOG"
 assert_exit 0 run_contribute release
 assert_contains "$DS_STDERR" "[dotsteward] WARNING: cannot read or push refs/tags/v0.1.1 on origin; trying again in 1s"

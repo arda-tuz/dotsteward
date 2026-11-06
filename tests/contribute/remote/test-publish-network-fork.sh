@@ -16,7 +16,12 @@ checked_run add-feature
 mark_trialled full false
 sha=$(git -C "$ct_clone" rev-parse HEAD)
 
-network_plan x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.
+# A read takes x. (dropped, served); a push x.x.. (its read dropped and
+# served, the push dropped, the read served, the push served). In order: the
+# tags of both remotes and the fetch of the upstream; the branch; the fetch
+# and the tags of both remotes again; main, read and pushed; the fetch of the
+# verification and the tags of both remotes for the last line.
+network_plan x.x.x.x.x..x.x.x.x.x.x.x..x.x.x.
 hub_knob runs-flaky 1
 : >"$DS_FAKESSH_LOG"
 assert_exit 0 run_contribute publish

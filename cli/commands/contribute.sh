@@ -115,7 +115,10 @@
 #                           before the merge. Upstream main moved: the
 #                           branch is rebased and the run goes back to check
 #                           (exit 5); so does a tree mismatch after the
-#                           merge, with the branch on the merged main
+#                           merge, with the branch on the merged main. A git
+#                           read or push that fails for the network is made
+#                           again (a push reads its ref first), a push that
+#                           the remote or a hook refused never
 #   release [--major]       the release that VERSION of the merged commit
 #                           names, when it is the next one: after the newest
 #                           v* tag, as the conventional commits since the

@@ -139,6 +139,16 @@ it writes a new commit with another identity. The merged tree must equal
 the tested tree. When upstream `main` moved, the branch is rebased and the
 run goes back to `check` (exit 5).
 
+A `git ls-remote`, fetch or push that fails for the network (a connection
+that times out, a name that does not resolve, an answer that never comes)
+says nothing about the change, so `publish`, `release` and `upgrade` make it
+again after a pause that starts at `DOTSTEWARD_CONTRIBUTE_POLL_SECONDS` and
+doubles, until the failures lasted `DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS`. A
+push reads its ref again first, because a push whose answer was lost has
+landed. A push the remote refuses (a protected branch, a `main` that moved),
+a finding of the pre-push hook and a refused login are verdicts and are never
+made again.
+
 The full check (`nix flake check`) runs on every push to `main`, nightly
 and for pull requests from forks, not on the pull requests and branches of
 the repository itself. `dotsteward contribute status` shows `main`'s CI for

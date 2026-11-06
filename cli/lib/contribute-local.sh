@@ -21,7 +21,11 @@
 #   contribute_require_clean DIR
 #   contribute_fetch_main DIR REMOTE
 #                            fetches main of REMOTE into
-#                            refs/remotes/REMOTE/main (180 s)
+#                            refs/remotes/REMOTE/main (180 s per attempt,
+#                            made again after a network failure)
+#   contribute_git_net MESSAGE SECONDS ARG...
+#                            git_net SECONDS ARG... with standard input
+#                            empty, made again after a network failure
 #   contribute_leak_terms CONTEXT_JSON ALLOWLIST BASE EXEMPT PUBLIC...
 #                            the instance-leak terms in the denylist format:
 #                            runtime and check user and home, the instance
@@ -46,6 +50,14 @@
 #                            the one term EXEMPT (case-insensitive; empty:
 #                            none), the private component the run promotes
 #                            into the catalog (start --promote)
+#
+# Environment (seconds, positive integers), for a network operation that
+# failed for the network:
+#   DOTSTEWARD_CONTRIBUTE_POLL_SECONDS    the first pause before it is made
+#                                         again (default 15; the pause
+#                                         doubles)
+#   DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS  how long it may keep failing
+#                                         (default 300)
 #
 # Facts set by contribute_resolve_mode (the remote steps use them too):
 #   CT_CONTEXT          `dotsteward context --json` of the instance
@@ -213,10 +225,77 @@ contribute_require_clean() {
   [[ -z $changes ]] || die "the clone $1 has uncommitted changes; commit or remove them first"
 }
 
+# --- the network ----------------------------------------------------------------------
+
+# The status of an operation that failed for the network, which says nothing
+# about the operation itself (the same value as sysexits' EX_TEMPFAIL).
+CONTRIBUTE_NET_FAILED=75
+# What ssh, git and the remote print when the remote answered and refused
+# access, or does not know the repository: a verdict, not a network failure.
+CONTRIBUTE_GIT_REFUSED='permission denied|permission to .* denied|repository .*not found|does not appear to be a git repository|authentication failed|could not read username|host key verification failed|returned error: 40[0-9]'
+
+# _contribute_seconds NAME DEFAULT: a positive integer from the environment.
+_contribute_seconds() {
+  local value=${!1:-$2}
+  [[ $value =~ ^[1-9][0-9]*$ ]] || die "$1 must be a positive number of seconds"
+  printf '%s\n' "$value"
+}
+
+# _contribute_retry MESSAGE COMMAND [ARG...]: COMMAND, made again as long as
+# it returns CONTRIBUTE_NET_FAILED, after a warning "MESSAGE <pause>s" and a
+# pause that starts at DOTSTEWARD_CONTRIBUTE_POLL_SECONDS and doubles. Any
+# other status of COMMAND is the status of this function, and
+# CONTRIBUTE_NET_FAILED once the failures lasted
+# DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS.
+_contribute_retry() {
+  local message=$1 start pause window elapsed code
+  shift
+  pause=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_POLL_SECONDS 15) || return 1
+  window=$(_contribute_seconds DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS 300) || return 1
+  start=$SECONDS
+  while :; do
+    code=0
+    "$@" || code=$?
+    ((code == CONTRIBUTE_NET_FAILED)) || return "$code"
+    elapsed=$((SECONDS - start))
+    ((elapsed < window)) || return "$code"
+    ((pause <= window - elapsed)) || pause=$((window - elapsed))
+    warn "$message ${pause}s"
+    sleep "$pause"
+    pause=$((pause * 2))
+  done
+}
+
+# _contribute_git_once SECONDS ARG...: git_net SECONDS ARG... once, standard
+# input empty, git's standard error passed on. Status CONTRIBUTE_NET_FAILED
+# when it failed for the network: the time limit ended it (124), or git
+# stopped (128) without a word that the remote refused access. Any other
+# failure is a verdict and keeps git's status: a push the remote rejected or
+# a hook refused ends with 1. Standard error goes through a file, not a
+# pipe: a ControlPersist SSH master that stays behind would keep a pipe open.
+_contribute_git_once() {
+  local seconds=$1 errors code=0
+  shift
+  errors=$(mktemp "${TMPDIR:-/tmp}/dotsteward-git.XXXXXX") || return 1
+  git_net "$seconds" "$@" </dev/null 2>"$errors" || code=$?
+  cat -- "$errors" >&2
+  if ((code == 124)) || { ((code == 128)) && ! grep -Eqi -e "$CONTRIBUTE_GIT_REFUSED" -- "$errors"; }; then
+    code=$CONTRIBUTE_NET_FAILED
+  fi
+  rm -f -- "$errors"
+  return "$code"
+}
+
+contribute_git_net() {
+  local message=$1
+  shift
+  _contribute_retry "$message; trying again in" _contribute_git_once "$@"
+}
+
 contribute_fetch_main() {
   local dir=$1 remote=$2
-  git_net 180 -C "$dir" fetch --quiet "$remote" "+refs/heads/main:refs/remotes/$remote/main" ||
-    die "could not fetch main from $remote within 180 s"
+  contribute_git_net "cannot fetch main from $remote" 180 -C "$dir" fetch --quiet "$remote" \
+    "+refs/heads/main:refs/remotes/$remote/main" || die "could not fetch main from $remote"
 }
 
 # _contribute_origin_url: the URL the clone's origin must have in CT_MODE.

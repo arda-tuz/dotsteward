@@ -94,8 +94,6 @@ rt_live=$DS_TEST_ROOT/live
 rt_hub=$DS_TEST_ROOT/hub
 rt_remote_dir=$DS_REPO_ROOT/tests/contribute/remote
 
-export DOTSTEWARD_CONTRIBUTE_POLL_SECONDS=1
-export DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS=1
 export DOTSTEWARD_CONTRIBUTE_CI_TIMEOUT_SECONDS=60
 
 # --- the release of the synthetic framework -----------------------------------
