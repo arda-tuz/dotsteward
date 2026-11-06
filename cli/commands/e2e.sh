@@ -28,8 +28,13 @@
 #                                 tree
 #       core:repo-origin          origin equals instance.remote
 #       core:repo-remote          origin <branch>, read with git_net, equals
-#                                 HEAD; with --expected-remote-base OID it
-#                                 equals OID and OID is an ancestor of HEAD
+#                                 HEAD, or HEAD is its ancestor: another machine
+#                                 published, the check passes with a note. A
+#                                 remote commit that is not here yet is fetched
+#                                 without writing a ref, so concurrent runs and
+#                                 fetches do not lock each other out. With
+#                                 --expected-remote-base OID it equals OID and
+#                                 OID is an ancestor of HEAD
 #       core:repo-skill-count     the vendored SKILL.md files git tracks
 #                                 match the number of skills lock entries
 #   10. <component>:<hook>        late checks.e2e hooks
@@ -884,9 +889,27 @@ _e2e_repo_remote() {
     git -C "$DS_INSTANCE_ROOT" merge-base --is-ancestor "$expected_base" "$local_oid" 2>/dev/null ||
       skills_fail base-not-ancestor "$DS_INSTANCE_ROOT" \
         "the expected publish base $expected_base is not an ancestor of HEAD $local_oid"
-  elif [[ $local_oid != "$remote" ]]; then
+  elif [[ $local_oid != "$remote" ]] && ! _e2e_repo_behind "$local_oid" "$remote" "$branch"; then
     skills_fail remote-mismatch "$DS_INSTANCE_ROOT" "local HEAD $local_oid differs from origin $branch $remote"
   fi
+}
+
+# _e2e_repo_behind LOCAL REMOTE BRANCH: status 0, with a note, when LOCAL is an
+# ancestor of REMOTE. A commit of the remote that is not here yet comes without a
+# destination: no ref and no FETCH_HEAD to lock, and nothing a run has to clean up.
+_e2e_repo_behind() {
+  local local_oid=$1 remote=$2 branch=$3 count noun=commit status=0
+  if ! git -C "$DS_INSTANCE_ROOT" cat-file -e "$remote^{commit}" 2>/dev/null; then
+    git_net 60 -C "$DS_INSTANCE_ROOT" fetch --quiet --no-tags --no-auto-maintenance --no-write-fetch-head --refmap= \
+      origin "refs/heads/$branch" </dev/null || status=$?
+    ((status == 0)) ||
+      skills_fail remote-unreachable "$DS_INSTANCE_ROOT" \
+        "cannot fetch origin $branch of the instance checkout (git fetch exited with $status)"
+  fi
+  git -C "$DS_INSTANCE_ROOT" merge-base --is-ancestor "$local_oid" "$remote" 2>/dev/null || return 1
+  count=$(git -C "$DS_INSTANCE_ROOT" rev-list --count "$local_oid..$remote")
+  ((count == 1)) || noun=commits
+  log "the checkout is $count $noun behind origin $branch; 'git pull --ff-only' moves it"
 }
 
 # The lock's entries are the expected skills; an expected_skill_count that
