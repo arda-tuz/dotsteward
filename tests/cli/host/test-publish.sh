@@ -192,6 +192,17 @@ assert_exit 0 env GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
 assert_eq "$DS_TEST_IDENTITY_NAME" "$(git -C "$e2e_bare" log -1 --format=%an "$(remote_tip)")"
 assert_eq "" "$(git -C "$agents_inst" config --local --get user.name || true)"
 
+# A file on the remote that is not TOML: a refusal with the reason, no traceback.
+git -C "$clone" pull -q --ff-only origin main
+printf 'this is not toml\n' >"$clone/hosts/laptop.toml"
+git -C "$clone" commit -qam "chore(hosts): break laptop"
+git -C "$clone" push -q origin main
+assert_exit 1 run_host publish
+assert_contains "$DS_STDERR" "on the remote is not TOML"
+assert_not_contains "$DS_STDERR" "Traceback"
+git -C "$clone" revert --no-edit HEAD >/dev/null
+git -C "$clone" push -q origin main
+
 # A privacy finding: nothing is published, and the status says so.
 denylist=$DS_TEST_ROOT/denylist.txt
 printf 'denied-name\n' >"$denylist"

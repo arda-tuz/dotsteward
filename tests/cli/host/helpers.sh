@@ -83,7 +83,7 @@ if pid == 0:
     os.execv(sys.argv[2], sys.argv[2:])
 output = b""
 typed = 0
-deadline = time.monotonic() + 120
+deadline = time.monotonic() + 600
 while time.monotonic() < deadline:
     ready, _, _ = select.select([fd], [], [], 0.2)
     if ready:
@@ -99,6 +99,9 @@ while time.monotonic() < deadline:
     if typed < len(answers) and output.rstrip(b" ").endswith((b":", b"]")) and output.endswith(b" "):
         os.write(fd, answers[typed].encode() + b"\n")
         typed += 1
+else:
+    # Nobody reads the terminal any more: a command that writes to it would wait forever.
+    os.kill(pid, 9)
 _, status = os.waitpid(pid, 0)
 sys.stdout.write(output.decode("utf-8", "replace").replace("\r", ""))
 sys.exit(os.waitstatus_to_exitcode(status))
