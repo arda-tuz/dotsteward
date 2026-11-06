@@ -465,6 +465,8 @@ let
       # every Python file of the tree: the check lints them all
       (fs.intersection tree (fs.fileFilter (file: file.hasExt "py") root))
       (paths [
+        # test-run-report.sh: the page of the exit codes
+        "docs/exit-codes.md"
         "engines"
         "nix/checks"
         "nix/packages/dotsteward.nix"
