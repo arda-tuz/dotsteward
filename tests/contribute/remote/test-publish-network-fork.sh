@@ -49,3 +49,15 @@ assert_contains "$DS_STDERR" "[dotsteward] ERROR: main of $CT_FORK_SLUG (${sha:0
 assert_not_contains "$DS_STDERR" "trying again"
 assert_eq 2 "$(pushes_served)" "pushes served: the branch and the push to main that does not fast-forward, once"
 assert_eq "$sha" "$(fork_main)" "fork main after the refused fast-forward"
+
+# The answer of the push of the fork's main is lost and that main moves on:
+# the push landed, so the run is published, with no call to rebase.
+git -C "$ct_fork_bare" update-ref refs/heads/main "$upstream_before"
+hub_knob push-lost 'refs/heads/main moved'
+reset_calls
+assert_exit 0 run_contribute publish
+assert_contains "$DS_STDOUT" "[dotsteward] ${second:0:12} is on main of $CT_FORK_SLUG: its push landed although its answer was lost"
+assert_not_contains "$DS_STDERR" "rebase"
+[[ $(fork_main) != "$second" ]] || ds_fail "the fork's main did not move on"
+git -C "$ct_fork_bare" merge-base --is-ancestor "$second" refs/heads/main || ds_fail "the tested commit is not on the fork's main"
+state_json | assert_json - ".step == \"release\" and .merged_sha == \"$second\""

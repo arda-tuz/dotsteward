@@ -142,3 +142,23 @@ export DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS=30
 network_plan xx
 assert_exit 0 run_contribute publish
 assert_eq "$sha" "$(upstream_main)" "upstream main once the network is back"
+assert_exit 0 run_contribute release
+state_set '.step = "done"'
+
+# --- the answer of the push of main is lost and main moves on: the push landed --------------------
+
+# The next attempt no longer fast-forwards, but the tested commit is on main,
+# so the run is published: no rebase, and no way back to check.
+switched_run moved-feature 0.1.7
+sha=$(git -C "$ct_clone" rev-parse HEAD)
+hub_knob push-lost 'refs/heads/main moved'
+reset_calls
+assert_exit 0 run_contribute publish
+assert_contains "$DS_STDOUT" "[dotsteward] ${sha:0:12} is on main of $CT_UPSTREAM_SLUG: its push landed although its answer was lost"
+assert_not_contains "$DS_STDOUT" "rebasing"
+[[ $(upstream_main) != "$sha" ]] || ds_fail "main did not move on"
+git -C "$ct_upstream_bare" merge-base --is-ancestor "$sha" refs/heads/main || ds_fail "the tested commit is not on main"
+assert_eq "$sha" "$(git -C "$ct_clone" rev-parse HEAD)" "the branch stays the tested commit"
+assert_eq "" "$(instance_calls)" "a push that landed runs no recovery"
+assert_eq trial "$(live)" "live framework after a push that landed"
+state_json | assert_json - ".step == \"release\" and .merged_sha == \"$sha\" and .test_sha == \"$sha\""

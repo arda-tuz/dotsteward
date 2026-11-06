@@ -44,8 +44,9 @@
 #   fast-forwards; once); with the knob push-tag (any value), the next push
 #   of a tag finds that the release workflow cut that tag on main just
 #   before (a lightweight tag) and fails (once); with the knob push-lost
-#   (a ref), the next push of that ref lands, but the connection breaks
-#   before its answer reaches the client (once)
+#   (a ref, optionally followed by "moved"), the next push of that ref lands
+#   (and with "moved", a concurrent commit lands on the ref right after it),
+#   but the connection breaks before its answer reaches the client (once)
 #
 #   run_contribute ARG...      the dispatcher of rt_fw on the instance
 #   rt_setup MODE [TOML...]    the denylist, workstation.toml in MODE (owner
@@ -280,12 +281,25 @@ EOF
   {
     printf '#!%s\n' "$BASH"
     printf 'knob=%q\n' "$rt_hub/knobs/push-lost"
+    printf 'bare=%q\n' "$rt_bare"
     cat <<'EOF'
 updates=$(cat)
 [[ $1 == committed && -f $knob ]] || exit 0
-ref=$(<"$knob")
+read -r ref moved <"$knob"
 [[ $updates == *" $ref"* ]] || exit 0
 rm -f -- "$knob"
+if [[ -n ${moved:-} ]]; then
+  (
+    unset GIT_DIR GIT_QUARANTINE_PATH GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+    blob=$(printf 'moved\n' | git -C "$bare" hash-object -w --stdin)
+    tree=$({
+      git -C "$bare" ls-tree "$ref"
+      printf '100644 blob %s\tmoved.txt\n' "$blob"
+    } | git -C "$bare" mktree)
+    commit=$(TZ=UTC git -C "$bare" commit-tree "$tree" -p "$ref" -m 'chore: a concurrent change')
+    git -C "$bare" update-ref "$ref" "$commit"
+  )
+fi
 kill -9 "$PPID"
 EOF
   } >"$rt_bare/hooks/reference-transaction"
