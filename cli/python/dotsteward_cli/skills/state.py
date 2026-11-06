@@ -1,0 +1,142 @@
+"""The machine state of skill tracking: ``<state root>/skills/`` (mode 0700).
+
+    base.json          {"skill:<name>": {base_sha256, base_commit, local_path}}: what
+                       this machine last had in sync with the repository
+    pending.json       {schema_version, reconciled_at, items: {"skill:<name>": item}}:
+                       what waits for a capture, a question or an answer
+    last-capture.json  the last capture: redacted findings, dropped files
+
+A file is replaced atomically, so a reader sees a whole one. A change of
+``pending.json`` holds ``pending.lock``, so parallel tool calls lose nothing. The
+state belongs to this machine and never enters the repository.
+
+This module is on the path of a hook without a change, so it imports the primitives
+(which bring ``pathlib`` and ``subprocess``) only for a write.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from collections.abc import Callable, Mapping
+from typing import Any
+
+SCHEMA_VERSION = 1
+# The revision that marks a skill as the user's own; [compat] repo_owned_revision names
+# another one for an instance that started with its own word for it.
+REPO_OWNED_REVISION = "same-as-instance-checkout"
+BASE_FILE = "base.json"
+PENDING_FILE = "pending.json"
+PENDING_LOCK = "pending.lock"
+LAST_CAPTURE_FILE = "last-capture.json"
+# How long a change of pending.json waits for the lock before it gives up: a hook
+# must not stall, and the next reconcile finds what a lost change would have said.
+_PENDING_WAIT_SECONDS = 2.0
+
+
+def directory(state_root: str) -> str:
+    """``<state root>/skills``."""
+    return os.path.join(state_root, "skills")
+
+
+def skill_key(name: str) -> str:
+    return f"skill:{name}"
+
+
+def read_json(path: str, default: Any) -> Any:
+    """The JSON document at PATH, DEFAULT when it is missing or no JSON: a broken
+    state file must not stop a hook, and no b only means "ask" for a decision."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return default
+
+
+def write_json(path: str, value: Any) -> None:
+    """Replaces the private file at PATH, with its directory when it is missing."""
+    from dotsteward_cli import atomic
+
+    atomic.make_private_dirs(os.path.dirname(path))
+    atomic.atomic_write_json(path, value, mode=0o600)
+
+
+def load_base(state_root: str) -> dict[str, Any]:
+    document = read_json(os.path.join(directory(state_root), BASE_FILE), {})
+    return document if isinstance(document, dict) else {}
+
+
+def save_base(state_root: str, base: Mapping[str, Any]) -> None:
+    write_json(os.path.join(directory(state_root), BASE_FILE), dict(base))
+
+
+def base_entry(base: Mapping[str, Any], name: str) -> dict[str, Any] | None:
+    """The record of the skill NAME in BASE, None without a digest."""
+    entry = base.get(skill_key(name))
+    if isinstance(entry, dict) and isinstance(entry.get("base_sha256"), str) and entry["base_sha256"]:
+        return entry
+    return None
+
+
+def record_base(state_root: str, name: str, digest: str, commit: str, local_path: str) -> None:
+    """Records that this machine had NAME in sync, unless it is known already."""
+    base = load_base(state_root)
+    entry = {"base_sha256": digest, "base_commit": commit, "local_path": local_path}
+    if base.get(skill_key(name)) != entry:
+        base[skill_key(name)] = entry
+        save_base(state_root, base)
+
+
+def empty_pending() -> dict[str, Any]:
+    return {"schema_version": SCHEMA_VERSION, "reconciled_at": None, "items": {}}
+
+
+def load_pending(state_root: str) -> dict[str, Any]:
+    document = read_json(os.path.join(directory(state_root), PENDING_FILE), None)
+    if not isinstance(document, dict) or not isinstance(document.get("items"), dict):
+        return empty_pending()
+    return document
+
+
+def change_pending(state_root: str, change: Callable[[dict[str, Any]], bool]) -> bool:
+    """Reads pending.json under its lock, runs CHANGE and writes the document when
+    CHANGE returns True. False when the lock stayed busy: nothing happened."""
+    from dotsteward_cli import atomic, locks
+
+    root = directory(state_root)
+    atomic.make_private_dirs(root)
+    lock = locks.FileLock(os.path.join(root, PENDING_LOCK))
+    if not lock.try_acquire(wait=_PENDING_WAIT_SECONDS):
+        return False
+    try:
+        document = load_pending(state_root)
+        if change(document):
+            write_json(os.path.join(root, PENDING_FILE), document)
+    finally:
+        lock.release()
+    return True
+
+
+def set_item(state_root: str, key: str, fields: Mapping[str, Any]) -> bool:
+    """Merges FIELDS into the item KEY of pending.json, creating it."""
+
+    def change(document: dict[str, Any]) -> bool:
+        item = document["items"].get(key)
+        merged = {**item, **fields} if isinstance(item, dict) else dict(fields)
+        if merged == item:
+            return False
+        document["items"][key] = merged
+        return True
+
+    return change_pending(state_root, change)
+
+
+def drop_item(state_root: str, key: str) -> bool:
+    """Removes the item KEY of pending.json."""
+    if key not in load_pending(state_root)["items"]:
+        return True
+
+    def change(document: dict[str, Any]) -> bool:
+        return document["items"].pop(key, None) is not None
+
+    return change_pending(state_root, change)

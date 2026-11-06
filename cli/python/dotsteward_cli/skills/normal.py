@@ -1,0 +1,203 @@
+"""The normal form of a skill: what a copy of it carries and its digest.
+
+The list comes from git, so the skill's own ``.gitignore`` files and the one of the
+instance count as they would for the repository::
+
+    git --git-dir=<empty> --work-tree=<dir> -c core.excludesFile=<instance>/.gitignore \\
+      ls-files -z --others --exclude-standard
+
+Left out besides: the directories ``.git``, ``__pycache__`` and ``__pypackages__``,
+the files ``*.pyc`` and ``metadata.json``, as in the native copy of
+``cli/lib/skills.sh``. A link inside the tree counts as what it points to. A link
+out of the tree or a broken one is *unsafe*: it cannot be copied, and it changes the
+digest, so that it is not taken for "nothing changed". What ignore rules hold back
+is *dropped* and gets reported: a ``.gitignore`` line such as ``state/`` must not
+carry a skill incomplete without a word.
+
+``digest`` is byte-compatible with ``directory_sha256`` of ``cli/lib/lib.sh`` and
+``dotsteward_pins.digest`` (the SHA-256 of the ``sha256sum`` lines of the files,
+sorted by the bytes of ``./<path>``), so the digest of a normal form equals the lock
+digest of the copy in the repository. It lives here because ``dotsteward_cli`` is the
+base of the engines and imports neither of them (docs/python.md).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import stat
+import subprocess
+import tempfile
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
+
+EXCLUDED_DIRECTORIES = frozenset({b".git", b"__pycache__", b"__pypackages__"})
+EXCLUDED_NAME = b"metadata.json"
+_CHUNK = 1 << 20
+
+
+class NormalFormError(RuntimeError):
+    """The list of a skill cannot be read (no git, an unreadable directory)."""
+
+
+@dataclass(frozen=True)
+class NormalForm:
+    """FILES maps each relative name to the path to read; DROPPED and UNSAFE hold
+    relative names, sorted; DIGEST is the digest of the normal form."""
+
+    files: Mapping[bytes, str]
+    dropped: list[str]
+    unsafe: list[str]
+    digest: str
+
+
+def _excluded(relative: bytes) -> bool:
+    parts = relative.split(b"/")
+    name = parts[-1]
+    return name == EXCLUDED_NAME or name.endswith(b".pyc") or any(part in EXCLUDED_DIRECTORIES for part in parts)
+
+
+def _clean_env() -> dict[str, str]:
+    """The environment of git: a hook may run inside another repository's hook, and
+    no configuration of the user may change the list."""
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull, LC_ALL="C")
+    return env
+
+
+def _git_list(directory: str, excludes_file: str | None, *flags: str) -> list[bytes]:
+    with tempfile.TemporaryDirectory(prefix="dotsteward-skill-") as empty:
+        os.mkdir(os.path.join(empty, "objects"))
+        os.mkdir(os.path.join(empty, "refs"))
+        with open(os.path.join(empty, "HEAD"), "w", encoding="ascii") as head:
+            head.write("ref: refs/heads/main\n")
+        argv = [
+            "git",
+            f"--git-dir={empty}",
+            f"--work-tree={directory}",
+            "-c",
+            f"core.excludesFile={excludes_file or os.devnull}",
+            "ls-files",
+            "-z",
+            "--others",
+            "--exclude-standard",
+            *flags,
+        ]
+        try:
+            result = subprocess.run(argv, cwd=directory, env=_clean_env(), capture_output=True, check=False)
+        except OSError as error:
+            raise NormalFormError(f"cannot run git: {error.strerror}") from error
+    if result.returncode != 0:
+        raise NormalFormError(result.stderr.decode(errors="replace").strip() or f"git exited {result.returncode}")
+    return [name for name in result.stdout.split(b"\0") if name]
+
+
+def _walk(root: bytes, real_root: bytes, relative: bytes, seen: set[bytes]) -> Iterator[tuple[bytes, bytes | None]]:
+    """Yields (relative name, path to read) below the directory RELATIVE, following
+    links inside the tree; the path is None for an unsafe link."""
+    current = os.path.join(root, relative) if relative else root
+    real = os.path.realpath(current)
+    if real in seen:
+        return
+    seen = seen | {real}
+    with os.scandir(current) as entries:
+        for entry in sorted(entries, key=lambda item: item.name):
+            child = os.path.join(relative, entry.name) if relative else entry.name
+            if _excluded(child):
+                continue
+            yield from _resolve(root, real_root, child, seen)
+
+
+def _resolve(root: bytes, real_root: bytes, relative: bytes, seen: set[bytes]) -> Iterator[tuple[bytes, bytes | None]]:
+    path = os.path.join(root, relative)
+    try:
+        mode = os.lstat(path).st_mode
+    except OSError:
+        return
+    if stat.S_ISLNK(mode):
+        target = os.path.realpath(path)
+        inside = target == real_root or target.startswith(real_root + b"/")
+        if not inside or not os.path.exists(target):
+            yield relative, None
+        elif os.path.isdir(target):
+            yield from _walk(root, real_root, relative, seen)
+        elif os.path.isfile(target):
+            yield relative, target
+    elif stat.S_ISDIR(mode):
+        yield from _walk(root, real_root, relative, seen)
+    elif stat.S_ISREG(mode):
+        yield relative, path
+
+
+def _sum_line(hexdigest: str, name: bytes) -> bytes:
+    if b"\\" in name or b"\n" in name or b"\r" in name:
+        escaped = name.replace(b"\\", b"\\\\").replace(b"\n", b"\\n").replace(b"\r", b"\\r")
+        return b"\\" + hexdigest.encode() + b"  " + escaped + b"\n"
+    return hexdigest.encode() + b"  " + name + b"\n"
+
+
+def _file_sha256(path: str | bytes) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        while chunk := handle.read(_CHUNK):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def plain_digest(directory: str) -> str:
+    """``directory_sha256`` of lib.sh for a tree that holds what it holds: the regular
+    files below DIRECTORY without ``__pycache__`` and ``*.pyc``, no link followed."""
+    root = os.fsencode(directory)
+    names: list[bytes] = []
+    pending = [b""]
+    while pending:
+        relative = pending.pop()
+        with os.scandir(os.path.join(root, relative) if relative else root) as entries:
+            for entry in entries:
+                child = os.path.join(relative, entry.name) if relative else entry.name
+                mode = entry.stat(follow_symlinks=False).st_mode
+                if stat.S_ISDIR(mode):
+                    if entry.name != b"__pycache__":
+                        pending.append(child)
+                elif stat.S_ISREG(mode) and not entry.name.endswith(b".pyc"):
+                    names.append(child)
+    outer = hashlib.sha256()
+    for relative in sorted(names, key=lambda name: b"./" + name):
+        outer.update(_sum_line(_file_sha256(os.path.join(root, relative)), b"./" + relative))
+    return outer.hexdigest()
+
+
+def normal_form(directory: str, excludes_file: str | None = None) -> NormalForm:
+    """The normal form of the skill in DIRECTORY (a real path); EXCLUDES_FILE is the
+    ``.gitignore`` of the instance. NormalFormError when the list cannot be read."""
+    root = os.fsencode(directory)
+    real_root = os.path.realpath(root)
+    listed = _git_list(directory, excludes_file)
+    found: dict[bytes, bytes | None] = {}
+    for entry in listed:
+        relative = entry.rstrip(b"/")
+        if not _excluded(relative):
+            found.update(_resolve(root, real_root, relative, {real_root}))
+    ignored = _git_list(directory, excludes_file, "--ignored")
+    dropped = sorted(os.fsdecode(name) for name in ignored if not _excluded(name.rstrip(b"/")))
+
+    files: dict[bytes, str] = {}
+    unsafe: list[str] = []
+    outer = hashlib.sha256()
+    for relative in sorted(found, key=lambda name: b"./" + name):
+        target = found[relative]
+        name = b"./" + relative
+        if target is None:
+            unsafe.append(os.fsdecode(relative))
+            text = os.readlink(os.path.join(root, relative))
+            outer.update(_sum_line(hashlib.sha256(b"unsafe-link:" + text).hexdigest(), name))
+            continue
+        try:
+            sum_hex = _file_sha256(target)
+        except OSError:
+            unsafe.append(os.fsdecode(relative))
+            outer.update(_sum_line(hashlib.sha256(b"unreadable").hexdigest(), name))
+            continue
+        files[relative] = os.fsdecode(target)
+        outer.update(_sum_line(sum_hex, name))
+    return NormalForm(files, dropped, sorted(unsafe), outer.hexdigest())

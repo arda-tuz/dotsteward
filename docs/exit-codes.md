@@ -36,7 +36,7 @@ status as a failure.
 | `rollback` | 0, 1, child | |
 | `scan` | 0, 1 | 1: at least one finding (all are collected first) or an error |
 | `settings` | 0, 1, 2, 3 | 1: `verify` found a difference; 2: error; 3: a decision is pending (a conflict or a local deletion; resolve it with `settings resolve`) |
-| `skills` | 0, 1, 2 | 2: usage error |
+| `skills` | 0, 1, 2, 3, 4, 6 | 2: usage error; 3: a conflict or a question waits for an answer; 4: a privacy stop, nothing was published; 6: no network, the skill waits and nothing was committed; `skills hook` always exits 0 |
 | `static` | 0, 1, script | otherwise the status of the failing instance script of `gate.static` |
 | `sync` | as `generate` | the old name of `generate`: a warning on standard error, then the same arguments, output and status |
 | `txn` | 0, 1 | `txn publish` exits 0 when the commit is already published |

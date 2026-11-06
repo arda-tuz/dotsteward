@@ -39,7 +39,9 @@
 #       legacy_directory, directory_sha256, deployment (copy, the
 #       default, or home-manager) and agents (a non-empty list of unique
 #       plain agent names, copy deployment only); no dotsteward-* name
-#       (framework skills are never instance lock entries)
+#       (framework skills are never instance lock entries); optional
+#       own_plugins, a list of entries with name, directory (a plain name)
+#       and directory_sha256
 #   skills_ensure_layout
 #       install: creates ~/.agents and every legacy root; a canonical root
 #       that is a link to a legacy root is migrated to a directory. Both
@@ -72,11 +74,17 @@
 #       is searched, installed and refreshed in the scoped store only, is
 #       refused when it is also in a shared root or names an agent
 #       without a skill root, and gets one link per named agent root.
+#       An own skill (a repo-owned sentinel revision, copy deployment) is
+#       different: dotsteward_cli.skills.threeway decides whether it is
+#       refreshed at all, a difference is a note and never a finding, a real
+#       directory in a link root moves to the canonical root (install) or is
+#       a note (check), and a missing entry or link is a note for check.
 #   skills_sweep
 #       removes (install) or reports (check) every dangling link directly
 #       in the canonical root, the link roots and the agent roots whose
 #       literal target is in a managed root or the scoped store (relative ../../<root>/... or $HOME/<root>/...,
-#       or a link-root target prefix); other links stay
+#       or a link-root target prefix); other links stay; check only notes the
+#       dangling link of an own skill
 #   skills_find_existing DIRECTORY LEGACY_DIRECTORY
 #   skills_canonical_entry PATH
 #       prints the canonical entry of a found skill (the path itself under
@@ -133,6 +141,8 @@ SKILLS_SWEEP_PREFIXES=()
 SKILLS_AGENT_NAMES=()
 SKILLS_AGENT_ROOTS=()
 SKILLS_SCOPED_STORE=''
+# Set while an own skill is laid out: what is missing is a note for check.
+SKILLS_SOFT_LAYOUT=0
 
 # --- Findings -------------------------------------------------------------
 
@@ -299,6 +309,15 @@ else
         (.skills | map(.directory) | group_by(.) | map(select(length > 1) | .[0])[]
           | "directory \(.) is used by more than one skill")
       else empty end)
+   end),
+  (if .own_plugins == null then empty
+   elif (.own_plugins | type) != "array" then "own_plugins is not a list"
+   else
+     (.own_plugins | to_entries[] | .key as $i | .value as $p
+      | if ($p | type) != "object" or ([$p.name, $p.directory, $p.directory_sha256] | all(nonempty) | not) then
+          "own plugin \($i + 1): name, directory and directory_sha256 must be non-empty strings"
+        elif ($p.directory | plain) | not then "own plugin \($p.name): directory must be a plain directory name"
+        else empty end)
    end)
 end'
 
@@ -405,6 +424,11 @@ skills_canonical_entry() {
   elif [[ -e $link ]]; then
     skills_fail entry-shadowed "$link" "canonical skill path shadows an existing skill: $link"
   elif ((SKILLS_CHECK_ONLY)); then
+    if ((SKILLS_SOFT_LAYOUT)); then
+      _skills_placement_note "canonical skill entry missing: $link"
+      printf '%s\n' "$path"
+      return 0
+    fi
     skills_fail entry-missing "$link" "canonical skill entry missing: $link"
   else
     if [[ $path == "$HOME"/* ]]; then
@@ -427,8 +451,16 @@ _skills_link() {
     [[ $link_real == "$actual_real" ]] ||
       skills_fail link-foreign "$link" "skill link points to an unexpected target: $link"
   elif [[ -e $link ]]; then
+    if ((SKILLS_SOFT_LAYOUT)); then
+      _skills_placement_note "skill link path is not a symlink: $link"
+      return 0
+    fi
     skills_fail link-not-symlink "$link" "skill link path is not a symlink: $link"
   elif ((SKILLS_CHECK_ONLY)); then
+    if ((SKILLS_SOFT_LAYOUT)); then
+      _skills_placement_note "skill link missing: $link"
+      return 0
+    fi
     skills_fail link-missing "$link" "skill link missing: $link"
   else
     mkdir -p -- "${link%/*}"
@@ -627,10 +659,11 @@ skills_process_framework() {
 
 skills_process_instance() {
   (($# == 1)) || die "usage: skills_process_instance ENTRY_JSON"
-  local entry=$1 name directory legacy skill_sha directory_sha deployment agents source found hm canonical_entry
+  local entry=$1 name directory legacy skill_sha directory_sha deployment agents revision source found hm canonical_entry
   local -a fields=()
   mapfile -d '' fields < <(jq -j '[.name, .directory, (.legacy_directory // ""), .skill_sha256,
-    (.directory_sha256 // ""), (.deployment // "copy"), ((.agents // []) | join(" "))]
+    (.directory_sha256 // ""), (.deployment // "copy"), ((.agents // []) | join(" ")),
+    (.revision // "" | tostring)]
     | map(. + "\u0000") | add' <<<"$entry")
   name=${fields[0]}
   directory=${fields[1]}
@@ -639,6 +672,7 @@ skills_process_instance() {
   directory_sha=${fields[4]}
   deployment=${fields[5]}
   agents=${fields[6]}
+  revision=${fields[7]}
   source=$SKILLS_VENDOR/$directory
   hm=$SKILLS_HM_ROOT/$directory
 
@@ -650,7 +684,11 @@ skills_process_instance() {
     skills_fail source-digest-mismatch "$source" "skill source digest differs from the lock: $name ($source)"
   fi
   if [[ -n $agents ]]; then
-    _skills_process_scoped "$name" "$directory" "$directory_sha" "$source" "$agents"
+    _skills_process_scoped "$name" "$directory" "$directory_sha" "$source" "$agents" "$revision"
+    return 0
+  fi
+  if [[ $deployment != home-manager ]] && _skills_is_own "$revision"; then
+    _skills_process_own "$name" "$directory" "$legacy" "$directory_sha" "$source"
     return 0
   fi
 
@@ -685,12 +723,143 @@ skills_process_instance() {
   _skills_link_roots "$name" "$canonical_entry"
 }
 
-# _skills_process_scoped NAME DIRECTORY DIGEST SOURCE AGENTS: a scoped
+# --- Own skills -----------------------------------------------------------
+
+# _skills_is_own REVISION: whether a lock revision marks the user's own skill.
+_skills_is_own() {
+  [[ $1 == same-as-instance-checkout || (-n ${DS_COMPAT_REPO_OWNED_REVISION:-} && $1 == "$DS_COMPAT_REPO_OWNED_REVISION") ]]
+}
+
+# _skills_placement_note MESSAGE: a difference in the layout of an own skill,
+# which `agents install` puts right. It goes to standard error: the callers
+# print their answer on standard output.
+_skills_placement_note() {
+  printf '[dotsteward] placement of an own skill: %s\n' "$*" >&2
+}
+
+# _skills_threeway ACTION ARG...: dotsteward_cli.skills.threeway for this
+# instance and this state root.
+_skills_threeway() {
+  local action=$1
+  shift
+  ds_python dotsteward_cli.skills.threeway "$action" --instance "$DS_INSTANCE_ROOT" --state-root "$(state_root)" "$@"
+}
+
+# _skills_own_note NAME DECISION: says why an own skill stays as it is.
+_skills_own_note() {
+  local name=$1
+  case $2 in
+    behind) log "skill $name: behind: the copy is ahead of the lock of this checkout; left as it is" ;;
+    pending-capture) log "skill $name: pending-capture: a local change waits for a capture; left as it is" ;;
+    incoming)
+      if ((SKILLS_CHECK_ONLY)); then
+        log "skill $name: incoming: the lock has a newer copy; $(_skills_rebuild_hint) to take it"
+      fi
+      ;;
+    conflict) log "skill $name: conflict: the copy and the lock both changed; left as it is; see 'dotsteward skills status'" ;;
+    deleted) log "skill $name: deleted: not installed again; see 'dotsteward skills status'" ;;
+  esac
+}
+
+# _skills_own_decision NAME FOUND DIGEST: the decision of an own skill on
+# standard output.
+_skills_own_decision() {
+  local mode=install
+  ((SKILLS_CHECK_ONLY)) && mode=check
+  _skills_threeway decide --name "$1" --found "$2" --digest "$3" --mode "$mode" ||
+    skills_fail skill-unresolvable "${2:-$1}" "cannot read the own skill $1 (${2:-no copy})"
+}
+
+# _skills_own_apply NAME DIRECTORY FOUND DECISION DIGEST SOURCE [ROOT]: says and
+# does what a decision asks for; SKILLS_OWN_COPY is the copy afterwards, empty
+# when there is none. ROOT: the scoped store, instead of the canonical root.
+SKILLS_OWN_COPY=''
+_skills_own_apply() {
+  local name=$1 directory=$2 found=$3 decision=$4 digest=$5 source=$6 root=${7:-} installed
+  SKILLS_OWN_COPY=$found
+  _skills_own_note "$name" "$decision"
+  case $decision in
+    missing)
+      if ((SKILLS_CHECK_ONLY)); then
+        skills_fail skill-missing "${root:-$SKILLS_CANONICAL}/$directory" \
+          "skill missing: $name; $(_skills_rebuild_hint) to install it"
+      fi
+      _skills_install "$name" "$directory" "$source" "$root"
+      installed=${root:-$SKILLS_CANONICAL}/$directory
+      [[ -f $installed/SKILL.md ]] ||
+        skills_fail install-unverified "$installed" "skill install could not be verified: $name"
+      log "installed skill $name into $installed"
+      if [[ $(directory_sha256 "$(realpath -e -- "$installed")") != "$digest" ]]; then
+        skills_fail install-digest-mismatch "$installed" \
+          "installed skill digest differs from the lock: $name ($installed); the native copy leaves out metadata.json, .git, __pycache__ and __pypackages__ and follows symlinks"
+      fi
+      _skills_threeway record --name "$name" --found "$installed" --digest "$digest"
+      SKILLS_OWN_COPY=$installed
+      ;;
+    incoming)
+      if ((!SKILLS_CHECK_ONLY)); then
+        _skills_refresh "$name" "$found" "$source" "$digest"
+        _skills_threeway record --name "$name" --found "$found" --digest "$digest"
+      fi
+      ;;
+  esac
+}
+
+# _skills_in_link_root NAME DIRECTORY: the real directory of a skill in a link
+# root, which is where an agent writes a new skill, under the name of the lock
+# or of its directory; nothing else counts there.
+_skills_in_link_root() {
+  local root candidate
+  for root in "${SKILLS_LINK_ROOTS[@]}"; do
+    for candidate in "$1" "$2"; do
+      if [[ ! -L $root/$candidate && -f $root/$candidate/SKILL.md ]]; then
+        printf '%s\n' "$root/$candidate"
+        return 0
+      fi
+    done
+  done
+}
+
+# _skills_process_own NAME DIRECTORY LEGACY DIGEST SOURCE: an own skill.
+_skills_process_own() {
+  local name=$1 directory=$2 legacy=$3 digest=$4 source=$5 found decision destination placed=0 entry
+  SKILLS_SOFT_LAYOUT=1
+  [[ -n $digest ]] || digest=$(directory_sha256 "$source")
+  found=$(skills_find_existing "$directory" "$legacy")
+  if [[ -z $found ]]; then
+    found=$(_skills_in_link_root "$name" "$directory")
+    if [[ -n $found ]]; then
+      destination=$SKILLS_CANONICAL/$directory
+      if ((SKILLS_CHECK_ONLY)); then
+        _skills_placement_note "$found moves to $destination; $(_skills_rebuild_hint)"
+        placed=1
+      else
+        if [[ -L $destination && ! -e $destination ]] && _skills_is_managed_target "$(readlink -- "$destination")"; then
+          unlink -- "$destination"
+        fi
+        [[ ! -e $destination && ! -L $destination ]] ||
+          skills_fail install-destination-exists "$destination" "skill install destination exists: $destination"
+        mkdir -p -- "${destination%/*}"
+        mv -- "$found" "$destination"
+        log "moved skill $name from $found to $destination"
+        found=$destination
+      fi
+    fi
+  fi
+  decision=$(_skills_own_decision "$name" "$found" "$digest")
+  _skills_own_apply "$name" "$directory" "$found" "$decision" "$digest" "$source"
+  [[ -n $SKILLS_OWN_COPY ]] || return 0
+  ((!placed)) || return 0
+  entry=$(skills_canonical_entry "$SKILLS_OWN_COPY")
+  _skills_link_roots "$name" "$entry"
+}
+
+# _skills_process_scoped NAME DIRECTORY DIGEST SOURCE AGENTS REVISION: a scoped
 # skill (AGENTS space-separated): the copy <store>/<directory>, installed or
-# refreshed like a shared copy, and <agent root>/NAME -> that copy for each
-# agent.
+# refreshed like a shared copy (an own skill: as its decision says), and
+# <agent root>/NAME -> that copy for each agent.
 _skills_process_scoped() {
-  local name=$1 directory=$2 directory_sha=$3 source=$4 agents=$5 agent root found real i known
+  local name=$1 directory=$2 directory_sha=$3 source=$4 agents=$5 revision=${6:-} agent root found real i known decision
   local -a roots=() names=()
   read -r -a names <<<"$agents"
   for agent in "${names[@]}"; do
@@ -714,7 +883,15 @@ _skills_process_scoped() {
   done
 
   found=$SKILLS_SCOPED_STORE/$directory
-  if [[ ! -f $found/SKILL.md ]]; then
+  if _skills_is_own "$revision"; then
+    SKILLS_SOFT_LAYOUT=1
+    [[ -n $directory_sha ]] || directory_sha=$(directory_sha256 "$source")
+    [[ -f $found/SKILL.md ]] || found=''
+    decision=$(_skills_own_decision "$name" "$found" "$directory_sha")
+    _skills_own_apply "$name" "$directory" "$found" "$decision" "$directory_sha" "$source" "$SKILLS_SCOPED_STORE"
+    found=$SKILLS_OWN_COPY
+    [[ -n $found ]] || return 0
+  elif [[ ! -f $found/SKILL.md ]]; then
     if ((SKILLS_CHECK_ONLY)); then
       skills_fail skill-missing "$found" "skill missing: $name; $(_skills_rebuild_hint) to install it"
     fi
@@ -748,6 +925,14 @@ _skills_is_managed_target() {
   return 1
 }
 
+# _skills_names_own NAME: whether NAME is the name or the directory of an own
+# skill of the lock.
+_skills_names_own() {
+  jq -e --arg name "$1" --arg compat "${DS_COMPAT_REPO_OWNED_REVISION:-same-as-instance-checkout}" '
+    any(.skills[]; (.name == $name or .directory == $name)
+      and (.revision == "same-as-instance-checkout" or .revision == $compat))' "$SKILLS_LOCK" >/dev/null 2>&1
+}
+
 skills_sweep() {
   local root link failed=0
   local -a links=()
@@ -757,6 +942,10 @@ skills_sweep() {
     for link in "${links[@]}"; do
       _skills_is_managed_target "$(readlink -- "$link")" || continue
       if ((SKILLS_CHECK_ONLY)); then
+        if _skills_names_own "${link##*/}"; then
+          log "dangling link of an own skill: $link; $(_skills_rebuild_hint) to remove it"
+          continue
+        fi
         skills_finding dangling-link "$link" "dangling skill link not removed: $link"
         ((SKILLS_KEEP_GOING)) || exit 1
         failed=1

@@ -75,7 +75,10 @@ instance: official-binary and pypi components, the canonical skill root
 instance skills, refreshed drifted copies (backed up first), removed
 dangling skill links and the agents hooks; then it validates. check runs
 the same steps without changing anything and fails on the first
-difference.
+difference. A skill of the user's own (a repo-owned sentinel revision in the
+lock) is never overwritten: install takes a newer copy of the repository only
+when the local copy did not change, and a difference is a note for check,
+never a failure; see `dotsteward skills status`.
 
   --profile PROFILE   a profile of the instance (required)
   --generation PATH   a built Home Manager generation: its manifest, its

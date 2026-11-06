@@ -21,9 +21,12 @@
 #   bootstrap      bootstrap.sh equals the framework's template copy, when the
 #                  framework ships one
 #   skills         vendored skills match the skills lock: schema,
-#                  directories, names, digests, licenses, no symbolic links
-#                  and no framework skills (expected_skill_count, a copy of
-#                  the number of entries, is ignored)
+#                  directories, names, digests, licenses (a skill with a
+#                  repo-owned sentinel revision is the user's own and needs
+#                  none), no symbolic links and no framework skills
+#                  (expected_skill_count, a copy of the number of entries, is
+#                  ignored); the own plugins of the lock (own_plugins) match
+#                  agent/plugins the same way
 #   hosts          every hosts/<name>.toml is valid and named like a machine, and
 #                  every machines key of the lock and of the plugin tables names
 #                  known machines (dotsteward host check)
@@ -225,9 +228,10 @@ done < <(list_files | LC_ALL=C sort -z -u)
 
 # Paths below these prefixes are vendored or generated: no shell or ban
 # checks.
+OWN_PLUGINS_DIR=agent/plugins
 SKIP_PREFIXES=()
 if [[ $target == instance ]]; then
-  SKIP_PREFIXES+=("${DS_SKILLS_VENDOR_DIR%/}/")
+  SKIP_PREFIXES+=("${DS_SKILLS_VENDOR_DIR%/}/" "$OWN_PLUGINS_DIR/")
 fi
 
 skipped() {
@@ -378,7 +382,7 @@ check_bootstrap() {
 # --- skills ------------------------------------------------------------------
 
 check_skills() {
-  local lock=$DS_SKILLS_LOCK vendor=${DS_SKILLS_VENDOR_DIR%/} name directory sha dsha declared listed
+  local lock=$DS_SKILLS_LOCK vendor=${DS_SKILLS_VENDOR_DIR%/} name directory sha dsha revision declared listed
   local entry link row
   local -a expected=() found=() problems=() rows=()
   if [[ ! -e $root/$lock ]]; then
@@ -431,12 +435,13 @@ check_skills() {
 
   if ! json_lines rows "$root/$lock" '.skills[] | objects
     | select((.name | type) == "string" and (.directory | type) == "string")
-    | [.name, .directory, (.skill_sha256 // "" | tostring), (.directory_sha256 // "-" | tostring)] | @tsv'; then
+    | [.name, .directory, (.skill_sha256 // "" | tostring), (.directory_sha256 // "-" | tostring),
+       (.revision // "-" | tostring)] | @tsv'; then
     fail "$lock cannot be read as a skills lock"
     return 0
   fi
   for row in "${rows[@]}"; do
-    IFS=$'\t' read -r name directory sha dsha <<<"$row"
+    IFS=$'\t' read -r name directory sha dsha revision <<<"$row"
     [[ $name != dotsteward-* ]] || fail "$name: framework skills never appear in $lock"
     [[ $sha =~ ^[0-9a-f]{64}$ ]] || fail "$name: skill_sha256 is not a sha256 hex digest"
     [[ $dsha == - || $dsha =~ ^[0-9a-f]{64}$ ]] || fail "$name: directory_sha256 is not a sha256 hex digest"
@@ -454,14 +459,17 @@ check_skills() {
     if [[ $dsha != - && $(directory_sha256 "$root/$vendor/$directory") != "$dsha" ]]; then
       fail "$name: directory digest does not match $lock"
     fi
-    listed=$(find "$root/$vendor/$directory" -maxdepth 1 -type f -iname 'license*' -print -quit)
-    [[ -n $listed ]] || fail "$name: no license file"
+    if [[ $revision != same-as-instance-checkout && $revision != "${DS_COMPAT_REPO_OWNED_REVISION:-same-as-instance-checkout}" ]]; then
+      listed=$(find "$root/$vendor/$directory" -maxdepth 1 -type f -iname 'license*' -print -quit)
+      [[ -n $listed ]] || fail "$name: no license file"
+    fi
     declared=$(sed -n 's/^name:[[:space:]]*//p' "$entry" | head -n 1)
     declared=${declared%"${declared##*[![:space:]]}"}
     declared=${declared#[\"\']}
     declared=${declared%[\"\']}
     [[ $declared == "$name" ]] || fail "$name: SKILL.md declares name ${declared:-nothing}"
   done
+  check_own_plugins
   return 0
 }
 
@@ -472,6 +480,51 @@ check_hosts() {
     [[ -z $line ]] || fail "${line#\[dotsteward\] ERROR: }"
   done < <("$framework_root/cli/dotsteward" --instance "$root" host check 2>&1 >/dev/null || true)
   return 0
+}
+
+# check_own_plugins: the own_plugins of the skills lock against agent/plugins:
+# directories, digests and no symbolic links.
+check_own_plugins() {
+  local lock=$DS_SKILLS_LOCK name directory dsha link row
+  local -a expected=() found=() rows=()
+  if ! jq -e '(.own_plugins // []) | type == "array"' "$root/$lock" >/dev/null 2>&1; then
+    fail "$lock: own_plugins must be a list"
+    return 0
+  fi
+  if [[ -L $root/$OWN_PLUGINS_DIR ]]; then
+    fail "$OWN_PLUGINS_DIR: the own plugins directory must not be a symbolic link"
+    return 0
+  fi
+  if [[ -d $root/$OWN_PLUGINS_DIR ]]; then
+    while IFS= read -r -d '' link; do
+      fail "${link#"$root"/}: own plugins must not contain symbolic links"
+    done < <(find "$root/$OWN_PLUGINS_DIR" -type l -print0 | LC_ALL=C sort -z)
+    mapfile -t found < <(find "$root/$OWN_PLUGINS_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | LC_ALL=C sort)
+  fi
+  if ! json_lines rows "$root/$lock" '(.own_plugins // [])[]
+    | [(.name | tostring), (.directory | tostring), (.directory_sha256 // "" | tostring)] | @tsv'; then
+    fail "$lock cannot be read as a skills lock"
+    return 0
+  fi
+  for row in "${rows[@]}"; do
+    IFS=$'\t' read -r name directory dsha <<<"$row"
+    expected+=("$directory")
+    if [[ -z $directory || $directory == *'/'* || $directory == . || $directory == .. ]]; then
+      fail "$name: invalid directory $directory"
+      continue
+    fi
+    [[ $dsha =~ ^[0-9a-f]{64}$ ]] || fail "$name: directory_sha256 is not a sha256 hex digest"
+    [[ -d $root/$OWN_PLUGINS_DIR/$directory && ! -L $root/$OWN_PLUGINS_DIR/$directory ]] || continue
+    if [[ $(directory_sha256 "$root/$OWN_PLUGINS_DIR/$directory") != "$dsha" ]]; then
+      fail "$name: directory digest does not match $lock"
+    fi
+  done
+  if ((${#expected[@]})); then
+    mapfile -t expected < <(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)
+  fi
+  if [[ "${expected[*]}" != "${found[*]}" ]]; then
+    fail "$OWN_PLUGINS_DIR: directories do not match the lock (expected ${expected[*]:-nothing}, found ${found[*]:-nothing})"
+  fi
 }
 
 # --- versions lock -----------------------------------------------------------

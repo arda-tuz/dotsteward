@@ -13,10 +13,13 @@ Check (labels ``skills:skills[name=<name>].<field>``): every entry's
 for repo-owned entries both equal the digests of the files (SKILL.md, and
 the directory digest of digest.py); a ``dotsteward-*`` name is refused
 (framework skills never appear in the instance lock). Nothing to check
-without a skills lock.
+without a skills lock. The own plugins of the lock
+(``skills:own_plugins[name=<name>].directory_sha256``, directories below
+``agent/plugins``) are the user's by definition and always follow their files.
 
 Sync: rewrites the digests of repo-owned entries and of the entries named
-with ``--skill``; ``directory_sha256`` only where the entry has one.
+with ``--skill``; ``directory_sha256`` only where the entry has one; the
+directory digest of every own plugin.
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ from ..lockfile import SKILLS, Scope, parse_path
 from . import Context, FieldSpec, Rule, strings
 
 FRAMEWORK_PREFIX = "dotsteward-"
+OWN_PLUGINS_DIR = "agent/plugins"
 _SKILLS = parse_path("skills:skills")
 
 
@@ -44,6 +48,15 @@ class SkillDigests(Rule):
         entries = ctx.locks.get(_SKILLS)
         if not isinstance(entries, list):
             raise TypeError("skills:skills: expected a list")
+        return entries
+
+    def _plugins(self, ctx: Context) -> list[dict[str, Any]]:
+        if SKILLS not in ctx.locks.documents:
+            return []
+        document = ctx.locks.documents[SKILLS]
+        entries = document.get("own_plugins", []) if isinstance(document, dict) else []
+        if not isinstance(entries, list):
+            raise TypeError("skills:own_plugins: expected a list")
         return entries
 
     def _directory(self, ctx: Context, item: dict[str, Any]) -> Path:
@@ -67,6 +80,11 @@ class SkillDigests(Rule):
                 c.eq(f"{label}.skill_sha256", item.get("skill_sha256"), file_sha256(directory / "SKILL.md"))
                 if "directory_sha256" in item:
                     c.eq(f"{label}.directory_sha256", item["directory_sha256"], directory_sha256(directory))
+        for item in self._plugins(ctx):
+            label = f"skills:own_plugins[name={item['name']}].directory_sha256"
+            c.fmt(label, "hex64", item.get("directory_sha256"))
+            directory = ctx.instance.path(OWN_PLUGINS_DIR) / item["directory"]
+            c.eq(label, item.get("directory_sha256"), directory_sha256(directory))
 
     def sync_scope(self, ctx: Context, scope: Scope) -> None:
         for item in self._entries(ctx):
@@ -76,3 +94,5 @@ class SkillDigests(Rule):
             item["skill_sha256"] = file_sha256(directory / "SKILL.md")
             if "directory_sha256" in item:
                 item["directory_sha256"] = directory_sha256(directory)
+        for item in self._plugins(ctx):
+            item["directory_sha256"] = directory_sha256(ctx.instance.path(OWN_PLUGINS_DIR) / item["directory"])
