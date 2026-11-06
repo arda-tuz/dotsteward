@@ -64,7 +64,7 @@ assert_contains "$DS_STDOUT" "skills left out: alpha (machines), gamma (declined
 # The machine it is for gets it: no question, and the tags and profile of its file.
 name_machine laptop
 assert_eq '[]' "$(effective .skip.skills)"
-assert_eq '["declined-tool@market"]' "$(effective '.skip.plugins | map(select(. != "declined-tool@market")) + ["declined-tool@market"]')"
+assert_eq '[]' "$(effective .skip.plugins)"
 assert_eq '["nvidia","small"]' "$(effective .tags)"
 assert_exit 0 run_agents install
 [[ -f $HOME/.agents/skills/alpha/SKILL.md && -f $HOME/.agents/skills/gamma/SKILL.md ]] ||

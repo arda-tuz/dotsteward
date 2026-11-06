@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and agents_* variables come from the harness and the helpers
+# shellcheck disable=SC2016 # the transport is written with its literal $*
 # Another machine published: `core:repo-remote` lets a checkout behind the remote pass
 # with a note, because nothing about this machine is wrong and `git pull --ff-only` moves
 # it. A remote commit it does not have yet is fetched without touching a shared ref, so
@@ -68,6 +69,22 @@ assert_eq '[["core:repo-remote","remote-base-moved"]]' "$(repo_findings)"
 # The remote cannot be read.
 assert_exit 1 env DS_FAKESSH_FAIL=1 "$agents_fw/cli/dotsteward" --instance "$agents_inst" e2e --profile workstation --json </dev/null
 assert_eq '[["core:repo-remote","remote-unreachable"]]' "$(repo_findings)"
+
+# The remote answers, then the fetch of the commit that is not here fails.
+from_elsewhere
+flaky=$DS_TEST_ROOT/flaky-ssh.sh
+{
+  printf '#!%s\n' "$BASH"
+  printf 'if [[ $* == *git-upload-pack* ]]; then\n'
+  printf '  [[ ! -e %q ]] || exit 255\n' "$DS_TEST_ROOT/answered"
+  printf '  : >%q\n' "$DS_TEST_ROOT/answered"
+  printf 'fi\n'
+  printf 'exec %q "$@"\n' "$GIT_SSH_COMMAND"
+} >"$flaky"
+chmod 0755 "$flaky"
+assert_exit 1 env GIT_SSH_COMMAND="$flaky" "$agents_fw/cli/dotsteward" --instance "$agents_inst" e2e --profile workstation --json </dev/null
+assert_eq '[["core:repo-remote","remote-unreachable"]]' "$(repo_findings)"
+assert_contains "$DS_STDOUT" "cannot fetch origin main"
 
 # Diverged: this machine has a commit the remote does not.
 ds_git_commit "$agents_inst" notes.txt "local work" "docs: local work"

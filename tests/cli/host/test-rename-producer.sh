@@ -74,6 +74,21 @@ assert_exit 0 run_host producer laptop
 assert_contains "$DS_STDOUT" "is the producer already"
 untouched
 
+# Behind the remote a commit could not be published, so it is not made.
+other=$DS_TEST_ROOT/other-clone
+git clone -q "$e2e_bare" "$other"
+ds_git_commit "$other" elsewhere.txt "elsewhere" "docs: elsewhere"
+git -C "$other" push -q origin main
+assert_exit 1 run_host producer other-name
+assert_contains "$DS_STDERR" "nor in hosts/"
+name_machine laptop-2
+assert_exit 1 run_host producer laptop-2
+assert_contains "$DS_STDERR" "the checkout is behind the remote"
+untouched
+git -C "$agents_inst" pull -q --ff-only origin main
+head=$(git -C "$agents_inst" rev-parse HEAD)
+name_machine laptop
+
 # Another registered machine; a dirty checkout is refused.
 write_host desktop
 publish_instance "chore(hosts): add desktop"
@@ -139,6 +154,16 @@ assert_contains "$DS_STDOUT" "this machine is solo"
 assert_eq '"solo"' "$(jq -c .name "$(machine_file)")"
 assert_eq "$key" "$(jq -r .machine_key "$(machine_file)")"
 untouched
+
+# Behind the remote the tree may know more than this checkout says: first the pull.
+git -C "$other" pull -q --ff-only origin main
+ds_git_commit "$other" elsewhere-2.txt "elsewhere" "docs: elsewhere again"
+git -C "$other" push -q origin main
+assert_exit 1 run_host rename still-solo
+assert_contains "$DS_STDERR" "the checkout is behind the remote"
+assert_eq '"solo"' "$(jq -c .name "$(machine_file)")"
+git -C "$agents_inst" pull -q --ff-only origin main
+head=$(git -C "$agents_inst" rev-parse HEAD)
 
 # The tree knows it: the file, the machines lists and the producer move in one commit.
 lock_add alpha
