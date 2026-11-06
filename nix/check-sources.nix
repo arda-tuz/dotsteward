@@ -454,6 +454,19 @@ let
       catalog
       (paths [ "tests/probes" ])
     ];
+    python-core = fs.unions [
+      runner
+      cli
+      catalog
+      # every Python file of the tree: the check lints them all
+      (fs.intersection tree (fs.fileFilter (file: file.hasExt "py") root))
+      (paths [
+        "engines"
+        "nix/checks"
+        "nix/packages/dotsteward.nix"
+        "tests/cli/core"
+      ])
+    ];
     settings = fs.unions [
       runner
       cli
