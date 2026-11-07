@@ -51,6 +51,11 @@ assert_eq conflict "$(item a s2 .state)"
 ds_code a skills capture --now
 assert_eq "$tip" "$(remote_tip)" "no push over the other machine"
 
+# An answer to the question of tracking is not the answer to this one.
+EXPECT_STATUS=3 ds_code a skills track s2 --own
+assert_eq "$tip" "$(remote_tip)" "track --own is no resolve"
+assert_eq conflict "$(item a s2 .state)"
+
 # An edit on machine a is what it always was: a conflict, not a push.
 printf 'the edit of machine a\n' >>"$a_dev/SKILL.md"
 assert_exit 0 ds a skills reconcile --full

@@ -85,6 +85,54 @@ assert_eq forgotten "$(item a fg .state)"
 ds_code a skills capture --now
 assert_eq "$tip" "$(remote_tip)" "a stale lock brings nothing back"
 
+# --- a directory that was renamed keeps its name, and what the name was told ------------------
+
+new_skill a kept-out
+assert_exit 0 ds a skills reconcile
+ds_code a skills track kept-out --never
+tip=$(remote_tip)
+mv "$root/kept-out" "$root/kept-out-v2"
+wrote a kept-out-v2
+settle a kept-out-v2
+ds_code a skills capture --now
+assert_eq "$tip" "$(remote_tip)" "the name is declined, whatever the directory"
+assert_eq "{}" "$(remote_entry kept-out)"
+assert_eq declined "$(item a kept-out-v2 .state)"
+rm -rf "${root:?}/kept-out-v2"
+
+own_new a moved-on
+settle a moved-on
+ds_code a skills capture --now
+ds_code a skills forget moved-on
+tip=$(remote_tip)
+mv "$root/moved-on" "$root/moved-on-v2"
+wrote a moved-on-v2
+settle a moved-on-v2
+ds_code a skills capture --now
+assert_eq "$tip" "$(remote_tip)" "a forgotten name stays forgotten"
+assert_eq "{}" "$(remote_entry moved-on)"
+rm -rf "${root:?}/moved-on-v2"
+
+# --- forget outlives the state of this machine -------------------------------------------------
+
+own_new a lasting
+settle a lasting
+ds_code a skills capture --now
+ds_code a skills forget lasting
+assert_contains "$(remote_file hosts/a.toml)" lasting
+tip=$(remote_tip)
+rm -f "$(state_of a)/skills/pending.json" "$(state_of a)/skills/base.json"
+printf 'an edit by an agent\n' >>"$root/lasting/SKILL.md"
+wrote a lasting
+settle a lasting
+ds_code a skills capture --now
+assert_eq "$tip" "$(remote_tip)" "the host file remembers"
+assert_eq "{}" "$(remote_entry lasting)"
+# Another answer takes it back, here as well.
+ds_code a skills track lasting --own
+assert_eq lasting "$(remote_entry lasting | jq -r .name)"
+assert_not_contains "$(remote_file hosts/a.toml)" lasting
+
 # --- --never on an own skill deleted here -------------------------------------------------
 
 git -C "$(clone_of a)" pull -q --ff-only

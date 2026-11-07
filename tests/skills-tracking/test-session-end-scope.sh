@@ -76,3 +76,19 @@ for _ in $(seq 1 300); do
   sleep 0.1
 done
 [[ -n $deadline && $deadline -gt $(($(date +%s) + 600)) ]] || ds_fail "the fresh skill keeps its delay: [$deadline]"
+
+# --- a retry waits for an edit that goes on, as a fresh skill does ------------------------------
+
+new_machine c
+git -C "$(clone_of c)" remote set-url origin "$ssh_url"
+own_new c editing
+settle c editing
+EXPECT_STATUS=6 DS_FAKESSH_FAIL=1 ds_code c skills capture --now
+assert_eq offline "$(item c editing .reason)"
+tip=$(remote_tip)
+printf 'the second half, through a shell\n' >>"$(home_of c)/.claude/skills/editing/SKILL.md"
+touch -d '-30 seconds' "$(home_of c)/.claude/skills/editing/SKILL.md"
+printf '1000\n' >"$(state_of c)/skills/deadline"
+assert_exit 0 on c timeout 60 "$DS_REPO_ROOT/cli/dotsteward" skills capture --wait </dev/null
+assert_eq "$tip" "$(remote_tip)" "an edit that goes on waits for its delay"
+assert_eq capture "$(item c editing .state)"
