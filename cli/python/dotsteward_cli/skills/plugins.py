@@ -7,10 +7,11 @@ Two kinds, both under ``plugin:<name>`` keys of pending.json and base.json:
   ``<name>@skills-dir``, from no marketplace); or, with the codex component, one directly in
   ``${CODEX_HOME:-~/.codex}/plugins`` with ``.codex-plugin/plugin.json`` or ``plugin.json``
   (where the Codex documentation puts a personal plugin; ``cache`` there is Codex's own),
-  which another machine also gets into its personal marketplace and ``codex plugin add``. It is a skill as far as tracking goes: the
-  copy lands in ``agent/plugins/<directory>`` with an ``own_plugins`` entry of the lock
-  (``{name, directory, agents, directory_sha256, machines?}``), and `agents install` puts it
-  in ``~/.claude/skills`` of another machine as a real directory.
+  which another machine also gets into its personal marketplace and ``codex plugin add``.
+  It is a skill as far as tracking goes: the copy lands in ``agent/plugins/<directory>``
+  with an ``own_plugins`` entry of the lock (``{name, directory, agents, directory_sha256,
+  machines?}``), and `agents install` puts it in the same place of another machine as a
+  real directory.
 - **A plugin of a marketplace**: a ``NAME@MARKETPLACE`` that Claude Code installed at user
   scope (``plugins/installed_plugins.json`` of ``${CLAUDE_CONFIG_DIR:-~/.claude}``), of a
   marketplace that ``plugins/known_marketplaces.json`` names with a GitHub source. It is
