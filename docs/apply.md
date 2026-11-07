@@ -53,8 +53,10 @@ questions, or the adaptive route, which opens nothing; 6 no network, nothing ope
 3. **The gate.** `gate --scope maintain` proves the tree, or answers from its memo of the same tree
    in the same scope. Red, nothing is committed (`gate-failed`, with the log).
 4. **The commit.** With `SUBJECT` and the trace line of this machine (`Dotsteward-Machine: <name>`,
-   [machines.md](machines.md#the-trace-line)), in UTC, never amended. Its tree must be the tree the
-   gate proved.
+   [machines.md](machines.md#the-trace-line)), in UTC, never amended. The index must be the tree the
+   gate proved, and so must the commit: when a commit hook changed it, apply takes back the commit
+   it just made (`reset --soft`, the changes stay staged) and the same command proves the new tree
+   (`tree-changed`).
 5. **Activated** (`--activate`): an adopt-mode profile never installs a system-level component
    (`deb` on Linux, `app-archive` on macOS) in its rebuild, so for every such component that the
    transaction adds or changes and that `install --check-only` does not find in place, apply runs
@@ -85,7 +87,7 @@ in `data` the `base`, the `commit`, the `profile`, the `machine`, `activate`, `p
 | `nonconventional-commits` | unpublished commits whose subject `txn publish` refuses; `run` folds them into the change |
 | `gate-failed` | the gate refused the tree, or could not judge it (`environment`); nothing was committed |
 | `commit-refused` | git or a hook refused the commit |
-| `tree-changed` | the committed tree is not the tree the gate proved |
+| `tree-changed` | the tree to commit is not the tree the gate proved (a commit hook changed it); nothing was committed |
 | `install-required` | system-level components wait for `run` in a terminal (pending) |
 | `install-failed` | their install failed |
 | `rebuild-failed` | the rebuild failed; the commit stays here |

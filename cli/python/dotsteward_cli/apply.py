@@ -9,7 +9,8 @@ tree in the maintain scope, the commit carries the trace line of this machine; a
 system-level components an adopt-mode profile needs come in, ``rebuild --switch`` activates the
 committed tree and E2E checks it against the base; published, ``txn publish`` pushes it, which
 after an activation needs that E2E. The checkout is the transaction: apply commits there and never
-resets, cleans, stashes or amends. Like ``upgrade`` there is no journal and no resume: every run
+cleans, stashes or amends; the one reset takes back the commit it just made when a commit hook
+changed its tree away from the proven one, and keeps the changes staged. Like ``upgrade`` there is no journal and no resume: every run
 works out again what is left. The gate answers from its memo for a tree it proved, a tree that is
 active is not rebuilt, a passed E2E of the active tree with the repository checks is not run again
 and a published commit is not pushed again, so the same command finishes what a red step, a missing
@@ -480,10 +481,27 @@ class Apply(_Checkout):
             return ""
         return str(record.get("tree_oid") or "")
 
+    def _tree_changed(self, started: float, run: str) -> bool:
+        self._step("commit", report.FAILED, started, detail="the tree is not the tree the gate proved")
+        self.run.item(
+            "tree-changed",
+            run=run,
+            message=(
+                "the tree changed after the gate (a commit hook?): nothing was committed and the changes stay "
+                "staged; the same command proves the new tree"
+            ),
+        )
+        return False
+
     def _commit(self) -> bool:
         started = time.monotonic()
+        proven = self._validated_tree()
         if self._staged():
             assert self.subject is not None
+            # The index first: only the proven tree may become a commit.
+            if self._git("write-tree").stdout.strip() != proven:
+                return self._tree_changed(started, self._again(self.subject))
+            before = self._head()
             committed = publishing.git(
                 self.root,
                 *commit_identity(self.root, "HEAD"),
@@ -500,20 +518,19 @@ class Apply(_Checkout):
                 self._step("commit", report.FAILED, started, detail=said)
                 self.run.item("commit-refused", message=f"git or a hook refused the commit: {said}")
                 return False
+            if self._tree_of(self.root) != proven:
+                # A hook changed the tree during the commit: the commit this run made goes again, its
+                # changes stay staged, so no unproven commit is left behind.
+                if self._git("rev-parse", "HEAD^").stdout.strip() == before:
+                    self._git("reset", "--quiet", "--soft", before)
+                return self._tree_changed(started, self._again(self.subject))
             detail = None
         else:
+            if self._tree_of(self.root) != proven:
+                return self._tree_changed(started, self._again())
             detail = "nothing new to commit"
         self.commit = self._head()
         self.run.data.update(commit=self.commit)
-        tree = self._tree_of(self.root)
-        if tree != self._validated_tree():
-            self._step("commit", report.FAILED, started, detail="the committed tree is not the tree the gate proved")
-            self.run.item(
-                "tree-changed",
-                run=self._again(),
-                message="the tree changed after the gate (a hook?): the gate proves it again on the next run",
-            )
-            return False
         self._step("commit", report.OK, started, **({"detail": detail} if detail else {}))
         _say("apply", f"committed {self.commit[:12]}" if detail is None else f"{detail}: {self.commit[:12]}")
         return True
