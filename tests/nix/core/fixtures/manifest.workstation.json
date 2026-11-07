@@ -172,6 +172,7 @@
   ],
   "prerequisites": { "apt": ["example-term-deps"] },
   "managed_links": ["~/.config/nix/nix.conf", "~/.example-term/RULES.md", "~/.example-app/AGENTS.md"],
+  "component_managed_links": { "example-term": ["~/.example-term/RULES.md"], "example-app": ["~/.example-app/AGENTS.md"] },
   "force_linked_restore": [
     { "component": "example-term", "path": "~/.example-term/RULES.md", "mode": "0664" }
   ],

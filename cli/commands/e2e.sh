@@ -634,7 +634,7 @@ _e2e_managed_links() {
     _e2e_fail_or_continue
     unit_failed=1
   done < <(jq -j --argjson inactive "$(methods_inactive_components "$profile")" '
-    [.components[]? | select(.name as $name | $inactive | index($name)) | (.managed_links // [])[]] as $out
+    [$inactive[] as $name | (.component_managed_links[$name] // [])[]] as $out
     | ((.managed_links // []) - $out)[] | ., "\u0000"' <<<"$DS_MANIFEST_JSON")
   ((unit_failed == 0)) || exit 1
 }

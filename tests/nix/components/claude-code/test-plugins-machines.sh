@@ -29,6 +29,7 @@ printf 'schema_version = 1\ndeclined = { plugins = ["beta@builtin-market"] }\n' 
 
 # The machine that declined one.
 export DOTSTEWARD_MACHINE=desktop
+rm -f -- "$DOTSTEWARD_STATE_ROOT/machine/known.json" # a new start under this name
 assert_exit 0 agents install
 assert_contains "$DS_STDOUT" "claude plugin alpha@builtin-market 1.0.0 verified"
 assert_not_contains "$DS_STDOUT" "beta@builtin-market"
@@ -37,6 +38,7 @@ assert_exit 0 agents check
 
 # Everything is for this machine: the other one is missed until it is installed.
 export DOTSTEWARD_MACHINE=laptop
+rm -f -- "$DOTSTEWARD_STATE_ROOT/machine/known.json" # a new start under this name
 assert_exit 1 agents check
 assert_contains "$DS_STDERR" "claude plugin beta@builtin-market is not installed"
 assert_exit 0 agents install
@@ -49,6 +51,7 @@ sed -i 's/{ spec = "beta@builtin-market" }/{ spec = "beta@builtin-market", machi
 assert_exit 0 agents check
 assert_not_contains "$DS_STDOUT" "beta@builtin-market"
 export DOTSTEWARD_MACHINE=desktop
+rm -f -- "$DOTSTEWARD_STATE_ROOT/machine/known.json" # a new start under this name
 sed -i 's/declined = { plugins = \["beta@builtin-market"\] }//' "$inst/hosts/desktop.toml"
 : >"$DS_CALL_LOG"
 assert_exit 0 agents check
@@ -66,8 +69,10 @@ mkdir -p "$inst/hosts"
 printf 'schema_version = 1\n' >"$inst/hosts/laptop.toml"
 printf 'schema_version = 1\n' >"$inst/hosts/desktop.toml"
 export DOTSTEWARD_MACHINE=laptop
+rm -f -- "$DOTSTEWARD_STATE_ROOT/machine/known.json" # a new start under this name
 assert_exit 0 agents install
 assert_not_contains "$DS_STDOUT" "gamma@builtin-market"
 export DOTSTEWARD_MACHINE=desktop
+rm -f -- "$DOTSTEWARD_STATE_ROOT/machine/known.json" # a new start under this name
 assert_exit 0 agents install
 assert_contains "$DS_STDOUT" "gamma@builtin-market 1.0.0 verified"

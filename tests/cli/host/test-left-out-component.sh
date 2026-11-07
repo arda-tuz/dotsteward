@@ -13,7 +13,7 @@ add_component example external "$none"
 add_component witness external "$none"
 manifest_edit '
   .managed_links = ["~/.example/AGENTS.md"]
-  | (.components[] | select(.name == "example")).managed_links = ["~/.example/AGENTS.md"]
+  | .component_managed_links = {example: ["~/.example/AGENTS.md"]}
   | .settings_targets = {
       "example-config": {component: "example", path: "~/.example/config.json", format: "json",
         backup: true, create_if_missing: false, create_mode: "0644", reload: null}}'

@@ -26,6 +26,7 @@ printf 'schema_version = 1\ndeclined = { plugins = ["beta@other-market"] }\n' >"
 
 # The machine that declined one.
 export DOTSTEWARD_MACHINE=desktop
+rm -f -- "$DOTSTEWARD_STATE_ROOT/machine/known.json" # a new start under this name
 assert_exit 0 agents install
 assert_contains "$DS_STDOUT" "codex plugin alpha@other-market 1.0.0 verified"
 assert_not_contains "$DS_STDOUT" "beta@other-market"
@@ -34,6 +35,7 @@ assert_exit 0 agents check
 
 # Everything is for this machine: the other one is missed until it is installed.
 export DOTSTEWARD_MACHINE=laptop
+rm -f -- "$DOTSTEWARD_STATE_ROOT/machine/known.json" # a new start under this name
 assert_exit 1 agents check
 assert_contains "$DS_STDERR" "codex plugin beta@other-market is not installed"
 assert_exit 0 agents install
@@ -57,8 +59,10 @@ mkdir -p "$inst/hosts"
 printf 'schema_version = 1\n' >"$inst/hosts/laptop.toml"
 printf 'schema_version = 1\n' >"$inst/hosts/desktop.toml"
 export DOTSTEWARD_MACHINE=laptop
+rm -f -- "$DOTSTEWARD_STATE_ROOT/machine/known.json" # a new start under this name
 assert_exit 0 agents install
 assert_not_contains "$DS_STDOUT" "gamma@other-market"
 export DOTSTEWARD_MACHINE=desktop
+rm -f -- "$DOTSTEWARD_STATE_ROOT/machine/known.json" # a new start under this name
 assert_exit 0 agents install
 assert_contains "$DS_STDOUT" "gamma@other-market 1.0.0 verified"

@@ -40,6 +40,7 @@ assert_contains "$DS_STDOUT" "opencode-pi: Pi sees every expected skill (1)"
 
 # The machine it is for must see it.
 export DOTSTEWARD_MACHINE=laptop
+rm -f -- "$DOTSTEWARD_STATE_ROOT/machine/known.json" # a new start under this name
 assert_exit 1 agents check
 assert_contains "$DS_STDERR" "skill"
 assert_exit 0 agents install
@@ -50,6 +51,7 @@ assert_exit 0 agents check
 
 # A machine that declined a skill: neither is expected.
 export DOTSTEWARD_MACHINE=desktop
+rm -f -- "$DOTSTEWARD_STATE_ROOT/machine/known.json" # a new start under this name
 rm -rf -- "$HOME/.agents/skills/alpha-skill" "$HOME/.agents/skills/beta-skill"
 assert_exit 0 agents install
 [[ ! -e $HOME/.agents/skills/beta-skill ]] || ds_fail "agents install took a declined skill"

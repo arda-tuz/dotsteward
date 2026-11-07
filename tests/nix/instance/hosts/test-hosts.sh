@@ -130,7 +130,7 @@ assert_inst_fails "($failing).checks.x86_64-linux.hosts-eval.drvPath" \
   "dotsteward: machine laptop3 does not evaluate with hosts/laptop3.toml:" "example-home needs example-term"
 
 # Links are data of their component, and the generation says which targets are active.
-assert_inst_eq '["~/.example-term/AGENTS.md"]' "(lib.findFirst (c: c.name == \"example-term\") null ($hosted).dotstewardManifest.x86_64-linux.components).managed_links" \
+assert_inst_eq '["~/.example-term/AGENTS.md"]' "($hosted).dotstewardManifest.x86_64-linux.component_managed_links.example-term" \
   "the links of a component"
 assert_inst_eq '{"desktop":false,"laptop":true}' "let
     active = name: (($hosted).hostConfigurations.\${name}.config.dotsteward.cli.settingsTargets).example-term.active;

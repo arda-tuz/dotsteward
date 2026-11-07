@@ -134,9 +134,6 @@ let
       // lib.optionalAttrs (component.machines != null) { inherit (component) machines; }
       // lib.optionalAttrs (component.tags != null) { inherit (component) tags; }
       // lib.optionalAttrs (component.requires != [ ]) { inherit (component) requires; }
-      // lib.optionalAttrs (component.rollback.managedLinks != [ ]) {
-        managed_links = component.rollback.managedLinks;
-      }
     ) enabled;
 
     settings_targets = helpers.settingsTargets system dotsteward.lib.platform enabled;
@@ -173,6 +170,12 @@ let
     );
 
     managed_links = ds.managedLinks;
+    # Whose they are: what is not active on a machine is not expected there. Rollback reads them all.
+    component_managed_links = lib.listToAttrs (
+      map ({ name, component }: lib.nameValuePair name component.rollback.managedLinks) (
+        lib.filter ({ component, ... }: component.rollback.managedLinks != [ ]) enabled
+      )
+    );
     force_linked_restore = tagged (component: component.rollback.forceLinkedRestore);
     adopt_paths = union (lib.concatMap ({ component, ... }: component.rebuild.adoptPaths) enabled);
 
