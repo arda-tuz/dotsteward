@@ -692,20 +692,30 @@ def _apply_marketplace(
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
     document = tomlfile.loads(text)
-    if work.name in plugins.tracked_specs(document):
+    existing = plugins.table_of(document, work.name)
+    for_all = existing is not None and not isinstance(existing.get("machines"), list)
+    if for_all or (here and work.name in plugins.tracked_specs(document, machine)):
         attempt.in_sync.append((work, work.name, ""))
         return []
     if not plugins.manages_claude(document):
         attempt.rejected.append((work, "claude-code-not-managed", None))
         return []
-    source = work.item.get("source") or {}
-    try:
-        entry = plugins.options_entry(document, work.name, str(source.get("repo")), machine if here else None)
-    except ValueError:
-        attempt.rejected.append((work, "plugin-invalid", None))
-        return []
+    if existing is not None:
+        # The table of another machine's --here: this answer edits it, a second table of the
+        # same spec is no valid configuration.
+        known = existing.get("machines")
+        machines = sorted({*(str(item) for item in known), str(machine)}) if here and isinstance(known, list) else None
+        changed = plugins.with_machines(text, work.name, machines)
+    else:
+        source = work.item.get("source") or {}
+        try:
+            entry = plugins.options_entry(document, work.name, str(source.get("repo")), machine if here else None)
+        except ValueError:
+            attempt.rejected.append((work, "plugin-invalid", None))
+            return []
+        changed = plugins.with_options_entry(text, entry)
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write(plugins.with_options_entry(text, entry))
+        handle.write(changed)
     attempt.applied.append(Applied(work, work.name, None))
     allowed = [relative]
     accepted = plugins.declined_in(worktree, machine) & {work.name}

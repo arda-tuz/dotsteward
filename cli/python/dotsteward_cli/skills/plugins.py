@@ -215,13 +215,28 @@ def manages_claude(config: Mapping[str, Any]) -> bool:
     return table is not None and table.get("enable") is True
 
 
-def tracked_specs(config: Mapping[str, Any]) -> set[str]:
-    """The specs of [[components.claude-code.options.plugins]]."""
+def _tables(config: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     table = _component(config)
     options = table.get("options") if table is not None else None
     entries = options.get("plugins") if isinstance(options, Mapping) else None
     listed = entries if isinstance(entries, list) else []
-    return {str(entry["spec"]) for entry in listed if isinstance(entry, Mapping) and isinstance(entry.get("spec"), str)}
+    return [entry for entry in listed if isinstance(entry, Mapping) and isinstance(entry.get("spec"), str)]
+
+
+def tracked_specs(config: Mapping[str, Any], machine: str | None = None) -> set[str]:
+    """The specs of [[components.claude-code.options.plugins]] that MACHINE takes: a table with
+    machines is for those machines only (all of them without MACHINE)."""
+    found = set()
+    for entry in _tables(config):
+        machines = entry.get("machines")
+        if machine is not None and isinstance(machines, list) and machine not in machines:
+            continue
+        found.add(str(entry["spec"]))
+    return found
+
+
+def table_of(config: Mapping[str, Any], spec: str) -> Mapping[str, Any] | None:
+    return next((entry for entry in _tables(config) if entry["spec"] == spec), None)
 
 
 def read_config(tree: str) -> dict[str, Any]:
@@ -304,7 +319,8 @@ def look(
     if fresh or recorded or len(drop) < len(asking):
         config = read_config(instance)
         managed = manages_claude(config)
-        known = tracked_specs(config) | declined_in(instance, machine()) if managed else set()
+        here = machine()
+        known = tracked_specs(config, here) | declined_in(instance, here) if managed else set()
         # Answered meanwhile, on another machine or by hand: the question goes too.
         drop += [key for key, spec in asking.items() if key not in drop and (not managed or spec in known)]
         for spec, commit in recorded.items() if managed else ():
@@ -358,6 +374,22 @@ def options_entry(config: Mapping[str, Any], spec: str, repo: str, machine: str 
     if machine is not None:
         entry["machines"] = [machine]
     return entry
+
+
+def with_machines(text: str, spec: str, machines: list[str] | None) -> str:
+    """TEXT of workstation.toml with the table of SPEC for MACHINES (every machine with
+    None); every other key and comment stays."""
+    import tomlkit
+
+    document: Any = tomlkit.parse(text)
+    for entry in document["components"][COMPONENT]["options"]["plugins"]:
+        if entry.get("spec") == spec:
+            if machines is None:
+                entry.pop("machines", None)
+            else:
+                entry["machines"] = machines
+    result: str = tomlkit.dumps(document)
+    return result
 
 
 def with_options_entry(text: str, entry: Mapping[str, Any]) -> str:
