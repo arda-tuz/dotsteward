@@ -3,9 +3,9 @@
 # shellcheck disable=SC2016 # the scripts of tool_stub run later and are single-quoted on purpose
 # E1, the happy path on a terminal in tracked mode: one sudo window before all Nix work, the bridge
 # before apt-get update, recovery, policy and the commit of the apt engine, then the writer, the
-# gate, a local commit, self triggers, the rebuild, E2E, the publish and the report. Nothing but
-# upgrade touches the remote. A second run has nothing left: no rebuild, no E2E, no second weekly
-# Nix move. Reboot is said, never done.
+# gate, a local commit with the trace line of this machine, self triggers, the rebuild, E2E, the
+# publish and the report. Nothing but upgrade touches the remote. A second run has nothing left: no
+# rebuild, no E2E, no second weekly Nix move. Reboot is said, never done.
 # shellcheck source=tests/upgrade/helpers.sh
 source "$DS_REPO_ROOT/tests/upgrade/helpers.sh"
 
@@ -49,6 +49,9 @@ assert_not_contains "$(steps '^pins .*apply')" "--skip"
 
 # The local commit passed the real gate and went out through the real txn publish.
 assert_eq "chore: update pinned tool versions" "$(git -C "$up_inst" log -1 --format=%s HEAD -- versions.lock.json)"
+# The trace line: the commit says which machine made it.
+assert_eq "example-host" "$(git -C "$up_inst" log -1 --format='%(trailers:key=Dotsteward-Machine,valueonly)' HEAD -- \
+  versions.lock.json | sed '/^$/d')"
 assert_eq "$(remote_oid)" "$(git -C "$up_inst" rev-parse HEAD)"
 [[ $(remote_oid) != "$before_remote" ]] || ds_fail "nothing was published"
 assert_eq "" "$(git -C "$up_inst" status --porcelain)" "the checkout stays clean"
