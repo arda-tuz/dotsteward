@@ -191,6 +191,7 @@ for _ in $(seq 1 1500); do
 done
 [[ -s $stall ]] || ds_fail "the capture did not reach its commit"
 read -r stalled capturing <"$stall"
+ds_defer kill -9 "$capturing" "$stalled"
 kill -9 "$capturing" "$stalled"
 wait "$killer" 2>/dev/null || true
 assert_eq "$start" "$(remote_tip)"

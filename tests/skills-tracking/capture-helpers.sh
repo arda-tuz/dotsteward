@@ -13,7 +13,13 @@
 #   ds_code NAME ARG...   the same; sets DS_STDOUT, DS_STDERR and DS_STATUS, any status
 #   new_skill NAME SKILL  a skill in ~/.claude/skills of the machine, where an agent
 #                         writes it, without a license
-#   wrote NAME SKILL      what the hook sees when a file tool wrote its SKILL.md
+#   wrote NAME SKILL      what the hook sees when a file tool wrote its SKILL.md, in the
+#                         session HOOK_SESSION
+#   hook_on NAME EVENT FIXTURE
+#                         what the agent of the machine does for EVENT, in the session
+#                         HOOK_SESSION with the variables of HOOK_ENV; sets HOOK_OUT
+#   age_field NAME KEY FIELD SECONDS
+#                         makes a time in the pending item KEY SECONDS older
 #   own_new NAME SKILL    new_skill and wrote
 #   settle NAME SKILL     its files are of an age: capture takes them at once
 #   remote_file PATH      the file in the tip of the remote
@@ -30,7 +36,9 @@
 # The git wrapper. GIT_WRAP_BEFORE_PUSH=SCRIPT runs SCRIPT before the first push of
 # a run, and removes it; GIT_WRAP_LOSE_REPLY=FILE: while FILE exists a push reaches the
 # remote and its answer is lost, once; GIT_WRAP_STALL_COMMIT=FILE: a commit writes its
-# process id and the one of its parent to FILE and waits, for a test to kill them.
+# process id and the one of its parent to FILE and waits, for a test to kill them;
+# GIT_WRAP_PUSH_SAYS=TEXT: a push says TEXT and exits 1; GIT_WRAP_FAIL_WORKTREE=1: adding a
+# worktree fails.
 
 # shellcheck source=tests/static/helpers.sh
 source "$DS_REPO_ROOT/tests/static/helpers.sh"
@@ -129,11 +137,29 @@ new_skill() {
   printf '# Guide\n' >"$dir/references/guide.md"
 }
 
+HOOK_SESSION=fe058fc9
+HOOK_ENV=()
+HOOK_OUT=
+
 wrote() {
   local file
   file=$(home_of "$1")/.claude/skills/$2/SKILL.md
-  on "$1" bash -c 'sed -e "s|@HOME@|$HOME|g" -e "s|@CWD@|$PWD|g" -e "s|@SESSION@|fe058fc9|g" -e "s|@FILE@|$2|g" "$1" |
-    "$3" skills hook PostToolUse --agent claude' _ "$fixtures/claude/post-tool-use-write.json" "$file" "$DS_REPO_ROOT/cli/dotsteward"
+  on "$1" bash -c 'sed -e "s|@HOME@|$HOME|g" -e "s|@CWD@|$PWD|g" -e "s|@SESSION@|$4|g" -e "s|@FILE@|$2|g" "$1" |
+    "$3" skills hook PostToolUse --agent claude' _ "$fixtures/claude/post-tool-use-write.json" "$file" \
+    "$DS_REPO_ROOT/cli/dotsteward" "$HOOK_SESSION"
+}
+
+hook_on() {
+  HOOK_OUT=$(on "$1" env ${HOOK_ENV[@]+"${HOOK_ENV[@]}"} bash -c \
+    'sed -e "s|@HOME@|$HOME|g" -e "s|@CWD@|$PWD|g" -e "s|@SESSION@|$2|g" "$1" | "$3" skills hook "$4" --agent claude' \
+    _ "$fixtures/claude/$3.json" "$HOOK_SESSION" "$DS_REPO_ROOT/cli/dotsteward" "$2")
+}
+
+age_field() {
+  local pending
+  pending=$(state_of "$1")/skills/pending.json
+  jq --arg key "$2" --arg field "$3" --argjson seconds "$4" '.items[$key][$field] -= $seconds' "$pending" >"$pending.tmp"
+  mv -- "$pending.tmp" "$pending"
 }
 
 own_new() {
@@ -186,7 +212,18 @@ wrap_git() {
 #!$BASH
 for argument in "\$@"; do
   case \$argument in
+    worktree)
+      if [[ -n \${GIT_WRAP_FAIL_WORKTREE:-} && " \$* " == *" worktree add "* ]]; then
+        printf 'fatal: cannot make a worktree here\n' >&2
+        exit 128
+      fi
+      break
+      ;;
     push)
+      if [[ -n \${GIT_WRAP_PUSH_SAYS:-} ]]; then
+        printf '%s\n' "\$GIT_WRAP_PUSH_SAYS" >&2
+        exit 1
+      fi
       if [[ -n \${GIT_WRAP_BEFORE_PUSH:-} && -f \$GIT_WRAP_BEFORE_PUSH ]]; then
         script=\$GIT_WRAP_BEFORE_PUSH.run
         mv -- "\$GIT_WRAP_BEFORE_PUSH" "\$script"
@@ -220,7 +257,7 @@ _capture_cleanup() {
     [[ -f $(state_of "$name")/skills/capture.log ]] || continue
     while read -r pid; do
       [[ -z $pid ]] || kill -9 "$pid" 2>/dev/null || true
-    done < <(sed -n 's/^[^ ]* sleeper pid //p' "$(state_of "$name")/skills/capture.log")
+    done < <(sed -n -e 's/^[^ ]* sleeper pid //p' -e 's/^[^ ]* capture pid //p' "$(state_of "$name")/skills/capture.log")
   done
 }
 ds_defer _capture_cleanup

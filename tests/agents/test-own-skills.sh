@@ -235,6 +235,33 @@ assert_exit 0 run_agents install
 [[ ! -d $state/backups ]] || ds_fail "catching up neither copies nor backs up"
 assert_eq in-sync "$(skill_state behind)"
 
+
+# A copy taken back to the old lock while the checkout is behind: that is no sync with the
+# repository, so b stays and the pull that follows finds a change, not an incoming copy.
+new_case
+rm -rf "$agents_inst/.git"
+git init -q "$agents_inst"
+fresh reverted
+git -C "$agents_inst" add -A
+git -C "$agents_inst" commit -q -m "chore: the instance"
+git -C "$agents_inst" checkout -q -b captured
+printf 'captured on this machine\n' >>"$(vendored reverted)/SKILL.md"
+refresh_lock reverted
+git -C "$agents_inst" add -A
+git -C "$agents_inst" commit -q -m "chore(skills): capture reverted"
+captured=$(git -C "$agents_inst" rev-parse HEAD)
+captured_digest=$(lock_digest reverted)
+git -C "$agents_inst" checkout -q main
+jq --arg digest "$captured_digest" --arg commit "$captured" \
+  '.["skill:reverted"].base_sha256 = $digest | .["skill:reverted"].base_commit = $commit' "$base" >"$base.tmp"
+mv -- "$base.tmp" "$base"
+chmod 0600 "$base"
+assert_exit 0 run_agents install
+assert_eq "$captured_digest" "$(base_digest reverted)" "b does not go back"
+git -C "$agents_inst" merge -q --ff-only captured
+assert_eq pending-capture "$(skill_state reverted)"
+rm -rf "$agents_inst/.git"
+
 # --- a third-party skill keeps drift and refresh next to own skills -----------------
 
 new_case

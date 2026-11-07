@@ -81,9 +81,12 @@ mkdir -p "$ss"
 printf 'not json\n' >"$ss/pending.json"
 printf '[]\n' >"$ss/base.json"
 all_events
-# The state directory is missing, then cannot be made.
+# The state directory is missing, then cannot be made. The sleepers of these events end
+# here: what names them goes with the state.
+_kill_sleepers
 rm -rf "$state"
 all_events
+_kill_sleepers
 rm -rf "$state"
 printf 'not a directory\n' >"$state"
 all_events

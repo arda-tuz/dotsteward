@@ -22,6 +22,8 @@
 #   pending_state NAME the state of skill:NAME in pending.json, or none
 #   wait_for FILE PATTERN
 #                      waits until the file holds a line matching PATTERN
+#   wait_captures N    waits for what hooks started: N captures run by `--now` are in
+#                      capture.log, and all of them have ended
 #   capture_runs       how many capture runs capture.log records
 #   sleepers           how many sleepers capture.log records
 
@@ -125,6 +127,27 @@ wait_for() {
     ((tries < 3000)) || ds_fail "no line matching [$2] in $1 after 60 seconds"
     sleep 0.02
   done
+}
+
+wait_captures() {
+  local tries=0 pid
+  until (($(grep -c ' capture pid ' "$ss/capture.log" 2>/dev/null || true) >= $1)); do
+    tries=$((tries + 1))
+    ((tries < 3000)) || ds_fail "fewer than $1 captures started after 60 seconds"
+    sleep 0.02
+  done
+  while read -r pid; do
+    until ! _process_lives "$pid"; do
+      tries=$((tries + 1))
+      ((tries < 9000)) || ds_fail "the capture $pid has not ended after 3 minutes"
+      sleep 0.02
+    done
+  done < <(sed -n 's/^[^ ]* capture pid //p' "$ss/capture.log")
+}
+
+_process_lives() {
+  [[ -r /proc/$1/stat ]] || return 1
+  [[ $(sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -d' ' -f1) != Z ]]
 }
 
 capture_runs() {

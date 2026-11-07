@@ -38,11 +38,7 @@ agent_event claude PostToolUse post-tool-use-edit "$skill"
 assert_eq capture "$(pending_state alpha)"
 agent_event claude SessionEnd session-end
 assert_eq "" "$EVENT_OUT"
-wait_for "$ss/capture.log" ' run$'
-for _ in $(seq 1 60); do
-  [[ $(capture_runs) -ge 2 ]] && break
-  sleep 1
-done
+wait_captures 1
 (($(capture_runs) >= 2)) || ds_fail "SessionEnd runs the capture at once"
 # A sleeper that was waiting finds nothing left to wait for, or ends on its own.
 _kill_sleepers
