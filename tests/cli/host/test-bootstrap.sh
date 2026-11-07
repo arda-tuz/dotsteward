@@ -97,7 +97,18 @@ assert_not_contains "$DS_STDOUT" "bootstrap complete"
 assert_exit 1 env DOTSTEWARD_MACHINE=laptop "$agents_fw/cli/dotsteward" --instance "$agents_inst" \
   bootstrap --profile fresh --stage 1 </dev/null
 assert_contains "$DS_STDERR" "--reuse"
+assert_contains "$DS_STDERR" "DOTSTEWARD_MACHINE_REUSE=1"
 assert_calls
+
+# A reinstall without a terminal goes through ./bootstrap.sh, which takes no such option:
+# the environment says it is one.
+assert_exit 0 env DOTSTEWARD_MACHINE=laptop DOTSTEWARD_MACHINE_REUSE=1 \
+  "$agents_fw/cli/dotsteward" --instance "$agents_inst" bootstrap --profile fresh --stage 1 </dev/null
+assert_eq "$final" "$(tail -n 1 <<<"$DS_STDOUT")"
+assert_eq '"laptop"' "$(record .name)"
+assert_contains "$DS_STDOUT" "nothing to publish"
+rm -- "$(machine_file)"
+: >"$DS_CALL_LOG"
 
 # A reinstall under the same name: named beforehand, the bootstrap keeps it. What the
 # name stands for comes back, and the file that says so does not change.
