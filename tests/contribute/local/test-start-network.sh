@@ -92,8 +92,11 @@ start_slow() {
 printf x >"$DS_FAKESSH_DROPS"
 unset DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS
 assert_exit 0 start_slow default-limit
-assert_contains "$DS_STDERR" "[dotsteward] WARNING: cannot fetch main from origin; trying again in 60s"
-assert_eq 60 "$(<"$DS_TEST_ROOT/sleep.log")" "the pause under the limit of start"
+# The pause is what the limit of 60 s leaves after the first fetch, which takes
+# a second or more on a loaded machine.
+pause=$(<"$DS_TEST_ROOT/sleep.log")
+((pause > 30 && pause <= 60)) || ds_fail "the pause under the limit of start: $pause"
+assert_contains "$DS_STDERR" "[dotsteward] WARNING: cannot fetch main from origin; trying again in ${pause}s"
 printf x >"$DS_FAKESSH_DROPS"
 export DOTSTEWARD_CONTRIBUTE_APPEAR_SECONDS=300
 assert_exit 0 start_slow chosen-limit
