@@ -46,32 +46,31 @@ Command line (``cli/commands/incoming.sh``)::
 
 from __future__ import annotations
 
-import argparse
-import datetime
 import json
 import os
 import re
-import shutil
-import subprocess
 import sys
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from dotsteward_cli import atomic, config, locks, machine, report
-from dotsteward_cli import publish as publishing
+from dotsteward_cli import config, machine
+
+if TYPE_CHECKING:
+    from dotsteward_cli import report
 
 KNOWN_FILE = os.path.join("machine", "known.json")
 SCHEMA_VERSION = 1
 EXIT_REFUSAL = 1
 EXIT_USAGE = 2
-EXIT_WAITING = report.PENDING
 
 NEW = "new"
 CHANGED = "changed"
 REMOVED = "removed"
 _KIND_KEYS = {"skill": "skills", "plugin": "plugins", "component": "components"}
 _FETCH_SCOPE = "incoming"
+# `machine.effective` asks `waiting` in every command: what no question needs is imported
+# where it is used, so a machine without a question pays for reading two files.
 _TRAILER = re.compile(r"^Dotsteward-Machine:[ \t]*([a-z0-9][a-z0-9-]*)[ \t]*$", re.MULTILINE)
 _REVIEW_CODE = "incoming"
 _SHOW_LINES = 80
@@ -112,6 +111,8 @@ def read_known(state_root: str | os.PathLike[str], name: str) -> dict[str, Any] 
 
 
 def _write_known(state_root: str | os.PathLike[str], document: Mapping[str, Any]) -> None:
+    from dotsteward_cli import atomic
+
     path = _known_path(state_root)
     atomic.make_private_dirs(state_root)
     atomic.make_private_dirs(path.parent)
@@ -141,6 +142,8 @@ def never_answers(state_root: str | os.PathLike[str], name: str) -> dict[str, li
 
 def _git(root: str | os.PathLike[str], *arguments: str) -> str:
     """The output of a git command, empty when it fails."""
+    from dotsteward_cli import publish as publishing
+
     result = publishing.git(root, *arguments)
     return result.stdout if result.code == 0 else ""
 
@@ -194,6 +197,8 @@ def _source(root: Path, *where: str, text: str | None = None, pattern: str | Non
 
 
 def _pretty_time(moment: str | None) -> str:
+    import datetime
+
     if not moment:
         return "unknown time"
     try:
@@ -473,6 +478,8 @@ def settle(instance: config.Instance, env: Mapping[str, str] | None = None) -> N
 def _agents_install(instance: config.Instance, scope: Mapping[str, Any]) -> None:
     """The one way a skill and a plugin land: `agents install`, for the skills, the links and
     the hooks at once."""
+    import subprocess
+
     profile = scope["profile"] or instance.config["profiles"]["check"]
     result = subprocess.run(
         [
@@ -494,6 +501,10 @@ def _agents_install(instance: config.Instance, scope: Mapping[str, Any]) -> None
 
 
 def _remove_copy(instance: config.Instance, state_root: str, name: str, record: Mapping[str, Any]) -> None:
+    import datetime
+    import shutil
+
+    from dotsteward_cli import atomic
     from dotsteward_cli.skills import layout
     from dotsteward_cli.skills import state as skill_state
 
@@ -522,6 +533,8 @@ def _remove_copy(instance: config.Instance, state_root: str, name: str, record: 
 
 def _drop_review(state_root: str, item_id: str) -> None:
     """A question that has its answer leaves the review, whichever command put it there."""
+    from dotsteward_cli import report
+
     report.drop_items(state_root, _REVIEW_CODE, item_id)
 
 
@@ -594,6 +607,10 @@ def _evaluates(instance: config.Instance, this: str, commit: str) -> None:
     """A component this machine leaves out must leave a machine that evaluates, or its
     no: tag breaks hosts-eval in the gate of every other machine. A framework pin older
     than the tags has no such output and nothing to say; neither has a machine without Nix."""
+    import subprocess
+
+    from dotsteward_cli import publish as publishing
+
     root = instance.root
     ref = f"refs/dotsteward/{_FETCH_SCOPE}/evaluate"
     publishing.git(root, "update-ref", ref, commit)
@@ -621,7 +638,7 @@ def _evaluates(instance: config.Instance, this: str, commit: str) -> None:
 
 def _publish_never(instance: config.Instance, this: str, env: Mapping[str, str]) -> None:
     """Brings the answers that wait to the host file on the remote, and the checkout along."""
-    from dotsteward_cli import host
+    from dotsteward_cli import host, report
 
     state_root = config.state_root(instance, env)
     pending = never_answers(state_root, this)
@@ -668,6 +685,8 @@ def _clear_never(instance: config.Instance, this: str, env: Mapping[str, str]) -
 def move_forward(instance: config.Instance, *, quiet: bool = False) -> None:
     """The repository moves forward whatever the answers are: a fast-forward of a clean
     checkout. Anything else is said, and the command goes on with the checkout it has."""
+    from dotsteward_cli import publish as publishing
+
     root = instance.root
     branch = str(instance.config["instance"]["branch"])
     outcome, tip, detail = publishing.fetch_tip(root, branch, _FETCH_SCOPE)
@@ -707,6 +726,8 @@ def _prompt(item: Mapping[str, Any]) -> str:
 
 def show_text(instance: config.Instance, item: Mapping[str, Any], env: Mapping[str, str] | None = None) -> str:
     """What an answer is about: what an install would change here."""
+    import subprocess
+
     root = instance.root
     lines = [describe(item)]
     name = str(item["name"])
@@ -823,7 +844,9 @@ def answer(instance: config.Instance, item_id: str, *, never: bool, env: Mapping
 # --- command line --------------------------------------------------------------------------
 
 
-def _parser() -> argparse.ArgumentParser:
+def _parser() -> Any:
+    import argparse
+
     parser = argparse.ArgumentParser(
         prog="dotsteward incoming",
         description=(
@@ -869,7 +892,9 @@ def _print_items(items: Sequence[Mapping[str, Any]]) -> None:
         print(f"  {item['answer']}")
 
 
-def _ask_command(args: argparse.Namespace, instance: config.Instance, env: Mapping[str, str]) -> int:
+def _ask_command(args: Any, instance: config.Instance, env: Mapping[str, str]) -> int:
+    from dotsteward_cli import atomic, locks, report
+
     state_root = config.state_root(instance, env)
     scope = _current(instance, env)
     if scope["name"] is None:
@@ -897,6 +922,8 @@ def _ask_command(args: argparse.Namespace, instance: config.Instance, env: Mappi
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    from dotsteward_cli import locks, report
+
     if list(sys.argv[1:] if argv is None else argv) == ["settle"]:
         # For `agents install`, not for a person.
         try:
