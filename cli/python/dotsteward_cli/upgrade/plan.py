@@ -45,7 +45,9 @@ def build(instance: config.Instance, accept: Sequence[str]) -> dict[str, Any]:
         "gated": facts.gated(instance, effective["name"]),
     }
     remote = _remote(instance)
-    channels = analysis.read_user_channels(facts.tracked_commands(mirror, active), not remote["reachable"], env)
+    channels = analysis.read_user_channels(
+        facts.tools(instance), facts.tracked_commands(mirror, active), not remote["reachable"], env, instance.root
+    )
     listing = firmware.list_updates()
     return {
         "machine": effective["name"],
@@ -84,7 +86,7 @@ def text(document: Mapping[str, Any]) -> str:
         "Everything:",
         f"  {_changes(document['all']['apt'])}",
     ]
-    said += [f"  {line}" for line in analysis.lines(document["channels"]) if not line.startswith("apt")]
+    said += [f"  {line}" for line in analysis.lines(document["channels"]) if not line.startswith(("apt ", "apt:"))]
     told = {str(item.get("message")): item for item in document["all"]["apt"].get("items") or ()}
     said += [
         f"Waits for you: {message}" + (f" -> {item['accept']}" if item.get("accept") else "")

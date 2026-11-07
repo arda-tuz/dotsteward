@@ -41,18 +41,18 @@ assert_stdout_json '.channels["example-none"] == {"available": true, "count": 0,
 assert_stdout_json '.channels["example-broken"].count == 0 and (.channels["example-broken"].error | contains("the index is broken"))'
 assert_stdout_json '.channels["example-absent"] == {"available": false, "count": 0}'
 assert_eq "$up_inst" "$(<"$DS_TEST_ROOT/where")"
-assert_no_step 'update'
+assert_no_step ' update'
 
 # What a person reads.
 assert_exit 0 upgrade --plan
-assert_contains "$DS_STDOUT" "example-many 2 (first, second) (tracked commands left out: 2)"
+assert_contains "$DS_STDOUT" "example-many 2 (first, second) (left out, they provide tracked commands or may: 2)"
 assert_contains "$DS_STDOUT" "example-none 0"
 assert_contains "$DS_STDOUT" "example-broken: could not be read: the index is broken"
 assert_contains "$DS_STDOUT" "example-absent: not on this machine"
 
 # The menu names what is declared.
 clear_log
-assert_exit 0 on_terminal 'Update what=2' --
+assert_exit 1 on_terminal 'Update what=2' --
 assert_contains "$DS_STDOUT" "2) Everything (apt, snap, flatpak, example-many, example-none, example-broken, example-absent, example-where)"
 assert_order '^example-many update first second$'
 assert_no_step '^example-many update .*(provider|mystery)'
@@ -61,6 +61,10 @@ assert_no_step '^example-broken update'
 assert_eq "$up_inst" "$(sed -n 2p "$DS_TEST_ROOT/where")"
 last_report '[.steps[] | select(.name == "tool:example-many") | .status] == ["ok"]'
 last_report '[.steps[] | select(.name == "tool:example-none")] == []'
+# A tool that cannot say what there is to update is a failed step, and the next tool still runs.
+last_report '[.steps[] | select(.name == "tool:example-broken") | .status] == ["failed"]'
+last_report '[.steps[] | select(.name == "tool:example-where") | .status] == ["ok"]'
+assert_contains "$DS_STDOUT" "tool:example-broken: could not be read: the index is broken"
 
 # A declared update that fails is said and ends nothing.
 tool_stub example-many 'case "$1" in outdated) printf "first 1 2\n";; update) exit 7;; esac'

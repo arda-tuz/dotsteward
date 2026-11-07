@@ -69,6 +69,11 @@ def tracked_packages(active: list[dict[str, Any]], instance: config.Instance) ->
     return sorted(names)
 
 
+def tools(instance: config.Instance) -> list[dict[str, Any]]:
+    """``[[upgrade.tools]]``: the updaters of this instance, in their order."""
+    return list(instance.config["upgrade"]["tools"])
+
+
 def constraints(active: list[dict[str, Any]], instance: config.Instance) -> dict[str, str]:
     """A constrained server and its version: ``{"sampledbms": "16.*"}``."""
     found: dict[str, str] = {}
@@ -86,7 +91,7 @@ def gated(instance: config.Instance, name: str | None) -> bool:
 
 
 def tracked_commands(document: Mapping[str, Any], active: list[dict[str, Any]]) -> set[str]:
-    """The commands of core and the active components: a global npm package never touches them."""
+    """The commands of core and the active components: a declared tool never moves them."""
     names = {component["name"] for component in active} | {"core"}
     commands = (document.get("checks") or {}).get("commands") or ()
     return {entry["command"] for entry in commands if entry.get("component") in names}

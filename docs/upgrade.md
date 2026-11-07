@@ -20,12 +20,39 @@ reboot. A reboot that is due is only said.
 
 | | `--tracked` | `--all` |
 | --- | --- | --- |
-| On a terminal | apt for the tracked packages; the pins, the rebuild, own updaters, skills, E2E, publishing; then a read only analysis of everything else and "Update these too?" | all of that with apt as a whole, snap, flatpak, the global npm packages of every nodevers Node, rustup and `sampletool tool`, in one run; no analysis and no second question |
-| Without a terminal | also what no flag means: the sudo steps wait in `review.json`, the analysis runs and only its counts go there; no question | what runs as the user (npm, rustup, `sampletool tool`, flatpak `--user`); what needs sudo waits, exit 3 |
+| On a terminal | apt for the tracked packages; the pins, the rebuild, own updaters, skills, E2E, publishing; then a read only analysis of everything else and "Update these too?" | all of that with apt as a whole, snap, flatpak and the tools the instance declares, in one run; no analysis and no second question |
+| Without a terminal | also what no flag means: the sudo steps wait in `review.json`, the analysis runs and only its counts go there; no question | what runs as the user (the declared tools, flatpak `--user`); what needs sudo waits, exit 3 |
 
 Updating something outside the tracked set does not track it: the intent, the shared lock and the
 key of E2E stay as they are. The analysis stays on this machine in `<state>/upgrade/analysis.json`
 (mode 0600) and is never published; `review.json` holds only its counts and the path.
+
+## Other updaters
+
+The framework knows the channels of the system: apt, snap and flatpak. Which other package managers
+a person uses is theirs to say, so every other updater is a table in `workstation.toml`, and all of
+them are treated alike:
+
+```toml
+[[upgrade.tools]]
+name = "example-lang"
+check = "example-lang outdated"
+update = "example-lang update \"$@\""
+skip_providers = "example-lang provides \"$1\""
+```
+
+Each command runs through `sh` in the checkout, as the user, with a limit of 60 seconds for `check`
+and `skip_providers`. A tool that is not declared is not run.
+
+| Key | Required | What it does |
+| --- | --- | --- |
+| `name` | yes | The name in the menu, the analysis (`channels.<name>`) and the report (`tool:<name>`). |
+| `check` | yes | Read only: one line per thing that can be updated, the first word its name. Exit 0 is an answer, 127 means the tool is not on this machine, anything else is shown as an error, and in `--all` it is a failed step. |
+| `update` | yes | Runs when `check` named something, with the names as arguments (`"$@"`). |
+| `skip_providers` | no | Read only: given a name as `$1`, prints the commands it puts on PATH. A name that provides a tracked command stays out of `update` (`tracked-command`), and so does one this command fails for (`providers-unknown`). |
+
+A tool that has several installs on one machine says so in its names, for example
+`<install>/<package>`, and its commands read them back. Offline no declared command runs.
 
 `--accept KEY` answers in advance; a terminal is needed in the end, and without one nothing moves:
 
@@ -41,7 +68,7 @@ key of E2E stay as they are. The analysis stays on this machine in `<state>/upgr
 ```text
 Update what?
   1) Tracked only (then a read only analysis of the system and an offer)
-  2) Everything (apt, snap, flatpak, the global npm packages of every nodevers Node, rustup, sampletool tool)
+  2) Everything (apt, snap, flatpak, example-lang, example-pkgs)
 Choice [1/2]: 1
 Firmware Example SSD: 1.0 -> 2.0. Apply? [y/N] y
 [upgrade] the sudo window: apt first, sudo closes before the long builds

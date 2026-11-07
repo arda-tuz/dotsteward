@@ -179,6 +179,15 @@ The settings buffer (see [concepts.md](concepts.md#settings-buffer)).
 | `skills.capture_delay_seconds` | `600` | How long a changed skill of this machine stays quiet before it is captured. |
 | `skills.capture_max_mib` | `100` | The size above which a skill is refused for capture, in MiB. |
 
+## `[[upgrade.tools]]`
+
+The updaters of `dotsteward upgrade` beyond the channels of the system (apt, snap, flatpak), in the
+order they run: [upgrade.md](upgrade.md#other-updaters).
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `upgrade.tools` | `[]` | Tables with `name` (not one of those three, and not twice), `check`, `update` and optional `skip_providers`. |
+
 ## `[hosts]`
 
 The machines of the instance: [machines.md](machines.md).

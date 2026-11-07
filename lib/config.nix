@@ -353,6 +353,12 @@ let
       [ ];
 
   # Rules across keys; only run on a schema-valid file.
+  systemChannels = [
+    "apt"
+    "snap"
+    "flatpak"
+  ];
+
   semanticErrors =
     { catalog }:
     raw:
@@ -368,6 +374,17 @@ let
       identityErrors = optional (
         lib.any (lib.hasSuffix "-linux") systems && match linuxUserPattern username == null
       ) "identity.username: ${toJSON username} is not a valid Linux user name (${linuxUserPattern})";
+
+      toolNames = map (tool: tool.name) (raw.upgrade.tools or [ ]);
+      toolErrors = concatLists (
+        imap0 (
+          i: name:
+          if elem name systemChannels then
+            [ "upgrade.tools[${toString i}].name: ${toJSON name} is a channel of the system" ]
+          else
+            optional (elem name (lib.take i toolNames)) "upgrade.tools[${toString i}].name: ${toJSON name} is declared twice"
+        ) toolNames
+      );
 
       profileErrors =
         concatLists (
@@ -431,7 +448,7 @@ let
         ++ optional (elem alias builtinChecks) "${formatPath path}: collides with the built-in check ${alias}"
       ) (attrNames aliases);
     in
-    identityErrors ++ profileErrors ++ componentErrors ++ compatErrors;
+    identityErrors ++ toolErrors ++ profileErrors ++ componentErrors ++ compatErrors;
 
   errors =
     {

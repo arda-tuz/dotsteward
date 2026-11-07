@@ -314,6 +314,9 @@
       "fresh-home": "fresh"
     }
   },
+  "upgrade": {
+    "tools": []
+  },
   "hosts": {
     "producer": null
   },

@@ -1,17 +1,17 @@
 """The channels nothing tracks: a read only look, and the update when the owner says so.
 
-Everything runs as the user, with a time limit per channel; a missing tool is ``available: false``,
-a failing one has ``error``, and neither ends the run. Without a network the channels that ask one
-say ``skipped``. The result stays in ``<state>/upgrade/analysis.json`` and is never published: it
-names packages of this machine. Updating here enters nothing into the intent, the lock or the state.
+The framework knows the channels of the system (apt, snap, flatpak). Every other updater is a table
+of ``[[upgrade.tools]]`` in the instance, and they are all treated alike. Everything runs as the user,
+with a time limit per channel; a missing tool is ``available: false``, a failing one has ``error``,
+and neither ends the run. Without a network the channels that ask one say ``skipped``. The result
+stays in ``<state>/upgrade/analysis.json`` and is never published: it names packages of this machine.
+Updating here enters nothing into the intent, the lock or the state.
 """
 
 from __future__ import annotations
 
 import datetime
 import json
-import os
-import re
 import shutil
 import subprocess
 from collections.abc import Mapping, Sequence
@@ -23,16 +23,16 @@ from dotsteward_cli import atomic, procs
 SCHEMA_VERSION = 1
 _SECONDS = 60
 _FILE = Path("upgrade") / "analysis.json"
-_RUSTUP_UPDATE = re.compile(r"update available", re.IGNORECASE)
-_TOOL_OUTDATED = re.compile(r"^(\S+) v?(\S+) \[latest: v?([^\]]+)\]")
+_NOT_FOUND = 127
 _MAX_NAMES = 3
+SYSTEM_CHANNELS = ("apt", "snap", "flatpak")
 # 128 + SIGINT, SIGTERM, SIGHUP.
 _SIGNALLED = {130, 143, 129}
 
 
-def _read(argv: Sequence[str], env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def _read(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        list(argv), capture_output=True, text=True, timeout=_SECONDS, stdin=subprocess.DEVNULL, env=env, check=False
+        list(argv), capture_output=True, text=True, timeout=_SECONDS, stdin=subprocess.DEVNULL, check=False
     )
 
 
@@ -82,87 +82,67 @@ def _flatpak() -> dict[str, Any]:
     return {"available": True, "count": len(items), "items": items}
 
 
-def _rustup() -> dict[str, Any]:
-    done = _read(["rustup", "check"])
-    if done.returncode != 0:
-        return {"available": True, "count": 0, "error": done.stderr.strip()}
-    lines = [line.strip() for line in done.stdout.splitlines() if _RUSTUP_UPDATE.search(line)]
-    return {"available": True, "count": len(lines), "items": lines}
+def _sh(command: str, *arguments: str, env: Mapping[str, str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    """COMMAND of a declaration through sh, in the checkout, with ARGUMENTS as ``"$@"``."""
+    return subprocess.run(
+        ["sh", "-c", command, "sh", *arguments],
+        capture_output=True,
+        text=True,
+        timeout=_SECONDS,
+        stdin=subprocess.DEVNULL,
+        env=env,
+        cwd=cwd,
+        check=False,
+    )
 
 
-def _sampletool() -> dict[str, Any]:
-    done = _read(["sampletool", "tool", "list", "--outdated"])
-    if done.returncode != 0:
-        return {"available": True, "count": 0, "error": done.stderr.strip()}
-    items = []
-    for line in done.stdout.splitlines():
-        match = _TOOL_OUTDATED.match(line)
-        if match:
-            items.append({"name": match.group(1), "current": match.group(2), "latest": match.group(3)})
-    return {"available": True, "count": len(items), "items": items}
-
-
-def node_npms(env: Mapping[str, str]) -> list[tuple[str, Path]]:
-    """Every Node of nodevers with its npm: the version and the file."""
-    home = Path(env.get("HOME", "~")).expanduser()
-    root = Path(env.get("NODEVERS_DIR") or home / ".nodevers") / "versions" / "node"
-    return [(path.parent.parent.name, path) for path in sorted(root.glob("*/bin/npm"))]
-
-
-def _node_env(npm: Path, env: Mapping[str, str]) -> dict[str, str]:
-    return {**env, "PATH": f"{npm.parent}{os.pathsep}{env.get('PATH', '')}"}
-
-
-def _provides(npm: Path, package: str) -> set[str]:
-    """The command names a global package puts on PATH."""
-    manifest = npm.parent.parent / "lib" / "node_modules" / package / "package.json"
+def _left_out(tool: Mapping[str, Any], name: str, tracked: set[str], env: Mapping[str, str], cwd: Path) -> str | None:
+    """Why NAME stays out of the update. What nobody can say about stays out too: moving a tracked
+    command by accident is the one thing this must not do."""
+    command = tool.get("skip_providers")
+    if command is None:
+        return None
     try:
-        declared = json.loads(manifest.read_text(encoding="utf-8")).get("bin")
-    except (OSError, ValueError, AttributeError):
-        return set()
-    if isinstance(declared, str):
-        return {package.rsplit("/", 1)[-1]}
-    return set(declared) if isinstance(declared, dict) else set()
+        done = _sh(str(command), name, env=env, cwd=cwd)
+    except (OSError, subprocess.SubprocessError):
+        return "providers-unknown"
+    if done.returncode != 0:
+        return "providers-unknown"
+    return "tracked-command" if set(done.stdout.split()) & tracked else None
 
 
-def _npm(tracked: set[str], env: Mapping[str, str]) -> dict[str, Any]:
-    nodes: dict[str, Any] = {}
-    count = 0
-    for version, npm in node_npms(env):
-        items: list[dict[str, Any]] = []
-        skipped: list[dict[str, Any]] = []
-        node: dict[str, Any] = {"items": items, "skipped": skipped}
-        nodes[version] = node
-        try:
-            # Exit 1 is the normal answer when something is outdated.
-            done = _read([str(npm), "outdated", "-g", "--json", "--depth=0"], _node_env(npm, env))
-            outdated = json.loads(done.stdout or "{}")
-        except (OSError, subprocess.SubprocessError, ValueError) as error:
-            node["error"] = str(error)
+def _read_tool(tool: Mapping[str, Any], tracked: set[str], env: Mapping[str, str], cwd: Path) -> dict[str, Any]:
+    done = _sh(str(tool["check"]), env=env, cwd=cwd)
+    if done.returncode == _NOT_FOUND:
+        return {"available": False, "count": 0}
+    if done.returncode != 0:
+        return {"available": True, "count": 0, "error": done.stderr.strip() or f"exit {done.returncode}"}
+    items: list[dict[str, str]] = []
+    skipped: list[dict[str, str]] = []
+    for line in done.stdout.splitlines():
+        if not line.strip():
             continue
-        for name, row in sorted(outdated.items()):
-            if _provides(npm, name) & tracked:
-                skipped.append({"name": name, "reason": "tracked-command"})
-            else:
-                items.append({"name": name, "current": row.get("current"), "latest": row.get("latest")})
-        count += len(items)
-    return {"available": bool(nodes), "count": count, "nodes": nodes}
+        name = line.split()[0]
+        reason = _left_out(tool, name, tracked, env, cwd)
+        if reason:
+            skipped.append({"name": name, "reason": reason})
+        else:
+            items.append({"name": name, "line": line.strip()})
+    return {"available": True, "count": len(items), "items": items, "skipped": skipped}
 
 
-def read_user_channels(tracked_commands: set[str], offline: bool, env: Mapping[str, str]) -> dict[str, Any]:
-    """Every channel but apt, which needs the engine."""
+def read_user_channels(
+    tools: Sequence[Mapping[str, Any]], tracked_commands: set[str], offline: bool, env: Mapping[str, str], cwd: Path
+) -> dict[str, Any]:
+    """Every channel but apt, which needs the engine: snap, flatpak and the declared tools."""
     channels: dict[str, Any] = {}
-    for name, tool, read, args in (
-        ("snap", "snap", _snap, ()),
-        ("flatpak", "flatpak", _flatpak, ()),
-        ("rustup", "rustup", _rustup, ()),
-        ("sampletool", "sampletool", _sampletool, ()),
-    ):
-        channels[name] = _channel(tool, offline) or _guarded(read, *args)
-    if offline:
-        channels["npm"] = {"available": bool(node_npms(env)), "count": 0, "nodes": {}, "skipped": "offline"}
-    else:
-        channels["npm"] = _guarded(_npm, tracked_commands, env)
+    for name, read in (("snap", _snap), ("flatpak", _flatpak)):
+        channels[name] = _channel(name, offline) or _guarded(read)
+    for tool in tools:
+        if offline:
+            channels[str(tool["name"])] = {"available": True, "count": 0, "skipped": "offline"}
+        else:
+            channels[str(tool["name"])] = _guarded(_read_tool, tool, tracked_commands, env, cwd)
     return channels
 
 
@@ -187,14 +167,15 @@ def _names(items: Sequence[Mapping[str, Any]]) -> str:
 def lines(channels: Mapping[str, Any]) -> list[str]:
     """One line per channel, for a person; ``--json`` has the rest."""
     said = []
-    for name in ("apt", "snap", "flatpak", "npm", "rustup", "sampletool"):
+    others = [name for name in channels if name not in SYSTEM_CHANNELS]
+    for name in (*SYSTEM_CHANNELS, *others):
         channel = channels.get(name) or {}
         if channel.get("error"):
             said.append(f"{name}: could not be read: {channel['error']}")
         elif not channel.get("available"):
             said.append(f"{name}: not on this machine")
-        elif channel.get("skipped"):
-            said.append(f"{name}: skipped ({channel['skipped']})")
+        elif channel.get("skipped") == "offline":
+            said.append(f"{name}: skipped (offline)")
         elif name == "apt":
             packages = channel.get("packages") or []
             phased = sum(1 for package in packages if package.get("phased"))
@@ -202,15 +183,16 @@ def lines(channels: Mapping[str, Any]) -> list[str]:
             shown = f" ({_names(packages)})" if packages else ""
             count = channel.get("count", 0)
             said.append(f"apt {count} {'package' if count == 1 else 'packages'}{detail}{shown}")
-        elif name == "npm":
-            nodes = [
-                f"{version}: {len(node.get('items') or [])}"
-                + (f" (tracked commands left out: {len(node['skipped'])})" if node.get("skipped") else "")
-                for version, node in channel.get("nodes", {}).items()
-            ]
-            said.append("npm " + "; ".join(nodes))
-        else:
+        elif name in SYSTEM_CHANNELS:
             said.append(f"{name} {channel.get('count', 0)}")
+        else:
+            items = channel.get("items") or []
+            left_out = channel.get("skipped") or []
+            said.append(
+                f"{name} {channel.get('count', 0)}"
+                + (f" ({_names(items)})" if items else "")
+                + (f" (left out, they provide tracked commands or may: {len(left_out)})" if left_out else "")
+            )
     apt = channels.get("apt") or {}
     if apt.get("autoremovable"):
         said.append(f"apt autoremove could take {apt['autoremovable']}; this command never does that")
@@ -219,33 +201,34 @@ def lines(channels: Mapping[str, Any]) -> list[str]:
     return said
 
 
-def _run(argv: Sequence[str], env: Mapping[str, str] | None = None) -> int:
+def _run(argv: Sequence[str], env: Mapping[str, str] | None = None, cwd: Path | None = None) -> int:
     """The status of an update. A signal that ended it ends the run: no next channel starts."""
     try:
-        status = procs.run_attached(list(argv), env=env)
+        status = procs.run_attached(list(argv), env=env, cwd=cwd)
     except OSError:
-        return 127
+        return _NOT_FOUND
     if status in _SIGNALLED:
         raise KeyboardInterrupt
     return status
 
 
-def update_user_channels(tracked_commands: set[str], offline: bool, env: Mapping[str, str]) -> dict[str, int]:
-    """The updates of what runs as the user; a status per channel that ran. Nothing is tracked by
-    this. A global npm package that provides a tracked command stays as it is."""
-    statuses: dict[str, int] = {}
+def update_user_channels(
+    tools: Sequence[Mapping[str, Any]], tracked_commands: set[str], offline: bool, env: Mapping[str, str], cwd: Path
+) -> list[tuple[str, int, str | None]]:
+    """The updates of what runs as the user: channel, status and what went wrong, in the order of
+    the declarations. Nothing is tracked by this. A tool with nothing to update does not run, one
+    that cannot say what there is to update fails, and what provides a tracked command stays as it is."""
+    statuses: list[tuple[str, int, str | None]] = []
     if offline:
         return statuses
     if shutil.which("flatpak"):
-        statuses["flatpak"] = _run(["flatpak", "update", "--user", "--noninteractive", "-y"])
-    npm = _guarded(_npm, tracked_commands, env)
-    for version, node in npm.get("nodes", {}).items():
-        names = [str(item["name"]) for item in node.get("items", ())]
-        if names:
-            path = dict(node_npms(env))[version]
-            statuses[f"npm {version}"] = _run([str(path), "update", "-g", *names], _node_env(path, env))
-    if shutil.which("rustup"):
-        statuses["rustup"] = _run(["rustup", "update", "stable"])
-    if shutil.which("sampletool"):
-        statuses["sampletool"] = _run(["sampletool", "tool", "upgrade", "--all"])
+        statuses.append(("flatpak", _run(["flatpak", "update", "--user", "--noninteractive", "-y"]), None))
+    for tool in tools:
+        channel = f"tool:{tool['name']}"
+        read = _guarded(_read_tool, tool, tracked_commands, env, cwd)
+        names = [str(item["name"]) for item in read.get("items") or ()]
+        if read.get("error"):
+            statuses.append((channel, 1, f"could not be read: {read['error']}"))
+        elif names:
+            statuses.append((channel, _run(["sh", "-c", str(tool["update"]), "sh", *names], env, cwd), None))
     return statuses

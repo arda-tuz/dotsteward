@@ -220,6 +220,9 @@
     "host_input": "instance",
     "check_aliases": {}
   },
+  "upgrade": {
+    "tools": []
+  },
   "hosts": {
     "producer": null
   },

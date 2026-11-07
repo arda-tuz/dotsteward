@@ -1,0 +1,31 @@
+# expect: upgrade.tools[0].name: "Not_A_Name" does not match "^[a-z0-9][a-z0-9-]{0,31}$"
+# expect: upgrade.tools[1].check: expected a non-empty string
+# expect: missing required key upgrade.tools[2].update
+# jsonschema: invalid
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["workstation"]
+
+[[upgrade.tools]]
+name = "Not_A_Name"
+check = "example-tool list"
+update = "example-tool update"
+
+[[upgrade.tools]]
+name = "example-empty"
+check = ""
+update = "example-tool update"
+
+[[upgrade.tools]]
+name = "example-half"
+check = "example-tool list"

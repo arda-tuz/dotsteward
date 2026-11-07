@@ -88,7 +88,7 @@ rm -f -- "$analysis"
 assert_exit 0 on_terminal 'Update what=2' --
 assert_not_contains "$DS_STDOUT" "Update these too"
 assert_contains "$(steps '^apt commit')" '"mode":"all"'
-assert_order '^apt commit' '^sudo -n snap refresh$' '^sudo -n flatpak update --system' '^sudo -k' '^claude update' '^npm v22.11.0 update -g' '^rustup update stable'
+assert_order '^apt commit' '^sudo -n snap refresh$' '^sudo -n flatpak update --system' '^sudo -k' '^claude update' '^example-globals update v22/example-global' '^example-lang update stable'
 [[ ! -e $analysis ]] || ds_fail "--all has no analysis"
 last_report '.data.mode == "all"'
 

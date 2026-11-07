@@ -51,7 +51,9 @@ def _status_of(returncode: int) -> int:
     return 128 - returncode if returncode < 0 else returncode
 
 
-def run_attached(argv: Sequence[str], env: Mapping[str, str] | None = None) -> int:
+def run_attached(
+    argv: Sequence[str], env: Mapping[str, str] | None = None, cwd: str | os.PathLike[str] | None = None
+) -> int:
     """Runs ARGV in this process group with this terminal and returns its status.
     SIGINT from the terminal reaches the child by itself; SIGTERM and SIGHUP reach
     it through this process. A signal before the child exists waits for it. Raises
@@ -72,7 +74,7 @@ def run_attached(argv: Sequence[str], env: Mapping[str, str] | None = None) -> i
 
     previous = {number: signal.signal(number, forward) for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     try:
-        child = subprocess.Popen(argv, env=env)
+        child = subprocess.Popen(argv, env=env, cwd=cwd)
         for signum in early:
             child.send_signal(signum)
         returncode = child.wait()

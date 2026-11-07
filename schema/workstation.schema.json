@@ -390,6 +390,49 @@
       },
       "additionalProperties": false
     },
+    "upgrade": {
+      "type": "object",
+      "description": "What dotsteward upgrade does beyond the channels of the system (apt, snap, flatpak).",
+      "properties": {
+        "tools": {
+          "type": "array",
+          "default": [],
+          "description": "The other updaters of this instance, in the order they run. Each command runs through sh in the checkout, as the user.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+                "description": "The name in the analysis and in the report."
+              },
+              "check": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Read only: prints one line per thing that can be updated, the first word its name. Exit 0 is an answer, 127 means not on this machine, anything else is said as an error."
+              },
+              "update": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Runs when check named something, with the names that remain as its arguments (\"$@\")."
+              },
+              "skip_providers": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Read only: given a name as $1, prints the commands it puts on PATH. A name that provides a tracked command stays out of update, and so does one this command fails for."
+              }
+            },
+            "required": [
+              "name",
+              "check",
+              "update"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "hosts": {
       "type": "object",
       "description": "The machines of the instance.",

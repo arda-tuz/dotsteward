@@ -862,8 +862,13 @@ class Upgrade:
             self.run.step("user-channels", report.PARTIAL, detail="offline")
             return
         commands = facts.tracked_commands(facts.mirror(self.instance, self.env), self._active())
-        for channel, status in analysis.update_user_channels(commands, False, self.env).items():
-            self.run.step(channel, status)
+        tools = facts.tools(self.instance)
+        for channel, status, problem in analysis.update_user_channels(tools, commands, False, self.env, self.root):
+            if problem:
+                _say(f"{channel}: {problem}")
+                self.run.step(channel, status, detail=problem)
+            else:
+                self.run.step(channel, status)
 
     # --- phase 3 ---------------------------------------------------------------------------
 
@@ -1138,7 +1143,7 @@ class Upgrade:
 
     def _analysis(self) -> Mapping[str, Any]:
         commands = facts.tracked_commands(facts.mirror(self.instance, self.env), self._active())
-        channels = analysis.read_user_channels(commands, self.offline, self.env)
+        channels = analysis.read_user_channels(facts.tools(self.instance), commands, self.offline, self.env, self.root)
         channels["apt"] = {"available": False, "count": 0}
         if self.linux:
             try:

@@ -76,6 +76,7 @@ CATALOG_ORDER = (
 
 # Keys of the [profiles] table that are not profile tables.
 PROFILE_KEYS = ("names", "default", "check", "bootstrap")
+SYSTEM_CHANNELS = ("apt", "snap", "flatpak")
 
 LINUX_USER_PATTERN = "^[a-z_][a-z0-9_-]*$"
 
@@ -553,6 +554,13 @@ def _semantic_errors(document: dict[str, Any], raw: dict[str, Any], catalog: Seq
     messages: list[str] = []
     if any(system.endswith("-linux") for system in systems) and not nix_match(LINUX_USER_PATTERN, username):
         messages.append(f"identity.username: {to_json(username)} is not a valid Linux user name ({LINUX_USER_PATTERN})")
+
+    tool_names = [tool["name"] for tool in raw.get("upgrade", {}).get("tools", [])]
+    for index, name in enumerate(tool_names):
+        if name in SYSTEM_CHANNELS:
+            messages.append(f"upgrade.tools[{index}].name: {to_json(name)} is a channel of the system")
+        elif name in tool_names[:index]:
+            messages.append(f"upgrade.tools[{index}].name: {to_json(name)} is declared twice")
 
     for index, name in enumerate(names):
         if name in PROFILE_KEYS:

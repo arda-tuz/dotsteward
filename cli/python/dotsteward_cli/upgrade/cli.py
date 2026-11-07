@@ -10,8 +10,9 @@ import argparse
 import json
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 from dotsteward_cli import apt_plan, config, firmware, locks, report
 from dotsteward_cli.upgrade import plan, run
@@ -22,7 +23,7 @@ EXIT_INTERRUPTED = 130
 _MENU = """\
 Update what?
   1) Tracked only (then a read only analysis of the system and an offer)
-  2) Everything (apt, snap, flatpak, the global npm packages of every nodevers Node, rustup, sampletool tool)"""
+  2) Everything ({everything})"""
 _DESCRIPTION = (
     "Brings this machine and the shared lock to the newest stable versions. Without a flag a terminal "
     "asks what to update; without a terminal it is --tracked. Exit status: 0 done, 1 a refusal or a "
@@ -43,7 +44,7 @@ def _parser() -> argparse.ArgumentParser:
     mode.add_argument(
         "--all",
         action="store_true",
-        help="also apt as a whole, snap, flatpak, npm, rustup and sampletool tool; no second question",
+        help="also apt as a whole, snap, flatpak and the tools of [[upgrade.tools]]; no second question",
     )
     parser.add_argument("--plan", action="store_true", help="say what both modes would do and change nothing")
     parser.add_argument("--json", action="store_true", help="print the report as one JSON document")
@@ -62,8 +63,9 @@ def _say_error(text: str) -> None:
     print(f"[dotsteward] ERROR: {text}", file=sys.stderr)
 
 
-def _choose_mode() -> str | None:
-    print(_MENU, flush=True)
+def _choose_mode(tools: Sequence[Mapping[str, Any]]) -> str | None:
+    everything = ", ".join(["apt", "snap", "flatpak", *(str(tool["name"]) for tool in tools)])
+    print(_MENU.format(everything=everything), flush=True)
     for _ in range(3):
         print("Choice [1/2]: ", end="", flush=True)
         answer = sys.stdin.readline()
@@ -125,7 +127,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     mode = "tracked" if options.tracked else "all" if options.all else None
     if mode is None:
         try:
-            mode = _choose_mode() if terminal else "tracked"
+            mode = _choose_mode(instance.config["upgrade"]["tools"]) if terminal else "tracked"
         except KeyboardInterrupt:
             print()
             _say_error("no answer: nothing was changed")

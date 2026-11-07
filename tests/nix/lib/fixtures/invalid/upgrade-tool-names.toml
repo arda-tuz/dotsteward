@@ -1,0 +1,31 @@
+# expect: upgrade.tools[0].name: "snap" is a channel of the system
+# expect: upgrade.tools[2].name: "example-tool" is declared twice
+# jsonschema: valid
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+state_version = "26.05"
+
+[profiles]
+names = ["workstation"]
+
+[[upgrade.tools]]
+name = "snap"
+check = "example-tool list"
+update = "example-tool update"
+
+[[upgrade.tools]]
+name = "example-tool"
+check = "example-tool list"
+update = "example-tool update"
+
+[[upgrade.tools]]
+name = "example-tool"
+check = "example-tool list"
+update = "example-tool update"
