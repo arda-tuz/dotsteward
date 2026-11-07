@@ -302,7 +302,8 @@ _darwin_app_archive_cleanup() {
 
 # _darwin_app_archive_fetch NAME URL SIZE SHA256 TMP_DIR: runs in a subshell
 # whose EXIT trap detaches and removes TMP_DIR; downloads and checks the
-# archive, then replaces the bundle. The subshell is the left operand of
+# archive (and the signature the lock records for _aa_pin, methods.sh), then
+# replaces the bundle. The subshell is the left operand of
 # `||`, where bash ignores errexit, so every step checks its own status.
 _darwin_app_archive_fetch() {
   local name=$1 url=$2 size=$3 sha256=$4 tmp_dir=$5 asset format staged found status=0
@@ -313,6 +314,8 @@ _darwin_app_archive_fetch() {
   log "$name (app-archive): downloading $url"
   download_verified "$url" "$tmp_dir/$asset" "$size" "$sha256" || status=$?
   ((status == 0)) || die "$name (app-archive): download failed (curl exit $status): $url"
+  _methods_signature_verify "$name" app-archive "$_aa_pin" "$_aa_entry" "$url" "$tmp_dir/$asset" ||
+    _methods_signature_unsigned "$name" app-archive "$_aa_pin" "$url"
   format=$(_darwin_archive_format "$tmp_dir/$asset") ||
     die "$name (app-archive): unsupported archive format (expected a zip or a disk image): $url"
 

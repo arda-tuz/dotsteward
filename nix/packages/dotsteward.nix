@@ -3,9 +3,9 @@
 # The framework calls it with its own nixpkgs (packages.<system>.dotsteward);
 # an instance calls it with the instance nixpkgs, so the Python engines run
 # with the instance's python and tomlkit. Bash commands run with the
-# toolchain below first on PATH on every platform; everything else
-# (ssh, sudo, platform package managers, catalog CLIs) resolves from the
-# inherited PATH.
+# toolchain below (cosign among it) first on PATH on every platform;
+# everything else (ssh, sudo, platform package managers, catalog CLIs)
+# resolves from the inherited PATH.
 #
 # The package copies the files of nix/packages/dotsteward-files.nix (cli/,
 # engines/, skills/manifest.json, privacy/, schema/, VERSION, template/ and
@@ -52,6 +52,9 @@ let
     pkgs.git
     flock
     pkgs.curl
+    # Verifies the sigstore signatures the lock records, offline (cli/lib/methods.sh,
+    # pins apply).
+    pkgs.cosign
     python
   ];
 

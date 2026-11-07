@@ -15,7 +15,8 @@
 #   external                    installed by the user; codex is expected on
 #                               PATH
 # Sigstore: the Linux release ships a sigstore bundle for the binary inside
-# the archive, darwin none; the installer verifies sha256 only (README.md,
+# the archive, darwin none; the installer verifies sha256, and the signature
+# `pins apply` records in the pin when there is one (README.md,
 # "Verification").
 #
 # options (the [components.codex] options table of workstation.toml):

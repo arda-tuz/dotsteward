@@ -64,9 +64,10 @@ so a pin bump never downgrades a machine; it only raises the floor.
   `e2e-code-mode-host.sh`, which starts it with `--help`.
 - Sigstore: the Linux release ships `codex-x86_64-unknown-linux-musl.sigstore`
   for the extracted binary; darwin ships none (README.md, "Verification").
-  Re-check this when the official-binary method gains `sha256+sigstore`
-  support or upstream starts signing the archives or the darwin binary, and
-  record the new result in README.md.
+  `pins apply` records and verifies it (docs/pins-engine.md, Authenticity).
+  Re-check this when upstream starts signing the archives or the darwin
+  binary (then `verify = "sha256+sigstore"` fits both platforms), and record
+  the new result in README.md.
 - Plugins: the hook relies on `codex plugin list --json` (an `installed`
   list with `pluginId`, `installed`, `enabled`, `version` and an optional
   local `source` with `path`), on `codex plugin add NAME@MARKETPLACE` and on

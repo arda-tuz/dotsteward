@@ -14,9 +14,10 @@ from dotsteward_cli import atomic
 from ..instance import Instance
 from ..latest.adapters import Request
 from ..latest.upstream import github_repo
-from ..lockfile import LockPath, Locks, dump, parse_path
+from ..lockfile import VERSIONS, LockPath, Locks, dump, parse_path
 from ..syncer import sync_locks, write_changed
 from . import plan as routing
+from .authenticity import Authenticity, Finding
 from .plan import Declared, Group, Move, flake_original, hash_fields, pin_of, version_field
 from .tools import PLACEHOLDER, GroupFailure, Tools, Waits, nix_system
 
@@ -33,8 +34,12 @@ class Writer:
     instance: Instance
     tools: Tools
     declared: Declared
+    # Signatures of the downloads (None: nothing is downloaded, as in the tests of other kinds).
+    authenticity: Authenticity | None = None
     # Review items that wait for nothing: what the report should say about a move that happened.
     notes: list[dict[str, Any]] = field(default_factory=list)
+    # The authenticity of each moved row, by id: a download's signature, "unsigned" for the rest.
+    findings: dict[str, Finding] = field(default_factory=dict)
 
     # -- locks --
 
@@ -195,12 +200,25 @@ class Writer:
         if not digest or not size:
             fetched, fetched_size = self.tools.prefetch(str(url))
             digest, size = digest or fetched, size or fetched_size
+        pin_text = path.text().removeprefix("versions:")
+        finding = Finding("unsigned")
+        if self.authenticity is not None:
+            versions_document = self.instance.load_locks().documents[VERSIONS]
+            finding = self.authenticity.examine(
+                versions_document, pin_text, str(url), str(digest), _repository(move.request)
+            )
+        self.findings[move.id] = finding
 
         def change(locks: Locks) -> None:
             target = locks.get(path)
             target[fields["version"]] = move.latest
             target[fields["url"]], target[fields["size"]], target[fields["sha256"]] = url, size, digest
             self.release_fields(target, _tag(move), f"v{old}", _repository(move.request))
+            # A signature belongs to one file: the old one never stays with the new file.
+            target.pop("signature", None)
+            if finding.signature is not None:
+                target["signature"] = finding.signature
+            record_trust(locks.documents[VERSIONS], pin_text, finding)
 
         self.edit(change)
 
@@ -227,6 +245,7 @@ class Writer:
         self.edit(change)
         self.sync()
         self.refresh_hashes(path, str(path.steps[-1].key))
+        self.findings[move.id] = Finding("unsigned")
 
     # -- npm bundles --
 
@@ -327,6 +346,8 @@ class Writer:
 
         self.edit(change)
         self.sync()
+        # PEP 740 attestations are not read yet: a requirement is hash-pinned only.
+        self.findings.update((move.id, Finding("unsigned")) for move in group.moves)
 
     def _pypi_pin(self, locks: Locks, move: Move, text: str) -> None:
         name = _package(move)
@@ -340,6 +361,17 @@ class Writer:
             pin[version_field(move, self.declared, pin) or "version"] = found[1]
         else:
             locks.set(path, found[1])
+
+
+def record_trust(versions: dict[str, Any], pin: str, finding: Finding) -> None:
+    """Writes the signer of PIN (and the trusted root a signature was verified
+    with) into the ``trust`` section of the versions lock."""
+    if finding.signer is None:
+        return
+    trust = versions.setdefault("trust", {})
+    if finding.root is not None:
+        trust["sigstore_root"] = finding.root
+    trust.setdefault("signers", {})[pin] = finding.signer
 
 
 def _path(move: Move) -> LockPath:

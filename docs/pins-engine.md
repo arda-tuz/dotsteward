@@ -23,8 +23,8 @@ package files.
 
 Framework-owned sections of `versions.lock.json` are `schema_version`,
 `generated_at`, `policy` ([update-policy.md](update-policy.md)), `nix` (the
-Nix installer read by the first bootstrap), `flake_inputs` and
-`nix_packages`. Every other section belongs to the components that declare
+Nix installer read by the first bootstrap), `flake_inputs`,
+`nix_packages` and `trust` ([Authenticity](#authenticity)). Every other section belongs to the components that declare
 rules for it.
 
 ## Commands
@@ -194,3 +194,78 @@ holding the exit status. Repo-owned skills have no row and are never touched. A 
 Exit codes are those of a run report ([exit-codes.md](exit-codes.md)): 0 done, 1 a
 group failed, 3 review items wait, 6 an upstream could not be read. The run report is
 `pins-apply`.
+
+## Authenticity
+
+The digest of a pin binds the file the pin names; a digest published next to the
+file catches corruption, not a compromised release. So when the writer moves a
+`download-pin` it also looks for a signature of the new file and verifies it:
+
+1. A Sigstore bundle published next to the file: `<url>.sigstore.json`,
+   `<url>.sigstore`, `<url>.bundle`, and for an archive (`.tar.gz`, `.tgz`,
+   `.tar.xz`, `.txz`, `.tar.bz2`, `.tbz2`, `.tar`, `.zip`) the same names after the
+   archive without its extension: the signature of the member of that name (the
+   layout of release workflows that sign the binary inside the archive).
+2. Otherwise, when the declaration names a GitHub repository, a GitHub artifact
+   attestation of the digest (`gh api repos/<repo>/attestations/sha256:<digest>`,
+   then `gh attestation download`): build provenance
+   (`https://slsa.dev/provenance/v1`) logged in the public transparency log.
+
+Every lookup has a timeout (60 seconds each, 180 for one pin), and a lookup that
+fails counts as nothing found, so discovery never holds a run. The trusted root
+comes from `gh attestation trusted-root` (the GitHub CLI checks it with TUF), else
+the one the lock recorded. cosign verifies the bundle against it with the
+signer's identity regular expression and OIDC issuer; it needs no network.
+
+The first verified signer of a pin is trusted on first use: the lock records its
+certificate identity as a regular expression, escaped, with every run of digits after
+`@refs/tags/` generalized (so the next release of the same workflow matches and no
+other workflow, repository or branch does), and its OIDC issuer. The report says
+`trusted on first use`. From then on:
+
+| Found | Result |
+| --- | --- |
+| a signature of the pinned signer that verifies | the pin moves with the signature |
+| a signature of another identity or issuer | `authenticity-signer-changed`; the pin stays |
+| a signature that does not verify | `authenticity-failed`; the pin stays |
+| no signature for a signed source | `authenticity-signature-missing`; the pin stays |
+| a signature, and no trusted root | `authenticity-no-trusted-root`; the pin stays |
+| no signature for an unsigned source | the pin moves, labelled `unsigned` |
+
+A source that never offered a signature moves as before: there is no minimum
+release age for unsigned files (decision T8-a). Its signer entry says
+`unsigned` and the report labels the move: the `pins apply` line
+(`moved <id>: <from> -> <to> (unsigned)` or `(sigstore: <identity>)`), the
+`authenticity` of each entry of `moved` in the JSON summary and the step of the
+run report. Requirements of a `pypi` group and packages built from source are
+labelled `unsigned` too; their PEP 740 attestations and upstream signatures are
+not read yet.
+
+What the lock holds:
+
+```json
+"agent_tools": { "example": { "minimum_version": "1.2.0", "url": "https://...", "size": 1, "sha256": "...",
+  "signature": { "kind": "message", "subject": "member", "member": "example-linux",
+                 "identity": "https://github.com/example/example/.github/workflows/release.yml@refs/tags/v1.2.0",
+                 "bundle": { "mediaType": "application/vnd.dev.sigstore.bundle+json;version=0.1", "...": "..." } } } },
+"trust": {
+  "sigstore_root": { "mediaType": "application/vnd.dev.sigstore.trustedroot+json;version=0.1", "...": "..." },
+  "signers": {
+    "agent_tools.example": { "kind": "sigstore",
+      "identity_regexp": "^https://github\\.com/example/example/\\.github/workflows/release\\.yml@refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "issuer": "https://token.actions.githubusercontent.com", "first_seen": "2026-11-01" },
+    "agent_tools.other": { "kind": "unsigned", "first_seen": "2026-11-01" } } }
+```
+
+`kind` is `message` (a signature of the file) or `attestation` (an in-toto statement
+in DSSE, with its `predicate_type`); `subject` is `asset` (the downloaded file) or
+`member` (a file of the archive). The bundle is the one cosign verified; a legacy
+cosign bundle (`base64Signature`, `cert`, `rekorBundle`) is converted to a v0.1
+Sigstore bundle first, since cosign reads a trusted root only with Sigstore
+bundles. The install methods verify a recorded signature again after the
+download and before anything is replaced (`official-binary`, `deb`,
+`app-archive`), from the lock alone; `verify = "sha256+sigstore"` makes the
+signature of an `official-binary` pin mandatory
+([component-contract.md](component-contract.md)). Attestations GitHub issues for
+private repositories (its own certificate authority and timestamps, no
+transparency log entry) are not read.

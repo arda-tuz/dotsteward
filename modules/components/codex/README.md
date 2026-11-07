@@ -268,10 +268,14 @@ assets list (`https://api.github.com/repos/openai/codex/releases/latest`):
   byte. The darwin release ships no sigstore bundle for its archive or
   binary.
 - Decision: `verify = "sha256"` on both platforms. The installer checks size
-  and SHA-256 from the lock, which binds the exact archive the pin names.
-  Sigstore would cover Linux only, would verify the member after extraction
-  rather than the download, and needs a sigstore client on the machine;
-  `sha256+sigstore` is not implemented by the official-binary method yet.
+  and SHA-256 from the lock, which binds the exact archive the pin names, and
+  verifies the sigstore signature the pin records whenever there is one
+  ([docs/pins-engine.md](../../../docs/pins-engine.md#authenticity)):
+  `pins apply` finds the member-named bundle next to the Linux archive,
+  verifies it, records it and pins the identity on first use, with the tag
+  generalized (`...rust-release\.yml@refs/tags/rust-v[0-9]+\.[0-9]+\.[0-9]+$`). `sha256+sigstore` would refuse the darwin pin, which
+  has no bundle, and every Linux pin recorded before the signature was, so the
+  component does not demand it.
 
 ## Files
 

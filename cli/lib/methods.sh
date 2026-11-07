@@ -252,6 +252,115 @@ _methods_pin_download() {
   printf '%s\n' "$fields"
 }
 
+# --- Signatures -----------------------------------------------------------
+# A pin entry may record the sigstore signature of its download (written by
+# `dotsteward pins apply`, docs/pins-engine.md):
+#   "signature": { "kind": "message" | "attestation", "subject": "asset" |
+#                  "member", "member": PATH, "predicate_type": TYPE,
+#                  "identity": SAN, "bundle": { a Sigstore bundle } }
+# and versions.lock.json `trust` the trusted root and the signer of the pin:
+#   "trust": { "sigstore_root": { a Sigstore trusted root },
+#              "signers": { PIN: { "kind": "sigstore", "identity_regexp": RE,
+#                                  "issuer": URL, "first_seen": DATE } } }
+# Every recorded signature is verified, offline, before a download is used.
+
+# _methods_pin_signed ENTRY: the lock entry records a signature.
+_methods_pin_signed() {
+  [[ $(jq -r '.signature | type' <<<"$1") == object ]]
+}
+
+# _methods_signature_required NAME METHOD PATH ENTRY: dies when the entry at
+# PATH records no signature (verify = "sha256+sigstore").
+_methods_signature_required() {
+  _methods_pin_signed "$4" ||
+    die "$1 ($2): verify = \"sha256+sigstore\" needs a recorded signature, and ${DS_PINS_VERSIONS_LOCK##*/} $3 has none; run 'dotsteward pins apply' to record one"
+}
+
+# _methods_signature_unsigned NAME METHOD PATH URL: reports a download whose
+# pin records no signature.
+_methods_signature_unsigned() {
+  log "$1 ($2): $4 is unsigned: ${DS_PINS_VERSIONS_LOCK##*/} $3 records no signature"
+}
+
+# _methods_signature_verify NAME METHOD PATH ENTRY URL FILE [ROOT]: verifies
+# the signature the entry ENTRY at PATH records for the download of URL,
+# saved as FILE; ROOT is the directory an archive was extracted into, for the
+# signature of a member. The bundle, the trusted root and the signer come
+# from the lock, so cosign needs no network. Returns 1 when the entry records
+# no signature; dies when the signature does not verify.
+_methods_signature_verify() {
+  local name=$1 method=$2 pin=$3 entry=$4 url=$5 file=$6 root=${7:-}
+  local lock lock_name signature signer regexp issuer kind subject member subject_file label what work output status=0
+  local -a command=()
+  _methods_pin_signed "$entry" || return 1
+  lock_name=${DS_PINS_VERSIONS_LOCK##*/}
+  lock=$(config_instance_path "$DS_PINS_VERSIONS_LOCK") || exit 1
+  signature=$(jq -c '.signature' <<<"$entry")
+  signer=$(jq -c --arg pin "$pin" '.trust.signers[$pin]? // empty | select(type == "object" and .kind == "sigstore")' "$lock") ||
+    die "cannot read $lock"
+  [[ -n $signer ]] || die "$name ($method): $lock_name $pin records a signature, but trust.signers has no sigstore signer for it"
+  regexp=$(jq -r '.identity_regexp | strings' <<<"$signer")
+  issuer=$(jq -r '.issuer | strings' <<<"$signer")
+  [[ -n $regexp && -n $issuer ]] || die "$name ($method): the signer of $pin in $lock_name lacks identity_regexp or issuer"
+  [[ $(jq -r '.trust.sigstore_root | type' "$lock") == object ]] ||
+    die "$name ($method): $lock_name records a signature for $pin but no trust.sigstore_root"
+  kind=$(jq -r '.kind // empty | strings' <<<"$signature")
+  subject=$(jq -r '.subject // "asset" | strings' <<<"$signature")
+  case $kind in
+    message)
+      command=(verify-blob)
+      what="sigstore signature"
+      ;;
+    attestation)
+      local predicate
+      predicate=$(jq -r '.predicate_type // empty | strings' <<<"$signature")
+      [[ -n $predicate ]] || die "$name ($method): the attestation $lock_name $pin records has no predicate_type"
+      command=(verify-blob-attestation --type "$predicate")
+      what="sigstore attestation ($predicate)"
+      ;;
+    *) die "$name ($method): unknown signature kind in $lock_name $pin: ${kind:-none}" ;;
+  esac
+  case $subject in
+    asset)
+      subject_file=$file
+      label=${url%%[?#]*}
+      label=${label##*/}
+      ;;
+    member)
+      member=$(jq -r '.member // empty | strings' <<<"$signature")
+      [[ -n $member && $member != /* && /$member/ != */../* && /$member/ != */./* ]] ||
+        die "$name ($method): invalid signed member in $lock_name $pin: ${member:-none}"
+      [[ -n $root ]] || die "$name ($method): $lock_name $pin records the signature of an archive member, and $method does not extract archives"
+      subject_file=$root/$member
+      [[ -f $subject_file && ! -L $subject_file ]] ||
+        die "$name ($method): the signed member $member is not a regular file in $url"
+      label=$member
+      ;;
+    *) die "$name ($method): unknown signature subject in $lock_name $pin: $subject" ;;
+  esac
+  require_command cosign
+  work=$(mktemp -d "${TMPDIR:-/tmp}/dotsteward-signature.XXXXXX") ||
+    die "$name ($method): cannot create a temporary directory"
+  if jq '.bundle' <<<"$signature" >"$work/bundle.json" && jq '.trust.sigstore_root' "$lock" >"$work/root.json"; then
+    # A home of its own: cosign keeps no state between runs and never reads
+    # a TUF cache; the trusted root of the lock is the only trust.
+    output=$(HOME=$work timeout 120 cosign "${command[@]}" --trusted-root "$work/root.json" --bundle "$work/bundle.json" \
+      --certificate-identity-regexp "$regexp" --certificate-oidc-issuer "$issuer" "$subject_file" 2>&1 </dev/null) || status=$?
+  else
+    output="cannot write the bundle or the trusted root"
+    status=1
+  fi
+  cleanup_temp_dir "$work"
+  if ((status)); then
+    local detail
+    detail=$(sed -n 's/^Error: //p' <<<"$output" | head -n 1)
+    [[ -n $detail ]] || detail=$(tail -n 1 <<<"$output")
+    ((status != 124)) || detail="cosign did not finish within 120 seconds"
+    die "$name ($method): the $what of $label does not verify: ${detail:-cosign exit $status}"
+  fi
+  log "$name ($method): $what of $label verified: $(jq -r '.identity // empty | strings' <<<"$signature")"
+}
+
 # methods_version_compare A B: the one version order of the framework
 # (cli/python/dotsteward_cli/versions.py). Two equal strings, the usual check,
 # start no process. A failure stops the caller: an order nobody computed must
@@ -530,12 +639,11 @@ methods_official_binary_install() {
   [[ $(methods_component_method "$name") == official-binary ]] ||
     die "$name: not an official-binary component"
   _methods_official_binary_state "$name"
-  # A declared verification is never skipped silently.
+  # A declared verification is never skipped silently: sha256+sigstore
+  # needs a recorded signature for every download; a recorded signature is
+  # verified whatever verify says.
   case $_ob_verify in
-    sha256) ;;
-    sha256+sigstore)
-      die "$name (official-binary): verify = \"sha256+sigstore\" is not supported yet; use \"sha256\""
-      ;;
+    sha256 | sha256+sigstore) ;;
     *) die "$name (official-binary): unknown verify: $_ob_verify" ;;
   esac
   member=${_ob_member//\{version\}/$_ob_version}
@@ -579,13 +687,15 @@ methods_official_binary_install() {
     download=$(_methods_pin_download "$name" official-binary "$pin" "$entry") || exit 1
     read -r url size sha256 <<<"$download"
     [[ $url == https://* ]] || die "$name (official-binary): refusing a non-HTTPS download URL: $url"
-    sources+=("$url"$'\t'"$size"$'\t'"$sha256"$'\t'"$companion_member"$'\t'"$target")
+    [[ $_ob_verify != sha256+sigstore ]] || _methods_signature_required "$name" official-binary "$pin" "$entry"
+    sources+=("$url"$'\t'"$size"$'\t'"$sha256"$'\t'"$companion_member"$'\t'"$target"$'\t'"$pin")
   done
   if ((replace)); then
     download=$(_methods_pin_download "$name" official-binary "$_ob_pin" "$_ob_entry") || exit 1
     read -r url size sha256 <<<"$download"
     [[ $url == https://* ]] || die "$name (official-binary): refusing a non-HTTPS download URL: $url"
-    sources+=("$url"$'\t'"$size"$'\t'"$sha256"$'\t'"$member"$'\t'"$_ob_dest")
+    [[ $_ob_verify != sha256+sigstore ]] || _methods_signature_required "$name" official-binary "$_ob_pin" "$_ob_entry"
+    sources+=("$url"$'\t'"$size"$'\t'"$sha256"$'\t'"$member"$'\t'"$_ob_dest"$'\t'"$_ob_pin")
   fi
 
   tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotsteward-official-binary.XXXXXX") ||
@@ -623,18 +733,18 @@ _methods_official_binary_replaceable() {
 }
 
 # _methods_official_binary_fetch NAME TMP_DIR SOURCE...: runs in a subshell
-# that removes TMP_DIR; each SOURCE is URL SIZE SHA256 MEMBER DEST, separated
-# by tabs. Downloads and extracts all of them, then installs all of them, so a
+# that removes TMP_DIR; each SOURCE is URL SIZE SHA256 MEMBER DEST PIN,
+# separated by tabs. Downloads and extracts all of them, then installs all of them, so a
 # refused download replaces nothing. The subshell is the left operand of `||`,
 # where bash ignores errexit, so every step checks its own status.
 _methods_official_binary_fetch() {
-  local name=$1 tmp_dir=$2 source url size sha256 member dest index=0
+  local name=$1 tmp_dir=$2 source url size sha256 member dest pin index=0
   shift 2
   local -a staged=() targets=()
   for source in "$@"; do
-    IFS=$'\t' read -r url size sha256 member dest <<<"$source"
+    IFS=$'\t' read -r url size sha256 member dest pin <<<"$source"
     index=$((index + 1))
-    _methods_official_binary_stage "$name" "$url" "$size" "$sha256" "$member" "$tmp_dir/$index"
+    _methods_official_binary_stage "$name" "$url" "$size" "$sha256" "$member" "$tmp_dir/$index" "$pin"
     staged+=("$_ob_staged")
     targets+=("$dest")
   done
@@ -643,11 +753,11 @@ _methods_official_binary_fetch() {
   done
 }
 
-# _methods_official_binary_stage NAME URL SIZE SHA256 MEMBER DIR: downloads and
-# verifies the asset in the new directory DIR and extracts it; sets _ob_staged
-# to the file to install.
+# _methods_official_binary_stage NAME URL SIZE SHA256 MEMBER DIR PIN: downloads
+# and verifies the asset in the new directory DIR, extracts it and verifies the
+# signature the lock records at PIN; sets _ob_staged to the file to install.
 _methods_official_binary_stage() {
-  local name=$1 url=$2 size=$3 sha256=$4 member=$5 dir=$6 asset status=0
+  local name=$1 url=$2 size=$3 sha256=$4 member=$5 dir=$6 pin=$7 asset entry status=0
   asset=${url%%[?#]*}
   asset=${asset##*/}
   [[ -n $asset ]] || asset=download
@@ -667,6 +777,9 @@ _methods_official_binary_stage() {
     *) member='' ;;
   esac
   ((status == 0)) || die "$name (official-binary): cannot extract $asset (exit $status)"
+  entry=$(_methods_pin_entry "$name" official-binary "$pin") || exit 1
+  _methods_signature_verify "$name" official-binary "$pin" "$entry" "$url" "$dir/$asset" "$dir/extracted" ||
+    _methods_signature_unsigned "$name" official-binary "$pin" "$url"
   if [[ -n $member ]]; then
     _ob_staged=$dir/extracted/$member
     [[ -f $_ob_staged && ! -L $_ob_staged && -x $_ob_staged ]] ||
@@ -1251,7 +1364,7 @@ _methods_deb_check() {
 # shellcheck disable=SC2034 # METHODS_DEB_* are read by the callers
 methods_deb_transaction() {
   local name package met tmp_dir status=0 queued existing download url size sha256 detail
-  local -a names=("$@") apt_queue=() deb_names=() deb_urls=() deb_sizes=() deb_sha=() deb_files=()
+  local -a names=("$@") apt_queue=() deb_names=() deb_pins=() deb_urls=() deb_sizes=() deb_sha=() deb_files=()
   local -a deb_expected=() deb_arch=()
   local -a src_components=() src_json=() src_text=() src_key=()
   local -A component_apt=() component_deb=() component_src=() component_bridge=() src_seen=()
@@ -1272,6 +1385,7 @@ methods_deb_transaction() {
       download=$(_methods_pin_download "$name" deb "$_deb_pin" "$_deb_entry") || exit 1
       read -r url size sha256 <<<"$download"
       deb_names+=("$name")
+      deb_pins+=("$_deb_pin")
       deb_urls+=("$url")
       deb_sizes+=("$size")
       deb_sha+=("$sha256")
@@ -1371,7 +1485,7 @@ methods_deb_transaction() {
       die "cannot create a temporary directory for the deb transaction"
     (
       trap 'cleanup_temp_dir "$tmp_dir"' EXIT
-      local i file field found found_keys=() paths=() shown=()
+      local i file field found entry found_keys=() paths=() shown=()
       for i in "${!src_json[@]}"; do
         name=${src_components[i]}
         _methods_apt_source_paths "${src_json[i]}"
@@ -1397,6 +1511,9 @@ methods_deb_transaction() {
         status=0
         download_verified "${deb_urls[i]}" "$file" "${deb_sizes[i]}" "${deb_sha[i]}" || status=$?
         ((status == 0)) || die "$name (deb): download failed (curl exit $status): ${deb_urls[i]}"
+        entry=$(_methods_pin_entry "$name" deb "${deb_pins[i]}") || exit 1
+        _methods_signature_verify "$name" deb "${deb_pins[i]}" "$entry" "${deb_urls[i]}" "$file" ||
+          _methods_signature_unsigned "$name" deb "${deb_pins[i]}" "${deb_urls[i]}"
         field=$(deb_field "$file" Package) || die "$name (deb): cannot read the Package field of ${deb_urls[i]}"
         [[ " ${deb_expected[i]} " == *" $field "* ]] ||
           die "$name (deb): unexpected package $field in ${deb_urls[i]} (expected ${deb_expected[i]// /, })"

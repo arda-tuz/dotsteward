@@ -41,6 +41,7 @@ from ..latest.adapters import Planned
 from ..lockfile import Locks, load_json
 from . import plan as routing
 from .plan import Declared, Group, Plan
+from .authenticity import Authenticity
 from .skills import Upstreams, relative, replace_skill
 from .tools import GroupFailure, Tools, Waits
 from .writers import TEMPLATE_FILES, Writer
@@ -107,6 +108,9 @@ class Run:
         self.outcome = Outcome()
         self.upstreams = Upstreams(tools)
         self.writer_notes: list[dict[str, Any]] = []
+        self.writer: Writer | None = None
+        self.scratch = tempfile.TemporaryDirectory(prefix="dotsteward-pins-authenticity.")
+        self.authenticity = Authenticity(tools, Path(self.scratch.name))
 
     def say(self, text: str) -> None:
         if not self.quiet:
@@ -123,6 +127,7 @@ class Run:
                 self.generate()
         finally:
             self.upstreams.close()
+            self.scratch.cleanup()
 
     def group(self, group: Group) -> None:
         ids = [move.id for move in group.moves]
@@ -173,8 +178,9 @@ class Run:
             instance.path("flake.nix"), instance.path("flake.lock"), instance.versions_path, instance.skills_path
         )
         declared = Declared(instance, instance.load_locks())
-        writer = Writer(instance, self.tools, declared)
+        writer = Writer(instance, self.tools, declared, self.authenticity)
         self.writer_notes = writer.notes
+        self.writer = writer
         if group.kind == "framework":
             snapshot.keep(*(instance.path(name) for name in TEMPLATE_FILES))
             snapshot.keep(*sorted(instance.path(".dotsteward").glob("*")))
@@ -223,13 +229,30 @@ class Run:
 
     def done(self, group: Group) -> None:
         ids = []
+        findings = self.writer.findings if self.writer is not None else {}
+        checked = []
         for move in group.moves:
             ids.append(move.id)
-            self.outcome.moved.append(
-                {"id": move.id, "from": move.row.get("current"), "to": move.row.get("latest"), "group": group.name}
-            )
-            self.say(f"moved {move.id}: {move.row.get('current')} -> {move.row.get('latest')}")
-        self.run.step(group.name, report.OK, moved=ids)
+            moved: dict[str, Any] = {
+                "id": move.id,
+                "from": move.row.get("current"),
+                "to": move.row.get("latest"),
+                "group": group.name,
+            }
+            finding = findings.get(move.id)
+            label = ""
+            if finding is not None:
+                checked.append(finding.report(move.id))
+                moved["authenticity"] = finding.status
+                if finding.signature is not None:
+                    moved["identity"] = finding.signature["identity"]
+                label = f" ({finding.label()})"
+            self.outcome.moved.append(moved)
+            self.say(f"moved {move.id}: {move.row.get('current')} -> {move.row.get('latest')}{label}")
+        if checked:
+            self.run.step(group.name, report.OK, moved=ids, authenticity=checked)
+        else:
+            self.run.step(group.name, report.OK, moved=ids)
         self.outcome.groups.append({"group": group.name, "outcome": "moved", "ids": ids})
 
     def generate(self) -> None:

@@ -68,7 +68,7 @@ needs code specific to one component.
 | `install.official-binary.versionArgv` | list of strings | Arguments that print the version. |
 | `install.official-binary.versionRegex` | string | Regular expression whose first group is the version. |
 | `install.official-binary.policy` | `at-least` or `exact` | `at-least` keeps a newer binary the application installed itself. |
-| `install.official-binary.verify` | `sha256` or `sha256+sigstore` | Download verification. |
+| `install.official-binary.verify` | `sha256` or `sha256+sigstore` | Download verification: size and SHA-256 of the pin; `sha256+sigstore` also needs the sigstore signature `pins apply` records in the pin, and refuses a pin without one before any download. A recorded signature is verified with either value ([pins-engine.md](pins-engine.md#authenticity)). |
 | `install.official-binary.companions` | list of records | Further release assets the binary starts, each installed next to `dest` from its own verified pin. A binary that meets the pin stays and gets the files it lacks; a file in place is kept until the binary is replaced, when all move together. Checked next to the binary's resolved executable. |
 | `install.official-binary.companions.*.pin` | lock path | The asset: version, URL, size and SHA-256. The version must equal the binary's pin. Read only when a file is to be installed, so a lock without it stays valid for a file already in place. |
 | `install.official-binary.companions.*.member` | string | The archive member to install. |
@@ -115,7 +115,7 @@ needs code specific to one component.
 | Method | `fresh` profile | `adopt` profile | `dotsteward install --check-only` |
 | --- | --- | --- | --- |
 | `nix` | the packages join `home.packages` | same | the probes cover it |
-| `official-binary` | verified download (HTTPS, size, SHA-256, optional sigstore), the member installed with mode 0755 into `dest`, version re-checked | same (user level) | version per `policy`, else exit 1 with a rebuild hint |
+| `official-binary` | verified download (HTTPS, size, SHA-256, the recorded sigstore signature), the member installed with mode 0755 into `dest`, version re-checked | same (user level) | version per `policy`, else exit 1 with a rebuild hint |
 | `pypi` | the virtual environment created when missing, the requirements installed with `pip install --require-hashes`, the exact version re-checked, the console scripts linked | same (user level) | exact version and links, else exit 1 with a rebuild hint |
 | `deb` | one APT transaction: verified DEBs only where the installed version is below the floor, never a downgrade, then the floors re-checked | `not-managed`, unless named with `install --component` | `dpkg --compare-versions` against the floor |
 | `app-archive` | verified zip or disk image into `dest`; an existing bundle is backed up first | `not-managed` | `CFBundleShortVersionString` of the bundle |
