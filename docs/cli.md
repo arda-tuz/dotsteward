@@ -52,6 +52,8 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | `DOTSTEWARD_APT_BRIDGE_TIMEOUT` | Seconds the deb transaction lets one refresh of the local APT bridge take before it leaves the rest to the bridge's timer (default 1800). |
 | `DOTSTEWARD_ASSUME_YES` | `1` answers installer and package manager confirmations; meant for CI runners only. |
 | `DOTSTEWARD_CLI` | A CLI that `.dotsteward/cli.sh` runs instead of building the pinned one. |
+| `DOTSTEWARD_MACHINE` | The name of this machine, instead of `machine.json` of the state root ([machines.md](machines.md)). |
+| `DOTSTEWARD_MACHINE_REUSE` | `1`: this machine is the reinstall of the machine whose name it takes, like `host init --reuse`. |
 
 ## Commands
 
@@ -65,6 +67,8 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | [`doctor`](#doctor) | Check the health of the instance on this machine (--redact to share) |
 | [`e2e`](#e2e) | Verify this machine against the instance: the end-to-end checks of a profile |
 | [`gate`](#gate) | Validate the candidate tree of a maintenance transaction (the gate) |
+| [`generate`](#generate) | Regenerate the .dotsteward/ mirrors and the derived lock values |
+| [`host`](#host) | Name this machine and bring its host file to the remote (init, publish, show, list, rename, producer, check) |
 | [`init`](#init) | Create a new instance from the framework template (--dir, --remote, --components) |
 | [`install`](#install) | Run the system-install phase (deb transaction, phase hooks) or check every install method |
 | [`login-shell`](#login-shell) | Set, migrate or check the stable login shell of the instance |
@@ -75,9 +79,11 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | [`rollback`](#rollback) | Undo the instance's Home Manager setup (login shell, managed links, force-linked files) |
 | [`scan`](#scan) | Scan files, the staged index or a commit range for secrets and private data |
 | [`settings`](#settings) | Sync tracked application settings with the instance's settings buffer |
+| [`skills`](#skills) | Track the user's own skills, and report what the instance means for this machine |
 | [`static`](#static) | Check the static contracts of an instance or of the framework source |
-| [`sync`](#sync) | Regenerate the .dotsteward/ mirrors and the derived lock values |
-| [`update`](#update) | Prepare, publish and report a maintenance transaction |
+| [`sync`](#sync) | Old name of generate: a warning, then generate with the same arguments (until 2.0.0) |
+| [`txn`](#txn) | Prepare, publish and report a maintenance transaction |
+| [`update`](#update) | Old name of txn: a warning, then txn with the same arguments (until 2.0.0) |
 | [`version`](#version) | Print the framework version, source revision and narHash |
 
 ## `agents`
@@ -95,7 +101,10 @@ instance: official-binary and pypi components, the canonical skill root
 instance skills, refreshed drifted copies (backed up first), removed
 dangling skill links and the agents hooks; then it validates. check runs
 the same steps without changing anything and fails on the first
-difference.
+difference. A skill of the user's own (a repo-owned sentinel revision in the
+lock) is never overwritten: install takes a newer copy of the repository only
+when the local copy did not change, and a difference is a note for check,
+never a failure; see `dotsteward skills status`.
 
   --profile PROFILE   a profile of the instance (required)
   --generation PATH   a built Home Manager generation: its manifest, its
@@ -124,9 +133,10 @@ Bootstrap stage 1 (run by ./bootstrap.sh once Nix is installed).
 Usage: dotsteward bootstrap --profile PROFILE --stage 1
 
 Stage 1 of a fresh-machine bootstrap, run by the instance's ./bootstrap.sh
-(stage 0) once Nix is installed: the system-install phase, rebuild
---switch, the login shell, the desktop apply hooks (fresh mode) and the
-E2E checks. Start a bootstrap with ./bootstrap.sh --profile PROFILE.
+(stage 0) once Nix is installed: the name of this machine, the
+system-install phase, rebuild --switch, the login shell, the desktop apply
+hooks (fresh mode), the E2E checks and the host file of this machine. Start a
+bootstrap with ./bootstrap.sh --profile PROFILE.
 
   --profile PROFILE   the instance's bootstrap profile (profiles.bootstrap)
   --stage 1           the stage to run (internal; stage 0 is ./bootstrap.sh)
@@ -578,6 +588,157 @@ prints its FAILED line and the last 60 log lines on stderr.
 Exit status: 0 passed (or answered from the memo), 1 refused or failed.
 ```
 
+## `generate`
+
+Regenerate the .dotsteward/ mirrors and the derived lock values.
+
+```text
+Usage: dotsteward generate [--nix] [--skill NAME]...
+
+Evaluates the instance's dotstewardMirrors output (`nix eval --json
+--no-update-lock-file <instance>#dotstewardMirrors`), writes every mirror
+that changed to .dotsteward/<name> byte for byte (atomically), removes
+manifest.*.json and stage0.*.env mirrors the evaluation no longer
+produces, then runs `dotsteward pins sync` with the same flags against the
+fresh mirrors. Untracked, not ignored files other than those mirrors are
+refused before any Nix call, because Nix does not see them. Exit codes:
+0 ok, 1 refusal or error, else the status of `pins sync`.
+```
+
+## `host`
+
+Name this machine and bring its host file to the remote (init, publish, show, list, rename, producer, check).
+
+```text
+usage: dotsteward host [-h] SUBCOMMAND ...
+
+The name of this machine and its host file hosts/<name>.toml.
+
+positional arguments:
+  SUBCOMMAND
+    init      name this machine
+    publish   bring hosts/<name>.toml to the remote
+    show      print this machine
+    list      print the machines of this checkout
+    rename    give this machine another name
+    producer  name the machine that moves the upstream values
+    check     check the host files and the machines lists of the tree
+
+options:
+  -h, --help  show this help message and exit
+
+Exit status: 0 done, 1 refusal, 2 usage error; host publish: 4 a privacy
+finding, 6 no network or no login. Both publish nothing, and 6 asks to run it
+again.
+```
+
+### `host init`
+
+```text
+usage: dotsteward host init [-h] [--name NAME] [--profile PROFILE]
+                            [--tags TAG,TAG] [--reuse]
+
+Names this machine. Without a name on the command line it asks on a terminal;
+without a terminal the name comes from DOTSTEWARD_MACHINE, or with
+DOTSTEWARD_ASSUME_YES=1 from the cleaned host name, else it is a usage error.
+A name in hosts/ is the name of another machine, or of this one before a
+reinstall: a terminal asks, without a terminal it takes --reuse or
+DOTSTEWARD_MACHINE_REUSE=1. Only <state>/machine.json is written; the checkout
+stays as it is.
+
+options:
+  -h, --help         show this help message and exit
+  --name NAME        the name of this machine: ^[a-z0-9][a-z0-9-]{0,31}$
+  --profile PROFILE  the profile this machine runs (default: the one of its
+                     last rebuild, never a default of the instance)
+  --tags TAG,TAG     the tags of this machine
+  --reuse            this machine is the reinstall of a machine whose name is
+                     in hosts/
+```
+
+### `host publish`
+
+```text
+usage: dotsteward host publish [-h]
+
+Writes hosts/<name>.toml on the remote branch in one commit without force, and
+leaves the checkout as it is. The other keys of the file stay. Without a
+network or a login it exits 6 and nothing is lost: it works out the same again
+next time.
+
+options:
+  -h, --help  show this help message and exit
+```
+
+### `host show`
+
+```text
+usage: dotsteward host show [-h] [--json]
+
+Prints this machine.
+
+options:
+  -h, --help  show this help message and exit
+  --json      print one JSON document
+```
+
+### `host list`
+
+```text
+usage: dotsteward host list [-h] [--json]
+
+Prints the machines hosts/ of this checkout registers.
+
+options:
+  -h, --help  show this help message and exit
+  --json      print one JSON document
+```
+
+### `host rename`
+
+```text
+usage: dotsteward host rename [-h] NEW
+
+Gives this machine another name: its host file, the machines lists that name
+it and the producer move in one commit of the checkout, which needs to be
+clean. Publish that commit like any maintain commit.
+
+positional arguments:
+  NEW         the new name
+
+options:
+  -h, --help  show this help message and exit
+```
+
+### `host producer`
+
+```text
+usage: dotsteward host producer [-h] NAME
+
+Writes [hosts] producer: the machine that moves flake.lock, the pins and the
+third-party skills, in one commit of the checkout, which needs to be clean.
+Publish that commit like any maintain commit.
+
+positional arguments:
+  NAME        this machine, or a machine in hosts/
+
+options:
+  -h, --help  show this help message and exit
+```
+
+### `host check`
+
+```text
+usage: dotsteward host check [-h]
+
+Checks every hosts/<name>.toml against schema/host.schema.json and nix.systems
+and profiles.names, and every machines list of the skills lock and of the
+plugin tables: not empty, and only names in hosts/.
+
+options:
+  -h, --help  show this help message and exit
+```
+
 ## `init`
 
 Create a new instance from the framework template (--dir, --remote, --components).
@@ -586,9 +747,9 @@ Create a new instance from the framework template (--dir, --remote, --components
 usage: dotsteward init --dir DIR --remote URL [OPTION]...
 
 Create a dotsteward instance from the framework template in DIR (missing,
-empty, or filled by `nix flake init -t`), lock it, sync its mirrors, check its
-pins and commit it. All or nothing: on a refusal or a failed step DIR is left
-as it was.
+empty, or filled by `nix flake init -t`), lock it, generate its mirrors, check
+its pins and commit it. All or nothing: on a refusal or a failed step DIR is
+left as it was.
 
 options:
   -h, --help            show this help message and exit
@@ -618,6 +779,8 @@ options:
   --framework-ref vX.Y.Z
                         the framework release tag the dotsteward input pins
   --framework-url URL   the whole flake reference of the dotsteward input
+  --machine NAME        hosts.producer: the machine that moves the values that
+                        come from upstream, usually this one
   --no-git              neither initialize git nor commit
   --non-interactive     never prompt (init never prompts; accepted for
                         scripts)
@@ -858,6 +1021,10 @@ Options:
                       the policy's denylist path is used
   --extra-terms F     more terms in the denylist format
   --redact            print rule and location only, never the matched text
+  --instance-policy   the policy of the instance found like every instance
+                      command, as `dotsteward static` applies it to personal
+                      content: generic secret rules, [privacy] forbidden_paths
+                      and file_rules; the terms come from --denylist
 
 The policy is privacy/policy.toml of the scanned repository root when it
 exists, otherwise the framework's own; privacy/allowlist.txt next to it
@@ -1016,6 +1183,219 @@ options:
   -h, --help  show this help message and exit
 ```
 
+## `skills`
+
+Track the user's own skills, and report what the instance means for this machine.
+
+```text
+usage: dotsteward skills [-h] COMMAND ...
+
+Track the user's own skills, and report what the instance means for this
+machine.
+
+positional arguments:
+  COMMAND
+    effective
+              what this machine leaves out, and why
+    status    what the machine knows about the own skills of the lock
+    reconcile
+              compare the skill roots with what is known, without network
+    capture   publish the skills that wait, from a separate worktree
+    track     answer the question about a skill: --all, --here or --never
+    resolve   settle a conflict: the local copy or the repository wins
+    diff      the three trees of a skill, to compare them
+    forget    take a skill out of the repository, for all machines
+    restore   install a skill deleted here from the repository again
+    retry     try a skill that was kept back again, now
+    hooks     the hooks of skill tracking in the configuration of an agent
+
+options:
+  -h, --help  show this help message and exit
+
+Exit status: 0 done, 1 refusal, 2 usage error, 3 a conflict or a question
+waits, 4 a privacy stop, 6 no network. `skills hook EVENT --agent AGENT` is
+what the agents call, and it always exits 0.
+```
+
+### `skills effective`
+
+```text
+usage: dotsteward skills effective [-h] [--json]
+
+Prints the machine name, its profile and tags, and what it leaves out:
+skip.components, skip.skills and skip.plugins, with one word for each in
+reasons (machines: the entry is for other machines; declined:
+hosts/<name>.toml says never; deleted: an own skill deleted here). name_taken
+lists the skills of the lock that are for other machines while this machine
+has a skill of that name.
+
+options:
+  -h, --help  show this help message and exit
+  --json      print one JSON document
+```
+
+### `skills status`
+
+```text
+usage: dotsteward skills status [-h] [--json]
+
+One line per own skill that is not in sync, what ignore rules leave out of a
+copy, links that cannot be copied and what waits. With --json the document
+with the state of every own skill.
+
+options:
+  -h, --help  show this help message and exit
+  --json      print one JSON document
+```
+
+### `skills reconcile`
+
+```text
+usage: dotsteward skills reconcile [-h] [--json] [--full]
+
+Finds new skills and changes of own skills and records them in pending.json.
+
+options:
+  -h, --help  show this help message and exit
+  --json      print pending.json
+  --full      digest every own skill, whatever its file times say
+```
+
+### `skills capture`
+
+```text
+usage: dotsteward skills capture [-h] [--now | --wait] [--name SKILL] [--json]
+
+Publishes what waits in pending.json. The checkout stays as it is.
+
+options:
+  -h, --help    show this help message and exit
+  --now         now; ends at once when nothing waits (default)
+  --wait        sleep until the deadline, as one process per machine
+  --name SKILL  only this skill; may be repeated
+  --json        print the result as one JSON document
+```
+
+### `skills track`
+
+```text
+usage: dotsteward skills track [-h] [--all | --here | --never] [--own]
+                               [--no-capture]
+                               SKILL
+
+--all puts the skill into the lock for every machine, --here for this machine
+only, --never remembers in the host file of this machine that it stays out. A
+downloaded skill keeps its upstream pinned; --own tracks your own copy without
+one, which also turns a pinned skill into yours.
+
+positional arguments:
+  SKILL
+
+options:
+  -h, --help    show this help message and exit
+  --all         for all machines
+  --here        for this machine only
+  --never       never on this machine
+  --own         your own copy, without an upstream
+  --no-capture  record the answer; the next capture takes it
+```
+
+### `skills resolve`
+
+```text
+usage: dotsteward skills resolve [-h] (--ours | --theirs) SKILL
+
+--ours publishes the local copy. --theirs backs it up and installs the copy of
+the repository.
+
+positional arguments:
+  SKILL
+
+options:
+  -h, --help  show this help message and exit
+  --ours      the local copy wins
+  --theirs    the repository wins
+```
+
+### `skills diff`
+
+```text
+usage: dotsteward skills diff [-h] [--json] SKILL
+
+Names the local copy, the copy on the remote and the one this machine last had
+in sync.
+
+positional arguments:
+  SKILL
+
+options:
+  -h, --help  show this help message and exit
+  --json      print one JSON document
+```
+
+### `skills forget`
+
+```text
+usage: dotsteward skills forget [-h] SKILL
+
+Removes the skill from the lock and the repository. A local copy stays, and
+nobody asks about it.
+
+positional arguments:
+  SKILL
+
+options:
+  -h, --help  show this help message and exit
+```
+
+### `skills restore`
+
+```text
+usage: dotsteward skills restore [-h] SKILL
+
+Copies the skill of the remote to the canonical skill root.
+
+positional arguments:
+  SKILL
+
+options:
+  -h, --help  show this help message and exit
+```
+
+### `skills retry`
+
+```text
+usage: dotsteward skills retry [-h] SKILL
+
+For a skill that is blocked (dotsteward skills status says why) once the cause
+is gone: a refusal of the remote is never tried again by itself.
+
+positional arguments:
+  SKILL
+
+options:
+  -h, --help  show this help message and exit
+```
+
+### `skills hooks`
+
+```text
+usage: dotsteward skills hooks [-h] [--agent {claude,codex}]
+                               {install,check,remove}
+
+install puts the hooks into the configuration of an agent, or removes them
+when [skills] tracking is off; check reports and never fails; remove takes
+them out until the next rebuild.
+
+positional arguments:
+  {install,check,remove}
+
+options:
+  -h, --help            show this help message and exit
+  --agent {claude,codex}
+                        default: the enabled agents
+```
+
 ## `static`
 
 Check the static contracts of an instance or of the framework source.
@@ -1041,9 +1421,15 @@ Instance checks, in this order:
   bootstrap      bootstrap.sh equals the framework's template copy, when the
                  framework ships one
   skills         vendored skills match the skills lock: schema,
-                 directories, names, digests, licenses, no symbolic links
-                 and no framework skills (expected_skill_count, a copy of
-                 the number of entries, is ignored)
+                 directories, names, digests, licenses (a skill with a
+                 repo-owned sentinel revision is the user's own and needs
+                 none), no symbolic links and no framework skills
+                 (expected_skill_count, a copy of the number of entries, is
+                 ignored); the own plugins of the lock (own_plugins) match
+                 agent/plugins the same way
+  hosts          every hosts/<name>.toml is valid and named like a machine, and
+                 every machines key of the lock and of the plugin tables names
+                 known machines (dotsteward host check)
   versions-lock  versions.lock.json: schema_version "1.0", no persistent
                  agentic updates, native application updates kept
   allowlist      no update allowlist entry (gate.update_allowlist and the
@@ -1090,10 +1476,11 @@ error, otherwise the exit status of the failing instance script.
 
 ## `sync`
 
-Regenerate the .dotsteward/ mirrors and the derived lock values.
+Old name of generate: a warning, then generate with the same arguments (until 2.0.0).
 
 ```text
-Usage: dotsteward sync [--nix] [--skill NAME]...
+[dotsteward] WARNING: 'dotsteward sync' is the old name of 'dotsteward generate'; the old name stops working in 2.0.0
+Usage: dotsteward generate [--nix] [--skill NAME]...
 
 Evaluates the instance's dotstewardMirrors output (`nix eval --json
 --no-update-lock-file <instance>#dotstewardMirrors`), writes every mirror
@@ -1105,16 +1492,89 @@ refused before any Nix call, because Nix does not see them. Exit codes:
 0 ok, 1 refusal or error, else the status of `pins sync`.
 ```
 
-## `update`
+## `txn`
 
 Prepare, publish and report a maintenance transaction.
 
 ```text
-Usage: dotsteward [--instance DIR] update prepare --official-sources-only
+Usage: dotsteward [--instance DIR] txn prepare --official-sources-only
                   [--scope update|maintain]
-       dotsteward [--instance DIR] update publish [--scope update|maintain]
+       dotsteward [--instance DIR] txn publish [--scope update|maintain]
                   [--expected-base OID]
-       dotsteward [--instance DIR] update status [--json]
+       dotsteward [--instance DIR] txn status [--json]
+
+The maintenance transaction: prepare records a base, `dotsteward gate`
+proves the candidate tree, publish ships a commit whose tree is the proven
+tree. Nothing here builds, activates or commits anything.
+
+prepare
+  Runs in the instance clone (top of a git work tree, on instance.branch,
+  origin exactly instance.remote). The update scope (default) needs an
+  entirely clean clone; the maintain scope lists the changes instead. It
+  fetches origin/<branch> (60 s), requires HEAD to equal it in both
+  scopes, and records <state>/update/candidate.json (schema_version
+  "1.1": prepared_at, base_oid, root, scope, official_sources_only,
+  persistent_agentic_updates, native_application_updates). Advisory
+  checks become warnings in the output, never refusals: the binary cache
+  (gate.cache_url) does not answer, /nix/store has less than
+  gate.prepare_warn_free_gib GiB free, gh is not logged in or not
+  installed. Output: a "prepared" line, then one JSON line {base_oid,
+  root, scope, dirty, warnings}.
+  --official-sources-only   required: the transaction takes versions
+                            only from official sources
+
+publish
+  In order: the clone guards; a clean tree; the base OID (--expected-base,
+  else base_oid of candidate.json when it was prepared for this instance,
+  else `git merge-base HEAD origin/<branch>`; a clone without
+  origin/<branch>, a new instance before its first push, is refused with
+  the `git push -u` to run); at least one commit after
+  the base, which must be an ancestor of HEAD; the HEAD tree is the tree
+  of a passed validation.json, made for the same scope and without a
+  framework override; when the transaction activated a tree on this
+  machine (<state>/current/activation.json of rebuild --switch: its tree
+  is the HEAD tree, or its revision a commit after the base), that tree
+  is the HEAD tree and <state>/update/e2e.json records a passed E2E run
+  of it, of the activated generation and of the activated profile, with
+  the repository checks (publishing without an activation needs no E2E
+  record); the commit subjects (update scope: the last one is exactly
+  commit.update_subject; maintain scope: every one after the base is a
+  conventional commit); a fresh fetch (60 s) finds origin/<branch>
+  still at the base; HEAD is pushed to <branch> without force (180 s) and
+  the remote branch is verified to be HEAD (60 s). When the fetch finds
+  the remote branch already at HEAD, the commit is already published:
+  nothing is pushed and the exit status is 0. Finally the canonical
+  checkout (canonical_repo of <state>/host-overrides/inventory.json, else
+  instance.checkout) is fast-forwarded when it is a clean clone of
+  instance.remote on <branch> at the base; any other state is a warning,
+  never a failure; a path that is not a git repository, or the publishing
+  clone itself, is skipped.
+  --scope S                 update (default) or maintain
+  --expected-base OID       the base OID
+
+status
+  Prints the state directory and the paths and records of candidate.json,
+  validation.json and validate.log. Reads only; works in any checkout.
+  --json                    one JSON document {schema_version: 1,
+                            instance, paths: {state_dir, candidate,
+                            validation, log}, candidate, validation}; a
+                            record is the file's object, or null when the
+                            file is absent or not a JSON object
+
+Exit status: 0 done (already published included), 1 refused or failed.
+```
+
+## `update`
+
+Old name of txn: a warning, then txn with the same arguments (until 2.0.0).
+
+```text
+[dotsteward] WARNING: 'dotsteward update' is the old name of 'dotsteward txn'; the old name stops working in 2.0.0
+Usage: dotsteward [--instance DIR] txn prepare --official-sources-only
+                  [--scope update|maintain]
+       dotsteward [--instance DIR] txn publish [--scope update|maintain]
+                  [--expected-base OID]
+       dotsteward [--instance DIR] txn status [--json]
 
 The maintenance transaction: prepare records a base, `dotsteward gate`
 proves the candidate tree, publish ships a commit whose tree is the proven
