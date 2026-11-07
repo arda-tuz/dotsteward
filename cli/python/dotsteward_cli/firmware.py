@@ -50,6 +50,11 @@ class Device:
     current: str
     new: str
     needs_reboot: bool
+    problems: tuple[str, ...] = ()
+
+
+def _device_json(device: Device) -> dict[str, Any]:
+    return {key: value for key, value in asdict(device).items() if key != "problems" or value}
 
 
 @dataclass(frozen=True)
@@ -59,13 +64,15 @@ class Listing:
     available: bool
     installable: tuple[Device, ...] = ()
     locked: tuple[Device, ...] = ()
+    blocked: tuple[Device, ...] = ()
     error: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
             "available": self.available,
-            "installable": [asdict(device) for device in self.installable],
-            "locked": [asdict(device) for device in self.locked],
+            "installable": [_device_json(device) for device in self.installable],
+            "locked": [_device_json(device) for device in self.locked],
+            "blocked": [_device_json(device) for device in self.blocked],
             "error": self.error,
         }
 
@@ -78,13 +85,23 @@ def _device(entry: Mapping[str, Any]) -> Device:
         current=str(entry.get("Version", "")),
         new=str(releases[0].get("Version", "")),
         needs_reboot="needs-reboot" in (entry.get("Flags") or ()),
+        problems=tuple(str(problem) for problem in entry.get("Problems") or ()),
     )
 
 
-def _installable(entry: Mapping[str, Any]) -> bool:
+def _locked(entry: Mapping[str, Any]) -> bool:
     flags = set(entry.get("Flags") or ())
     problems = set(entry.get("Problems") or ())
-    return "updatable" in flags and not flags & _LOCKED_FLAGS and not problems & _LOCKED_PROBLEMS
+    return "updatable" not in flags or bool(flags & _LOCKED_FLAGS or problems & _LOCKED_PROBLEMS)
+
+
+def _installable(entry: Mapping[str, Any]) -> bool:
+    return not _locked(entry) and not entry.get("Problems")
+
+
+def _blocked(entry: Mapping[str, Any]) -> bool:
+    """Updatable, but a condition of the moment holds it back: a low battery, a closed lid."""
+    return not _locked(entry) and bool(entry.get("Problems"))
 
 
 def list_updates() -> Listing:
@@ -117,7 +134,8 @@ def list_updates() -> Listing:
     return Listing(
         True,
         installable=tuple(_device(entry) for entry in devices if _installable(entry)),
-        locked=tuple(_device(entry) for entry in devices if not _installable(entry)),
+        locked=tuple(_device(entry) for entry in devices if _locked(entry)),
+        blocked=tuple(_device(entry) for entry in devices if _blocked(entry)),
     )
 
 
@@ -130,8 +148,16 @@ def _ask_terminal(question: str) -> bool:
     return sys.stdin.readline().strip().lower() in {"y", "yes", "e", "evet"}
 
 
-def _describe(device: Device) -> dict[str, str]:
-    return {"device": device.name, "id": device.device_id, "current": device.current, "new": device.new}
+def _describe(device: Device) -> dict[str, Any]:
+    described: dict[str, Any] = {
+        "device": device.name,
+        "id": device.device_id,
+        "current": device.current,
+        "new": device.new,
+    }
+    if device.problems:
+        described["problems"] = list(device.problems)
+    return described
 
 
 def approve(
@@ -150,6 +176,13 @@ def approve(
             pending=False,
             devices=[_describe(device) for device in listing.locked],
             message="locked firmware is updated by hand, from the site of the vendor",
+        )
+    if listing.blocked:
+        run.item(
+            "firmware-blocked",
+            pending=False,
+            devices=[_describe(device) for device in listing.blocked],
+            message="a condition of the moment holds these back; a later run asks again",
         )
     if not listing.installable:
         return ()
@@ -174,8 +207,16 @@ def approve(
     return approved
 
 
+def _reads(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
 def on_mains_power() -> bool:
-    """Mains online, or no battery at all (DOTSTEWARD_SYSTEM_ROOT stands in for / in tests)."""
+    """Mains online, or no battery of the machine at all; the battery of a wireless mouse does not
+    count (DOTSTEWARD_SYSTEM_ROOT stands in for / in tests)."""
     root = Path(os.environ.get("DOTSTEWARD_SYSTEM_ROOT") or "/") / "sys/class/power_supply"
     types: list[str] = []
     try:
@@ -186,6 +227,8 @@ def on_mains_power() -> bool:
         try:
             kind = (supply / "type").read_text(encoding="utf-8").strip()
         except OSError:
+            continue
+        if kind == "Battery" and _reads(supply / "scope") == "Device":
             continue
         types.append(kind)
         if kind == "Mains":
@@ -217,18 +260,32 @@ def apply(devices: Sequence[Device], run: report.RunReport) -> None:
         return
     failed = []
     needs_reboot = []
+    applied = []
+    left: Sequence[Device] = ()
     try:
-        for device in devices:
+        for index, device in enumerate(devices):
             argv = ["sudo", "-n", _TOOL, "update", device.device_id, "--assume-yes", "--no-reboot-check"]
             result = procs.run_protected(argv)
-            if result.interrupted:
-                run.mark_interrupted(result.interrupted)
             if result.returncode != 0:
                 failed.append(device)
-            elif device.needs_reboot:
-                needs_reboot.append(device)
+            else:
+                applied.append(device.device_id)
+                if device.needs_reboot:
+                    needs_reboot.append(device)
+            if result.interrupted:
+                # Ctrl-C takes the word back: the update at work ends, the next one does not start.
+                run.mark_interrupted(result.interrupted)
+                left = devices[index + 1 :]
+                break
     finally:
         subprocess.run(["sudo", "-k"], check=False)
+    if left:
+        run.item(
+            "firmware-available",
+            devices=[_describe(device) for device in left],
+            run="dotsteward upgrade --accept firmware",
+            message="interrupted: these were not written",
+        )
     if needs_reboot:
         run.item(
             "firmware-needs-reboot",
@@ -240,7 +297,7 @@ def apply(devices: Sequence[Device], run: report.RunReport) -> None:
         names = ", ".join(device.name for device in failed)
         run.step("firmware", report.FAILED, detail=f"fwupdmgr failed for {names}")
     else:
-        run.step("firmware", report.OK, applied=[device.device_id for device in devices])
+        run.step("firmware", report.OK, applied=applied)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
