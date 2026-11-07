@@ -55,6 +55,7 @@ REASON_INCOMING = "incoming"
 REASON_TAGS = "tags"
 REASON_REQUIRES = "requires"
 REASON_NOT_ACTIVATED = "not-activated"
+REASON_PLATFORM = "platform"
 
 
 def valid_name(name: str) -> bool:
@@ -395,8 +396,13 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
         elif plugin in declined.get("plugins", []):
             reasons[f"plugin:{plugin}"] = REASON_DECLINED
     machine_tags = list(host.get("tags", recorded.get("tags") or []))
+    from dotsteward_cli import platforms
+
+    unavailable = platforms.unavailable(platforms.resolve(instance, os.environ if env is None else env))
     for component, table in enabled_components(instance):
-        if not _for_this_machine(table, name):
+        if component in unavailable:
+            reasons[f"component:{component}"] = REASON_PLATFORM
+        elif not _for_this_machine(table, name):
             reasons[f"component:{component}"] = REASON_MACHINES
         elif table.get("tags") is not None and not set(table["tags"]) & set(machine_tags):
             reasons[f"component:{component}"] = REASON_TAGS
@@ -415,12 +421,14 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
 
     profile = host.get("profile") or recorded.get("profile") or recorded_profile(state, instance)
     _note_not_activated(instance, state, reasons)
-    nix_tags: list[str] = []
+    # What the platform layer calls unavailable, also on a machine without a name.
+    nix_tags: list[str] = [f"no:{component}" for component in unavailable]
     if name is not None:
         # Every declined component, enabled or not, as mkInstance reads the host file.
         left_out = [question["name"] for question in questions if question["kind"] == "component"]
         left_out += declined.get("components", [])
         left_out += [entry["component"] for entry in requires["unmet"]]
+        left_out += unavailable
         nix_tags = sorted({*machine_tags, f"machine:{name}", *(f"no:{component}" for component in left_out)})
     return {
         "name": name,
@@ -601,7 +609,9 @@ def _parser() -> argparse.ArgumentParser:
             "skip.skills and skip.plugins, with one word for each in reasons (machines: the entry is for "
             "other machines; declined: hosts/<name>.toml says never; deleted: an own skill deleted here; "
             "incoming: another machine brought it and this machine did not answer yet; tags: a component for "
-            "machine tags this machine does not carry). incoming lists those questions (dotsteward incoming), "
+            "machine tags this machine does not carry; platform: platforms/ calls the component unavailable on the "
+            "platform of this machine, see dotsteward host platform). "
+            "incoming lists those questions (dotsteward incoming), "
             "nix_tags what rebuild hands to Nix. "
             "name_taken lists the skills of the lock that are for other machines while this machine has a "
             "skill of that name."

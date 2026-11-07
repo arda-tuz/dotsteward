@@ -1,0 +1,8 @@
+# What differs on macOS 15 (prototype): docs/platforms.md#platform-files.
+# macOS takes the fast route by [platform.darwin.fast_path] of workstation.toml; a
+# component that supports only Linux is left out on darwin without a word here.
+schema_version = 1
+
+# A component that does not exist here although it supports darwin:
+# [components.example]
+# unavailable = "no build for this release"

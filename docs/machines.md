@@ -76,6 +76,11 @@ than the tags keeps working. Nix reads `system`, `profile`, `tags` and
 `declined.components` of a host file, as intent; it reads no answer and no state of a
 machine.
 
+The platform layer adds one more reason: a component that `platforms/<platform>.toml`
+calls unavailable on the platform of this machine is left out with the reason `platform`
+and the tag `no:<component>`, on a machine with a name or without one
+([platforms.md](platforms.md#platform-files)).
+
 A component that is left out on a machine is not active there: `helpers.isActive` decides,
 in every module. The manifest does not change with it: `machines`, `tags`, `requires` and its
 `managed_links` are data in its component entries, there is one manifest per system, and the

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/arda-tuz/dotsteward/schema/platform.schema.json",
+  "title": "dotsteward platforms/<platform>.toml",
+  "description": "What differs on one platform, schema version 1. The file name is the platform: a release (ubuntu-22.04, macos-15), an operating system (ubuntu, macos) or a Nix platform (linux, darwin); the most specific file of a machine wins key by key. Unknown keys are errors.",
+  "$comment": "Readers interpret the keyword subset of workstation.schema.json. The CLI reads the components, the stage-0 mirror the fast path; nothing else of the file reaches Nix.",
+  "type": "object",
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Platform file schema version."
+    },
+    "fast_path": {
+      "type": "object",
+      "description": "A Linux release that takes the fast route of the bootstrap like [platform.linux.fast_path] of workstation.toml, whose desktop rule still applies. It names the release of the file.",
+      "required": ["os_id", "os_version", "architecture"],
+      "properties": {
+        "os_id": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "ID of os-release."
+        },
+        "os_version": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "VERSION_ID of os-release."
+        },
+        "architecture": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "uname -m."
+        }
+      },
+      "additionalProperties": false
+    },
+    "components": {
+      "type": "object",
+      "description": "What this platform says about a component, by its name.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "unavailable": {
+            "$ref": "#/$defs/nonEmptyString",
+            "description": "The component does not exist on this platform, and why: every command and Nix leave it out on a machine of the platform."
+          }
+        },
+        "additionalProperties": false
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

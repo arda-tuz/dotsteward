@@ -22,7 +22,9 @@
 # and prints its match line as a whole line; a missing command is false.
 # The Linux fast path is os_id, os_version and architecture plus the
 # desktop: no desktop rule, or XDG_CURRENT_DESKTOP contains desktop_contains
-# (case-insensitive), or one of the fast-path detectors is true. The darwin
+# (case-insensitive), or one of the fast-path detectors is true. The release
+# of a platform file with a fast path (DS_STAGE0_PLATFORM_* arrays) is one
+# too, under the same desktop rule. The darwin
 # fast path is a version at least min_version (dotted numbers) and the
 # architecture. On the adaptive route preflight warns and exits 3.
 #
@@ -209,7 +211,7 @@ preflight_run() {
   local profile=${PREFLIGHT_PROFILE:-$DS_STAGE0_BOOTSTRAP_PROFILE}
   local platform=$DS_STAGE0_PLATFORM os_id os_version architecture desktop desktop_lower contains
   local fast_path=false route=adaptive desktop_match=false nix_version='' nix_output free_kib
-  local remote_accessible=false name wanted found index json version_json
+  local remote_accessible=false name wanted found index count json version_json
   local -a names values
   preflight_require_profile "$profile"
   require_safe_identity
@@ -280,6 +282,19 @@ preflight_run() {
         $architecture == "$DS_STAGE0_FAST_PATH_ARCHITECTURE" && $desktop_match == true ]]; then
         fast_path=true
       fi
+      # The releases of platforms/<id>.toml with a fast path, under the same desktop rule.
+      count=0
+      if [[ -n ${DS_STAGE0_PLATFORM_IDS+set} ]]; then
+        count=${#DS_STAGE0_PLATFORM_IDS[@]}
+      fi
+      index=0
+      while ((index < count)); do
+        if [[ $os_id == "${DS_STAGE0_PLATFORM_OS_IDS[index]}" && $os_version == "${DS_STAGE0_PLATFORM_OS_VERSIONS[index]}" &&
+          $architecture == "${DS_STAGE0_PLATFORM_ARCHITECTURES[index]}" && $desktop_match == true ]]; then
+          fast_path=true
+        fi
+        index=$((index + 1))
+      done
       ;;
     darwin)
       if [[ $os_version != unknown && $architecture == "$DS_STAGE0_FAST_PATH_ARCHITECTURE" ]] &&

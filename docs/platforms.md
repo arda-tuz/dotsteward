@@ -235,6 +235,43 @@ for the user database lookup; it answers before `getent` or `dscl`) and
 `DOTSTEWARD_CPU_COUNT` replace the memory and CPU count behind the gate's
 derived Nix parallelism ([workstation.toml](workstation-toml.md#gate)).
 
+## Platform files
+
+`platforms/<platform>.toml` of an instance says what differs on one platform
+([schema](../schema/platform.schema.json)). A machine runs one release, the
+`platform` of its host file: `ubuntu-22.04` (`ID` and `VERSION_ID` of
+os-release) or `macos-15` (the major version of `sw_vers`). Its layers, the
+most specific first, are the release, the operating system (`ubuntu`, `macos`)
+and the Nix platform (`linux`, `darwin`), with `workstation.toml` below them
+all; a key of a more specific layer wins over the same key of a more general
+one, and lists do not merge. The template brings `ubuntu-22.04.toml`,
+`ubuntu-26.04.toml` and `macos-15.toml`:
+
+```toml
+schema_version = 1
+
+[fast_path]            # this release takes the fast route of the bootstrap
+os_id = "ubuntu"
+os_version = "22.04"
+architecture = "x86_64"
+
+[components.example]
+unavailable = "the vendor publishes no package for jammy"
+```
+
+| Key | Meaning |
+| --- | --- |
+| `fast_path` | A Linux release that takes the fast route like `[platform.linux.fast_path]` of `workstation.toml`, whose desktop rule still applies. It names the release of its file. |
+| `components.<name>.unavailable` | The component does not exist on this platform, and why. On a machine of the platform every command leaves it out, as `dotsteward skills effective` says with the reason `platform`, and Nix gets the tag `no:<name>`. A general layer reaches every release below it: a component unavailable in `linux.toml` is unavailable on every Linux release. |
+
+`dotsteward host platform [--json]` prints the platform of this machine, its
+layers, the files that exist for them and what they say; `dotsteward host
+check`, which `dotsteward static` runs, holds every file to the schema. The CLI
+resolves the layer and Nix never reads it, apart from the fast paths, which the
+stage-0 mirror carries (`DS_STAGE0_PLATFORM_*`) because the bootstrap reads them
+before Nix exists. Ubuntu 22.04 is tested in ordinary containers
+(`tests/container`), macOS by the macOS smoke workflow.
+
 ## What is verified where
 
 | What | Linux | darwin |

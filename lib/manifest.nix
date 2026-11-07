@@ -212,6 +212,36 @@ let
         "INSTALLER_SHA256"
       ];
       lockPath = name: "nix.${lib.toLower name}";
+      # The Linux releases of platforms/<id>.toml with a fast path, sorted by platform: the
+      # only part of a platform file Nix reads, for the bootstrap before Nix.
+      platformsDir = root + "/platforms";
+      platformFastPaths =
+        if platform == "linux" && builtins.pathExists platformsDir then
+          lib.concatMap
+            (
+              file:
+              let
+                document = builtins.fromTOML (builtins.readFile (platformsDir + "/${file}"));
+              in
+              lib.optional (document ? fast_path) (document.fast_path // { id = lib.removeSuffix ".toml" file; })
+            )
+            (
+              lib.sort lib.lessThan (
+                attrNames (
+                  lib.filterAttrs (file: type: type == "regular" && lib.hasSuffix ".toml" file) (
+                    builtins.readDir platformsDir
+                  )
+                )
+              )
+            )
+        else
+          [ ];
+      platformLines = lib.optionals (platformFastPaths != [ ]) [
+        (array "PLATFORM_IDS" (map (entry: entry.id) platformFastPaths))
+        (array "PLATFORM_OS_IDS" (map (entry: entry.os_id) platformFastPaths))
+        (array "PLATFORM_OS_VERSIONS" (map (entry: entry.os_version) platformFastPaths))
+        (array "PLATFORM_ARCHITECTURES" (map (entry: entry.architecture) platformFastPaths))
+      ];
       backupPaths = union (
         manifest.backup_paths
         ++ bufferBackupPaths {
@@ -254,6 +284,7 @@ let
         (scalar "BOOTSTRAP_PROFILE" cfg.profiles.bootstrap)
       ]
       ++ fastPathLines
+      ++ platformLines
       ++ [ (array "DETECTORS" detectorNames) ]
       ++ lib.concatLists (
         lib.imap0 (

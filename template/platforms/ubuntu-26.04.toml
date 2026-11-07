@@ -1,0 +1,9 @@
+# What differs on Ubuntu 26.04 (resolute): docs/platforms.md#platform-files.
+# No fast path yet: apt 3.1 resolves with solver3 and vendor repositories may not
+# publish resolute, so a fresh machine takes the adaptive route of the bootstrap until
+# this file declares the release with a [fast_path] like ubuntu-22.04.toml.
+schema_version = 1
+
+# A component that does not exist here:
+# [components.example]
+# unavailable = "the vendor publishes no package for resolute"

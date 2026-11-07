@@ -1,0 +1,15 @@
+# What differs on Ubuntu 22.04 (jammy): docs/platforms.md#platform-files.
+# Measured for the framework: glibc 2.35, apt 2.4, python3-apt 2.4, Python 3.10. The
+# pins of the kernel and driver classes have the same form as on 24.04, and vendor
+# repositories with a code name take {codename} = jammy, so the release takes the
+# fast route of the bootstrap like 24.04.
+schema_version = 1
+
+[fast_path]
+os_id = "ubuntu"
+os_version = "22.04"
+architecture = "x86_64"
+
+# A component that does not exist here:
+# [components.example]
+# unavailable = "the vendor publishes no package for jammy"

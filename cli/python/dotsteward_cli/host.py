@@ -9,7 +9,8 @@ of the machine: nothing is stored, the next ``publish`` works it out again.
 
 ``rename`` and ``producer`` change what all machines share, so they are maintain
 commits in the checkout, published the way every maintain commit is. ``check`` holds
-the tree to the rules of the machines.
+the tree to the rules of the machines and of the platform files. ``platform`` prints what
+the platform layer (``dotsteward_cli.platforms``) says on this machine.
 
 Exit status: 0 done, 1 refusal, 2 usage error; ``publish`` 4 for a privacy finding
 (nothing was published) and 6 without a network (nothing was published, run it again).
@@ -37,7 +38,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from dotsteward_cli import atomic, config, incoming, locks, machine, report, tomlfile
+from dotsteward_cli import atomic, config, incoming, locks, machine, platforms, report, tomlfile
 from dotsteward_cli import publish as publishing
 
 EXIT_REFUSAL = 1
@@ -156,37 +157,6 @@ def _machine_key(env: Mapping[str, str]) -> str:
     return digest.hex()
 
 
-def _os_release(env: Mapping[str, str]) -> dict[str, str]:
-    path = env.get("DOTSTEWARD_OS_RELEASE") or "/etc/os-release"
-    values: dict[str, str] = {}
-    try:
-        text = Path(path).read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return values
-    for line in text.splitlines():
-        key, separator, value = line.partition("=")
-        if separator:
-            values[key.strip()] = value.strip().strip("\"'")
-    return values
-
-
-def _platform(env: Mapping[str, str]) -> str:
-    """The operating system and its version: ubuntu-24.04, macos-15."""
-    if config.runtime_platform(env) == "darwin":
-        command = env.get("DOTSTEWARD_SW_VERS") or "sw_vers"
-        try:
-            version = subprocess.run(
-                [command, "-productVersion"], capture_output=True, text=True, timeout=30, check=False
-            ).stdout.strip()
-        except (OSError, subprocess.SubprocessError):
-            version = ""
-        text = f"macos-{version.split('.')[0]}" if version else "macos"
-    else:
-        release = _os_release(env)
-        text = "-".join(part for part in (release.get("ID"), release.get("VERSION_ID")) if part) or "linux"
-    return re.sub(r"[^a-z0-9.-]+", "-", text.lower()).strip("-.") or "unknown"
-
-
 def _suggested_name() -> str:
     """The cleaned host name, always a valid machine name."""
     try:
@@ -295,7 +265,7 @@ def cmd_init(args: argparse.Namespace, instance: config.Instance, env: Mapping[s
             "host": {
                 "system": machine.nix_system(instance, env),
                 "profile": profile,
-                "platform": _platform(env),
+                "platform": platforms.platform_id(env),
                 "tags": tags if tags is not None else kept.get("tags", host_file.get("tags", [])),
             },
         },
@@ -779,7 +749,7 @@ def cmd_rename(args: argparse.Namespace, instance: config.Instance, env: Mapping
 
 
 def cmd_check(args: argparse.Namespace, instance: config.Instance, env: Mapping[str, str]) -> int:
-    problems = machine.check_problems(instance)
+    problems = machine.check_problems(instance) + platforms.check_problems(instance)
     for problem in problems:
         _error(problem)
     if problems:
@@ -787,6 +757,25 @@ def cmd_check(args: argparse.Namespace, instance: config.Instance, env: Mapping[
     for warning in machine.check_warnings(instance):
         _warn(warning)
     _log(f"machines: {len(machine.known_names(instance.root))} registered, no problem")
+    count = len(platforms.file_names(instance.root))
+    if count:
+        _log(f"platforms: {count} file{'' if count == 1 else 's'}, no problem")
+    return 0
+
+
+# --- host platform --------------------------------------------------------------------------------
+
+
+def cmd_platform(args: argparse.Namespace, instance: config.Instance, env: Mapping[str, str]) -> int:
+    document = platforms.resolve(instance, env)
+    if args.json:
+        print(json.dumps(document, indent=2, ensure_ascii=False))
+        return 0
+    print(f"platform: {document['id']} (layers: {', '.join(document['layers'])})")
+    print(f"files: {', '.join(document['files']) or '(none)'}")
+    for name, entry in document["components"].items():
+        if entry.get("unavailable"):
+            print(f"{name}: unavailable ({entry['layer']}: {entry['unavailable']})")
     return 0
 
 
@@ -867,11 +856,25 @@ def _parser() -> argparse.ArgumentParser:
         help="check the host files and the machines lists of the tree",
         description=(
             "Checks every hosts/<name>.toml against schema/host.schema.json and nix.systems and profiles.names, and "
-            "every machines list of the skills lock and of the plugin tables: not empty, and only names in hosts/."
+            "every machines list of the skills lock and of the plugin tables: not empty, and only names in hosts/; "
+            "every platforms/<platform>.toml against schema/platform.schema.json, and a fast path names its release."
         ),
         allow_abbrev=False,
     )
     check.set_defaults(handler=cmd_check)
+    platform = commands.add_parser(
+        "platform",
+        help="print the platform of this machine and what its platform files say",
+        description=(
+            "Prints the platform of this machine (ubuntu-24.04, macos-15), its layers from the most specific one "
+            "(the release, the operating system, linux or darwin), the files of platforms/ that exist for them and "
+            "what they say about components, each from the most specific layer: a component that is unavailable "
+            "here is left out by every command (skills effective names the reason platform)."
+        ),
+        allow_abbrev=False,
+    )
+    platform.add_argument("--json", action="store_true", help="print one JSON document")
+    platform.set_defaults(handler=cmd_platform)
     return parser
 
 
