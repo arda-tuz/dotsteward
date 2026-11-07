@@ -93,14 +93,14 @@ assert_eq "" "$DS_STDERR"
 
 # --- a validation made for the other scope ------------------------------------------------
 # The scope is part of the memo key: a gate in the publish scope runs again and records that
-# scope; the refusal hint still names --force, which does no harm.
+# scope, so the refusal names that gate and no --force.
 
 assert_exit 0 ds txn prepare --official-sources-only --scope maintain
 base=$(head_oid)
 printf '{\n  "schema_version": "1.0",\n  "maintained": true\n}\n' >"$up_inst/versions.lock.json"
 assert_exit 0 ds gate --scope update
 commit_all "chore: maintain the versions lock"
-scope_hint="[dotsteward] ERROR: the validation was made for the update scope, not maintain; run 'dotsteward gate --scope maintain --force' first"
+scope_hint="[dotsteward] ERROR: the validation was made for the update scope, not maintain; run 'dotsteward gate --scope maintain' first"
 assert_exit 1 ds txn publish --scope maintain
 assert_eq "$scope_hint" "$DS_STDERR"
 assert_eq "$base" "$(remote_oid)"
