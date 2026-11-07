@@ -74,6 +74,11 @@ assert_eq "$before" "$(tree_state)"
 : >"$release"
 wait "$holder"
 
-# Under the lock of its caller the writer runs nested.
+# Under the lock of its caller the writer runs nested: a real run, which takes the
+# lock and writes its report (--plan never reaches the lock).
+rows "$(row agent_tools.example-compat npm 1.0.0 1.0.0 current)"
+reports=$(find "$state/runs/pins-apply" -name '*.json' | wc -l)
 assert_exit 0 internal lock run --holder upgrade --state-root "$state" -- \
-  "$DS_REPO_ROOT/cli/dotsteward" --instance "$inst" pins apply --latest "$rows" --plan
+  "$DS_REPO_ROOT/cli/dotsteward" --instance "$inst" pins apply --latest "$rows" --json
+assert_eq '[]' "$(jq -c .moved <<<"$DS_STDOUT")"
+assert_eq "$((reports + 1))" "$(find "$state/runs/pins-apply" -name '*.json' | wc -l)"
