@@ -84,6 +84,7 @@ dialog.
 | `pypi` | yes | yes | user (a virtual environment, links in `~/.local/bin`) | installed |
 | `deb` | yes | no | system (one APT transaction) | not managed |
 | `app-archive` | no | yes | system (`~/Applications`) | not managed |
+| `system` | yes | no | system (root-owned files through `sudo`) | not managed |
 | `external` | yes | yes | nothing is installed | as in `fresh` |
 
 Each component lists the methods it supports per platform, and its default.

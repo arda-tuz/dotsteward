@@ -734,7 +734,8 @@
         "pypi",
         "deb",
         "app-archive",
-        "external"
+        "external",
+        "system"
       ],
       "description": "An install method (component contract)."
     },

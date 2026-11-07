@@ -68,7 +68,7 @@ a `[profiles.<name>]` table.
 | `profiles.default` | the first name | The profile of `mkHome` when none is given. |
 | `profiles.check` | `profiles.default` | The profile of `homeConfigurations`, `checks.<system>.home` and the gate's CLI probes. |
 | `profiles.bootstrap` | `profiles.default` | The only profile `bootstrap.sh` accepts. |
-| `profiles.<name>.mode` | `"fresh"` | `fresh` installs system-level parts (system packages, `deb` and `app-archive` components, system hooks); `adopt` skips them and reports such components as `not-managed`. |
+| `profiles.<name>.mode` | `"fresh"` | `fresh` installs system-level parts (system packages, `deb`, `app-archive` and `system` components, system hooks); `adopt` skips them and reports such components as `not-managed`. |
 
 ## `[platform]`
 
@@ -145,7 +145,7 @@ catalog component (see [catalog.md](catalog.md)) or a private component in
 | --- | --- | --- |
 | `components.<name>.enable` | `false` | Whether the component is part of the instance. |
 | `components.<name>.source` | `catalog` for a catalog name, else `instance` | Where the module comes from. |
-| `components.<name>.method` | the component's default | The install method on every platform: `nix`, `official-binary`, `pypi`, `deb`, `app-archive` or `external`. |
+| `components.<name>.method` | the component's default | The install method on every platform: `nix`, `official-binary`, `pypi`, `deb`, `app-archive`, `system` or `external`. |
 | `components.<name>.method_by_platform.linux` | none | The method on Linux; wins over `method`. |
 | `components.<name>.method_by_platform.darwin` | none | The method on macOS; wins over `method`. |
 | `components.<name>.profiles` | every profile | The profiles where the component is active. |

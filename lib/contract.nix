@@ -24,12 +24,14 @@ let
     "deb"
     "app-archive"
     "external"
+    "system"
   ];
 
   # System-level methods: skipped in adopt mode.
   systemMethods = [
     "deb"
     "app-archive"
+    "system"
   ];
 
   platforms = [
@@ -240,6 +242,25 @@ let
     };
   };
 
+  # A file of a system component, written root-owned with this text and mode.
+  systemFileSpec = types.submodule {
+    options = {
+      path = option (
+        types.strMatching "/[A-Za-z0-9._@+-]+(/[A-Za-z0-9._@+-]+)*"
+        // {
+          description = "absolute path";
+        }
+      ) "Absolute path of the file on the machine.";
+      text = option types.str "The whole content of the file.";
+      mode = optionDefault (types.enum [
+        "0644"
+        "0640"
+        "0600"
+        "0755"
+      ]) "0644" "File mode.";
+    };
+  };
+
   # DEBs published as GitHub release assets, served by the local APT bridge.
   # A release asset an official-binary binary starts at run time.
   companionSpec = types.submodule {
@@ -337,6 +358,9 @@ let
       pin = option lockPath "Lock path of the archive.";
       appName = option types.str "Application bundle name.";
       dest = optionDefault homePath "~/Applications" "Destination directory.";
+    };
+    system = {
+      files = list systemFileSpec "System files written root-owned through sudo, each with its exact text and mode.";
     };
     external = {
       command = nullable types.str "Command expected on PATH.";

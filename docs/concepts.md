@@ -58,9 +58,10 @@ a default; the instance may choose another one per component and platform.
 | `pypi` | A Python application from a hash-pinned requirements file, in its own virtual environment, with its commands linked into `~/.local/bin`. |
 | `deb` | Debian packages with pinned minimum versions, in one APT transaction (Ubuntu). |
 | `app-archive` | A pinned application bundle, copied into `~/Applications` (macOS). |
+| `system` | System files with their exact text and mode, written root-owned through `sudo` (Linux). |
 | `external` | Installed by something else; dotsteward only verifies it. |
 
-`deb` and `app-archive` are system-level methods: they run only in a `fresh`
+`deb`, `app-archive` and `system` are system-level methods: they run only in a `fresh`
 profile.
 
 ## Profiles

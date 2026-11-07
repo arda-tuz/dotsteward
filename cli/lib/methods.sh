@@ -25,8 +25,8 @@
 #                                    [components] order
 #   methods_component NAME           the manifest entry of NAME (JSON)
 #   methods_component_method NAME    its resolved method
-#   methods_is_system_level METHOD   deb and app-archive: skipped in adopt
-#                                    mode
+#   methods_is_system_level METHOD   deb, app-archive and system: skipped in
+#                                    adopt mode
 #   methods_validate NAME            the method is known and available on
 #                                    this platform
 # Lock and versions
@@ -55,6 +55,10 @@
 #                                    bridge, then one apt transaction; sets
 #                                    METHODS_DEB_STATUS[name] and
 #                                    METHODS_DEB_DETAIL[name]
+#   methods_system_install NAME      the files of a system component
+#                                    (install.system.files) that are missing
+#                                    or differ, written root-owned through
+#                                    sudo
 #   app-archive dispatches to platform_app_archive_install NAME and
 #   platform_app_archive_check NAME of the platform layer, which set the same
 #   variables; without them the method is not available.
@@ -172,7 +176,7 @@ methods_component_method() {
 }
 
 methods_is_system_level() {
-  [[ $1 == deb || $1 == app-archive ]]
+  [[ $1 == deb || $1 == app-archive || $1 == system ]]
 }
 
 methods_validate() {
@@ -181,9 +185,9 @@ methods_validate() {
   method=$(methods_component_method "$name") || exit 1
   case $method in
     nix | official-binary | pypi | external) ;;
-    deb)
+    deb | system)
       [[ $DS_RUNTIME_PLATFORM == linux ]] ||
-        die "$name (deb): the deb method is not available on $DS_RUNTIME_PLATFORM"
+        die "$name ($method): the $method method is not available on $DS_RUNTIME_PLATFORM"
       ;;
     app-archive)
       if ! declare -F platform_app_archive_install >/dev/null || ! declare -F platform_app_archive_check >/dev/null; then
@@ -503,7 +507,96 @@ methods_check() {
     pypi) _methods_pypi_check "$name" "$profile" ;;
     external) _methods_external_check "$name" ;;
     app-archive) platform_app_archive_check "$name" ;;
+    system) _methods_system_check "$name" ;;
   esac
+}
+
+# --- system ---------------------------------------------------------------
+
+# _methods_system_files NAME: one JSON object per line, {path, text, mode}, the
+# files of the component in declaration order.
+_methods_system_files() {
+  _methods_install_field "$1" '.files[]'
+}
+
+# _methods_system_state FILE_JSON: sets _sys_path (the path the component
+# names), _sys_target (below DOTSTEWARD_SYSTEM_ROOT), _sys_mode and _sys_problem
+# (empty, "missing", "differs" or "mode <actual>").
+_methods_system_state() {
+  local actual
+  _sys_path=$(jq -r '.path' <<<"$1")
+  _sys_mode=$(jq -r '.mode' <<<"$1")
+  _sys_target=${DOTSTEWARD_SYSTEM_ROOT:-}$_sys_path
+  _sys_problem=''
+  if [[ ! -f $_sys_target ]]; then
+    _sys_problem=missing
+  elif ! cmp -s -- "$_sys_target" <(jq -j '.text' <<<"$1"); then
+    _sys_problem=differs
+  else
+    actual=$(stat -c %a -- "$_sys_target")
+    actual=$(printf '%04o' "$((8#$actual))")
+    [[ $actual == "$_sys_mode" ]] || _sys_problem="mode $actual"
+  fi
+}
+
+_methods_system_count() {
+  if (($1 == 1)); then
+    printf '1 system file'
+  else
+    printf '%s system files' "$1"
+  fi
+}
+
+_methods_system_check() {
+  local file count=0
+  while IFS= read -r file; do
+    [[ -n $file ]] || continue
+    count=$((count + 1))
+    _methods_system_state "$file"
+    case $_sys_problem in
+      '') ;;
+      missing)
+        _methods_set failed "system file $_sys_path is missing"
+        return 1
+        ;;
+      differs)
+        _methods_set failed "system file $_sys_path differs from the component"
+        return 1
+        ;;
+      *)
+        _methods_set failed "system file $_sys_path has ${_sys_problem}, the component $_sys_mode"
+        return 1
+        ;;
+    esac
+  done < <(_methods_system_files "$1")
+  _methods_set satisfied "$(_methods_system_count "$count") as the component has them"
+}
+
+methods_system_install() {
+  (($# == 1)) || die "usage: methods_system_install NAME"
+  local name=$1 file count=0 written=0 tmp_dir staged
+  tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotsteward-system.XXXXXX") || die "cannot create a temporary directory"
+  while IFS= read -r file; do
+    [[ -n $file ]] || continue
+    count=$((count + 1))
+    _methods_system_state "$file"
+    [[ -n $_sys_problem ]] || continue
+    staged=$tmp_dir/file
+    jq -j '.text' <<<"$file" >"$staged"
+    # install(1) writes a new file and renames it over the old one: a reader sees one or the other.
+    if ! sudo install -D -o root -g root -m "$_sys_mode" "$staged" "$_sys_target"; then
+      rm -rf -- "$tmp_dir"
+      _methods_set failed "cannot write $_sys_path"
+      return 1
+    fi
+    written=$((written + 1))
+  done < <(_methods_system_files "$name")
+  rm -rf -- "$tmp_dir"
+  if ((written)); then
+    _methods_set installed "$(_methods_system_count "$written") written"
+  else
+    _methods_set satisfied "$(_methods_system_count "$count") as the component has them"
+  fi
 }
 
 # --- external -------------------------------------------------------------

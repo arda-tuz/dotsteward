@@ -384,6 +384,13 @@ for name in "${components[@]}"; do
       platform_app_archive_install "$name"
       report "$name" "$method" "$METHODS_STATUS" "$METHODS_DETAIL"
       ;;
+    system)
+      if methods_system_install "$name"; then
+        report "$name" "$method" "$METHODS_STATUS" "$METHODS_DETAIL"
+      else
+        failure "$name" "$method" "$METHODS_DETAIL"
+      fi
+      ;;
     *) report "$name" "$method" skipped "$(delegated_detail "$method")" ;;
   esac
 done
