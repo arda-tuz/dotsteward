@@ -15,7 +15,7 @@ mkdir -p "$up_inst/hosts" "$up_inst/agent/skills/third-skill"
 printf 'schema_version = 1\n' >"$up_inst/hosts/example-host.toml"
 printf 'schema_version = 1\n' >"$up_inst/hosts/other-host.toml"
 set_toml hosts producer '"other-host"'
-jq -n '{schema_version: "1.0", generated_at: "2026-01-01T00:00:00Z",
+jq -n '{schema_version: "1.0", generated_at: "2026-01-01T00:00:00Z", nix_packages: {},
   agent_tools: {codex: {linux: {version: "1.0.0", sha256: "1111111111111111111111111111111111111111111111111111111111111111"}}}}' \
   >"$up_inst/versions.lock.json"
 jq -n '{nodes: {nixpkgs: {locked: {rev: "1111111", narHash: "sha256-one", type: "github"}, original: {type: "github"}},
@@ -104,7 +104,9 @@ git -C "$up_inst" reset -q --hard HEAD
 
 # --- not the producer: what any machine may write ----------------------------------------------------
 
-json_edit "$up_inst/versions.lock.json" '.agent_tools["example-cli"] = {linux: {version: "1.0.0"}} | .generated_at = "2026-02-02T00:00:00Z"'
+# The first key of a table the base has empty is a new pin as well.
+json_edit "$up_inst/versions.lock.json" '.agent_tools["example-cli"] = {linux: {version: "1.0.0"}}
+  | .nix_packages.first = {resolved: "1.0"} | .generated_at = "2026-02-02T00:00:00Z"'
 json_edit "$up_inst/flake.lock" '.nodes["example-input"] = {locked: {rev: "5555555", type: "github"}, original: {type: "github"}}
   | .nodes.root.inputs["example-input"] = "example-input"'
 json_edit "$lock" '.release_tools["new-tool"] = {version: "1.0.0"} | .generated_at = "2026-02-02T00:00:00Z"'
