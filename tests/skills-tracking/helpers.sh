@@ -146,6 +146,11 @@ wait_captures() {
 }
 
 _process_lives() {
+  # Without /proc (darwin) the system takes a detached process that ended away at once.
+  [[ -d /proc/self ]] || {
+    kill -0 "$1" 2>/dev/null
+    return
+  }
   [[ -r /proc/$1/stat ]] || return 1
   [[ $(sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -d' ' -f1) != Z ]]
 }
