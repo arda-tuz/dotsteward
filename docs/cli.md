@@ -72,7 +72,7 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | [`init`](#init) | Create a new instance from the framework template (--dir, --remote, --components) |
 | [`install`](#install) | Run the system-install phase (deb transaction, phase hooks) or check every install method |
 | [`login-shell`](#login-shell) | Set, migrate or check the stable login shell of the instance |
-| [`pins`](#pins) | Check, sync and research the pinned versions of the instance's lock files |
+| [`pins`](#pins) | Check, sync, research and move the pinned versions of the instance's lock files |
 | [`preflight`](#preflight) | Read-only check of this machine against the instance fast path (exit 3: adaptive route) |
 | [`probes`](#probes) | Run the version, presence and feature probes of a generation's manifest |
 | [`rebuild`](#rebuild) | Build the instance's Home Manager generation for this machine and optionally switch to it |
@@ -84,6 +84,7 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | [`sync`](#sync) | Old name of generate: a warning, then generate with the same arguments (until 2.0.0) |
 | [`txn`](#txn) | Prepare, publish and report a maintenance transaction |
 | [`update`](#update) | Old name of txn: a warning, then txn with the same arguments (until 2.0.0) |
+| [`upgrade`](#upgrade) | Bring this machine and the shared lock to the newest stable versions, with one command |
 | [`version`](#version) | Print the framework version, source revision and narHash |
 
 ## `agents`
@@ -848,7 +849,7 @@ of a failed system command.
 
 ## `pins`
 
-Check, sync and research the pinned versions of the instance's lock files.
+Check, sync, research and move the pinned versions of the instance's lock files.
 
 ```text
 usage: dotsteward pins [-h] [--instance DIR] COMMAND ...
@@ -860,6 +861,7 @@ positional arguments:
     check         cross-check the lock files with every rule
     sync          rewrite the derived values of the lock files
     latest        report the newest stable upstream versions (read-only)
+    apply         move the pins to the rows of pins latest; commits nothing
 
 options:
   -h, --help      show this help message and exit
@@ -898,6 +900,21 @@ options:
   --out FILE  write the full JSON report to FILE
   --all       also list rows that follow other pins
   --jobs N    parallel queries (default 8)
+```
+
+### `pins apply`
+
+```text
+usage: dotsteward pins apply [-h] [--latest FILE] [--plan] [--skip ID]
+                             [--json] [--jobs N]
+
+options:
+  -h, --help     show this help message and exit
+  --latest FILE  use this pins latest report instead of researching
+  --plan         show what would happen and write nothing
+  --skip ID      leave the rows with this id (a glob) alone (repeatable)
+  --json         print the summary as JSON on standard output
+  --jobs N       parallel queries (default 8)
 ```
 
 ## `preflight`
@@ -1021,6 +1038,9 @@ Options:
                       the policy's denylist path is used
   --extra-terms F     more terms in the denylist format
   --redact            print rule and location only, never the matched text
+  --secrets-only      only the shape of real credentials, for a tree that is not yours
+                      (--tree): no credential assignment in prose, no home path, e-mail,
+                      address or non-ASCII rule, no policy file, no denylist
   --instance-policy   the policy of the instance found like every instance
                       command, as `dotsteward static` applies it to personal
                       content: generic secret rules, [privacy] forbidden_paths
@@ -1042,8 +1062,7 @@ Sync tracked application settings with the instance's settings buffer.
 usage: local-maintained-files [-h] [--repo REPO] [--home HOME]
                               [--state-dir STATE_DIR]
                               [--targets-file TARGETS_FILE]
-                              {status,apply,flush,resolve,reconcile,verify,track,track-file,untrack,validate}
-                              ...
+                              {status,apply,flush,resolve,reconcile,verify,track,track-file,untrack,validate} ...
 
 Sync tracked application settings with the instance's settings buffer.
 
@@ -1135,9 +1154,8 @@ options:
 ### `settings track`
 
 ```text
-usage: local-maintained-files track [-h] --id ID --target TARGET
-                                    (--key KEY | --key-json KEY_JSON)
-                                    [--note NOTE]
+usage: local-maintained-files track [-h] --id ID --target TARGET (--key KEY |
+                                    --key-json KEY_JSON) [--note NOTE]
 
 options:
   -h, --help           show this help message and exit
@@ -1151,8 +1169,8 @@ options:
 ### `settings track-file`
 
 ```text
-usage: local-maintained-files track-file [-h] --id ID --path PATH --source
-                                         SOURCE [--mode MODE]
+usage: local-maintained-files track-file [-h] --id ID --path PATH
+                                         --source SOURCE [--mode MODE]
 
 options:
   -h, --help       show this help message and exit
@@ -1195,22 +1213,20 @@ machine.
 
 positional arguments:
   COMMAND
-    effective
-              what this machine leaves out, and why
-    status    what the machine knows about the own skills of the lock
-    reconcile
-              compare the skill roots with what is known, without network
-    capture   publish the skills that wait, from a separate worktree
-    track     answer the question about a skill: --all, --here or --never
-    resolve   settle a conflict: the local copy or the repository wins
-    diff      the three trees of a skill, to compare them
-    forget    take a skill out of the repository, for all machines
-    restore   install a skill deleted here from the repository again
-    retry     try a skill that was kept back again, now
-    hooks     the hooks of skill tracking in the configuration of an agent
+    effective  what this machine leaves out, and why
+    status     what the machine knows about the own skills of the lock
+    reconcile  compare the skill roots with what is known, without network
+    capture    publish the skills that wait, from a separate worktree
+    track      answer the question about a skill: --all, --here or --never
+    resolve    settle a conflict: the local copy or the repository wins
+    diff       the three trees of a skill, to compare them
+    forget     take a skill out of the repository, for all machines
+    restore    install a skill deleted here from the repository again
+    retry      try a skill that was kept back again, now
+    hooks      the hooks of skill tracking in the configuration of an agent
 
 options:
-  -h, --help  show this help message and exit
+  -h, --help   show this help message and exit
 
 Exit status: 0 done, 1 refusal, 2 usage error, 3 a conflict or a question
 waits, 4 a privacy stop, 6 no network. `skills hook EVENT --agent AGENT` is
@@ -1336,16 +1352,19 @@ options:
 ### `skills forget`
 
 ```text
-usage: dotsteward skills forget [-h] SKILL
+usage: dotsteward skills forget [-h] [--clear] SKILL
 
 Removes the skill from the lock and the repository. A local copy stays, and
-nobody asks about it.
+nobody asks about it. --clear is for later, once no copy is left: this machine
+stops keeping the name out, of forget and of track --never alike, and a new
+skill of that name is a new skill.
 
 positional arguments:
   SKILL
 
 options:
   -h, --help  show this help message and exit
+  --clear     stop keeping out a name whose copy is gone
 ```
 
 ### `skills restore`
@@ -1635,6 +1654,34 @@ status
                             file is absent or not a JSON object
 
 Exit status: 0 done (already published included), 1 refused or failed.
+```
+
+## `upgrade`
+
+Bring this machine and the shared lock to the newest stable versions, with one command.
+
+```text
+usage: dotsteward upgrade [-h] [--tracked | --all] [--plan] [--json]
+                          [--accept KEY]
+
+Brings this machine and the shared lock to the newest stable versions. Without
+a flag a terminal asks what to update; without a terminal it is --tracked.
+Exit status: 0 done, 1 a refusal or a failed step, 2 usage error, 3 a decision
+or a sudo step waits (review.json), 4 a privacy stop, 6 no network: the
+network steps were skipped and the checks ran, 130 interrupted: the next run
+finishes. Never: an OS release upgrade, autoremove, a reboot.
+
+options:
+  -h, --help    show this help message and exit
+  --tracked     what the instance tracks, then a read only analysis of
+                everything else and one offer
+  --all         also apt as a whole, snap, flatpak, npm, rustup and sampletool tool;
+                no second question
+  --plan        say what both modes would do and change nothing
+  --json        print the report as one JSON document
+  --accept KEY  answer in advance: install:PACKAGE, series:kernel=X.Y,
+                series:nvidia=N, firmware; all of them need a terminal in the
+                end
 ```
 
 ## `version`
