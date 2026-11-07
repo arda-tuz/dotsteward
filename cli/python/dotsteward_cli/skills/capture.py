@@ -212,12 +212,20 @@ def _write_tree_lock(worktree: str, relative: str, document: Mapping[str, Any]) 
         handle.write(text)
 
 
-def _find_entry(entries: Sequence[Any], name: str, directory: str) -> dict[str, Any] | None:
-    """The entry with this name, else the one with this directory."""
-    for key, value in (("name", name), ("directory", directory)):
+def _entry_of_copy(entries: Sequence[Any], directory: str) -> dict[str, Any] | None:
+    """The entry whose copy is the directory DIRECTORY. The directory says which skill a
+    copy is: its ``name`` may be what it was copied with."""
+    for key in ("directory", "legacy_directory", "name"):
         for entry in entries:
-            if isinstance(entry, dict) and entry.get(key) == value:
+            if isinstance(entry, dict) and entry.get(key) == directory:
                 return entry
+    return None
+
+
+def _entry_named(entries: Sequence[Any], name: str) -> dict[str, Any] | None:
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("name") == name:
+            return entry
     return None
 
 
@@ -384,8 +392,15 @@ def _apply_copy(
         attempt.rejected.append((work, reason or "skill-invalid", form.digest if form else None))
         return []
     entries: list[Any] = document["skills"]
-    entry = _find_entry(entries, declared, os.path.basename(os.path.normpath(path)))
-    directory = str(entry.get("directory") or entry["name"]) if entry else os.path.basename(os.path.normpath(path))
+    basename = os.path.basename(os.path.normpath(path))
+    entry = _entry_of_copy(entries, basename)
+    holder = _entry_named(entries, declared)
+    if holder is not None and holder is not entry:
+        # A copy of another skill that still carries its name: it must not land on that skill.
+        work.item["digest"] = form.digest
+        attempt.taken.append(work)
+        return []
+    directory = str(entry.get("directory") or entry["name"]) if entry else basename
     entry_name = str(entry["name"]) if entry else declared
     record = state.base_entry(base, entry_name)
     local = form.digest
@@ -460,7 +475,7 @@ def _apply_forget(
     work: Work, worktree: str, tree: Mapping[str, str], document: dict[str, Any], attempt: _Attempt
 ) -> list[str]:
     entries: list[Any] = document["skills"]
-    entry = _find_entry(entries, work.name, work.name)
+    entry = _entry_named(entries, work.name) or _entry_of_copy(entries, work.name)
     if entry is None:
         attempt.finished.append(work)
         return []
@@ -561,7 +576,8 @@ def _settle(state_root: str, attempt: _Attempt, published: publish.Published, su
         summary.conflicts.append(work.name)
         summary.codes.append(report.PENDING)
     for work in attempt.taken:
-        fields = {"state": reconcile.NAME_TAKEN, "reason": None, "last_asked": None}
+        digest = work.item.get("digest")
+        fields = {"state": reconcile.NAME_TAKEN, "reason": None, "blocked_digest": digest, "last_asked": None}
         state.set_item(state_root, work.key, {**_identity_fields(work), **fields})
         summary.conflicts.append(work.name)
         summary.codes.append(report.PENDING)

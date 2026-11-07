@@ -351,7 +351,9 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
 
 def _blocked_changed(item: Any, since: Any, full: bool, context: Mapping[str, Any]) -> bool:
     """A new skill that was kept back has another content by now, so it gets a new try."""
-    if not isinstance(item, dict) or item.get("state") != BLOCKED or not isinstance(item.get("path"), str):
+    if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+        return False
+    if item.get("state") != BLOCKED and not (item.get("state") == NAME_TAKEN and item.get("blocked_digest")):
         return False
     path = item["path"]
     if not os.path.isdir(path):

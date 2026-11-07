@@ -208,8 +208,9 @@ def _question(items: Sequence[Mapping[str, Any]]) -> str:
         )
     if "name-taken" in groups:
         lines.append(
-            f"- The name is used for another machine: {', '.join(groups['name-taken'])}. Ask the user to rename "
-            "the skill here, or to answer dotsteward skills track <name> --never."
+            f"- The name in SKILL.md belongs to another skill or to a skill of another machine: "
+            f"{', '.join(groups['name-taken'])}. Ask the user to rename the skill here, "
+            "or to answer dotsteward skills track <name> --never."
         )
     if "deleted" in groups:
         lines.append(
