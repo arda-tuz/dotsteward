@@ -60,9 +60,12 @@ entries=()
 if [[ -n $launch ]]; then
   mapfile -t entries <<<"$launch"
 fi
-# shellcheck disable=SC2016 # jq programs: $component and $name are jq variables
-listed=$(config_query -r --arg component "$component" '.components[$component].options.plugins // []
-  | .[] | (.spec | split("@")[0]) as $name | (.mcpServers // [])[] | "plugin:\($name):\(.)"')
+# The servers of the plugins this machine does not leave out.
+# shellcheck disable=SC2016 # jq programs: $component, $skip and $name are jq variables
+listed=$(config_query -r --arg component "$component" --argjson skip "${DS_SKIP_PLUGINS_JSON:-[]}" \
+  '.components[$component].options.plugins // []
+  | .[] | select((.spec? // "") as $spec | $skip | index($spec) | not)
+  | (.spec | split("@")[0]) as $name | (.mcpServers // [])[] | "plugin:\($name):\(.)"')
 servers=()
 if [[ -n $listed ]]; then
   mapfile -t servers <<<"$listed"
