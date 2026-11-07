@@ -19,7 +19,8 @@ moved between the fetch and the push. A skill and a host file publish through he
 
 ``stamp`` is the one place that names the machine on what `txn publish` sends: an agent's plain
 `git commit` and the writer of `upgrade` do not have to know about it. A commit that already
-names a machine keeps its name; a commit that gets the line keeps its tree, author and dates.
+names a machine keeps its name; a commit that gets the line keeps its tree, author and dates, and
+is signed again when it was signed or the checkout signs its commits.
 
 Command line::
 
@@ -202,6 +203,7 @@ def stamp(repository: str | os.PathLike[str], base: str, machine: str) -> str:
     commits = [row.split() for row in rows]
     if any(len(row) != 2 for row in commits):
         return head
+    signing = git(repository, "config", "--bool", "commit.gpgsign").stdout.strip() == "true"
     parent = base
     for commit, old_parent in commits:
         message = git(repository, "log", "-1", "--format=%B", commit).stdout.rstrip("\n")
@@ -213,9 +215,12 @@ def stamp(repository: str | os.PathLike[str], base: str, machine: str) -> str:
             message = f"{message}\n\n{MACHINE_TRAILER}: {machine}"
         fields = git(repository, "log", "-1", "--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%T", commit).stdout
         author, email, date, committer, committer_email, committer_date, tree = fields.rstrip("\n").split("\0")
+        # A signed commit stays signed: the key of this checkout signs the new one, as it signed the old.
+        signed = signing or "\ngpgsig " in git(repository, "cat-file", "commit", commit).stdout
         made = git(
             repository,
             "commit-tree",
+            *(["-S"] if signed else []),
             tree,
             "-p",
             parent,
