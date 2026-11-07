@@ -76,6 +76,7 @@ dotsteward scan --range origin/main..HEAD --metadata --require-denylist --redact
 | `--require-denylist` | refuse to run without a denylist; without `--denylist` the policy's path is used |
 | `--extra-terms F` | match more terms in the same format |
 | `--redact` | print the rule and the location only, never the matched text |
+| `--instance-policy` | the policy of the instance instead of the framework's, as `dotsteward static` applies it to personal content: generic secret rules, `[privacy] forbidden_paths` and `file_rules` |
 
 A denylist has one term per line: a plain line matches as a
 case-insensitive substring, `word:TERM` as a whole word, `re:ERE` as an

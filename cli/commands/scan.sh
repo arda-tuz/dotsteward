@@ -20,10 +20,9 @@
 #   --extra-terms F     more terms in the denylist format
 #   --redact            print rule and location only, never the matched text
 #   --instance-policy   the policy of the instance found like every instance
-#                       command (`dotsteward --instance DIR`, for example), as
-#                       `dotsteward static` applies it to personal content:
-#                       generic secret rules, [privacy] forbidden_paths and
-#                       file_rules; the terms come from --denylist
+#                       command, as `dotsteward static` applies it to personal
+#                       content: generic secret rules, [privacy] forbidden_paths
+#                       and file_rules; the terms come from --denylist
 #
 # The policy is privacy/policy.toml of the scanned repository root when it
 # exists, otherwise the framework's own; privacy/allowlist.txt next to it
