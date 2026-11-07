@@ -70,6 +70,13 @@ printf '\n[components.other]\nenable = true\nmachines = ["nowhere"]\n' >>"$agent
 assert_contains "$(problems)" "component other: machines names nowhere, which has no hosts/nowhere.toml"
 sed -i '/^\[components.other\]$/,$d' "$agents_inst/workstation.toml"
 assert_exit 0 run_host check
+for key in 'machines = []' 'machines = ["Not A Name"]' 'tags = []' 'tags = ["machine:laptop"]' 'tags = ["no:other"]'; do
+  cp -- "$agents_inst/workstation.toml" "$DS_TEST_ROOT/good.toml"
+  printf '\n[components.other]\nenable = true\n%s\n' "$key" >>"$agents_inst/workstation.toml"
+  assert_exit 1 run_host check
+  assert_contains "$DS_STDERR" "components.other.${key%% *}"
+  cp -- "$DS_TEST_ROOT/good.toml" "$agents_inst/workstation.toml"
+done
 
 # A skill Home Manager links on every machine cannot be declined on one.
 lock_edit '(.skills[] | select(.name == "beta")).deployment = "home-manager"'

@@ -777,14 +777,15 @@ def ask(
         return items
     left: list[dict[str, Any]] = []
     for item in items:
+        removal = item["change"] == REMOVED
+        accepted = ("r" if removal else "i", "l", "n", "")
         while True:
             answer = _read_answer(_prompt(item))
             if answer == "d":
                 print(show_text(instance, item, env), file=sys.stderr, flush=True)
-                continue
-            break
-        removal = item["change"] == REMOVED
-        if answer == ("r" if removal else "i"):
+            elif answer in accepted:
+                break
+        if answer == accepted[0]:
             print(
                 f"[dotsteward] {_install(instance, this, item, now=install_now, env=env)}", file=sys.stderr, flush=True
             )

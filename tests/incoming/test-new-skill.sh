@@ -31,8 +31,9 @@ assert_exit 0 agents laptop2 check
 assert_exit 0 agents laptop2 install --skip-validation
 assert_eq 0 "$(find "$(home_of laptop2)/.agents/skills" -name foo | wc -l)" "agents install does not install it"
 
-# A person: ask later stores nothing, the same question comes again, and it is no failure.
-out=$(ask_on_tty laptop2 'l' incoming)
+# A person: an answer that is none asks again; ask later stores nothing, the same question comes
+# again, and it is no failure.
+out=$(ask_on_tty laptop2 $'x\nl' incoming)
 assert_contains "$out" 'skill foo (new) - machine laptop1'
 assert_contains "$out" '[I]nstall, ask [L]ater, [N]ever on this machine, show the [D]ifference'
 assert_eq 'skill:foo' "$(waiting laptop2)"
