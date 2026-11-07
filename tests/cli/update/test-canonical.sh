@@ -190,12 +190,20 @@ assert_eq "$(head_oid)" "$(git -C "$other" rev-parse HEAD)"
 assert_eq "$base" "$(git -C "$canon" rev-parse HEAD)"
 git -C "$canon" pull -q --ff-only origin main
 
-# An inventory path that is not a repository never falls back.
-jq -n --arg repo "$DS_TEST_ROOT/missing" '{canonical_repo: $repo}' >"$inventory"
+# An inventory path that is a directory but no repository never falls back.
+mkdir -p "$DS_TEST_ROOT/not-a-repository"
+jq -n --arg repo "$DS_TEST_ROOT/not-a-repository" '{canonical_repo: $repo}' >"$inventory"
 candidate
 published_silently
 assert_eq "$base" "$(git -C "$canon" rev-parse HEAD)"
 git -C "$canon" pull -q --ff-only origin main
+
+# A path that is gone (the clone of an upgrade, removed since) falls back to instance.checkout.
+jq -n --arg repo "$DS_TEST_ROOT/missing" '{canonical_repo: $repo}' >"$inventory"
+candidate
+reset_logs
+assert_exit 0 run_update publish --scope maintain
+assert_eq "$(head_oid)" "$(git -C "$canon" rev-parse HEAD)" "the checkout of the configuration follows"
 
 # An empty or absent canonical_repo, or an unreadable inventory, falls back
 # to instance.checkout.
