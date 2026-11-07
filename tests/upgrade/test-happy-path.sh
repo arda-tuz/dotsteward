@@ -15,12 +15,11 @@ tool_stub codex 'printf "codex-cli 1.0.0\n"'
 tool_stub uname 'case "$1" in -r) printf "7.0.0-38-generic\n";; *) printf "Linux\n";; esac'
 tool_stub fwupdmgr 'exit 2'
 ds_dpkg_installed example-tracked 1.0
-ds_dpkg_installed linux-image-7.0.0-38-generic 7.0.0-38.38
-ds_dpkg_installed linux-image-7.0.0-42-generic 7.0.0-42.42
+NEWEST='"newest_kernel": {"abi": "7.0.0-42", "base": "generic", "release": "7.0.0-42-generic", "nvidia": false, "prebuilt": false, "driver_version": null, "planned": false}'
 
 apt_answer commit '{"status": "committed", "committed": true,
   "changes": {"install": [], "upgrade": [{"name": "example-tracked", "from": "1.0", "to": "1.1"}], "remove": [], "downgrade": []},
-  "items": [], "gated": {"decision": "no-move"}, "applicable": true, "log": null}'
+  "items": [], "gated": {"decision": "no-move"}, "applicable": true, "log": null, '"$NEWEST"'}'
 move flake_inputs.nixpkgs 26.05-new channel
 move agent_tools.codex.linux 2.0.0 download
 
@@ -30,7 +29,9 @@ output=$DS_STDOUT
 
 assert_order '^sudo -v' '^sudo -n( |.*)true|^sudo -n .*recover' '^apt recover' '^apt policy' '^bridge ' \
   '^sudo -n apt-get .*update' '^apt commit' '^sudo -k' '^pins latest' '^pins .*apply' '^static ' '^claude update' \
-  '^rebuild ' '^e2e '
+  '^rebuild .*root=.*/upgrade/work' '^e2e .*root=.*/upgrade/work' "^rebuild .*root=$up_inst\$"
+work_gone
+assert_no_step "^pins .*root=$up_inst\$"
 
 assert_no_step '^(sudo .*)?reboot'
 assert_no_step 'autoremove'
@@ -60,24 +61,24 @@ last_report '.data.mode == "tracked" and .data.profile == "workstation"'
 assert_eq ok "$(step_status apt-commit)"
 assert_eq ok "$(step_status publish)"
 
-# Only said: the machine runs an older kernel than it has.
+# Only said: the machine runs an older kernel than it has, by the word of the engine.
 assert_contains "$output" "7.0.0-42-generic"
 assert_contains "$output" "eboot"
 review_json '[.items[] | select(.code == "reboot-required")] | length == 1'
 review_json '.exit_code == 0'
+last_report '.data.newest_kernel.release == "7.0.0-42-generic"'
 
 apt_answer commit "$NOTHING_CHANGED"
 
-# On a machine with a driver, the kernel a reboot starts is asked about its module; never a reboot.
-ds_dpkg_installed nvidia-driver-595-open 595.99.02-0ubuntu0.24.04.1
-tool_stub modinfo 'exit 1'
-clear_log
-assert_exit 3 on_terminal 'Update these too=n' -- --tracked
+# Without a sudo window this run, the plan of the engine still says what a reboot starts, and the
+# module the kernel lacks waits for a person.
+apt_answer plan '{"status": "nothing", "changes": {}, "applicable": true, '"$NEWEST"', "items": [{"code": "module-missing", "pending": true, "kernel": "7.0.0-42-generic", "message": "the newest kernel has no nvidia module"}, {"code": "phased-waiting", "pending": false, "packages": ["example-lib"]}]}'
+assert_exit 3 upgrade --tracked
 review_json '[.items[] | select(.code == "module-missing" and .kernel == "7.0.0-42-generic")] | length == 1'
-tool_stub modinfo 'printf "Canonical Ltd. Kernel Module Signing\n"'
-clear_log
-assert_exit 0 on_terminal 'Update these too=n' -- --tracked
-review_json '[.items[] | select(.code == "module-missing")] | length == 0'
+review_json '[.items[] | select(.code == "phased-waiting")] | length == 0'
+review_json '[.items[] | select(.code == "reboot-required")] | length == 1'
+apt_answer plan "$NOTHING_CHANGED"
+
 # The analysis is local: review.json names numbers and the path.
 assert_file_mode "$DOTSTEWARD_STATE_ROOT/upgrade/analysis.json" 600
 assert_json "$DOTSTEWARD_STATE_ROOT/upgrade/analysis.json" '.schema_version == 1 and .channels.apt.available == true'

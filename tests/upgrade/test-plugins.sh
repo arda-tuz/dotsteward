@@ -29,7 +29,7 @@ new=$HOME/.claude/plugins/cache/example-market/example-plugin/1.1.0
 mkdir -p "$new"
 printf 'two\n' >"$new/README.md"
 assert_exit 3 upgrade --tracked
-assert_contains "$(steps '^scan .*plugins/cache')" "--tree --redact"
+assert_contains "$(steps '^scan .*plugins/cache')" "--tree --secrets-only --redact"
 assert_contains "$(steps '^scan .*plugins/cache')" "$new"
 assert_eq 1 "$(steps '^scan .*plugins/cache' | wc -l | tr -d ' ')" "only what changed"
 assert_contains "$DS_STDOUT" "1 plugin updated itself"
@@ -52,6 +52,16 @@ clear_log
 assert_exit 3 upgrade --tracked
 assert_no_step '^scan .*plugins/cache'
 review_json '[.items[] | select(.code == "plugin-scan-finding")] | length == 1'
+
+# A scanner that fails is no finding (M10).
+clear_log
+broken=$HOME/.claude/plugins/cache/example-market/broken-plugin/1.0.0
+mkdir -p "$broken"
+printf 'x\n' >"$broken/SCAN-FAILS"
+assert_exit 3 upgrade --tracked
+review_json '[.items[] | select(.code == "plugin-scan-failed" and (.plugin | contains("broken-plugin")))] | length == 1'
+review_json '[.items[] | select(.code == "plugin-scan-finding" and (.plugin | contains("broken-plugin")))] | length == 0'
+rm -rf -- "$broken"
 
 # Never: the marketplaces, a plugin update, autoUpdate.
 log=$(cat "$UP_LOG")

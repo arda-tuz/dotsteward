@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # summary: Fake rebuild of the upgrade tests: the record of rebuild --switch
 set -euo pipefail
-printf 'rebuild %s\n' "$*" >>"$UP_LOG"
+printf 'rebuild %s root=%s\n' "$*" "$DOTSTEWARD_INSTANCE" >>"$UP_LOG"
 [[ ! -e $UP_CONTROL/rebuild-fails ]] || exit 1
+if [[ -e $UP_CONTROL/rebuild-fails-in-work && $DOTSTEWARD_INSTANCE == */upgrade/work ]]; then
+  exit 1
+fi
+if [[ -e $UP_CONTROL/rebuild-status-hook ]]; then
+  bash "$UP_CONTROL/rebuild-status-hook"
+fi
 if [[ -e $UP_CONTROL/rebuild-status ]]; then
   exit "$(<"$UP_CONTROL/rebuild-status")"
 fi

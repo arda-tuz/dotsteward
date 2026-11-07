@@ -63,7 +63,10 @@ git -C "$inst" remote add origin "$remote"
 git -C "$inst" add -A
 git -C "$inst" diff --cached --quiet || git -C "$inst" commit -q -m "chore: the world"
 git -C "$inst" push -q "$bare" HEAD:main
-git -C "$inst" config url."$bare".insteadOf "$remote"
+git config --global url."$bare".insteadOf "$remote"
+mkdir -p "$state"
+jq -n '{schema_version: 1, name: "example-host", machine_key: "00112233445566778899aabbccddeeff", named_at: "2026-01-01T00:00:00Z",
+  host: {system: "x86_64-linux", profile: "main", platform: "ubuntu-24.04", tags: []}}' >"$state/machine.json"
 git -C "$inst" fetch -q origin
 branch=$(git -C "$inst" rev-parse --abbrev-ref HEAD)
 assert_eq main "$branch"
@@ -77,6 +80,7 @@ download=$(row agent_tools.example-release github-release 4.0.0 4.1.0 update '{"
 rows "$download"
 assert_exit 3 upgrade --tracked
 assert_contains "$(<"$UP_LOG")" "pins apply --latest"
+assert_eq "" "$(git -C "$inst" status --porcelain)"
 assert_eq '"4.1.0"' "$(json_get "$versions" '.agent_tools["example-release"].minimum_version')"
 assert_eq "chore: update pinned tool versions" "$(git -C "$inst" log -1 --format=%s)"
 assert_eq "" "$(git -C "$inst" status --porcelain)"

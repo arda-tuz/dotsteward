@@ -88,3 +88,23 @@ rows "$(row agent_tools.example-release github-release 5.0.0 5.3.0 update '{"tag
 assert_exit 1 apply --latest "$rows"
 assert_contains "$DS_STDERR" "v5.3.0"
 assert_eq "$before" "$(tree_state)"
+
+# A component table without a `version` constrains nothing, as the schema default says: the pin moves.
+# A `version` in it does: the pin stays, with the reason.
+cat >>"$inst/workstation.toml" <<'TOML'
+
+[components.example-release]
+enable = true
+TOML
+digest=$(printf '%064d' 7)
+later=https://downloads.example.invalid/example-release/v5.1.0/example-release-linux-x64.tar.gz
+current=$(json_get "$versions" '.agent_tools["example-release"].minimum_version | ltrimstr("\"") | rtrimstr("\"")')
+git -C "$inst" add -A
+git -C "$inst" commit -q -m "a component table"
+printf '\nversion = "4.*"\n' >>"$inst/workstation.toml"
+rows "$(row agent_tools.example-release github-release "$current" 5.1.0 update '{"tag":"v5.1.0","size":1,"sha256":"'"$digest"'","url":"'"$later"'"}')"
+assert_exit 0 apply --plan --latest "$rows" --json
+assert_contains "$DS_STDOUT" "pins-constrained"
+git -C "$inst" checkout -q -- workstation.toml
+assert_exit 0 apply --plan --latest "$rows" --json
+assert_not_contains "$DS_STDOUT" "pins-constrained"

@@ -39,6 +39,10 @@ case $command in
     fi
     ;;
   apply)
+    if [[ -e $UP_CONTROL/pins-garbage ]]; then
+      printf 'not json\n'
+      exit 1
+    fi
     moved='[]'
     if [[ -e $UP_CONTROL/moves ]]; then
       for move in $(jq -c '.[]' "$UP_CONTROL/moves"); do
@@ -55,8 +59,12 @@ case $command in
         fi
       done
     fi
-    jq -n --argjson moved "$moved" '{
-      moved: $moved, groups: [], lines: [], items: [],
+    groups='[]'
+    if [[ -e $UP_CONTROL/pins-status && $(<"$UP_CONTROL/pins-status") == 1 ]]; then
+      groups='[{"group": "npm:example", "outcome": "failed", "ids": ["example.broken"], "error": "asset 404"}]'
+    fi
+    jq -n --argjson moved "$moved" --argjson groups "$groups" '{
+      moved: $moved, groups: $groups, lines: [], items: [],
       framework_moved: ([$moved[] | select(.group == "framework")] | length > 0),
       flake_inputs_moved: [$moved[] | select(.id | startswith("flake_inputs.")) | .id],
       status: "ok", exit_code: 0}'

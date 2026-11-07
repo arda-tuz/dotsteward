@@ -44,7 +44,8 @@ assert_no_step 'fwupdmgr update cccc3333'
 clear_log
 ds_dpkg_installed example-tracked 9.9
 printf 'core:example\n' >"$UP_CONTROL/e2e-red"
-assert_exit 1 on_terminal 'Example SSD=y' 'Update these too=n' -- --tracked
+assert_exit 1 on_terminal 'Example SSD=y' -- --tracked
+review_json '[.items[] | select(.code == "firmware-available" and (.message | contains("green E2E")))] | length == 1'
 assert_no_step 'fwupdmgr update'
 rm -f -- "$UP_CONTROL/e2e-red"
 

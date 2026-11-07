@@ -4,7 +4,7 @@
 # $UP_CONTROL/e2e-red-once: this run is red, with the findings in the file (one id per line).
 # $UP_CONTROL/e2e-red: every run is. $UP_CONTROL/drop-network-after-e2e: the network ends here.
 set -euo pipefail
-printf 'e2e %s\n' "$*" >>"$UP_LOG"
+printf 'e2e %s root=%s\n' "$*" "$DOTSTEWARD_INSTANCE" >>"$UP_LOG"
 root=$DOTSTEWARD_INSTANCE
 repo_checks=true
 case " $* " in

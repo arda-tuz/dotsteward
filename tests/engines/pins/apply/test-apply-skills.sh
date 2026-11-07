@@ -38,10 +38,11 @@ reset_world() {
 }
 reset_world
 
-# A recorded transform is prose: only an agent can replay it.
+# A recorded transform is prose: only an agent can replay it. It is work that waits, no decision
+# that holds a run: the item stands in the review and the exit status stays 0.
 json_edit "$skills" 'data["skills"][1]["source_transform"] = "remove a key from the front matter"'
 before=$(tree_state)
-assert_exit 3 apply --latest "$rows"
+assert_exit 0 apply --latest "$rows"
 assert_eq "skill-transform skills.example-vendored" "$(item_codes)"
 assert_contains "$(jq -c '.items[0]' "$state/review.json")" "remove a key from the front matter"
 assert_eq "$before" "$(tree_state)"

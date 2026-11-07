@@ -4,7 +4,8 @@
     terminal.py [--answer TEXT=REPLY]... -- COMMAND [ARG...]
 
 Standard input, output and error of COMMAND are the terminal. Whenever TEXT shows up in its
-output, REPLY and a newline go to the terminal, each answer once and in the given order. What
+output, REPLY and a newline go to the terminal, each answer once and in the given order; the reply
+^C is the key, which interrupts what runs in the foreground, the way a person stops it. What
 the terminal showed goes to standard output. The exit status is the status of COMMAND. An answer
 never asked for is an error on standard error, with status 99: a question that should come did
 not come. Silence for two minutes ends the command with status 98: a question nobody planned for.
@@ -69,7 +70,7 @@ def main() -> int:
         while answers and answers[0][0].encode() in seen:
             text, reply = answers.pop(0)
             seen = seen.split(text.encode(), 1)[1]
-            os.write(master, reply.encode() + b"\n")
+            os.write(master, b"\x03" if reply == "^C" else reply.encode() + b"\n")
     status = child.wait()
     if answers:
         print(f"terminal.py: never asked: {answers[0][0]}", file=sys.stderr)

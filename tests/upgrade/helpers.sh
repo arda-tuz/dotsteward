@@ -39,6 +39,8 @@
 #   move ID TO [GROUP]       the fake pins apply moves the pin ID to TO when run; adds to the list
 #   name_machine NAME        machine.json as `host init` writes it, profile workstation
 #   step_status NAME         the status of step NAME in the newest report
+#   waiting_commit           the commit waiting for the remote, empty when none
+#   work_gone                the clone of the writer is not there
 
 # shellcheck source=tests/cli/update/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/update/helpers.sh"
@@ -232,6 +234,14 @@ last_report() {
 
 step_status() {
   jq -r --arg name "$1" '[.steps[] | select(.name == $name) | .status] | last // "none"' "$(newest_report)"
+}
+
+waiting_commit() {
+  git -C "$up_inst" rev-parse --verify --quiet refs/dotsteward/upgrade/waiting || true
+}
+
+work_gone() {
+  [[ ! -e $DOTSTEWARD_STATE_ROOT/upgrade/work ]] || ds_fail "the clone of the writer is still there"
 }
 
 move() {
