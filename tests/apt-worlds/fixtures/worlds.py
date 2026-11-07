@@ -17,6 +17,7 @@ ROOT/sources.world.list for a disposable container, where dpkg installs them.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import os
 import shutil
@@ -327,10 +328,11 @@ def world(new=(), *, installed=None, archive=None, suites=None, description=""):
 NEW_KERNEL_44 = kernel("7.0.0-44", K44)
 
 
-def _hooked(records, name):
-    """A package whose maintainer scripts wait while a flag exists and fail while another exists: a
-    test can stop dpkg at a known point of a commit. They also keep what the pin file says while
-    dpkg runs."""
+def _hooked(records, name, stages=("preinst", "postinst")):
+    """A copy of RECORDS with a package whose maintainer scripts wait while a flag exists and fail
+    while another exists: a test can stop dpkg at a known point of a commit. They also keep what
+    the pin file says while dpkg runs."""
+    records = copy.deepcopy(records)
     hook = """#!/bin/sh
 state=/run/dotsteward-test
 [ -d "$state" ] || exit 0
@@ -344,8 +346,14 @@ fi
 """
     for record in records:
         if record["name"] == name:
-            record["scripts"] = {stage: hook.replace("STAGE", stage) for stage in ("preinst", "postinst")}
+            record["scripts"] = {stage: hook.replace("STAGE", stage) for stage in stages}
     return records
+
+
+def _failing_package():
+    record = rec("example-broken", "1.0-1", "example-broken")
+    record["scripts"] = {"postinst": '#!/bin/sh\n[ ! -e /run/dotsteward-test/fail-unrelated ]\n'}
+    return record
 
 
 def _controls(*names):
@@ -663,6 +671,55 @@ WORLDS = {
         [*_bind_records(), *_controls(*CONTROLS)],
         suites={SECURITY: [*_bind_records(), *_controls(*CONTROLS)]},
         description="new gated packages and control packages, in -updates and -security",
+    ),
+    # A package that has nothing to do with the classes and whose postinst fails while a flag exists.
+    "broken-other": world(
+        _bind_records(),
+        installed=[*BASE_INSTALLED, _failing_package()],
+        archive=[*ARCHIVE, _failing_package()],
+        description="an unrelated package that dpkg cannot configure",
+    ),
+    "series-hooked-old": world(
+        driver("615", D615, component="multiverse")
+        + module("615", "7.0.0-42", K42, D615)
+        + kernel("7.0.0-44", K44)
+        + module("595", "7.0.0-44", K44, D99),
+        installed=_hooked(BASE_INSTALLED, "nvidia-driver-595-open", ("prerm",)),
+        archive=_hooked(ARCHIVE, "nvidia-driver-595-open", ("prerm",)),
+        description="a series change that can stop in the prerm of the old driver",
+    ),
+    "series-hooked-new": world(
+        _hooked(driver("615", D615, component="multiverse"), "nvidia-driver-615-open", ("preinst",))
+        + module("615", "7.0.0-42", K42, D615)
+        + kernel("7.0.0-44", K44)
+        + module("595", "7.0.0-44", K44, D99),
+        description="a series change that can stop in the preinst of the new driver",
+    ),
+    "series-keeps-fallback": world(
+        _driver_615() + module_abi("615", "7.0.0-38", K38 + "+1", upstream(D615)),
+        description="the new series has a module for the fallback kernel too",
+    ),
+    "bump-security": world(
+        driver("595", D99B),
+        suites={SECURITY: driver("595", D99B)},
+        description="a packaging bump of the driver, also in -security: what a person may undo by hand",
+    ),
+    "no-module-installed": world(
+        installed=kernel("7.0.0-44", K44)
+        + kernel_abi("7.0.0-42", K42)
+        + module("595", "7.0.0-42", K42, D99)
+        + module_abi("595", "7.0.0-38", K38 + "+1", UP99)
+        + kernel_abi("7.0.0-38", K38)
+        + driver("595", D99, dkms=False)
+        + support(),
+        archive=ARCHIVE + kernel("7.0.0-44", K44),
+        description="the newest installed kernel has no module, and the archive has none: nothing moves",
+    ),
+    "image-above-meta": world(
+        _controls("example-lib"),
+        installed=BASE_INSTALLED + kernel_abi("7.0.0-44", K44),
+        archive=ARCHIVE + kernel_abi("7.0.0-44", K44),
+        description="an image newer than the one the meta package names, installed by hand",
     ),
     "conffile": world(
         [

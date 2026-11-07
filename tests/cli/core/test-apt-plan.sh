@@ -66,8 +66,9 @@ SCRIPT
 chmod +x "$work/python-canned"
 export DOTSTEWARD_APT_PYTHON=$work/python-canned
 mkdir -p "$work/bin"
-export PATH=$work/bin:$PATH
-printf '#!/bin/sh\necho "Canonical Ltd. Kernel Module Signing"\n' >"$work/bin/modinfo"
+export DOTSTEWARD_MODINFO=$work/bin/modinfo
+# shellcheck disable=SC2016 # the text of a script, for its own shell
+printf '#!/bin/sh\n[ "$4" != signer ] || echo "Canonical Ltd. Kernel Module Signing"\n' >"$work/bin/modinfo"
 chmod +x "$work/bin/modinfo"
 
 commit() {
@@ -76,7 +77,7 @@ commit() {
   core_python -m dotsteward_cli.apt_plan commit --report apt-test >"$work/out" 2>"$work/err" || status=$?
 }
 
-AFTER='"after": {"kernel": {"abi": "7.0.0-44", "base": "generic"}, "nvidia": {"series": "595-open"}}'
+AFTER='"newest_kernel": {"abi": "7.0.0-44", "base": "generic", "release": "7.0.0-44-generic", "nvidia": true, "prebuilt": true, "driver_version": "595.99.02-0ubuntu1", "planned": false}'
 
 commit "{\"status\": \"committed\", \"committed\": true, \"items\": [], $AFTER}"
 assert_eq 0 "$status"
@@ -103,18 +104,45 @@ assert_eq 0 "$status"
 assert_json "$review" '[.items[].code] == ["module-loss", "dpkg-dist", "rollback-missing"]'
 assert_json "$review" '.items[] | select(.code == "dpkg-dist") | .path == "/etc/example.conf.dpkg-dist"'
 
-# The module of the newest kernel: signed by the distribution, by somebody else, or not there.
-printf '#!/bin/sh\necho "machine owner key"\n' >"$work/bin/modinfo"
+# The module of the newest kernel, whatever the commit did: signed by the distribution, by somebody
+# else, of another version, or not there. A person looks at all but the first.
+modinfo_says() {
+  # shellcheck disable=SC2016 # the text of a script, for its own shell
+  printf '#!/bin/sh\n[ "%s" != missing ] || exit 1\ncase "$4" in\n  signer) echo "%s" ;;\n  version) echo "%s" ;;\nesac\n' "$1" "$1" "$2" >"$work/bin/modinfo"
+}
+modinfo_says "Canonical Ltd. Kernel Module Signing" 595.99.02
 commit "{\"status\": \"committed\", \"committed\": true, \"items\": [], $AFTER}"
 assert_eq 0 "$status"
-assert_json "$review" '.items[] | select(.code == "module-signer") | .signer == "machine owner key" and .kernel == "7.0.0-44-generic"'
-printf '#!/bin/sh\nexit 1\n' >"$work/bin/modinfo"
+modinfo_says "machine owner key" 595.99.02
 commit "{\"status\": \"committed\", \"committed\": true, \"items\": [], $AFTER}"
 assert_eq 3 "$status"
-assert_json "$review" '.items[] | select(.code == "module-missing") | .kernel == "7.0.0-44-generic" and (.message | test("do not reboot"))'
-# Without the NVIDIA class there is no module to look for.
-commit '{"status": "committed", "committed": true, "items": [], "after": {"kernel": {"abi": "7.0.0-44", "base": "generic"}, "nvidia": null}}'
+assert_json "$review" '.items[] | select(.code == "module-signer") | .signer == "machine owner key" and .kernel == "7.0.0-44-generic"'
+# A module the machine builds and signs itself is a note only.
+commit "{\"status\": \"committed\", \"committed\": true, \"items\": [], ${AFTER/\"prebuilt\": true/\"prebuilt\": false}}"
 assert_eq 0 "$status"
+assert_json "$review" '.items[] | select(.code == "module-signer") | .signer == "machine owner key"'
+modinfo_says "Canonical Ltd. Kernel Module Signing" 595.80.01
+commit "{\"status\": \"committed\", \"committed\": true, \"items\": [], $AFTER}"
+assert_eq 3 "$status"
+assert_json "$review" '.items[] | select(.code == "module-version") | .module == "595.80.01" and .driver == "595.99.02" and .kernel == "7.0.0-44-generic"'
+modinfo_says missing ""
+for outcome in committed nothing refused dpkg-failed; do
+  commit "{\"status\": \"$outcome\", \"committed\": false, \"items\": [], $AFTER}"
+  ((status != 0)) || ds_fail "a kernel without a module after $outcome is no green run"
+  assert_json "$review" '.items[] | select(.code == "module-missing") | .kernel == "7.0.0-44-generic" and (.message | test("do not reboot"))'
+done
+# What the plan brings is no finding, and without the NVIDIA class there is no module to look for.
+commit "{\"status\": \"nothing\", \"committed\": false, \"items\": [], ${AFTER/\"nvidia\": true/\"nvidia\": false}}"
+assert_eq 0 "$status"
+commit "{\"status\": \"nothing\", \"committed\": false, \"items\": [], ${AFTER/\"planned\": false/\"planned\": true}}"
+assert_eq 0 "$status"
+# No modinfo at all: said, and no decision.
+export DOTSTEWARD_MODINFO=$work/bin/no-such-modinfo
+commit "{\"status\": \"nothing\", \"committed\": false, \"items\": [], $AFTER}"
+assert_eq 0 "$status"
+assert_json "$review" '.items[] | select(.code == "module-unchecked") | .kernel == "7.0.0-44-generic"'
+export DOTSTEWARD_MODINFO=$work/bin/modinfo
+modinfo_says "Canonical Ltd. Kernel Module Signing" 595.99.02
 
 # The helper dies without an answer: a failure, and its status is named.
 printf '#!/bin/sh\nexit 137\n' >"$work/python-canned"

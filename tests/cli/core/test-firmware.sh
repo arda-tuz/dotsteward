@@ -33,7 +33,13 @@ cat >"$bin/fwupdmgr" <<SH_STUB
 printf '%s\n' "\$*" >>"$log"
 case "\$1" in
   get-updates) cat "$updates" ;;
-  update) [ "\$2" != "fail-me" ] ;;
+  update)
+    if [ -e "$DS_TEST_ROOT/hold" ]; then
+      : >"$DS_TEST_ROOT/at-work"
+      while [ -e "$DS_TEST_ROOT/hold" ]; do sleep 0.05; done
+    fi
+    [ "\$2" != "fail-me" ]
+    ;;
 esac
 SH_STUB
 chmod +x "$bin/fwupdmgr"
@@ -51,7 +57,8 @@ firmware() {
 }
 
 # on_terminal ANSWERS ARG...: the same on a terminal, answering each question with a line of
-# ANSWERS (y, n); the text of the terminal lands in TERMINAL.
+# ANSWERS (y, n); the text of the terminal lands in TERMINAL. While the file hold exists the tool
+# waits in its first update, and the key of Ctrl-C ends the wait.
 on_terminal() {
   local answers=$1
   shift
@@ -65,6 +72,8 @@ import sys
 import time
 
 answers, log_path, *arguments = sys.argv[1:]
+hold = os.path.join(os.path.dirname(log_path), "hold")
+at_work = os.path.join(os.path.dirname(log_path), "at-work")
 argv = [sys.executable, "-s", "-P", "-m", "dotsteward_cli.firmware", *arguments, "--report", "firmware-test"]
 pid, master = pty.fork()
 if pid == 0:
@@ -82,6 +91,10 @@ while time.monotonic() < deadline:
         except OSError:
             data = b""
         text += data
+    if os.path.exists(at_work) and os.path.exists(hold):
+        os.write(master, b"\x03")
+        time.sleep(0.3)
+        os.unlink(hold)
     if text.count(b"[y/N]") > asked and pending:
         asked += 1
         os.write(master, pending.pop(0).encode() + b"\n")
@@ -183,6 +196,43 @@ fresh
 on_terminal '' run --accept
 assert_eq 0 "$status"
 assert_contains "$(<"$log")" "update aaaa1111"
+
+# A battery of a device, a wireless mouse on a desktop, says nothing about the machine.
+rm -rf "$power"
+mkdir -p "$power/hidpp_battery_0"
+printf 'Battery\n' >"$power/hidpp_battery_0/type"
+printf 'Device\n' >"$power/hidpp_battery_0/scope"
+fresh
+on_terminal '' run --accept
+assert_eq 0 "$status"
+assert_contains "$(<"$log")" "update aaaa1111"
+rm -rf "$power"
+
+# --- Ctrl-C takes the word back: the update at work ends, the next device is not written
+
+mains 1
+fresh
+: >"$DS_TEST_ROOT/hold"
+on_terminal '' run --accept
+assert_eq 3 "$status"
+assert_contains "$(<"$log")" "update aaaa1111"
+assert_not_contains "$(<"$log")" "update bbbb2222"
+assert_json "$review" '.items[] | select(.code == "firmware-available") | [.devices[].id] == ["bbbb2222"]'
+assert_call_count 1 sudo '*-k*'
+assert_json "$(find "$DOTSTEWARD_STATE_ROOT/runs/firmware-test" -name '*.json' | LC_ALL=C sort | tail -n 1)" '.interrupted == ["SIGINT"]'
+rm -f "$DS_TEST_ROOT/at-work"
+
+# --- a device a condition of the moment holds back is not asked about; the report names why
+
+cp "$updates" "$updates.kept"
+jq '.Devices[1].Problems = ["system-power-too-low", "lid-is-closed"]' "$updates.kept" >"$updates"
+fresh
+on_terminal '' run --accept
+assert_eq 0 "$status"
+assert_contains "$(<"$log")" "update aaaa1111"
+assert_not_contains "$(<"$log")" "update bbbb2222"
+assert_json "$review" '.items[] | select(.code == "firmware-blocked") | .devices[0].id == "bbbb2222" and .devices[0].problems == ["system-power-too-low", "lid-is-closed"]'
+cp "$updates.kept" "$updates"
 
 # --- a device that fails is a failure of the run; the others are still tried
 

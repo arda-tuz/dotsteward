@@ -14,14 +14,15 @@
 #   gated_state            name=version of every installed package of a gated Source
 #   pin_matches_dpkg       the pin file holds exactly the (source, version) of dpkg
 #   candidates_stay        under the pin every gated package has its installed version as candidate
-#   modinfo_stub [SIGNER]  a modinfo that finds the module with this signer (default the
-#                          distribution's); empty: it finds none. A container has no kernel modules
+#   world_modinfo          tests/apt-worlds/helpers.sh: a container has no kernel modules
 #   STATE                  the directory the hooks of the fixture packages look at
 
 WORLDS_PY=$DS_REPO_ROOT/tests/apt-worlds/fixtures/worlds.py
 CODENAME=$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")
 STATE=/run/dotsteward-test
 PIN=/etc/apt/preferences.d/60dotsteward
+PIN_HOOK=/etc/dpkg/dpkg.cfg.d/60dotsteward-pin
+PIN_SYNC_DIR=/usr/local/lib/dotsteward
 GATED_SOURCES='^(linux-meta|linux-restricted-modules|linux-restricted-signatures|nvidia-graphics-drivers-)'
 # The harness points this at a synthetic file; the engine must see this machine.
 unset DOTSTEWARD_OS_RELEASE
@@ -52,8 +53,8 @@ world_clean() {
     apt_root dpkg --purge --force-all $names >/dev/null 2>&1 || true
   fi
   sudo -n rm -rf /srv/world "$STATE"
-  sudo -n rm -f "$PIN" /etc/apt/apt.conf.d/52dotsteward-unattended-upgrades
-  sudo -n rm -rf /var/cache/dotsteward
+  sudo -n rm -f "$PIN" /etc/apt/apt.conf.d/52dotsteward-unattended-upgrades "$PIN_HOOK"
+  sudo -n rm -rf /var/cache/dotsteward "$PIN_SYNC_DIR"
 }
 
 world_install() {
@@ -87,17 +88,17 @@ engine_ok() {
 }
 
 version_of() {
-  { dpkg-query -W -f='${db:Status-Abbrev}${Version}\n' "$1" 2>/dev/null || true; } | awk '/^ii/ {sub(/^ii */, ""); print}'
+  { sudo -n dpkg-query -W -f='${db:Status-Abbrev}${Version}\n' "$1" 2>/dev/null || true; } | awk '/^ii/ {sub(/^ii */, ""); print}'
 }
 
 gated_state() {
-  dpkg-query -W -f='${db:Status-Abbrev} ${binary:Package} ${Version} ${source:Package}\n' |
+  sudo -n dpkg-query -W -f='${db:Status-Abbrev} ${binary:Package} ${Version} ${source:Package}\n' |
     awk -v re="$GATED_SOURCES" '$1 == "ii" && $4 ~ re {print $2 "=" $3}' | LC_ALL=C sort
 }
 
 # Also what is unpacked and not yet configured: that version is on the disk, and is the one to keep.
 dpkg_pairs() {
-  dpkg-query -W -f='${db:Status-Abbrev} ${source:Package} ${Version}\n' |
+  sudo -n dpkg-query -W -f='${db:Status-Abbrev} ${source:Package} ${Version}\n' |
     awk -v re="$GATED_SOURCES" '$1 ~ /^i/ && $2 ~ re {print $2 " " $3}' | LC_ALL=C sort -u
 }
 
@@ -112,6 +113,12 @@ pin_matches_dpkg() {
   assert_file_mode "$PIN" 644
 }
 
+# pin_holds_no_target PAIRS: the pin file names what dpkg has, or had before (PAIRS): never a version
+# dpkg has not got to.
+pin_holds_no_target() {
+  assert_eq "" "$(LC_ALL=C comm -23 <(pin_pairs) <(printf '%s\n%s\n' "$1" "$(dpkg_pairs)" | LC_ALL=C sort -u))" "the pin holds a target"
+}
+
 candidates_stay() {
   local entry name policy installed candidate
   while IFS= read -r entry; do
@@ -121,21 +128,6 @@ candidates_stay() {
     candidate=$(awk '/Candidate:/ {print $2}' <<<"$policy")
     assert_eq "$installed" "$candidate" "the candidate of $name under the pin"
   done < <(gated_state)
-}
-
-modinfo_stub() {
-  local signer=${1-Canonical Ltd. Kernel Module Signing}
-  mkdir -p "$DS_TEST_ROOT/bin"
-  if [[ -n $signer ]]; then
-    printf '#!/bin/sh\necho "%s"\n' "$signer" >"$DS_TEST_ROOT/bin/modinfo"
-  else
-    printf '#!/bin/sh\nexit 1\n' >"$DS_TEST_ROOT/bin/modinfo"
-  fi
-  chmod +x "$DS_TEST_ROOT/bin/modinfo"
-  case :$PATH: in
-    *":$DS_TEST_ROOT/bin:"*) ;;
-    *) export PATH=$DS_TEST_ROOT/bin:$PATH ;;
-  esac
 }
 
 # The journal of a dpkg that was killed takes root to read.

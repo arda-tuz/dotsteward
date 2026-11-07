@@ -63,7 +63,10 @@ for key in 615-open 615; do
     plan_changes install nvidia-driver-615-open "$MODULE-615-open-generic-hwe-24.04" "$MODULE-615-open-7.0.0-42-generic" nvidia-firmware-615-615.71.09
     plan_no_change install nvidia-dkms-615-open
     plan_changes remove nvidia-driver-595-open "$MODULE-595-open-generic-hwe-24.04" "$MODULE-595-open-7.0.0-42-generic" "$MODULE-595-open-7.0.0-38-generic"
-    assert_json "$PLAN" '[.changes.remove[].reason] | unique == ["series-change"]'
+    assert_json "$PLAN" '[.changes.remove[] | select(.name | endswith("7.0.0-38-generic") | not) | .reason] | unique == ["series-change"]'
+    # The new series has no module for the fallback kernel: the report says it goes.
+    plan_item module-loss "and .packages == [\"$MODULE-595-open-7.0.0-38-generic\"] and .running == false"
+    plan_item driver-needs-reboot
   done
 done
 
@@ -81,3 +84,18 @@ plan_item series-available 'and .class == "nvidia" and .series == "615-open" and
 world_ubuntu_drivers 'driver   : nvidia-driver-595-open - distro non-free recommended'
 world_plan new-series-nvidia
 plan_no_item series-available
+
+# The new series has a module for the fallback kernel too: it comes along and nothing is lost.
+world_plan series-keeps-fallback '{"accept": ["series:nvidia=615-open"]}'
+plan_applicable
+plan_changes install "$MODULE-615-open-7.0.0-42-generic" "$MODULE-615-open-7.0.0-38-generic"
+plan_no_item module-loss
+assert_json "$PLAN" "[.gated.target.pairs[] | select(.[1] == \"$K38+1\")] | length == 1"
+
+# The running kernel loses its module: said, and said with the reboot it takes.
+world_plan new-series-nvidia '{"accept": ["series:nvidia=615-open"], "running_kernel": "7.0.0-38-generic"}'
+plan_item module-loss 'and .running == true and (.message | test("reboot"))'
+
+# A running kernel whose release is only the start of another: no false alarm.
+world_plan new-series-nvidia '{"accept": ["series:nvidia=615-open"], "running_kernel": "7.0.0-3-generic"}'
+plan_item module-loss 'and .running == false'

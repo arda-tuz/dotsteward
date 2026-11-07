@@ -12,7 +12,7 @@ source "$DS_REPO_ROOT/tests/apt-worlds/helpers.sh"
 
 apt --version | head -n 1
 sudo_open
-modinfo_stub
+world_modinfo
 world_install bind
 MODULE_44=linux-modules-nvidia-595-open-7.0.0-44-generic
 
@@ -26,6 +26,7 @@ engine_ok policy
 assert_json "$ENGINE" '.pin.changed == true and .unattended.changed == true'
 pin_matches_dpkg
 assert_contains "$(</etc/apt/apt.conf.d/52dotsteward-unattended-upgrades)" 'Remove-Unused-Kernel-Packages "false"'
+assert_contains "$(<"$PIN_HOOK")" "post-invoke="
 before=$(gated_state)
 [[ -n $before ]] || ds_fail "the world has no gated package"
 candidates_stay
@@ -141,7 +142,7 @@ else
   printf 'NOT EXERCISED: aptdaemon: not in the archive of this release\n'
 fi
 
-# --- the engine moves them, and the pin follows; during the commit it told the old state
+# --- the engine moves them, and the pin follows
 
 pin_before=$(<"$PIN")
 engine_ok commit '{"mode": "tracked", "tracked": ["example-tracked"]}'
@@ -153,7 +154,6 @@ assert_eq "$D106" "$(version_of nvidia-driver-595-open)"
 assert_eq "$D106" "$(version_of libnvidia-gl-595:i386)"
 assert_eq "2.0-1" "$(version_of example-tracked)"
 assert_eq "1.0-1" "$(version_of example-other)" "tracked mode leaves the rest"
-assert_eq "$pin_before" "$(<"$STATE/pin-during-commit")" "the target never stands in the file"
 audit_clean
 pin_matches_dpkg
 candidates_stay

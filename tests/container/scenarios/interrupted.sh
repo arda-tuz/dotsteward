@@ -10,7 +10,7 @@ source "$DS_REPO_ROOT/tests/apt-worlds/helpers.sh"
 
 apt --version | head -n 1
 sudo_open
-modinfo_stub
+world_modinfo
 IMAGE=linux-image-7.0.0-44-generic
 MODULE=linux-modules-nvidia-595-open
 
@@ -41,9 +41,11 @@ converged() {
   candidates_stay
 }
 
-no_target_in_pin() {
-  assert_not_contains "$(<"$PIN")" "$K44"
-  assert_not_contains "$(<"$PIN")" "$D106"
+# commit_behind REQUEST: a commit in the background, killed by the test; PARENT is the process.
+commit_behind() {
+  PYTHONPATH=$DS_REPO_ROOT/cli/python PYTHONDONTWRITEBYTECODE=1 python3 -s -P -m dotsteward_cli.apt_plan commit \
+    --request - <<<"$1" >"$out_dir/run.behind" 2>&1 &
+  PARENT=$!
 }
 
 # at_terminal EVENT: one commit of the world on a terminal of its own, the answer in a file.
@@ -125,10 +127,6 @@ assert_json "$(newest_report)" '.interrupted == ["SIGINT"]'
 converged
 # dpkg printed on the terminal, through sudo, while the answer went to its own stream.
 assert_contains "$(<"$out_dir/terminal.log")" "Setting up $IMAGE"
-# A pin file with a target would have bound every user of libapt during the commit.
-assert_not_contains "$(<"$STATE/pin-during-commit")" "$K44"
-assert_not_contains "$(<"$STATE/pin-during-commit")" "$D106"
-assert_contains "$(<"$STATE/pin-during-commit")" "$K42"
 
 # --- the terminal goes away while dpkg works, and dpkg still has lines to print: it finishes
 
@@ -150,11 +148,14 @@ assert_eq "$log_file" "$(jq -r '.steps[] | select(.name == "commit") | .log' "$(
 
 world_install bind
 engine_ok policy
+pairs_before=$(dpkg_pairs)
 : >"$STATE/hang-postinst"
 PYTHONPATH=$DS_REPO_ROOT/cli/python PYTHONDONTWRITEBYTECODE=1 python3 -s -P -m dotsteward_cli.apt_plan commit \
   --request - --report apt-test <<<'{"mode": "all"}' >"$out_dir/run.signals" 2>&1 &
 parent=$!
 wait_for "$STATE/in-postinst"
+# During the commit the pin file names what dpkg has, not the target.
+pin_holds_no_target "$pairs_before"
 kill -TERM "$parent"
 kill -HUP "$parent"
 sleep 1
@@ -169,7 +170,7 @@ converged
 
 world_install bind
 engine_ok policy
-pin_before=$(<"$PIN")
+pairs_before=$(dpkg_pairs)
 : >"$STATE/hang-postinst"
 PYTHONPATH=$DS_REPO_ROOT/cli/python PYTHONDONTWRITEBYTECODE=1 python3 -s -P -m dotsteward_cli.apt_plan commit \
   --request - <<<'{"mode": "all"}' >"$out_dir/run.postinst" 2>&1 &
@@ -179,7 +180,7 @@ kill_commit "$parent"
 rm -f "$STATE/hang-postinst"
 wait "$parent" 2>/dev/null || true
 assert_contains "$(audit)" "$IMAGE"
-assert_eq "$pin_before" "$(<"$PIN")" "kill -9 leaves the pin file as it was"
+pin_holds_no_target "$pairs_before"
 # Nobody moves anything meanwhile: the pin tells the old state, no candidate is above it.
 assert_not_contains "$(apt-get -s full-upgrade 2>/dev/null)" "Inst nvidia-"
 engine_ok recover
@@ -209,26 +210,133 @@ assert_json "$ENGINE" '.recovery.ran == true'
 assert_json "$ENGINE" '.status == "committed"'
 converged
 
-# --- kill -9 right after dpkg, before the pin is rewritten: the old pin stays harmless: no
-# candidate, no move, no downgrade; the next run writes the file from dpkg
+# --- kill -9 right after dpkg, before the engine writes the pin: the hook of dpkg has done it: no
+# candidate, no move, no downgrade, and the next run has nothing to repair
 
 world_install bind
 engine_ok policy
-pin_before=$(<"$PIN")
 printf 'DPkg::Post-Invoke { "pkill -9 -f apt_helpe[r].py || true"; };\n' | sudo -n tee /etc/apt/apt.conf.d/99test-kill >/dev/null
 engine commit '{"mode": "all"}'
 sudo -n rm -f /etc/apt/apt.conf.d/99test-kill
 assert_eq 1 "$ENGINE_STATUS" "the helper died without an answer: $(tail -n 3 "$ENGINE.err")"
 audit_clean
 assert_eq "$K44" "$(version_of linux-generic-hwe-24.04)"
-assert_eq "$pin_before" "$(<"$PIN")"
+pin_matches_dpkg
 simulation=$(apt-get -s full-upgrade 2>&1)
 assert_not_contains "$simulation" "Inst linux-"
 assert_not_contains "$simulation" "Inst nvidia-"
 assert_not_contains "$simulation" "Remv "
 assert_not_contains "$simulation" "Downgrad"
 engine_ok policy
-assert_json "$ENGINE" '.pin.changed == true'
+assert_json "$ENGINE" '.pin.changed == false'
+converged
+
+# --- kill -9 in the prerm of the old driver of a series change: dpkg left deinstall selections that
+# a later dselect, aptitude or `dpkg --remove --pending` would act on. The next run takes them back.
+
+world_install series-hooked-old
+engine_ok policy
+: >"$STATE/hang-prerm"
+commit_behind '{"mode": "all", "accept": ["series:nvidia=615-open"]}'
+wait_for "$STATE/in-prerm"
+kill_commit "$PARENT"
+rm -f "$STATE/hang-prerm"
+wait "$PARENT" 2>/dev/null || true
+assert_contains "$(sudo -n dpkg --get-selections)" "deinstall"
+engine_ok recover
+assert_json "$ENGINE" '.recovery.ran == true and .recovery.clean == true'
+assert_json "$ENGINE" '.items[] | select(.code == "dpkg-selection-restored") | (.packages | index("nvidia-driver-595-open")) != null'
+assert_not_contains "$(sudo -n dpkg --get-selections)" "deinstall"
+assert_not_contains "$(apt-get -s dselect-upgrade 2>/dev/null)" "Remv "
+
+# The same through a commit, without the word for the new series: nothing of the set stays behind.
+world_install series-hooked-old
+engine_ok policy
+: >"$STATE/hang-prerm"
+commit_behind '{"mode": "all", "accept": ["series:nvidia=615-open"]}'
+wait_for "$STATE/in-prerm"
+kill_commit "$PARENT"
+rm -f "$STATE/hang-prerm"
+wait "$PARENT" 2>/dev/null || true
+engine_ok commit '{"mode": "all"}'
+assert_json "$ENGINE" '.status == "committed" and .recovery.ran == true'
+assert_json "$ENGINE" '[.items[].code] | index("dpkg-selection-restored") != null'
+audit_clean
+assert_not_contains "$(sudo -n dpkg --get-selections)" "deinstall"
+assert_not_contains "$(apt-get -s dselect-upgrade 2>/dev/null)" "Remv "
+assert_eq "$K44" "$(version_of linux-generic-hwe-24.04)"
+assert_eq "$K44" "$(version_of "$MODULE-generic-hwe-24.04")"
+assert_eq "$D99" "$(version_of nvidia-driver-595-open)"
+pin_matches_dpkg
+
+# --- kill -9 in the preinst of the new driver: apt sees half a transaction. The plan says so and
+# decides nothing; the pin step recovers first and keeps the class of the driver.
+
+world_install series-hooked-new
+engine_ok policy
+: >"$STATE/hang-preinst"
+commit_behind '{"mode": "all", "accept": ["series:nvidia=615-open"]}'
+wait_for "$STATE/in-preinst"
+kill_commit "$PARENT"
+rm -f "$STATE/hang-preinst"
+wait "$PARENT" 2>/dev/null || true
+engine plan '{"mode": "all"}'
+assert_eq 3 "$ENGINE_STATUS"
+assert_json "$ENGINE" '.applicable == false and .gated.decision == "waiting"'
+assert_json "$ENGINE" '[.items[].code] | index("dpkg-interrupted") != null'
+engine_ok policy
+assert_json "$ENGINE" '.status == "done" and .recovery.ran == true'
+assert_contains "$(<"$PIN")" 'src:nvidia-graphics-drivers-*:any'
+pin_matches_dpkg
+candidates_stay
+engine_ok commit '{"mode": "all"}'
+audit_clean
+pin_matches_dpkg
+
+# --- the lock is taken: the pin step leaves the file alone and says so
+
+world_install bind
+engine_ok policy
+printf 'Package: *\nPin: version *\nPin-Priority: 100\n' | sudo -n tee "$PIN" >/dev/null
+sudo -n /usr/bin/python3 -I -c '
+import os, sys, time
+import apt_pkg
+apt_pkg.init_config()
+apt_pkg.init_system()
+apt_pkg.pkgsystem_lock()
+open(sys.argv[1], "w").close()
+while not os.path.exists(sys.argv[2]):
+    time.sleep(0.1)
+' "$STATE/locked" "$STATE/unlock" &
+holder=$!
+wait_for "$STATE/locked"
+engine policy '{"lock_timeout": 1}'
+assert_eq 3 "$ENGINE_STATUS"
+assert_json "$ENGINE" '.status == "blocked" and ([.items[].code] | index("dpkg-lock-busy") != null)'
+assert_contains "$(<"$PIN")" "Package: *"
+: >"$STATE/unlock"
+wait "$holder"
+rm -f "$STATE/locked" "$STATE/unlock"
+
+# --- an unrelated package dpkg cannot configure: the run stops for a person and moves no class; the
+# temporary pins of a run that was killed long ago go away
+
+world_install broken-other
+engine_ok policy
+: >"$STATE/fail-unrelated"
+apt_root dpkg -i /srv/world/repo/pool/example-broken_1.0-1_amd64.deb >/dev/null 2>&1 || true
+before=$(gated_state)
+sudo -n mkdir -p /tmp/dotsteward-apt-pins-old
+sudo -n touch -d '2 days ago' /tmp/dotsteward-apt-pins-old
+engine commit '{"mode": "all"}'
+assert_eq 3 "$ENGINE_STATUS"
+assert_json "$ENGINE" '.status == "refused" and .committed == false'
+assert_json "$ENGINE" '.items[] | select(.code == "dpkg-broken") | (.packages | index("example-broken")) != null'
+assert_eq "$before" "$(gated_state)"
+[[ ! -e /tmp/dotsteward-apt-pins-old ]] || ds_fail "old temporary pins stay"
+rm -f "$STATE/fail-unrelated"
+engine_ok commit '{"mode": "all"}'
+assert_json "$ENGINE" '.status == "committed"'
 converged
 
 # --- a maintainer script fails: the run says so, the pin tells what dpkg has, the next run finishes

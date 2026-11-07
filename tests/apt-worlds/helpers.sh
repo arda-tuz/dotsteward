@@ -6,6 +6,10 @@
 # under /usr/bin/python3, so these tests cannot run in the build sandbox.
 #
 #   world_require           ends the test with a SKIP line without python3-apt
+#   world_modinfo [SIGNER [MISSING [VERSION]]]
+#                           the modinfo of the engine: it finds the module of every kernel with
+#                           SIGNER (default the distribution's) and VERSION (default it says
+#                           none), except the releases in MISSING; `all`: of none
 #   world_up NAME           builds world NAME once and fetches its lists; WORLD is its root
 #   world_plan NAME [JSON]  the plan of NAME for the request {mode: "all",
 #                           running_kernel: "7.0.0-42-generic"} + JSON; PLAN is its file
@@ -43,6 +47,22 @@ world_require() {
   export PATH=$DS_TEST_ROOT/world-bin:$PATH
   # The host's own tool looks at the host's hardware; a test that wants it writes its answers.
   world_ubuntu_drivers ''
+  world_modinfo
+}
+
+world_modinfo() {
+  mkdir -p "$DS_TEST_ROOT/world-bin"
+  export DOTSTEWARD_MODINFO=$DS_TEST_ROOT/world-bin/modinfo-stub
+  cat >"$DOTSTEWARD_MODINFO" <<SCRIPT
+#!/bin/sh
+# Called as: modinfo -k RELEASE -F FIELD nvidia
+case " ${2:-} " in *" all "*|*" \$2 "*) exit 1 ;; esac
+case "\$4" in
+  signer) echo "${1:-Canonical Ltd. Kernel Module Signing}" ;;
+  version) [ -z "${3:-}" ] || echo "${3:-}" ;;
+esac
+SCRIPT
+  chmod +x "$DOTSTEWARD_MODINFO"
 }
 
 # world_ubuntu_drivers TEXT: what `ubuntu-drivers devices` prints on standard output,
