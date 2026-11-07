@@ -219,7 +219,9 @@ assert_contains "$(<"$log")" "update aaaa1111"
 assert_not_contains "$(<"$log")" "update bbbb2222"
 assert_json "$review" '.items[] | select(.code == "firmware-available") | [.devices[].id] == ["bbbb2222"]'
 assert_call_count 1 sudo '*-k*'
-assert_json "$(find "$DOTSTEWARD_STATE_ROOT/runs/firmware-test" -name '*.json' | LC_ALL=C sort | tail -n 1)" '.interrupted == ["SIGINT"]'
+# Reports are ordered by their sequence: two of one second sort by chance by name.
+find "$DOTSTEWARD_STATE_ROOT/runs/firmware-test" -name '*.json' -exec cat {} + | jq -s 'max_by(.sequence)' >"$DS_TEST_ROOT/newest.json"
+assert_json "$DS_TEST_ROOT/newest.json" '.interrupted == ["SIGINT"]'
 rm -f "$DS_TEST_ROOT/at-work"
 
 # --- a device a condition of the moment holds back is not asked about; the report names why

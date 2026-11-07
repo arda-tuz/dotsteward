@@ -171,7 +171,8 @@ assert_file_mode "$log_file" 600
 assert_file_mode "$logs" 700
 assert_contains "$(<"$work/err")" "Setting up example (2.0)"
 assert_contains "$(<"$work/err")" "dpkg: warning: example"
-assert_eq "$log_file" "$(jq -r '.steps[] | select(.name == "commit") | .log' "$(find "$DOTSTEWARD_STATE_ROOT/runs/apt-test" -name '*.json' -newer "$canned" | LC_ALL=C sort | tail -n 1)")"
+# Reports are ordered by their sequence: two of one second sort by chance by name.
+assert_eq "$log_file" "$(find "$DOTSTEWARD_STATE_ROOT/runs/apt-test" -name '*.json' -exec cat {} + | jq -rs 'max_by(.sequence) | .steps[] | select(.name == "commit") | .log')"
 # A standard error nobody can write to changes nothing for the child or the answer.
 status=0
 core_python -m dotsteward_cli.apt_plan commit >"$work/out" 2>&- || status=$?

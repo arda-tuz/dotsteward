@@ -112,8 +112,10 @@ sys.exit(0)
 PY
 }
 
+# Reports are ordered by their sequence: two of one second sort by chance by name.
 newest_report() {
-  find "$DOTSTEWARD_STATE_ROOT/runs/apt-test" -name '*.json' -newer "$out_dir/terminal-request.json" | LC_ALL=C sort | tail -n 1
+  find "$DOTSTEWARD_STATE_ROOT/runs/apt-test" -name '*.json' -exec cat {} + | jq -s 'max_by(.sequence)' >"$out_dir/newest-report.json"
+  printf '%s\n' "$out_dir/newest-report.json"
 }
 
 # --- Ctrl-C at the terminal, with sudo asking nothing: the keystroke does not reach dpkg
