@@ -11,8 +11,9 @@ nothing of the framework. dotsteward_cli.apt_plan calls it:
               the changes of the depcache and what the refusal list says about them;
               it needs no privileges and changes nothing
     analysis  the upgradable packages outside the tracked set, read only
-    policy    (root) under the lock of dpkg: the pin file and the unattended-upgrades drop-in, from
-              what dpkg has, and the hook that keeps the pin file there whoever calls dpkg
+    policy    (root) under the lock of dpkg: the pin file, from what dpkg has, and the hook
+              that keeps the pin file there whoever calls dpkg (the drop-in of unattended-upgrades
+              is the system component apt-policy)
     recover   (root) `dpkg --configure -a` when dpkg was left half way
     commit    (root) the plan, under the lock of dpkg, and when nothing refuses it the
               same depcache applied
@@ -74,11 +75,6 @@ GATED_SOURCE = re.compile(
 KERNEL_GLOBS = ("linux-meta*",)
 NVIDIA_GLOBS = ("linux-restricted-modules*", "linux-restricted-signatures*", "nvidia-graphics-drivers-*")
 NVIDIA_GLOB = f"src:{NVIDIA_GLOBS[-1]}:any"
-UNATTENDED_FILE = "52dotsteward-unattended-upgrades"
-UNATTENDED_TEXT = """// Managed by dotsteward: no automatic removal of kernels and dependencies.
-Unattended-Upgrade::Remove-Unused-Kernel-Packages "false";
-Unattended-Upgrade::Remove-New-Unused-Dependencies "false";
-"""
 ROLLBACK_DIR = "/var/cache/dotsteward/apt-rollback"
 ROLLBACK_CLASSES = {"nvidia-driver", "nvidia-module"}
 DEFAULT_LOCK_TIMEOUT = 300
@@ -1461,12 +1457,9 @@ def apply_policy(session, classes):
             os.unlink(pin_path)
             pin_changed = True
     hook = apply_pin_hook(pin_path, wanted_pin)
-    unattended_path = os.path.join(apt_pkg.config.find_dir("Dir::Etc::Parts"), UNATTENDED_FILE)
-    unattended_changed = write_file(unattended_path, UNATTENDED_TEXT)
     return {
         "pin": {"path": pin_path, "present": wanted_pin, "changed": pin_changed},
         "hook": hook,
-        "unattended": {"path": unattended_path, "changed": unattended_changed},
         "installed_pairs": classes["pairs"],
     }
 

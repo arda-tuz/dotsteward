@@ -32,11 +32,13 @@ import contextlib
 import fnmatch
 import hashlib
 import json
+import os
 import shutil
 import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -146,6 +148,17 @@ def _session_unit(name: str) -> bool:
 def _ask_yes(question: str) -> bool:
     print(f"{question} [y/N] ", end="", flush=True)
     return sys.stdin.readline().strip().lower() in {"y", "yes", "e", "evet"}
+
+
+def _system_file_differs(path: str, text: str, mode: str) -> bool:
+    """A system file is missing, or its bytes or its mode are not the component's."""
+    try:
+        with open(path, "rb") as handle:
+            same = handle.read() == text.encode("utf-8")
+        actual = stat.S_IMODE(os.stat(path).st_mode)
+    except OSError:
+        return True
+    return not same or actual != int(mode, 8)
 
 
 class Upgrade(runner.Runner):
@@ -604,6 +617,8 @@ class Upgrade(runner.Runner):
             return False
         if self._engine("policy", lambda: apt_plan.policy(request, state_root=state)) is None:
             return False
+        if not self._system_files():
+            return False
         if self.offline:
             self.run.step("apt-commit", report.PARTIAL, detail="offline")
             return True
@@ -624,6 +639,34 @@ class Upgrade(runner.Runner):
         _say(f"apt ({mode}): " + (", ".join(counted) or "nothing to do"))
         if answer.get("committed") and counted:
             self.apt_changed = True
+        return True
+
+    def _system_files(self) -> bool:
+        """The files of the active system components that are missing or differ, each through
+        `sudo install` as `dotsteward install` writes them: the component is their one writer.
+        False: the window ended early."""
+        root = self.env.get("DOTSTEWARD_SYSTEM_ROOT") or ""
+        for component in self._active():
+            if component.get("method") != "system":
+                continue
+            step = f"system:{component.get('name')}"
+            files = (component.get("install") or {}).get("files") or []
+            wanted = [
+                entry for entry in files if _system_file_differs(root + entry["path"], entry["text"], entry["mode"])
+            ]
+            if not wanted:
+                self.run.step(step, report.OK)
+                continue
+            with tempfile.TemporaryDirectory(prefix="dotsteward-system-") as directory:
+                for index, entry in enumerate(wanted):
+                    staged = Path(directory) / str(index)
+                    staged.write_text(entry["text"], encoding="utf-8")
+                    staged.chmod(0o644)
+                    target = root + entry["path"]
+                    if not self._privileged(
+                        step, "install", "-D", "-o", "root", "-g", "root", "-m", entry["mode"], str(staged), target
+                    ):
+                        return False
         return True
 
     def _system_channels(self) -> None:

@@ -331,6 +331,13 @@ let
         "tests/nix/components/github-release-deb"
       ])
     ];
+    component-apt-policy = fs.unions [
+      componentBase
+      (paths [
+        "modules/components/apt-policy"
+        "tests/nix/components/apt-policy"
+      ])
+    ];
     component-herdr = fs.unions [
       componentBase
       package

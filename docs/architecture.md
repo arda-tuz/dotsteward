@@ -18,7 +18,7 @@ The framework never contains user data. Identity (username, home directory, repo
 ## Concepts
 
 - **Component**: one unit of the workstation, for example "Claude Code" or "zsh + starship". A component is a Home Manager module that fills the `dotsteward.components.<name>` contract: install method per platform, pinned versions and their official sources, settings files the user may edit locally, checks and probes, backup and rollback declarations, and documentation.
-- **Catalog**: the components shipped by the framework, one directory each under `modules/components/`: `claude-code` (Claude Code), `codex` (Codex), `herdr`, `shell` (zsh + starship), `opencode-pi` (OpenCode and Pi), `vscode` (VS Code), and on Linux `pdfcraft`, `gridcraft`, `wordcraft`, `deckcraft` and `craft-anything` (see [catalog.md](catalog.md)).
+- **Catalog**: the components shipped by the framework, one directory each under `modules/components/`: `claude-code` (Claude Code), `codex` (Codex), `herdr`, `shell` (zsh + starship), `opencode-pi` (OpenCode and Pi), `vscode` (VS Code), and on Linux `pdfcraft`, `gridcraft`, `wordcraft`, `deckcraft`, `craft-anything` and `apt-policy` (a system component, see [catalog.md](catalog.md)).
 - **Private component**: a component written in your instance under `components/<name>/`, using exactly the same contract as the catalog. Anything outside the catalog is a private component.
 - **Profile**: a named way to apply the instance. Each profile has a mode:
   - `fresh`: a new machine; system-level installs, system packages and desktop-level hooks run.

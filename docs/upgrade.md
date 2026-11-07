@@ -104,7 +104,9 @@ Update these too? [y/N] n
    ask later, never on this machine: [machines.md](machines.md)), then the firmware list and its approval.
    Without a terminal every item is ask later, in `review.json` under `incoming`, and the run ends in 3.
 3. **One sudo window before all Nix work.** `sudo -v`, `dpkg --configure -a` when dpkg was left half
-   way, the pin file from what dpkg has, the apt bridge when it is installed, `apt-get update`, the
+   way, the pin file from what dpkg has (with its dpkg hook), the files of the active system
+   components that are missing or differ (such as the drop-in of `apt-policy`, [the system
+   method](component-contract.md#method-semantics)), the apt bridge when it is installed, `apt-get update`, the
    apt plan and its commit in one depcache, snap and flatpak with `--all`, then `sudo -k`. Sudo runs
    out during a long step: a terminal asks once more; if that fails too, the rest of the window waits
    in `review.json` and everything else still runs. The pin file of the gated classes

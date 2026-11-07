@@ -47,5 +47,5 @@ mode = "fresh"
 
 # Components: one [components.<name>] table each, with enable = true, for the
 # catalog (shell, herdr, claude-code, codex, opencode-pi, vscode, pdfcraft,
-# gridcraft, wordcraft, deckcraft, craft-anything) and for
+# gridcraft, wordcraft, deckcraft, craft-anything, apt-policy) and for
 # your own components in components/<name>/.

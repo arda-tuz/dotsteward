@@ -403,8 +403,8 @@ def _privileged(action: str, request: Request, state_root: str | os.PathLike[str
 
 
 def policy(request: Request, *, state_root: str | os.PathLike[str] | None = None) -> dict[str, Any]:
-    """Writes the pin file and the unattended-upgrades drop-in from what dpkg has, whatever they
-    said before: the first step that writes in a run, and the repair of an interrupted one."""
+    """Writes the pin file and its dpkg hook from what dpkg has, whatever they said before: the
+    first step that writes in a run, and the repair of an interrupted one."""
     return _privileged("policy", request, state_root)
 
 

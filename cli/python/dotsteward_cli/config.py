@@ -72,6 +72,7 @@ CATALOG_ORDER = (
     "wordcraft",
     "deckcraft",
     "craft-anything",
+    "apt-policy",
 )
 
 # Keys of the [profiles] table that are not profile tables.
