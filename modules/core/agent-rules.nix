@@ -14,9 +14,9 @@ let
   platform = dotsteward.lib.platform.platformOf system;
   source = config.dotsteward.agentRules.source;
   targets = lib.concatMap ({ component, ... }: component.agentRulesTargets) (
-    lib.filter ({ component, ... }: helpers.isActive profile platform component) (
-      helpers.enabled cfg config.dotsteward.components
-    )
+    lib.filter (
+      { name, component }: helpers.isActive profile platform (dotsteward.tags or [ ]) name component
+    ) (helpers.enabled cfg config.dotsteward.components)
   );
 
   # The source copied into a store path of its own, whatever form `root`

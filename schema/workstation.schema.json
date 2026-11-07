@@ -800,14 +800,26 @@
           "description": "Component-owned options, passed to the module unchanged; never validated here."
         },
         "machines": {
-          "const": null,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
           "default": null,
-          "description": "Reserved: the machines the component is for. A later release acts on it; until then a value is refused, because a component would stay active on every other machine."
+          "description": "The machines the component is for, by the names of hosts/<name>.toml; default (null): every machine. Any other machine never gets it and is never asked."
         },
         "tags": {
-          "const": null,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
           "default": null,
-          "description": "Reserved: the machine tags the component is for. A later release acts on it; until then a value is refused, for the same reason."
+          "description": "The machine tags the component is for: a machine with one of them gets it; default (null): every machine."
         },
         "updater": {
           "type": "string",

@@ -30,7 +30,9 @@ let
   helpers = import ../../core/helpers.nix { inherit lib; };
 
   component = config.dotsteward.components.shell;
-  active = helpers.isActive profile (dotsteward.lib.platform.platformOf dotsteward.system) component;
+  active = helpers.isActive profile (dotsteward.lib.platform.platformOf dotsteward.system) (
+    dotsteward.tags or [ ]
+  ) "shell" component;
 
   starship = config.programs.starship;
   starshipPackage = packages.starship;

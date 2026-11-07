@@ -13,12 +13,16 @@
 #
 # Outputs:
 #   lib.mkHome { username, homeDirectory, profile ? profiles.default,
-#                system ? nix.systems[0] }
+#                system ? nix.systems[0], tags ? [ ] }
 #                                 Home Manager configuration (the generated
 #                                 host flake calls it)
 #   lib.pinnedVersions, lib.pinnedVersionsFor.<system>
 #   homeConfigurations.<identity.username>
 #                                 the check profile on the primary system
+#   hostConfigurations.<name>     the check identity's configuration of the
+#                                 machine hosts/<name>.toml: its system
+#                                 (default: the primary one), its profile
+#                                 (default: the check profile) and its tags
 #   packages.<system>             component packages (lib/packages.nix),
 #                                 dotsteward (the CLI built with the instance
 #                                 nixpkgs), local-maintained-files (the
@@ -28,8 +32,11 @@
 #                                 packages with check = true;
 #                                 dotsteward-manifest (every .dotsteward/
 #                                 mirror is current); manifest-consistent
-#                                 (the manifest does not depend on the
-#                                 profile); instance-static ([gate] static
+#                                 (the manifest depends neither on the
+#                                 profile nor on the tags of a machine);
+#                                 hosts-eval (every distinct tag set of the
+#                                 machines of the system evaluates, nothing
+#                                 is built); instance-static ([gate] static
 #                                 scripts); instance-contract (framework
 #                                 checks over the instance: static
 #                                 --sandbox, the offline pins check,
@@ -51,9 +58,16 @@
 # [components.<name>] method_by_platform or method configures one for the
 # platform); a component declares its default method with lib.mkDefault.
 # Guards: the instance inputs follow the framework's nixpkgs and
-# home-manager; every [components.<name>] table names a known component; an
-# enabled component supports every configured platform and its resolved
-# method there (Home Manager assertions).
+# home-manager; every [components.<name>] table names a known component; the
+# machines of a component have a host file; an enabled component supports
+# every configured platform and its resolved method there (Home Manager
+# assertions).
+#
+# Machines. The machine layer only hands tags to Nix: the same system, profile and
+# tag set give the same evaluation. The tags of a machine are the tags of its file,
+# machine:<name> and no:<component> for each entry of declined.components; `rebuild`
+# adds no:<component> for what this machine has not answered yet (dotsteward incoming).
+# Nothing else of a host file reaches Nix, no state of a machine ever does.
 {
   dotsteward,
   nixpkgs,
@@ -191,11 +205,69 @@ let
 
   tableNames = filter (name: name != "order") (attrNames cfg.components);
 
+  # --- Machines ---------------------------------------------------------------
+
+  hostsDir = at "hosts";
+
+  # hosts/<name>.toml, read for what Nix may know: the intent of a machine.
+  hostFiles =
+    if pathExists hostsDir then
+      lib.mapAttrs' (
+        file: _:
+        lib.nameValuePair (lib.removeSuffix ".toml" file) (
+          builtins.fromTOML (builtins.readFile (hostsDir + "/${file}"))
+        )
+      ) (lib.filterAttrs (file: type: type == "regular" && lib.hasSuffix ".toml" file) (builtins.readDir hostsDir))
+    else
+      { };
+
+  hostFacts = lib.mapAttrs (name: host: {
+    inherit name;
+    system = host.system or primary;
+    profile = host.profile or checkProfile;
+    tags =
+      lib.unique (
+        host.tags or [ ]
+        ++ [ "machine:${name}" ]
+        ++ map (component: "no:${component}") (host.declined.components or [ ])
+      );
+  }) hostFiles;
+
+  # machine:<name> makes an evaluation differ only where a component names that machine.
+  machinesOf =
+    name:
+    let
+      machines = cfg.components.${name}.machines or null;
+    in
+    if machines == null then [ ] else machines;
+
+  scopedMachines = lib.unique (lib.concatMap machinesOf tableNames);
+
+  hostTagSet =
+    host:
+    lib.sort lib.lessThan (
+      filter (tag: !(lib.hasPrefix "machine:" tag) || elem (lib.removePrefix "machine:" tag) scopedMachines) host.tags
+    );
+
+  # One machine for each (profile, tag set) of a system.
+  hostsOfSystem =
+    system:
+    let
+      own = filter (host: host.system == system) (lib.attrValues hostFacts);
+      keyed = map (host: {
+        key = concatStringsSep " " ([ host.profile ] ++ hostTagSet host);
+        inherit host;
+      }) own;
+    in
+    lib.attrValues (lib.mapAttrs (_: entry: entry.host) (lib.listToAttrs (map (entry: lib.nameValuePair entry.key entry) keyed)));
+
   componentProblems = lib.concatMap (
     name:
     lib.optional
       (cfg.components.${name}.source == "instance" && !pathExists (at "components/${name}/default.nix"))
       "dotsteward: unknown component ${name} in workstation.toml: neither a catalog component nor an instance component (components/${name}/default.nix)"
+    ++ map (machine: "dotsteward: component ${name}: machines names ${machine}, which has no hosts/${machine}.toml")
+      (filter (machine: !(hostFiles ? ${machine})) (machinesOf name))
   ) tableNames;
 
   # Each output refuses on its own, so the output names never depend on the
@@ -305,6 +377,8 @@ let
               inherit (table) options;
             }
             // lib.optionalAttrs (table.profiles != null) { inherit (table) profiles; }
+            // lib.optionalAttrs ((table.machines or null) != null) { inherit (table) machines; }
+            // lib.optionalAttrs ((table.tags or null) != null) { inherit (table) tags; }
             // lib.optionalAttrs (method != null) { inherit method; }
           )
         ) enabled
@@ -330,6 +404,7 @@ let
       homeDirectory,
       profile ? cfg.profiles.default,
       system ? primary,
+      tags ? [ ],
     }:
     if !elem system systems then
       throw "dotsteward: mkHome: system ${system} is not in nix.systems (${concatStringsSep ", " systems})"
@@ -346,7 +421,7 @@ let
             ;
           inherit (fixpoints.${system}) packages;
           dotsteward = {
-            inherit cfg system;
+            inherit cfg system tags;
             root = rootValue;
             lib = dsLib;
           };
@@ -371,6 +446,16 @@ let
       }
     )
   );
+
+  # The configuration of each machine, with the check identity like homes.
+  hostConfigurations = lib.mapAttrs (
+    _: host:
+    mkHome {
+      inherit username;
+      inherit (host) profile system tags;
+      homeDirectory = platform.checkHome cfg host.system;
+    }
+  ) hostFacts;
 
   checkConfig = system: homes.${system}.${checkProfile}.config;
 
@@ -473,17 +558,28 @@ let
     system:
     let
       reference = homes.${system}.${checkProfile}.config.dotsteward.manifest;
-      differing = lib.concatMap (
-        profile:
-        let
-          manifest = homes.${system}.${profile}.config.dotsteward.manifest;
-          keys = filter (key: (manifest.${key} or null) != (reference.${key} or null)) (
-            lib.unique (attrNames manifest ++ attrNames reference)
-          );
-        in
-        lib.optional (keys != [ ])
-          "dotsteward: the manifest of profile ${profile} differs from the manifest of profile ${checkProfile} on ${system} (keys: ${concatStringsSep ", " keys}); contract options (dotsteward.*) must not depend on the profile: scope a component with its profiles field instead"
-      ) (filter (profile: profile != checkProfile) cfg.profiles.names);
+      differingKeys =
+        manifest:
+        filter (key: (manifest.${key} or null) != (reference.${key} or null)) (
+          lib.unique (attrNames manifest ++ attrNames reference)
+        );
+      differing =
+        lib.concatMap (
+          profile:
+          let
+            keys = differingKeys homes.${system}.${profile}.config.dotsteward.manifest;
+          in
+          lib.optional (keys != [ ])
+            "dotsteward: the manifest of profile ${profile} differs from the manifest of profile ${checkProfile} on ${system} (keys: ${concatStringsSep ", " keys}); contract options (dotsteward.*) must not depend on the profile: scope a component with its profiles field instead"
+        ) (filter (profile: profile != checkProfile) cfg.profiles.names)
+        ++ lib.concatMap (
+          host:
+          let
+            keys = differingKeys hostConfigurations.${host.name}.config.dotsteward.manifest;
+          in
+          lib.optional (keys != [ ])
+            "dotsteward: the manifest of machine ${host.name} differs from the manifest of profile ${checkProfile} on ${system} (keys: ${concatStringsSep ", " keys}); contract options (dotsteward.*) must not depend on the tags of a machine: scope a component with its machines or tags field instead"
+        ) (hostsOfSystem system);
     in
     if differing != [ ] then
       throw (concatStringsSep "\n" differing)
@@ -492,6 +588,25 @@ let
         echo "manifest identical in profiles: ${concatStringsSep " " cfg.profiles.names}"
         touch "$out"
       '';
+
+  # Each distinct tag set of the machines of SYSTEM evaluates, assertions included.
+  # Only the evaluation counts: the check holds no reference to what it forces, so
+  # nothing gets built, and what a machine makes of its tags is its own build and E2E.
+  hostsEval =
+    system:
+    let
+      hosts = hostsOfSystem system;
+      evaluated = map (host: host.name) hosts;
+      paths = map (
+        host: builtins.unsafeDiscardStringContext hostConfigurations.${host.name}.activationPackage.drvPath
+      ) hosts;
+    in
+    builtins.deepSeq paths (
+      pkgsFor.${system}.runCommand "hosts-eval" { passthru = { inherit evaluated; }; } ''
+        echo "evaluated machines: ${concatStringsSep " " evaluated}"
+        touch "$out"
+      ''
+    );
 
   # The narHash of the framework that flake.lock pins (the node the root's
   # dotsteward edge names), or null when the lock does not say.
@@ -549,6 +664,7 @@ let
       // {
         dotsteward-manifest = mirrorCheck system;
         manifest-consistent = consistency system;
+        hosts-eval = hostsEval system;
         # The scripts run as `dotsteward static` runs them, with the
         # environment they are documented to get (DOTSTEWARD_INSTANCE_ROOT,
         # DOTSTEWARD_SANDBOX=1 and the fail helper).
@@ -609,6 +725,8 @@ guarded {
   };
 
   homeConfigurations.${username} = homes.${primary}.${checkProfile};
+
+  inherit hostConfigurations;
 
   packages = packagesFor;
 

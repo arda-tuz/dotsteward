@@ -85,6 +85,10 @@ class Refusal(Exception):
     """A refusal: exit status 1."""
 
 
+class _NotEvaluated(Refusal):
+    """Nix does not evaluate this machine with the answer."""
+
+
 def _say(message: str) -> None:
     print(f"[dotsteward] {message}", file=sys.stderr, flush=True)
 
@@ -338,6 +342,24 @@ def _plugin_items(
     return [item for item in items if item is not None]
 
 
+def _component_items(
+    instance: config.Instance, state_root: str, this: str, known: Mapping[str, Any], reasons: Mapping[str, str]
+) -> list[dict[str, Any]]:
+    """An enabled component this machine does not know, for its profile: one for another
+    profile is no business of this machine yet."""
+    seen = _names(known, "components")
+    profile = machine.machine_profile(instance, state_root, this)
+    items: list[dict[str, Any] | None] = []
+    for name, table in machine.enabled_components(instance):
+        if name in seen or f"component:{name}" in reasons:
+            continue
+        profiles = table.get("profiles")
+        if profiles is not None and profile not in profiles:
+            continue
+        items.append(_item(instance, this, "component", NEW, name, [config.CONFIG_FILE], text=f"[components.{name}]"))
+    return [item for item in items if item is not None]
+
+
 def waiting(
     instance: config.Instance,
     name: str | None,
@@ -356,6 +378,7 @@ def waiting(
     return [
         *_skill_items(instance, state_root, name, known, reasons, lock),
         *_plugin_items(instance, name, known, reasons, lock),
+        *_component_items(instance, state_root, name, known, reasons),
     ]
 
 
@@ -378,7 +401,9 @@ def _current_set(instance: config.Instance, scope: Mapping[str, Any]) -> dict[st
     plugins = {str(p["spec"]) for p in machine.plugin_entries(instance) if isinstance(p.get("spec"), str)}
     plugins |= {str(p["name"]) for p in machine.entries_of(lock, "own_plugins") if isinstance(p.get("name"), str)}
     plugins = {plugin for plugin in plugins if reasons.get(f"plugin:{plugin}") != machine.REASON_MACHINES}
-    return {"skills": skills, "plugins": sorted(plugins)}
+    components = {name for name, _ in machine.enabled_components(instance)}
+    components = {name for name in components if reasons.get(f"component:{name}") != machine.REASON_MACHINES}
+    return {"skills": skills, "plugins": sorted(plugins), "components": sorted(components)}
 
 
 def write_baseline(instance: config.Instance, env: Mapping[str, str] | None = None) -> bool:
@@ -431,9 +456,8 @@ def settle(instance: config.Instance, env: Mapping[str, str] | None = None) -> N
         if f"skill:{name}" not in open_ids and reasons.get(f"skill:{name}") != machine.REASON_INCOMING:
             held.setdefault(name, digest)
     updated["skills"] = held
-    updated["plugins"] = sorted(
-        _names(known, "plugins") | {plugin for plugin in current["plugins"] if f"plugin:{plugin}" not in open_ids}
-    )
+    for key, kind in (("plugins", "plugin"), ("components", "component")):
+        updated[key] = sorted(_names(known, key) | {name for name in current[key] if f"{kind}:{name}" not in open_ids})
     if updated != known:
         _write_known(state_root, updated)
     # A skill this machine removed itself in a commit: its copy goes with the record.
@@ -566,6 +590,35 @@ def _never(instance: config.Instance, this: str, item: Mapping[str, Any], env: M
     return f"{kind} {name}: never on this machine"
 
 
+def _evaluates(instance: config.Instance, this: str, commit: str) -> None:
+    """A component this machine leaves out must leave a machine that evaluates, or its
+    no: tag breaks hosts-eval in the gate of every other machine. A framework pin older
+    than the tags has no such output and nothing to say; neither has a machine without Nix."""
+    root = instance.root
+    ref = f"refs/dotsteward/{_FETCH_SCOPE}/evaluate"
+    publishing.git(root, "update-ref", ref, commit)
+    flake = f"git+file://{root}?ref={ref}&rev={commit}"
+    attribute = f"{flake}#hostConfigurations.{this}.activationPackage.drvPath"
+    try:
+        result = subprocess.run(
+            ["nix", "--extra-experimental-features", "nix-command flakes", "eval", "--raw", attribute],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+        )
+    except OSError:
+        return
+    finally:
+        publishing.git(root, "update-ref", "-d", ref)
+    if result.returncode != 0 and "does not provide attribute" not in result.stderr:
+        told = [line.strip(" -") for line in result.stderr.splitlines() if "dotsteward:" in line] or [
+            result.stderr.strip()
+        ]
+        raise _NotEvaluated("this machine does not evaluate without it: " + "; ".join(told))
+
+
 def _publish_never(instance: config.Instance, this: str, env: Mapping[str, str]) -> None:
     """Brings the answers that wait to the host file on the remote, and the checkout along."""
     from dotsteward_cli import host
@@ -574,7 +627,18 @@ def _publish_never(instance: config.Instance, this: str, env: Mapping[str, str])
     pending = never_answers(state_root, this)
     if not any(pending.values()):
         return
-    code = host.publish(instance, env, declined=pending)
+    check = (lambda commit: _evaluates(instance, this, commit)) if pending.get("components") else None
+    try:
+        code = host.publish(instance, env, declined=pending, check=check)
+    except _NotEvaluated:
+        # This answer cannot stand: it stays a question.
+        known = read_known(state_root, this)
+        if known is not None:
+            never = {key: value for key, value in _table(known, "never").items() if key != "components"}
+            _write_known(state_root, {**known, "never": never})
+        raise
+    except host.Refusal as refused:
+        raise Refusal(f"{refused}; the answer holds here and waits") from refused
     if code != report.OK:
         _say("the answer waits for the remote: it holds here, a later 'dotsteward incoming' publishes it")
         return
@@ -700,7 +764,10 @@ def ask(
     this = scope["name"]
     if this is None:
         return []
-    _publish_never(instance, this, env)
+    try:
+        _publish_never(instance, this, env)
+    except Refusal as refused:
+        _say(f"ERROR: {refused}")
     scope = _current(instance, env)
     items: list[dict[str, Any]] = list(scope["incoming"])
     state_root = config.state_root(instance, env)
@@ -723,7 +790,12 @@ def ask(
             )
             _drop_review(state_root, str(item["id"]))
         elif answer == "n":
-            print(f"[dotsteward] {_never(instance, this, item, env)}", file=sys.stderr, flush=True)
+            try:
+                print(f"[dotsteward] {_never(instance, this, item, env)}", file=sys.stderr, flush=True)
+            except Refusal as refused:
+                _say(f"ERROR: {refused}")
+                left.append(item)
+                continue
             _drop_review(state_root, str(item["id"]))
         else:
             left.append(item)

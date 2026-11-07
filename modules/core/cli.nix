@@ -26,9 +26,9 @@ let
   cli = config.dotsteward.cli;
 
   platform = dotsteward.lib.platform.platformOf system;
-  active = lib.filter ({ component, ... }: helpers.isActive profile platform component) (
-    helpers.enabled cfg config.dotsteward.components
-  );
+  active = lib.filter (
+    { name, component }: helpers.isActive profile platform (dotsteward.tags or [ ]) name component
+  ) (helpers.enabled cfg config.dotsteward.components);
 
   cliPackage = packages.dotsteward or (dotsteward.lib.mkCli pkgs);
 

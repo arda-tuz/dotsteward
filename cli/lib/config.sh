@@ -46,6 +46,14 @@
 #                                        (expanded)
 #   DS_MACHINE_NAME                      the name of this machine; empty
 #                                        without one (`dotsteward host init`)
+#   DS_NIX_TAGS_JSON, DS_NIX_TAGS_SHA256 the tags rebuild hands to Nix, and their digest
+#   DS_HOST_BUILD_NAME, DS_HOST_BUILD_PROFILE, DS_HOST_BUILD_TAGS_SHA256
+#                                        the configuration of this machine in the
+#                                        flake (hostConfigurations), which the gate
+#                                        builds; empty without a file in the tree
+#                                        or on another system
+#   DS_INCOMING_SKILLS_JSON              the own skills another machine changed
+#                                        and this machine did not answer about
 #   DS_SKIP_COMPONENTS_JSON, DS_SKIP_SKILLS_JSON, DS_SKIP_PLUGINS_JSON
 #                                        what this machine leaves out, as JSON
 #                                        lists of names: skip of `dotsteward

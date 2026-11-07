@@ -33,7 +33,7 @@ import socket
 import subprocess
 import sys
 import tempfile
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -544,10 +544,12 @@ def publish(
     env: Mapping[str, str] | None = None,
     *,
     declined: Mapping[str, Collection[str]] | None = None,
+    check: Callable[[str], None] | None = None,
 ) -> int:
     """Brings hosts/<name>.toml of this machine to the remote: the exit status of
     ``host publish`` (OK, PARTIAL without a network, PRIVACY_STOP); Refusal when the
-    remote says no. DECLINED adds names to declined in the same commit (`incoming`)."""
+    remote says no. DECLINED adds names to declined in the same commit (`incoming`), and
+    CHECK looks at that commit before it leaves; it refuses by raising."""
     env = os.environ if env is None else env
     root = instance.root
     state = config.state_root(instance, env)
@@ -569,6 +571,8 @@ def publish(
         machine.parse_host(text, path, root)
         subject = f"chore(hosts): decline on {name}" if declined else f"chore(hosts): publish {name}"
         commit = _commit_on_tip(instance, tip, name, text, subject)
+        if check is not None:
+            check(commit)
         if _scan_file(instance, path, text, env) != 0:
             raise _PrivacyFinding(f"the privacy scan found something in {path}; nothing was published")
         return commit
@@ -690,14 +694,16 @@ def _rename_in_list(names: list[Any], old: str, new: str) -> list[Any]:
 
 
 def _rename_references(instance: config.Instance, old: str, new: str) -> None:
-    """Everything the tree says about the name: the machines of the lock and of the
-    plugin tables, and the producer. A later release moves the state branch here too."""
+    """Everything the tree says about the name: the machines of the lock, of the components
+    and of the plugin tables, and the producer. A later release moves the state branch here too."""
 
     def edit(document: Any) -> None:
         hosts = document.get("hosts")
         if hosts is not None and hosts.get("producer") == old:
             hosts["producer"] = new
         for table in document.get("components", {}).values():
+            if hasattr(table, "get") and isinstance(table.get("machines"), list):
+                table["machines"] = _rename_in_list(list(table["machines"]), old, new)
             options = table.get("options") if hasattr(table, "get") else None
             for plugin in (options.get("plugins") or []) if options is not None else []:
                 if hasattr(plugin, "get") and isinstance(plugin.get("machines"), list):

@@ -9,18 +9,19 @@
 #   2. the hand-off: when <state>/update/generation.json (written by a
 #      passing `dotsteward gate`; a private regular file of the user) names
 #      the tree of HEAD, PROFILE, the primary system, the runtime $USER and
-#      $HOME, the same framework override and this checkout, and its
+#      $HOME, the same framework override, this checkout and the tags of this
+#      machine (tags_sha256; a record without it stands for no tags), and its
 #      generation is a store path itself (no path inside or outside one)
 #      that `nix path-info` knows and that has an activate script, that
 #      generation is used as built: no evaluation, no build, and the host
 #      overrides are left as they are; otherwise steps 2a and 3 run as
 #      without the record
 #  2a. host overrides in <state>/host-overrides: profile.nix (the runtime
-#      $USER and $HOME), flake.nix (input [compat] host_input of
+#      $USER and $HOME, and the tags of this machine when it has any), flake.nix (input [compat] host_input of
 #      type git+file:, the committed tree that the gate builds as well,
 #      without the .git directory, with shallow=1 for a shallow clone, and
-#      homeConfigurations.current = <input>.lib.mkHome (import
-#      ./profile.nix)) and the host input lock, created when missing and
+#      homeConfigurations.current = <input>.lib.mkHome with what it takes of
+#      ./profile.nix, so an older framework pin ignores the tags) and the host input lock, created when missing and
 #      refreshed only when (canonical_revision, canonical_repo) of
 #      inventory.json changed, the last run used a framework override or
 #      flake.nix changed
@@ -220,9 +221,11 @@ reusable_generation() {
   [[ -n $record ]] || return 0
   tree=$(git -C "$repo_path" rev-parse "$canonical_revision^{tree}") || return 0
   generation=$(jq -r --arg tree "$tree" --arg profile "$profile" --arg system "$DS_NIX_PRIMARY_SYSTEM" \
-    --arg user "$USER" --arg home "$HOME" --arg override "$framework_override" --arg root "$repo_path" '
+    --arg user "$USER" --arg home "$HOME" --arg override "$framework_override" --arg root "$repo_path" \
+    --arg tags "$DS_NIX_TAGS_SHA256" --arg no_tags "$(printf '' | sha256sum | cut -d' ' -f1)" '
     select(.schema_version == "1.0" and .tree_oid == $tree and .profile == $profile and .system == $system
       and .username == $user and .home == $home and .root == $root
+      and (.tags_sha256 // $no_tags) == $tags
       and .framework_override == (if $override == "" then null else $override end))
     | .generation | strings' <<<"$record") || return 0
   name=${generation#"$store_dir"/}
@@ -257,12 +260,16 @@ build_generation() {
     previous_override=$(jq -r '.framework_override // empty' "$inventory")
   fi
 
+  local tags_line=''
+  if [[ $DS_NIX_TAGS_JSON != '[]' ]]; then
+    tags_line="  tags = [ $(jq -r 'map(@json) | join(" ")' <<<"$DS_NIX_TAGS_JSON") ];"$'\n'
+  fi
   write_private "$override_dir/profile.nix" <<EOF
 {
   username = "$USER";
   homeDirectory = "$HOME";
   profile = "$profile";
-}
+${tags_line}}
 EOF
 
   host_flake=$(
@@ -271,11 +278,9 @@ EOF
   inputs.$host_input.url = "$instance_url${instance_query:+?$instance_query}";
 
   outputs = { self, $host_input }:
-    let
-      profile = import ./profile.nix;
-    in
     {
-      homeConfigurations.current = $host_input.lib.mkHome profile;
+      homeConfigurations.current =
+        $host_input.lib.mkHome (builtins.intersectAttrs (builtins.functionArgs $host_input.lib.mkHome) (import ./profile.nix));
     };
 }
 EOF

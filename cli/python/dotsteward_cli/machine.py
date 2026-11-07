@@ -27,12 +27,13 @@ Command line (``cli/commands/skills.sh``)::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
 import re
 import sys
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +52,7 @@ REASON_MACHINES = "machines"
 REASON_DECLINED = "declined"
 REASON_DELETED = "deleted"
 REASON_INCOMING = "incoming"
+REASON_TAGS = "tags"
 
 
 def valid_name(name: str) -> bool:
@@ -228,12 +230,59 @@ def _deleted_here(instance: config.Instance, state: str, lock: Mapping[str, Any]
     return deleted
 
 
+def machine_profile(
+    instance: config.Instance, state: str, name: str | None, env: Mapping[str, str] | None = None
+) -> str | None:
+    """The profile of the machine NAME: its host file, machine.json, the last rebuild."""
+    host = (read_host(instance.root, name) if name is not None else None) or {}
+    record = read_machine(state)
+    kept = record.get("host") if record is not None and record.get("name") == name else None
+    recorded = kept if isinstance(kept, dict) else {}
+    return host.get("profile") or recorded.get("profile") or recorded_profile(state, instance)
+
+
+def tags_digest(tags: Collection[str]) -> str:
+    """The digest of a set of tags: what a generation was evaluated with."""
+    return hashlib.sha256("\n".join(sorted(tags)).encode("utf-8")).hexdigest()
+
+
+def host_tags(name: str, host: Mapping[str, Any]) -> list[str]:
+    """The tags hosts/NAME.toml means, as mkInstance reads them: its tags, machine:NAME and
+    no:<component> for what it declines."""
+    declined = host.get("declined", {}).get("components", [])
+    return sorted({*host.get("tags", []), f"machine:{name}", *(f"no:{component}" for component in declined)})
+
+
+def enabled_components(instance: config.Instance) -> Iterator[tuple[str, Mapping[str, Any]]]:
+    """(name, table) of every enabled component of the instance."""
+    for component, table in instance.config["components"].items():
+        if isinstance(table, dict) and table.get("enable"):
+            yield str(component), table
+
+
+def _host_build(instance: config.Instance, name: str | None, host: Mapping[str, Any]) -> dict[str, str] | None:
+    """What `gate` builds for this machine, when mkInstance has a configuration for it on
+    the primary system: a file in the tree."""
+    if name is None or not host:
+        return None
+    primary = instance.config["nix"]["systems"][0]
+    if host.get("system", primary) != primary:
+        return None
+    return {
+        "name": name,
+        "profile": str(host.get("profile") or instance.config["profiles"]["check"]),
+        "tags_sha256": tags_digest(host_tags(name, host)),
+    }
+
+
 def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -> dict[str, Any]:
     """What applies to this machine: ``{name, profile, tags, skip: {components, skills,
-    plugins}, reasons}``. ``skip`` holds sorted names, ``reasons`` one word for each,
-    under ``skill:<name>`` and ``plugin:<name>``. A plugin goes by its spec. The profile
-    never falls back to a default of the instance. The components stay empty until the
-    instance can scope them."""
+    plugins}, reasons, incoming, nix_tags, nix_tags_sha256, host_build}``. ``skip`` holds
+    sorted names, ``reasons`` one word for each, under ``skill:<name>``, ``plugin:<name>``
+    and ``component:<name>``. A plugin goes by its spec. The profile never falls back to a
+    default of the instance. ``incoming`` is what waits for an answer
+    (``dotsteward_cli.incoming``), ``nix_tags`` what `rebuild` hands to Nix, ``host_build``
+    the configuration of this machine in the flake."""
     state = config.state_root(instance, env)
     record = read_machine(state)
     name = current_name(record, env)
@@ -266,6 +315,14 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
             reasons[f"plugin:{plugin}"] = REASON_MACHINES
         elif plugin in declined.get("plugins", []):
             reasons[f"plugin:{plugin}"] = REASON_DECLINED
+    machine_tags = list(host.get("tags", recorded.get("tags") or []))
+    for component, table in enabled_components(instance):
+        if not _for_this_machine(table, name):
+            reasons[f"component:{component}"] = REASON_MACHINES
+        elif table.get("tags") is not None and not set(table["tags"]) & set(machine_tags):
+            reasons[f"component:{component}"] = REASON_TAGS
+        elif component in declined.get("components", []):
+            reasons[f"component:{component}"] = REASON_DECLINED
 
     from dotsteward_cli import incoming
 
@@ -277,17 +334,26 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
             reasons[f"{question['kind']}:{question['name']}"] = REASON_INCOMING
 
     profile = host.get("profile") or recorded.get("profile") or recorded_profile(state, instance)
+    nix_tags: list[str] = []
+    if name is not None:
+        # Every declined component, enabled or not, as mkInstance reads the host file.
+        left_out = [question["name"] for question in questions if question["kind"] == "component"]
+        left_out += declined.get("components", [])
+        nix_tags = sorted({*machine_tags, f"machine:{name}", *(f"no:{component}" for component in left_out)})
     return {
         "name": name,
         "profile": profile,
-        "tags": list(host.get("tags", recorded.get("tags") or [])),
+        "tags": machine_tags,
         "skip": {
-            "components": [],
+            "components": sorted(key.removeprefix("component:") for key in reasons if key.startswith("component:")),
             "skills": sorted(key.removeprefix("skill:") for key in reasons if key.startswith("skill:")),
             "plugins": sorted(key.removeprefix("plugin:") for key in reasons if key.startswith("plugin:")),
         },
         "reasons": dict(sorted(reasons.items())),
         "incoming": questions,
+        "nix_tags": nix_tags,
+        "nix_tags_sha256": tags_digest(nix_tags),
+        "host_build": _host_build(instance, name, host),
     }
 
 
@@ -398,6 +464,8 @@ def check_problems(instance: config.Instance) -> list[str]:
             problems.append(f"{label}: machines needs the copy deployment")
     for entry in entries_of(lock, "own_plugins"):
         problems += _machines_problems(f"{lock_name}: plugin {entry.get('name')}", entry.get("machines"), names)
+    for component, table in enabled_components(instance):
+        problems += _machines_problems(f"{config.CONFIG_FILE}: component {component}", table.get("machines"), names)
     answers: dict[Any, Any] = {}
     for plugin in plugin_entries(instance):
         label = f"{config.CONFIG_FILE}: plugin {plugin.get('spec')}"
@@ -438,8 +506,9 @@ def _parser() -> argparse.ArgumentParser:
             "Prints the machine name, its profile and tags, and what it leaves out: skip.components, "
             "skip.skills and skip.plugins, with one word for each in reasons (machines: the entry is for "
             "other machines; declined: hosts/<name>.toml says never; deleted: an own skill deleted here; "
-            "incoming: another machine brought it and this machine did not answer yet). incoming lists those "
-            "questions (dotsteward incoming). "
+            "incoming: another machine brought it and this machine did not answer yet; tags: a component for "
+            "machine tags this machine does not carry). incoming lists those questions (dotsteward incoming), "
+            "nix_tags what rebuild hands to Nix. "
             "name_taken lists the skills of the lock that are for other machines while this machine has a "
             "skill of that name."
         ),

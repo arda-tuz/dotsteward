@@ -3,9 +3,12 @@
 #   enabled CFG COMPONENTS     enabled components in [components] order (then
 #                              any other declared name, sorted), as
 #                              [ { name; component; } ]
-#   isActive PROFILE PLATFORM COMPONENT
+#   isActive PROFILE PLATFORM TAGS NAME COMPONENT
 #                              enabled, scoped to PROFILE (profiles null or
-#                              containing it) and supporting PLATFORM
+#                              containing it), supporting PLATFORM, for this
+#                              machine (machines null, or a machine:<name>
+#                              tag in TAGS), for its tags (tags null, or one
+#                              of them in TAGS), and no no:NAME tag in TAGS
 #   settingsTargets SYSTEM PLATFORM_LIB ENTRIES
 #                              { <target> = { component, path, format, ... } }
 #                              with paths selected for SYSTEM (dsLib.platform);
@@ -83,10 +86,13 @@ in
     }) (filter (name: components.${name}.enable) names);
 
   isActive =
-    profile: platform: component:
+    profile: platform: tags: name: component:
     component.enable
     && (component.profiles == null || elem profile component.profiles)
-    && elem platform component.platforms;
+    && elem platform component.platforms
+    && (component.machines == null || lib.any (machine: elem "machine:${machine}" tags) component.machines)
+    && (component.tags == null || lib.any (tag: elem tag tags) component.tags)
+    && !elem "no:${name}" tags;
 
   settingsTargets =
     system: platformLib: entries:

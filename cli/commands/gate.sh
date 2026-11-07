@@ -250,15 +250,29 @@ step_flake_check() {
   nix_cmd "${flake_check_args[@]}"
 }
 
+# host_configuration: whether the flake has the configuration of this machine. A framework
+# pin older than the CLI has no such output, which is no failure here.
+host_configuration() {
+  local names
+  [[ -n $DS_HOST_BUILD_NAME ]] || return 1
+  names=$(nix_cmd eval --json "$root#hostConfigurations" --apply builtins.attrNames --no-update-lock-file \
+    "${override_args[@]}" 2>/dev/null) || return 1
+  jq -e --arg name "$DS_HOST_BUILD_NAME" 'index($name) != null' <<<"$names" >/dev/null
+}
+
 step_cli_probes() {
-  local output generation
-  output=$(nix_cmd build "$probe_attribute" --no-link --no-update-lock-file --print-out-paths \
+  local output generation attribute=$probe_attribute host=''
+  if host_configuration; then
+    host=$DS_HOST_BUILD_NAME
+    attribute="$root#hostConfigurations.$host.activationPackage"
+  fi
+  output=$(nix_cmd build "$attribute" --no-link --no-update-lock-file --print-out-paths \
     "${parallelism[@]}" "${override_args[@]}")
   generation=${output##*$'\n'}
   [[ -n $generation ]] || die "the candidate build printed no output path"
   [[ -d $generation/home-path/bin ]] || die "candidate profile bin directory missing: $generation/home-path/bin"
   "$dotsteward" --instance "$root" probes --generation "$generation"
-  printf '%s\n' "$generation" >"$built_note"
+  printf '%s\n%s\n' "$generation" "$host" >"$built_note"
 }
 
 declare -A step_seconds=()
@@ -329,15 +343,28 @@ jq -n --argjson key "$memo_key" --arg base "$base" --arg scope "$scope" --arg ro
   }' | txn_write_private "$validation_file"
 
 # The hand-off: the generation of the check profile and identity.
-built_generation=$(<"$built_note")
+built_generation=''
+built_host=''
+{
+  read -r built_generation || true
+  read -r built_host || true
+} <"$built_note"
 [[ -n $built_generation ]] || die "the cli-probes step recorded no generation"
 check_home=$DS_IDENTITY_HOME
 [[ $DS_NIX_PRIMARY_SYSTEM != *-darwin ]] || check_home=$DS_IDENTITY_DARWIN_HOME
-jq -n --arg tree "$tree_oid" --arg profile "$DS_PROFILES_CHECK" --arg system "$DS_NIX_PRIMARY_SYSTEM" \
+built_profile=$DS_PROFILES_CHECK
+built_tags=$(printf '' | sha256sum | cut -d' ' -f1)
+if [[ -n $built_host ]]; then
+  built_profile=$DS_HOST_BUILD_PROFILE
+  built_tags=$DS_HOST_BUILD_TAGS_SHA256
+fi
+jq -n --arg tree "$tree_oid" --arg profile "$built_profile" --arg system "$DS_NIX_PRIMARY_SYSTEM" \
   --arg username "$DS_IDENTITY_USERNAME" --arg home "$check_home" --arg generation "$built_generation" \
-  --argjson key "$memo_key" --arg root "$root" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{
+  --argjson key "$memo_key" --arg root "$root" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg host "$built_host" --arg tags "$built_tags" '{
     schema_version: "1.0", tree_oid: $tree, profile: $profile, system: $system, username: $username,
     home: $home, generation: $generation, framework_override: $key.framework_override, root: $root,
+    host: (if $host == "" then null else $host end), tags_sha256: $tags,
     recorded_at: $at}' | txn_write_private "$generation_file"
 
 log "candidate validated; nothing committed or pushed"

@@ -134,7 +134,7 @@ let
         script = ./apt-repository.sh;
       };
 
-  active = helpers.isActive profile platform component;
+  active = helpers.isActive profile platform (dotsteward.tags or [ ]) "vscode" component;
 
   # The bundle's command directory, as a shell word for home.sessionPath.
   bundleBin =

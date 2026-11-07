@@ -2,7 +2,8 @@
 # managed links and the nix install method.
 #
 # A component is active in this generation when it is enabled, its profiles
-# are null or contain the profile, and it supports the platform. Active
+# are null or contain the profile, it supports the platform and the tags of the
+# machine let it in (helpers.isActive). Active
 # components whose resolved method is nix get install.nix.packages in
 # home.packages; the other methods run outside Home Manager (cli methods).
 # Active pypi components with install.pypi.pathAppend add the ~/.zshrc block
@@ -23,7 +24,9 @@ let
 
   platform = dotsteward.lib.platform.platformOf system;
   enabled = helpers.enabled cfg config.dotsteward.components;
-  active = lib.filter ({ component, ... }: helpers.isActive profile platform component) enabled;
+  active = lib.filter (
+    { name, component }: helpers.isActive profile platform (dotsteward.tags or [ ]) name component
+  ) enabled;
 
   pypiPathBlock =
     name: venv:
@@ -76,6 +79,16 @@ in
   };
 
   config = {
+    # What an active component needs is active too, on every machine: mkInstance
+    # evaluates each of them (checks.<system>.hosts-eval).
+    assertions = lib.concatMap (
+      { name, component }:
+      map (needed: {
+        assertion = lib.any (other: other.name == needed) active;
+        message = "dotsteward: component ${needed} is left out on this machine, and ${name} needs it";
+      }) component.requires
+    ) active;
+
     dotsteward.managedLinks =
       config.dotsteward.core.managedLinks
       ++ lib.concatMap ({ component, ... }: component.rollback.managedLinks) enabled;

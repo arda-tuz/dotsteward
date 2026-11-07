@@ -352,6 +352,9 @@ let
     options = {
       enable = optionDefault types.bool false "Set by mkInstance from [components.<name>].enable.";
       profiles = nullable (types.listOf types.str) "Profiles where the component is active; null: every profile.";
+      machines = nullable (types.listOf types.str) "Machines the component is for, set by mkInstance; null: every machine.";
+      tags = nullable (types.listOf types.str) "Machine tags the component is for, set by mkInstance; null: every machine.";
+      requires = list types.str "Components this component needs where it is active; leaving one out fails the evaluation of that machine.";
       platforms = optionDefault (types.listOf platform) platforms "Supported platforms.";
       method = option method "Resolved method: method_by_platform, then method, then the component default.";
       supportedMethods = submoduleOption {

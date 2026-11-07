@@ -36,6 +36,7 @@ let
   name = "opencode-pi";
   inherit (dotsteward) cfg system;
   dsLib = dotsteward.lib;
+  helpers = import ../../core/helpers.nix { inherit lib; };
   component = config.dotsteward.components.${name};
 
   platform = dsLib.platform.platformOf system;
@@ -79,10 +80,7 @@ let
   piPackage =
     packages.pi
       or (throw "dotsteward: component ${name} needs the package pi (modules/components/${name}/package.nix)");
-  active =
-    component.enable
-    && (component.profiles == null || elem profile component.profiles)
-    && elem platform component.platforms;
+  active = helpers.isActive profile platform (dotsteward.tags or [ ]) name component;
 
   modelDataTemplate = "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-{agent_tools.pi.version}.tgz";
 
