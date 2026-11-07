@@ -720,9 +720,22 @@ def _cycle(context: Mapping[str, Any], tree: Mapping[str, str], work: Sequence[W
 # --- a run --------------------------------------------------------------------------------
 
 
-def _ready(context: Mapping[str, Any], names: Sequence[str] | None, handled: set[str]) -> list[Work]:
-    """The items that wait for a capture; each only once in a run."""
+def waiting(state_root: str) -> bool:
+    """Whether something still waits for a capture."""
+    return any(
+        isinstance(item, dict) and item.get("state") == reconcile.CAPTURE
+        for item in state.load_pending(state_root)["items"].values()
+    )
+
+
+def _ready(
+    context: Mapping[str, Any], names: Sequence[str] | None, handled: set[str], only_due: bool = False
+) -> list[Work]:
+    """The items that wait for a capture; each only once in a run. ONLY_DUE: the run of a
+    deadline, which leaves alone what still has its delay to wait."""
     document = state.load_pending(str(context["state_root"]))
+    now = time.time()
+    delay = sleeper.delay_seconds(context)
     work = []
     for key, item in document["items"].items():
         if (
@@ -734,6 +747,8 @@ def _ready(context: Mapping[str, Any], names: Sequence[str] | None, handled: set
             continue
         name = str(item.get("name"))
         if names and name not in names:
+            continue
+        if only_due and not sleeper.is_due(item, now, delay):
             continue
         path = item.get("path")
         answer = item.get("answer")
@@ -786,7 +801,9 @@ def _write_last(state_root: str, summary: Summary) -> None:
     state.write_json(os.path.join(state.directory(state_root), state.LAST_CAPTURE_FILE), document)
 
 
-def run_now(context: Mapping[str, Any], tree: Mapping[str, str], names: Sequence[str] | None = None) -> Summary:
+def run_now(
+    context: Mapping[str, Any], tree: Mapping[str, str], names: Sequence[str] | None = None, *, only_due: bool = False
+) -> Summary:
     """One capture run: publishes what waits and reads pending.json again before it ends."""
     state_root = str(context["state_root"])
     instance = str(context["instance"])
@@ -801,7 +818,7 @@ def run_now(context: Mapping[str, Any], tree: Mapping[str, str], names: Sequence
     try:
         sleeper.log(state_root, "run")
         while True:
-            work = _ready(context, names, handled)
+            work = _ready(context, names, handled, only_due)
             if not work:
                 break
             ready = _settled(work)

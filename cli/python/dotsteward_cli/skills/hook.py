@@ -339,23 +339,45 @@ def _post_tool_use(context: Mapping[str, Any], agent: str, payload: Mapping[str,
         return
     from dotsteward_cli.skills import reconcile
 
-    own_changed, _ = reconcile.note_writes(context, hits, agent, tool)
+    session = payload.get("session_id")
+    own_changed, _ = reconcile.note_writes(context, hits, agent, tool, session if isinstance(session, str) else None)
     if own_changed and not subagent:
         from dotsteward_cli.skills import sleeper
 
         sleeper.arm(context)
 
 
-def _session_end(context: Mapping[str, Any]) -> None:
+def _session_end(context: Mapping[str, Any], payload: Mapping[str, Any]) -> None:
+    """What this session wrote goes out now, unless another session wrote it as well and
+    has not ended. Everything else keeps its delay: other sessions may still be writing."""
     from dotsteward_cli.skills import state
 
     state_root = str(context["state_root"])
-    if not _capture_items(state.load_pending(state_root)):
+    session = payload.get("session_id")
+    if not any(session in (item.get("writers") or []) for item in _capture_items(state.load_pending(state_root))):
+        return
+    finished: list[str] = []
+
+    def change(document: dict[str, Any]) -> bool:
+        finished.clear()
+        for item in _capture_items(document):
+            writers = item.get("writers") or []
+            if session in writers:
+                item["writers"] = [other for other in writers if other != session]  # type: ignore[index]
+                if not item["writers"]:
+                    item["due"] = True  # type: ignore[index]
+                    finished.append(str(item.get("name")))
+        return True
+
+    state.change_pending(state_root, change)
+    if not finished:
         return
     from dotsteward_cli.skills import sleeper
 
-    sleeper.write_deadline(state_root, time.time())
-    sleeper.spawn(context, "capture", "--now")
+    if len(finished) == len(_capture_items(state.load_pending(state_root))):
+        sleeper.write_deadline(state_root, time.time())
+    names = [argument for name in finished for argument in ("--name", name)]
+    sleeper.spawn(context, "capture", "--now", *names)
 
 
 def _run(argv: Sequence[str]) -> None:
@@ -383,7 +405,7 @@ def _run(argv: Sequence[str]) -> None:
     elif event == "Stop":
         _stop(context, agent, payload)
     else:
-        _session_end(context)
+        _session_end(context, payload)
 
 
 def _log_error() -> None:

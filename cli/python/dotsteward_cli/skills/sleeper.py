@@ -4,10 +4,12 @@ Arming writes ``now + delay`` to ``deadline`` and starts ``skills capture --wait
 detached. The first of those takes ``sleeper.lock``, the others end at once. The sleeper
 reads the deadline on every wake, so a later write just moves it; it wakes at least every
 30 seconds, and the wall clock counts, so a machine that slept fires on waking up. A
-deadline that moved during the capture sends it back to sleep. SessionEnd sets the
-deadline to now and runs the capture itself; whichever comes first finds the work done.
-A killed sleeper leaves pending.json and the deadline: the next hook starts another,
-which runs at once when the time has passed.
+deadline that moved during the capture sends it back to sleep. A deadline is for the items
+that are due by then: one that waits for a retry does not take a fresh one along, which
+gets a deadline of its own. The end of a session runs a capture for what that session
+wrote; everything else keeps its delay, because other sessions may still be writing. A
+killed sleeper leaves pending.json and the deadline: the next hook starts another, which
+runs at once when the time has passed.
 
 No systemd and no flock binary, so this works on macOS as well.
 """
@@ -30,6 +32,7 @@ LOG_FILE = "capture.log"
 _LONGEST_NAP_SECONDS = 30.0
 _DEADLINE_LOCK_WAIT_SECONDS = 1.0
 _LOG_LIMIT_BYTES = 256 * 1024
+RETRY_REASONS = frozenset({"offline", "race", "checks-unavailable"})
 
 
 def delay_seconds(context: Mapping[str, Any]) -> float:
@@ -147,7 +150,7 @@ def resume(context: Mapping[str, Any], items: Sequence[Mapping[str, Any]]) -> No
     state_root = str(context["state_root"])
     now = time.time()
     deadline = read_deadline(state_root)
-    retries = any(item.get("reason") in {"offline", "race", "checks-unavailable"} for item in items)
+    retries = any(item.get("reason") in RETRY_REASONS for item in items)
     wanted = max(float(item.get("detected_at") or 0) for item in items) + delay_seconds(context)
     if deadline is None:
         write_deadline(state_root, now if retries else max(now, wanted))
@@ -157,10 +160,31 @@ def resume(context: Mapping[str, Any], items: Sequence[Mapping[str, Any]]) -> No
         spawn(context, "capture", "--wait")
 
 
-def wait(state_root: str, capture: Callable[[], int]) -> int:
+def is_due(item: Mapping[str, Any], now: float, delay: float) -> bool:
+    """Whether the sleeper takes this item now: it waited long enough, or it is a retry,
+    an answer, or the end of the session that wrote it."""
+    if item.get("answer") or item.get("due") or item.get("reason") in RETRY_REASONS:
+        return True
+    return float(item.get("detected_at") or 0) + delay <= now
+
+
+def _next_deadline(context: Mapping[str, Any]) -> float | None:
+    """When what still waits for its delay is due, None when nothing does."""
+    now = time.time()
+    delay = delay_seconds(context)
+    later = [
+        float(item.get("detected_at") or 0) + delay
+        for item in state.load_pending(str(context["state_root"]))["items"].values()
+        if isinstance(item, dict) and item.get("state") == "capture" and not is_due(item, now, delay)
+    ]
+    return max(later) if later else None
+
+
+def wait(context: Mapping[str, Any], capture: Callable[[], int]) -> int:
     """The sleeping process: at most one per machine."""
     from dotsteward_cli import atomic, locks
 
+    state_root = str(context["state_root"])
     atomic.make_private_dirs(state.directory(state_root))
     lock = locks.FileLock(os.path.join(state.directory(state_root), SLEEPER_LOCK))
     if not lock.try_acquire():
@@ -179,7 +203,10 @@ def wait(state_root: str, capture: Callable[[], int]) -> int:
                 continue
             status = capture()
             if clear_deadline(state_root, deadline):
-                break
+                later = _next_deadline(context)
+                if later is None:
+                    break
+                write_deadline(state_root, later)
     finally:
         log(state_root, "sleeper end")
         lock.release()

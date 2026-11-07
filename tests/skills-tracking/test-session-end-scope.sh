@@ -6,9 +6,16 @@
 # a fresh one along either.
 # shellcheck source=tests/skills-tracking/capture-helpers.sh
 source "$DS_REPO_ROOT/tests/skills-tracking/capture-helpers.sh"
+# shellcheck source=tests/lib/fakessh.sh
+source "$DS_REPO_ROOT/tests/lib/fakessh.sh"
 
 new_machine a
 root=$(home_of a)/.claude/skills
+# From the start: a sleeper keeps the environment it was started with.
+ssh_url=git@github.com:example-org/workstation.git
+ds_fakessh_enable
+ds_fakessh_map "$ssh_url" "$remote"
+git -C "$(clone_of a)" remote set-url origin "$ssh_url"
 
 # --- two sessions -------------------------------------------------------------------------
 
@@ -45,12 +52,10 @@ assert_eq half "$(remote_entry half | jq -r .name)"
 
 # --- a retry does not take a fresh skill along --------------------------------------------
 
-mv "$remote" "$remote.away"
 own_new a retried
 settle a retried
-EXPECT_STATUS=6 ds_code a skills capture --now
+EXPECT_STATUS=6 DS_FAKESSH_FAIL=1 ds_code a skills capture --now
 assert_eq offline "$(item a retried .reason)"
-mv "$remote.away" "$remote"
 HOOK_SESSION=third
 new_skill a fresh
 wrote a fresh

@@ -154,7 +154,11 @@ def _record_install(answer: Mapping[str, Any], instance: str, state_root: str) -
     decision = answer["state"]
     if decision == IN_SYNC:
         known = state.base_entry(state.load_base(state_root), name)
-        if known and known["base_sha256"] != answer["lock_sha256"] and is_behind(instance, str(known.get("base_commit"))):
+        if (
+            known
+            and known["base_sha256"] != answer["lock_sha256"]
+            and is_behind(instance, str(known.get("base_commit")))
+        ):
             # The copy went back to the old lock of a checkout that is behind: b is not older.
             return
         state.record_base(state_root, name, str(answer["lock_sha256"]), head_commit(instance), str(answer["path"]))

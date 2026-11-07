@@ -55,7 +55,10 @@ sleep 0.2
 assert_eq capture "$(pending_state alpha)"
 [[ -f $ss/deadline ]] || ds_fail "the deadline stays"
 assert_eq 0 "$(capture_runs)"
+# Time passes.
 printf '1000\n' >"$ss/deadline"
+jq '.items["skill:alpha"].detected_at -= 1000' "$ss/pending.json" >"$ss/pending.tmp"
+mv -- "$ss/pending.tmp" "$ss/pending.json"
 agent_event claude Stop stop
 wait_for "$ss/capture.log" ' run$'
 assert_eq 1 "$(capture_runs)"

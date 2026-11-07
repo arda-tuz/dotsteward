@@ -144,10 +144,11 @@ def _capture(args: argparse.Namespace, loaded: config.Instance) -> int:
     state_root = str(context["state_root"])
     tree = capture.tree_paths(loaded)
     if args.wait:
-        return sleeper.wait(state_root, lambda: capture.run_now(context, tree).code)
+        return sleeper.wait(context, lambda: capture.run_now(context, tree, only_due=True).code)
+    sleeper.log(state_root, f"capture pid {os.getpid()}")
     started = sleeper.read_deadline(state_root)
     summary = capture.run_now(context, tree, args.name or None)
-    if started is not None and not summary.busy:
+    if started is not None and not summary.busy and (not args.name or not capture.waiting(state_root)):
         sleeper.clear_deadline(state_root, started)
     if args.json:
         print(json.dumps(summary.document(), indent=2))

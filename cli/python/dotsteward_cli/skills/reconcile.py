@@ -195,6 +195,7 @@ class Plan:
 
     def __init__(self) -> None:
         self.set_items: dict[str, dict[str, Any]] = {}
+        self.writers: dict[str, str] = {}
         self.drop_items: list[str] = []
         self.missing: dict[str, float] = {}
         self.not_missing: list[str] = []
@@ -208,6 +209,10 @@ class Plan:
         for key, fields in self.set_items.items():
             known = items.get(key)
             items[key] = {**known, **fields} if isinstance(known, dict) else dict(fields)
+        for key, session in self.writers.items():
+            item = items.get(key)
+            if isinstance(item, dict):
+                item["writers"] = sorted({*(item.get("writers") or []), session})
         for key in self.drop_items:
             items.pop(key, None)
         missing = document.setdefault("missing", {})
@@ -282,6 +287,10 @@ def _look_at_own(
         return
     if isinstance(item, dict) and item.get("state") == CAPTURE and item.get("digest") == digest:
         return
+    if isinstance(item, dict) and item.get("state") == CAPTURE and item.get("digest") is None:
+        # A file tool wrote it and the delay runs from there; now the content is known.
+        plan.set_items[key] = {"digest": digest}
+        return
     plan.set_items[key] = {
         "kind": "skill",
         "name": name,
@@ -291,6 +300,7 @@ def _look_at_own(
         "digest": digest,
         "detected_at": now,
         "reason": None,
+        "due": False,
     }
 
 
@@ -413,10 +423,15 @@ def reconcile(context: Mapping[str, Any], *, full: bool = False) -> dict[str, An
 
 
 def note_writes(
-    context: Mapping[str, Any], hits: Iterable[tuple[str, str, str]], agent: str, tool: str
+    context: Mapping[str, Any],
+    hits: Iterable[tuple[str, str, str]],
+    agent: str,
+    tool: str,
+    session: str | None = None,
 ) -> tuple[bool, dict[str, Any]]:
     """Records what a file tool wrote: HITS are (path of the skill, name, path below
-    it). Returns whether an own skill changed, and pending.json afterwards."""
+    it), SESSION the session that wrote, whose end publishes it. Returns whether an own
+    skill changed, and pending.json afterwards."""
     state_root = str(context["state_root"])
     entries = _read_lock(context)
     base = state.load_base(state_root)
@@ -464,22 +479,33 @@ def note_writes(
                 "evidence": evidence,
                 "detected_at": now,
                 "reason": None,
+                "due": False,
             }
+            if session:
+                plan.writers[state.skill_key(skill_name)] = session
             own_changed = True
             continue
         key = _item_key(path, name)
         known = document["items"].get(key)
         if below not in (SKILL_FILE, origin.PLUGIN_MANIFEST) or not _is_candidate(path):
             if isinstance(known, dict) and known.get("state") == CAPTURE and known.get("origin") == origin.OWN:
-                plan.set_items[key] = {"detected_at": now, "digest": None}
+                plan.set_items[key] = {"detected_at": now, "digest": None, "due": False}
+                if session:
+                    plan.writers[key] = session
                 own_changed = True
             continue
         item = _candidate_item(name, path, evidence)
         if isinstance(known, dict) and known.get("state") == item["state"]:
-            for kept in ("attempts", "last_asked", "detected_at"):
+            # Waiting for a capture, a new write starts the delay again.
+            for kept in (
+                ("attempts", "last_asked") if item["state"] == CAPTURE else ("attempts", "last_asked", "detected_at")
+            ):
                 if kept in known:
                     item[kept] = known[kept]
+        item["due"] = False
         plan.set_items[key] = item
+        if session and item["state"] == CAPTURE:
+            plan.writers[key] = session
         own_changed = own_changed or (item["state"] == CAPTURE and item["kind"] == "skill")
     if plan:
         state.change_pending(state_root, plan.apply)
