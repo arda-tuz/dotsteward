@@ -11,7 +11,7 @@
 #                    "workstation" (adopt mode, the check profile) and
 #                    "fresh" (fresh mode), an empty versions.lock.json, an
 #                    empty skills lock agent/skills.lock.json and the manifest
-#                    mirror .dotsteward/manifest.x86_64-linux.json without
+#                    mirror .dotsteward/manifest.<fixture_system>.json without
 #                    components; its skill layout is the catalog's: legacy
 #                    root ~/.codex/skills, link root ~/.claude/skills with
 #                    the target prefix ../../.agents/skills/, excluded
@@ -71,7 +71,9 @@
 
 agents_fw=$DS_TEST_ROOT/framework
 agents_inst=$DS_TEST_ROOT/instance
-agents_manifest=$agents_inst/.dotsteward/manifest.x86_64-linux.json
+# shellcheck source=tests/lib/fixture-system.sh
+source "$DS_REPO_ROOT/tests/lib/fixture-system.sh"
+agents_manifest=$agents_inst/.dotsteward/manifest.$fixture_system.json
 agents_lock=$agents_inst/agent/skills.lock.json
 agents_store=$DS_TEST_ROOT/store
 agents_gen=$DS_TEST_ROOT/generation
@@ -85,7 +87,7 @@ _agents_hm_root=.agents/skills
 _agents_installer=''
 
 _write_config() {
-  cat >"$agents_inst/workstation.toml" <<'EOF'
+  cat >"$agents_inst/workstation.toml" <<EOF
 schema_version = 1
 
 [identity]
@@ -96,7 +98,7 @@ name = "workstation"
 remote = "git@github.com:example-org/workstation.git"
 
 [nix]
-systems = ["x86_64-linux"]
+systems = ["$fixture_system"]
 state_version = "26.05"
 
 [profiles]
@@ -132,10 +134,10 @@ _write_config
 printf '{\n  "schema_version": "1.0"\n}\n' >"$agents_inst/versions.lock.json"
 jq -n '{ schema_version: "1.0", expected_skill_count: 0, skills: [] }' >"$agents_lock"
 
-jq -n '{
+jq -n --arg system "$fixture_system" --arg platform "$fixture_platform" '{
   schema_version: 1,
-  system: "x86_64-linux",
-  platform: "linux",
+  system: $system,
+  platform: $platform,
   framework: { version: "0.0.0" },
   components: [],
   probes: [],

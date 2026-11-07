@@ -160,12 +160,12 @@ fi
 # --- a named machine: its host file arrives with its first commit ---------------------
 
 new_machine named
-jq -n '{schema_version: 1, name: "named", machine_key: "00112233445566778899aabbccddeeff", named_at: "2026-01-01T00:00:00Z",
-  host: {system: "x86_64-linux", profile: "workstation", platform: "ubuntu-24.04", tags: []}}' >"$(state_of named)/machine.json"
+jq -n --arg system "$fixture_system" '{schema_version: 1, name: "named", machine_key: "00112233445566778899aabbccddeeff", named_at: "2026-01-01T00:00:00Z",
+  host: {system: $system, profile: "workstation", platform: "ubuntu-24.04", tags: []}}' >"$(state_of named)/machine.json"
 own_new named hosted
 settle named hosted
 ds_code named skills capture --now
-assert_contains "$(remote_file hosts/named.toml)" 'system = "x86_64-linux"'
+assert_contains "$(remote_file hosts/named.toml)" "system = \"$fixture_system\""
 assert_eq "chore(skills): capture hosted" "$(git -C "$remote" log -1 --format=%s)"
 tip=$(remote_tip)
 printf 'more\n' >>"$(home_of named)/.claude/skills/hosted/SKILL.md"

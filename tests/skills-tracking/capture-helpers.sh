@@ -44,6 +44,8 @@
 source "$DS_REPO_ROOT/tests/static/helpers.sh"
 # shellcheck source=tests/lib/bare-remote.sh
 source "$DS_REPO_ROOT/tests/lib/bare-remote.sh"
+# shellcheck source=tests/lib/fixture-system.sh
+source "$DS_REPO_ROOT/tests/lib/fixture-system.sh"
 
 world=$DS_TEST_ROOT/world
 remote=$world/remote.git
@@ -64,11 +66,12 @@ chmod 0755 "$DS_TEST_ROOT/bin/notify-send"
 : >"$DS_TEST_ROOT/notifications"
 
 make_instance "$seed"
-sed -i 's/^username = "alice"$/username = "dotsteward-test"/' "$seed/workstation.toml"
+sed -i -e 's/^username = "alice"$/username = "dotsteward-test"/' \
+  -e "/^\[nix\]\$/a systems = [\"$fixture_system\"]" "$seed/workstation.toml"
 printf '\n[skills]\ntracking = true\n' >>"$seed/workstation.toml"
 mkdir -p "$seed/.dotsteward"
-jq -n '{
-  schema_version: 1, system: "x86_64-linux", platform: "linux", framework: { version: "0.0.0" },
+jq -n --arg system "$fixture_system" --arg platform "$fixture_platform" '{
+  schema_version: 1, system: $system, platform: $platform, framework: { version: "0.0.0" },
   components: [], probes: [], pins: { rules: [], latest: [] },
   checks: { commands: [], e2e: [], agents: [], floors: [] },
   hooks: { pre_activate: [], system_install: [], post_install: [], forbid: [],
@@ -79,7 +82,7 @@ jq -n '{
     excluded_subtrees: [".system"]
   },
   skills: { hm_root: ".agents/skills", framework: [], home_managed: [], framework_manifest: null }
-}' >"$seed/.dotsteward/manifest.x86_64-linux.json"
+}' >"$seed/.dotsteward/manifest.$fixture_system.json"
 # What `pins check` of an instance without inputs needs.
 jq '. + {flake_inputs: {}, nix: {version: "2.31.2", installer_url: "https://releases.example.invalid/nix/nix-2.31.2/install",
   installer_size: 4499, installer_sha256: "105a596de51480d4c4aa1ea792a2ef370e86e2f53a9c6b3ead3a70888bbbfe64"}}' \
