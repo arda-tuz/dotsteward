@@ -89,6 +89,18 @@ release_row 4.1.0 "$base/v4.1.0/example-release-linux-x64" "$fixtures/example-re
 assert_exit 0 apply --latest "$rows"
 assert_contains "$DS_STDOUT" "moved agent_tools.example-release: 4.0.0 -> 4.1.0 (unsigned)"
 at "$start"
+# A server that answers every path (an HTML page, a JSON document that is no
+# bundle) publishes no signature: the source is still unsigned.
+release_row 4.1.0 "$base/v4.1.0/example-release-linux-x64" "$fixtures/example-release-4.1.0"
+printf '<!doctype html><title>Not here</title>\n' >"$DS_TEST_ROOT/page.html"
+printf '{"error": "not found"}\n' >"$DS_TEST_ROOT/answer.json"
+serve "$base/v4.1.0/example-release-linux-x64.sigstore.json" "$DS_TEST_ROOT/answer.json"
+serve "$base/v4.1.0/example-release-linux-x64.sigstore" "$DS_TEST_ROOT/page.html"
+serve "$base/v4.1.0/example-release-linux-x64.bundle" "$DS_TEST_ROOT/page.html"
+assert_exit 0 apply --latest "$rows"
+assert_contains "$DS_STDOUT" "moved agent_tools.example-release: 4.0.0 -> 4.1.0 (unsigned)"
+rm -f "$FAKE_NIX_STATE/serve/"*
+at "$start"
 
 # --- First use: a bundle of the asset; the signer is pinned. ---------------
 release_row 4.1.0 "$base/v4.1.0/example-release-linux-x64" "$fixtures/example-release-4.1.0"
