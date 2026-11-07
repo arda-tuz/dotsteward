@@ -174,6 +174,17 @@ files. From bash: `ds_internal report combine CODE...` prints the heaviest code,
 `ds_internal report write --command NAME` writes a report from JSON on standard input
 and exits with its code.
 
+### Runs of other commands
+
+`dotsteward_cli.runner.Runner(instance, state_root, publish_scope)` is the base of a command
+that puts other commands of this CLI in order, as `upgrade` and `apply` do, under the instance
+lock of its caller. `_ds(ARG...)` runs a command of this CLI on the terminal, `_ds_output`
+keeps its standard output, `_ds_quiet` shows only its `[dotsteward]` lines unless it fails;
+a child that a signal ended (`SIGNALLED`) ends the run with `KeyboardInterrupt`. `_is_active(where)`
+says whether the tree of `where` is the generation that `rebuild --switch` recorded for the
+profile of the run, and `_gate_environment(started)` why a gate could not judge a tree (another
+gate, its preflight, a full disk, no memory, the network), or `None` when its no is about the tree.
+
 ### State root
 
 `dotsteward_cli.config.state_root(instance=None, env=None)` is the one machine

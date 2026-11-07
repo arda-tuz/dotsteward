@@ -15,5 +15,6 @@ python with tomlkit) and only the standard library otherwise:
 - ``locks``: file locks and the instance lock.
 - ``report``: run reports and ``review.json``.
 - ``procs``: child processes a command waits for to the end.
+- ``runner``: the base of a command that runs other commands of this CLI in order.
 - ``internal``: the primitives for bash (``cli/lib/python.sh``).
 """

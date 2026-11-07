@@ -32,7 +32,6 @@ import contextlib
 import hashlib
 import json
 import os
-import re
 import shutil
 import signal
 import stat
@@ -43,7 +42,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from dotsteward_cli import apt_plan, atomic, config, firmware, incoming, machine, procs, report
+from dotsteward_cli import apt_plan, atomic, config, firmware, incoming, machine, procs, report, runner
 from dotsteward_cli import publish as publishing
 from dotsteward_cli.host import commit_identity
 from dotsteward_cli.skills import commands as skills_commands
@@ -70,8 +69,7 @@ _SKILL_ITEMS = {
     "blocked": ("capture-blocked", "this skill was not published"),
 }
 _NOT_COMPONENTS = {"core", "setup"}
-# 128 + SIGINT, SIGTERM, SIGHUP.
-_SIGNALLED = {130, 143, 129}
+_SIGNALLED = runner.SIGNALLED
 _APT_BUCKETS = ("install", "upgrade", "remove", "downgrade")
 # The local settings of the checkout that are about the checkout itself, not about how git behaves
 # there: the clone has its own. Everything else is copied, so the clone signs, pushes and asks for
@@ -80,18 +78,7 @@ _OWN_SECTIONS = ("remote.", "branch.", "extensions.", "submodule.", "worktree.")
 _OWN_KEYS = {"core.bare", "core.worktree", "core.repositoryformatversion", "core.hookspath"}
 _KEPT_REMOTE_KEYS = {"remote.origin.pushurl"}
 _STEP_WORDS = {"pending": "waits for you", "partial": "skipped, no network", "failed": "failed"}
-# What says that the gate could not judge the tree, rather than that the tree is red: in its own
-# words or in its log. A red of these holds nothing.
-_GATE_LOCKED = "another gate is running"
-_ENVIRONMENT_MARKERS = (
-    "No space left on device",
-    "Cannot allocate memory",
-    "Out of memory",
-    "out of memory",
-    "killed by signal 9",
-)
-# A child killed from outside: 137 through a shell, a negative status straight from Python.
-_KILLED = 137
+_KILLED = runner.KILLED
 _NO_RESULT = "unknown"
 RETRY_HELD = "dotsteward upgrade --retry-held"
 _WRITER_ITEMS = {
@@ -108,7 +95,7 @@ def _ask_yes(question: str) -> bool:
     return sys.stdin.readline().strip().lower() in {"y", "yes", "e", "evet"}
 
 
-class Upgrade:
+class Upgrade(runner.Runner):
     """One run, under the instance lock of its caller."""
 
     def __init__(
@@ -121,22 +108,16 @@ class Upgrade:
         arguments: Sequence[str],
         again: Callable[[], None],
     ) -> None:
-        self.instance = instance
-        self.root = instance.root
-        self.state_root = state_root
+        super().__init__(instance, state_root, _PUBLISH_SCOPE)
         self.mode = mode
         self.accept = tuple(accept)
         self.terminal = terminal
         self.arguments = list(arguments)
         self.again = again
-        self.env = os.environ
         self.run = report.RunReport("upgrade", state_root)
         self.upgrade_dir = Path(state_root) / "upgrade"
         self.linux = config.runtime_platform(self.env) == "linux"
-        self.branch = str(instance.config["instance"]["branch"])
         self.name: str | None = None
-        self.profile: str | None = None
-        self.offline = False
         self.dirty = False
         self.tip = ""
         self.apt_changed = False
@@ -144,13 +125,11 @@ class Upgrade:
         self.red = False
         self.verified = False
         self.interrupted = False
-        self.framework_moved = False
         self.work: Path | None = None
         self.waiting: str | None = None
         self.moved: list[dict[str, Any]] = []
         self.approved: tuple[firmware.Device, ...] = ()
         self.paths: report.ReportPaths | None = None
-        self.quiet_output = ""
         self.e2e_status = 0
         self.moved = self._waiting_moves()
         self.run.data.update(mode=mode)
@@ -161,68 +140,9 @@ class Upgrade:
         """Where the tree of this run is: the clone while it has a commit, else the checkout."""
         return self.work or self.root
 
-    def _cli(self) -> list[str]:
-        if self.framework_moved:
-            return [str(self._target() / ".dotsteward" / "cli.sh")]
-        return [str(config.FRAMEWORK_ROOT / "cli" / "dotsteward"), "--instance", str(self._target())]
-
-    def _ds(self, *arguments: str) -> int:
-        """A command of this CLI on this terminal. A signal that ended it ends the run as well: an
-        interrupted rebuild is no red one."""
-        return self._attached([*self._cli(), *arguments])
-
-    def _attached(self, argv: list[str]) -> int:
-        status = procs.run_attached(argv)
-        if status in _SIGNALLED:
-            raise KeyboardInterrupt
-        return status
-
-    def _ds_output(self, *arguments: str) -> subprocess.CompletedProcess[str]:
-        """A command of this CLI, its standard output kept: JSON, or noise for this report."""
-        return subprocess.run(
-            [*self._cli(), *arguments], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, check=False
-        )
-
-    def _ds_quiet(self, *arguments: str) -> int:
-        """A command of this CLI that prints a lot on a good day: its own lines pass as they come, the
-        rest is shown only when it fails."""
-        with subprocess.Popen(
-            [*self._cli(), *arguments],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        ) as child:
-            assert child.stdout is not None
-            others = []
-            said = []
-            for line in child.stdout:
-                said.append(line)
-                if line.startswith("[dotsteward]"):
-                    print(line, end="", flush=True)
-                else:
-                    others.append(line)
-        self.quiet_output = "".join(said)
-        if child.returncode in _SIGNALLED:
-            raise KeyboardInterrupt
-        if child.returncode != 0:
-            print("".join(others), end="", flush=True)
-        return child.returncode
-
-    def _git(self, *arguments: str) -> publishing.GitResult:
-        """Git in the checkout: reading, a fetch, its tracking ref, a fast-forward. Nothing else ever
-        runs there."""
-        return publishing.git(self.root, *arguments)
-
     def _work_git(self, *arguments: str) -> publishing.GitResult:
         assert self.work is not None
         return publishing.git(self.work, *arguments)
-
-    def _head(self) -> str:
-        return self._git("rev-parse", "HEAD").stdout.strip()
-
-    def _tree_of(self, where: Path) -> str:
-        return publishing.git(where, "rev-parse", "HEAD^{tree}").stdout.strip()
 
     def _command_again(self) -> str:
         """The command that does what waits."""
@@ -240,9 +160,6 @@ class Upgrade:
             constraints=facts.constraints(active, self.instance),
             gated=facts.gated(self.instance, self.name),
         )
-
-    def _checkout_clean(self) -> bool:
-        return not self._git("status", "--porcelain", "--untracked-files=normal").stdout.strip()
 
     # --- the run ---------------------------------------------------------------------------
 
@@ -382,13 +299,6 @@ class Upgrade:
         context from `skills hooks install`, which a rebuild does not run."""
         self._remove_work()
         self.framework_moved = False
-
-    def _track(self, commit: str) -> None:
-        """The tracking ref of the checkout says what the remote has, so `git status` does not count
-        a published commit as one of its own."""
-        tracking = f"refs/remotes/origin/{self.branch}"
-        if self._git("rev-parse", "--verify", "--quiet", tracking).code == 0:
-            self._git("update-ref", tracking, commit)
 
     def _waiting_ref(self) -> str | None:
         return self._git("rev-parse", "--verify", "--quiet", WAITING_REF).stdout.strip() or None
@@ -873,29 +783,6 @@ class Upgrade:
         _say(f"committed {self.waiting[:12]} next to the checkout; it goes out after a green E2E")
         self.run.step("commit", report.OK, commit=self.waiting)
 
-    def _gate_environment(self, started: float) -> str | None:
-        """Why the gate could not judge the tree, or None when its no is about the tree: another gate,
-        a step that never reached the tree, a full disk or no memory in its log, the network gone."""
-        if _GATE_LOCKED in self.quiet_output:
-            return _GATE_LOCKED
-        log = Path(self.state_root) / "update" / "validate.log"
-        try:
-            # A log of an earlier gate says nothing about this one.
-            text = log.read_text(encoding="utf-8", errors="replace") if log.stat().st_mtime >= started - 1 else ""
-        except OSError:
-            text = ""
-        steps = re.findall(r"^== ([a-z0-9-]+):", text, re.MULTILINE)
-        if steps and steps[-1] == "preflight":
-            return "the preflight of the gate failed (the binary cache or the free space of the store)"
-        for marker in _ENVIRONMENT_MARKERS:
-            if marker in text or marker in self.quiet_output:
-                return marker
-        outcome, _, _ = publishing.fetch_tip(self.root, self.branch, _PUBLISH_SCOPE)
-        if outcome == publishing.NETWORK:
-            self.offline = True
-            return "the network went away during the gate"
-        return None
-
     def _self_updates(self) -> None:
         """What updates itself is only asked to; a second way in is never added."""
         for entry in facts.self_updates(self._active(), self.instance):
@@ -923,14 +810,6 @@ class Upgrade:
             self.run.item("plugin-scan-failed", pending=False, plugin=key, message=f"the scan could not read {key}")
         self.run.data.update(plugins={"updated": found["updated"], "findings": len(found["findings"])})
         self.run.step("plugin-scan", report.OK)
-
-    def _activation(self) -> dict[str, Any]:
-        path = Path(self.state_root) / "current" / "activation.json"
-        try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return {}
-        return record if isinstance(record, dict) else {}
 
     def _saved_binaries(self) -> list[tuple[Path, Path]]:
         """The official binaries of the waiting move, each with the place of its saved copy."""
@@ -964,15 +843,6 @@ class Upgrade:
 
     def _forget_binaries(self) -> None:
         shutil.rmtree(Path(self.state_root) / "rollback", ignore_errors=True)
-
-    def _is_active(self, where: Path) -> bool:
-        active = self._activation()
-        return (
-            active.get("tree_oid") == self._tree_of(where)
-            and active.get("profile") == self.profile
-            and active.get("tags_sha256") in (None, machine.effective(self.instance, self.env)["nix_tags_sha256"])
-            and os.path.realpath(str(active.get("root"))) == os.path.realpath(where)
-        )
 
     def _rebuild(self) -> None:
         if self.profile is None:
