@@ -279,12 +279,14 @@ if ! flock -n 9; then
 fi
 # Holding the lock, whatever is still there comes from a run that was killed.
 rm -rf -- "$repo"/.partial.*
-work=$(mktemp -d "$repo/.partial.XXXXXX") || exit 0
 # timeout signals this shell and then its whole group. Without a trap, bash ends
 # at once on a second signal while it handles the first, before its EXIT trap
-# runs; and that trap must not lose its cleanup to a signal either.
+# runs; and that trap must not lose its cleanup to a signal either. The traps
+# come first: a signal right after mktemp would leave the directory behind.
+work=''
 trap 'exit 143' HUP INT TERM
-trap 'trap "" HUP INT TERM; rm -rf -- "$work"' EXIT
+trap 'trap "" HUP INT TERM; [[ -z $work ]] || rm -rf -- "$work"' EXIT
+work=$(mktemp -d "$repo/.partial.XXXXXX") || exit 0
 
 if [[ ! -f $repo/Release ]]; then
   write_index || say "cannot write the index of $repo"
