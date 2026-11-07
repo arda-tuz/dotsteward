@@ -10,11 +10,11 @@ system-level components an adopt-mode profile needs come in, ``rebuild --switch`
 committed tree and E2E checks it against the base; published, ``txn publish`` pushes it, which
 after an activation needs that E2E. The checkout is the transaction: apply commits there and never
 cleans, stashes or amends; the one reset takes back the commit it just made when a commit hook
-changed its tree away from the proven one, and keeps the changes staged. Like ``upgrade`` there is no journal and no resume: every run
-works out again what is left. The gate answers from its memo for a tree it proved, a tree that is
-active is not rebuilt, a passed E2E of the active tree with the repository checks is not run again
-and a published commit is not pushed again, so the same command finishes what a red step, a missing
-network or a person's sudo step left.
+changed its tree away from the proven one, and keeps the changes staged. Like ``upgrade`` there is
+no journal and no resume: every run works out again what is left. The gate answers from its memo
+for a tree it proved, a tree that is active is not rebuilt, a passed E2E of the active tree with
+the repository checks is not run again and a published commit is not pushed again, so the same
+command finishes what a red step, a missing network or a person's sudo step left.
 """
 
 from __future__ import annotations
