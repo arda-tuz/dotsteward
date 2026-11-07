@@ -48,7 +48,9 @@ questions, or the adaptive route, which opens nothing; 6 no network, nothing ope
    is staged or activated, since `txn publish` would refuse it at the end (`nonconventional-commits`).
 2. **Stage.** `git add -A`: Nix and the gate see tracked files only. A change needs `-m`, a
    conventional subject (`commit.conventional_types` of `dotsteward context --json`); without one
-   apply refuses with exit 2 before it stages anything. A checkout on the published tip with no
+   apply refuses with exit 2 before it stages anything. A git repository inside the checkout would
+   be staged as a gitlink, an empty directory elsewhere: apply refuses it (`nested-repository`) and
+   leaves it out of the index. A checkout on the published tip with no
    change has nothing to apply.
 3. **The gate.** `gate --scope maintain` proves the tree, or answers from its memo of the same tree
    in the same scope. Red, nothing is committed (`gate-failed`, with the log).
@@ -85,6 +87,7 @@ in `data` the `base`, the `commit`, the `profile`, the `machine`, `activate`, `p
 | Code | Meaning |
 | --- | --- |
 | `nonconventional-commits` | unpublished commits whose subject `txn publish` refuses; `run` folds them into the change |
+| `nested-repository` | git repositories inside the checkout (`paths`); vendor their files or remove them |
 | `gate-failed` | the gate refused the tree, or could not judge it (`environment`); nothing was committed |
 | `commit-refused` | git or a hook refused the commit |
 | `tree-changed` | the tree to commit is not the tree the gate proved (a commit hook changed it); nothing was committed |

@@ -427,6 +427,23 @@ class Apply(_Checkout):
         if added.code != 0:
             self._step("stage", report.FAILED, started, detail=added.stderr.strip())
             return False
+        links = self._new_gitlinks()
+        if links:
+            # Out of the index again: the index holds what it held before plus the rest.
+            self._git("reset", "--quiet", "--", *links)
+            self._step("stage", report.FAILED, started, detail="a git repository inside the checkout")
+            self.run.item(
+                "nested-repository",
+                paths=links,
+                message=(
+                    "a git repository inside the checkout would be published as an empty gitlink: vendor its files "
+                    "(remove its .git) or remove it, then the same apply"
+                ),
+            )
+            return self._refuse(
+                f"git repositories inside the checkout, which would be published as gitlinks: {', '.join(links)}; "
+                "remove their .git to vendor the files, or remove them"
+            )
         staged = self._staged()
         if not staged and self._head() == self.base:
             _say("apply", "nothing to apply: the checkout is the published tip and has no change")
@@ -437,6 +454,20 @@ class Apply(_Checkout):
             return self._refuse("a change waits for its commit: give its subject with -m")
         self._step("stage", report.OK, started, detail=f"{len(staged)} paths" if staged else "nothing new")
         return True
+
+    def _new_gitlinks(self) -> list[str]:
+        """The staged gitlinks that are not submodules of .gitmodules: nested repositories."""
+        raw = self._git("diff", "--cached", "--raw", "--no-renames", "-z").stdout.split("\0")
+        submodules = {
+            line.partition(" ")[2]
+            for line in self._git("config", "--file", ".gitmodules", "--get-regexp", r"\.path$").stdout.splitlines()
+        }
+        links = []
+        for header, path in zip(raw[0::2], raw[1::2], strict=False):
+            fields = header.split()
+            if len(fields) >= 2 and fields[1] == "160000" and path not in submodules:
+                links.append(path)
+        return links
 
     def _staged(self) -> list[str]:
         return self._git("diff", "--cached", "--name-only", "-z").stdout.split("\0")[:-1]
