@@ -77,6 +77,7 @@ dotsteward scan --range origin/main..HEAD --metadata --require-denylist --redact
 | `--extra-terms F` | match more terms in the same format |
 | `--redact` | print the rule and the location only, never the matched text |
 | `--instance-policy` | the policy of the instance instead of the framework's, as `dotsteward static` applies it to personal content: generic secret rules, `[privacy] forbidden_paths` and `file_rules` |
+| `--secrets-only` | only the shape of real credentials, for a tree that is not yours (`--tree`): no assignment in text, home path, e-mail, address or non-ASCII rule, no policy file, no denylist; `dotsteward upgrade` looks at updated plugins with it |
 
 A denylist has one term per line: a plain line matches as a
 case-insensitive substring, `word:TERM` as a whole word, `re:ERE` as an

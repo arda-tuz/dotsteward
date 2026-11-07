@@ -19,6 +19,9 @@
 #                       the policy's denylist path is used
 #   --extra-terms F     more terms in the denylist format
 #   --redact            print rule and location only, never the matched text
+#   --secrets-only      only the shape of real credentials, for a tree that is not yours
+#                       (--tree): no credential assignment in prose, no home path, e-mail,
+#                       address or non-ASCII rule, no policy file, no denylist
 #   --instance-policy   the policy of the instance found like every instance
 #                       command, as `dotsteward static` applies it to personal
 #                       content: generic secret rules, [privacy] forbidden_paths
@@ -66,6 +69,7 @@ require_denylist=0
 metadata=0
 redact=0
 instance_policy=0
+secrets_only=0
 
 # need_value FLAG ARGC VALUE: fails unless an option that takes a value got one.
 need_value() {
@@ -128,6 +132,10 @@ while (($#)); do
       instance_policy=1
       shift
       ;;
+    --secrets-only)
+      secrets_only=1
+      shift
+      ;;
     -*)
       error "unknown option: $1"
       exit 1
@@ -172,7 +180,13 @@ case $mode in
     ;;
 esac
 
-if ((instance_policy)); then
+if ((secrets_only && instance_policy)); then
+  error "--secrets-only and --instance-policy exclude each other"
+  exit 1
+fi
+if ((secrets_only)); then
+  ds_privacy_load_secrets_policy
+elif ((instance_policy)); then
   # Only here: the pre-push hook runs this file without Python or jq.
   # shellcheck source=cli/lib/lib.sh
   source "$framework_root/cli/lib/lib.sh"

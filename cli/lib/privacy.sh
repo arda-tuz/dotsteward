@@ -621,6 +621,20 @@ ds_privacy_load_instance_policy() {
   _DS_FILE_RULE_GLOBS=()
 }
 
+# ds_privacy_load_secrets_policy: only rules whose match is a credential by its shape, for a
+# tree that is somebody else's: a credential assignment in text is mostly documentation there.
+ds_privacy_load_secrets_policy() {
+  local i
+  local -a kept=()
+  ds_privacy_load_instance_policy
+  for ((i = 0; i < ${#_DS_PRIVACY_SECRET_RULES[@]}; i += 2)); do
+    if [[ ${_DS_PRIVACY_SECRET_RULES[i]} != secret-assignment ]]; then
+      kept+=("${_DS_PRIVACY_SECRET_RULES[i]}" "${_DS_PRIVACY_SECRET_RULES[i + 1]}")
+    fi
+  done
+  _DS_PRIVACY_SECRET_RULES=("${kept[@]}")
+}
+
 # ds_privacy_load_instance_config: the policy of an instance scan with the rules of
 # the loaded configuration: the forbidden paths (DS_PRIVACY_FORBIDDEN_PATHS_CONFIG, a
 # copy of its list, since this library owns the name) and the file rules
@@ -1157,6 +1171,8 @@ _ds_privacy_cache_key() {
         "$_DS_PRIVACY_GLOB_MODE" "${DS_PRIVACY_GENERIC_SECRETS:-}" "${DS_PRIVACY_HOME_PATHS:-}" \
         "${DS_PRIVACY_EMAILS:-}" "${DS_PRIVACY_PRIVATE_IPV4:-}" "${DS_PRIVACY_NON_ASCII:-}" \
         "${DS_PRIVACY_COMMIT_EMAIL:-}"
+      printf 'secret-rules\n'
+      _ds_privacy_cache_fields "${_DS_PRIVACY_SECRET_RULES[@]}"
       printf 'home-users\n'
       _ds_privacy_cache_fields ${DS_PRIVACY_HOME_ALLOW_USERS[@]+"${DS_PRIVACY_HOME_ALLOW_USERS[@]}"}
       printf 'home-paths\n'
