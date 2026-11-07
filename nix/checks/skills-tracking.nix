@@ -1,7 +1,9 @@
 # Skill tracking (tests/skills-tracking): the hooks in an agent's configuration
 # driven with recorded payloads of real sessions, what they say and when, the
 # origin of a new skill, the debounce and the capture to a bare remote; then
-# shellcheck over the command, the component hooks and the tests.
+# shellcheck over the command, the component hooks and the tests. ps is there
+# because the hook reads the Codex command line with it where the platform the
+# CLI sees is macOS, which a test forces on every system.
 {
   pkgs,
   dsLib,
@@ -13,7 +15,10 @@ in
 cli.mkTestCheck {
   name = "skills-tracking";
   paths = [ "tests/skills-tracking" ];
-  nativeBuildInputs = [ pkgs.shellcheck ];
+  nativeBuildInputs = [
+    pkgs.shellcheck
+    pkgs.ps
+  ];
   postCheck = ''
     shellcheck -x cli/commands/skills.sh modules/components/claude-code/skill-hooks.sh \
       modules/components/codex/skill-hooks.sh tests/skills-tracking/*.sh

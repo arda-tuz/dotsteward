@@ -120,13 +120,15 @@ def _proc_process(pid: int) -> tuple[int, list[bytes]] | None:
 
 
 def _ps_process(pid: int) -> tuple[int, list[bytes]] | None:
-    """The same from ``ps``, where there is no ``/proc`` (macOS). The command line comes
-    back as one line, split at blanks; an argument with a blank in it is several."""
+    """The same from ``ps``, where there is no ``/proc`` (macOS, where it is ``/bin/ps``
+    when the agent's PATH lacks it). The command line comes back as one line, split at
+    blanks; an argument with a blank in it is several."""
+    import shutil
     import subprocess
 
     try:
         done = subprocess.run(
-            ["ps", "-ww", "-o", "ppid=", "-o", "args=", "-p", str(pid)],
+            [shutil.which("ps") or "/bin/ps", "-ww", "-o", "ppid=", "-o", "args=", "-p", str(pid)],
             stdin=subprocess.DEVNULL,
             capture_output=True,
             timeout=_PAYLOAD_SECONDS,
