@@ -177,11 +177,12 @@ changed watched path (`pins-review`), since moving it is an inspection; a releas
 without the asset (`asset-missing`); a bundle whose audit findings grow, or whose audit
 gives no answer (`npm-audit`; findings that do not grow move the bundle and stand in the
 report as `npm-audit-remaining`, which waits for nothing);
-and for a skill a recorded `source_transform`
-(`skill-transform`), a vendored copy that is not upstream at the pinned revision
+and for a skill a vendored copy that is not upstream at the pinned revision
 (`skill-local-delta`), a finding of `dotsteward scan` in the new version
 (`skill-scan-finding`) or an upstream without the directory (`skill-source-missing`).
-Repo-owned skills have no row and are never touched. A plugin marketplace
+A skill with a recorded `source_transform` is `skill-transform`: the transform is prose only
+an agent can replay, so it is work for `dotsteward-update`, and it stands in the report without
+holding the exit status. Repo-owned skills have no row and are never touched. A plugin marketplace
 (`observed_marketplace_revision`) updates itself: a line of the report.
 
 Exit codes are those of a run report ([exit-codes.md](exit-codes.md)): 0 done, 1 a

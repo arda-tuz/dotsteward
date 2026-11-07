@@ -246,7 +246,7 @@ def constraint(move: Move, instance: Instance, declared: Declared, pin: Any) -> 
                 return f"the version follows {origin}"
     components = instance.config.get("components")
     entry = components.get(move.component) if isinstance(components, dict) else None
-    if isinstance(entry, dict) and "version" in entry:
+    if isinstance(entry, dict) and entry.get("version") is not None:
         return f"[components.{move.component}] version = {entry['version']!r}"
     bundle = declared.bundles.get(move.path.text()) if move.path is not None else None
     if bundle is not None and bundle.override and move.row["status"] == "review":
@@ -401,7 +401,8 @@ class Router:
         if entry is None or reached(move, self.instance, self.locks, self.declared):
             return
         if entry.get("source_transform"):
-            self.item("skill-transform", move, transform=entry["source_transform"])
+            # Prose only an agent can replay: work for dotsteward-update, no decision that holds a run.
+            self.item("skill-transform", move, pending=False, transform=entry["source_transform"])
             return
         self.add("skill", name, move)
 
