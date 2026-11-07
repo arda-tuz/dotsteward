@@ -105,15 +105,6 @@ assert_not_contains "$DS_STDERR" "cli.sh"
 pin_framework "$pinned"
 rm -- "$agents_inst/hosts/laptop.toml"
 
-# The keys of this release are known, and a component may not use the two that only a
-# later release acts on: the readers refuse them, and that is the tree's age too.
-for key in machines tags; do
-  cp -- "$DS_TEST_ROOT/good.toml" "$agents_inst/workstation.toml"
-  printf '\n[components.example]\nenable = true\n%s = ["laptop"]\n' "$key" >>"$agents_inst/workstation.toml"
-  assert_exit 1 ds agents check --profile workstation
-  assert_contains "$DS_STDERR" "components.example.$key: expected null"
-  assert_contains "$DS_STDERR" "$way_out"
-done
 # A value of a list a later release has grown.
 cp -- "$DS_TEST_ROOT/good.toml" "$agents_inst/workstation.toml"
 printf '\n[components.example]\nenable = true\nupdater = "a-later-updater"\n' >>"$agents_inst/workstation.toml"

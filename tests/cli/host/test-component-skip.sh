@@ -3,9 +3,7 @@
 # shellcheck disable=SC2016 # hook scripts are single-quoted on purpose
 # A component this machine leaves out is gone for every command: its hooks do not
 # run, its commands and probes are not required, `e2e --list` does not name it and
-# `component` refuses it. No instance can scope a component yet (skip.components
-# stays empty, and the schema refuses machines and tags on a component), so a framework
-# copy stands in for the release that fills it.
+# `component` refuses it.
 # shellcheck source=tests/cli/host/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/host/helpers.sh"
 
@@ -48,11 +46,15 @@ assert_eq "active" "$(<"$active_answer")"
 assert_contains "$(<"$ran")" "agents check"
 assert_contains "$(<"$ran")" "e2e hook"
 
-# This machine leaves it out.
-machine_py=$agents_fw/cli/python/dotsteward_cli/machine.py
-grep -q '"components": \[\],' "$machine_py" || ds_fail "the stand-in no longer applies to machine.py"
-sed -i 's/"components": \[\],/"components": ["example"],/' "$machine_py"
+# This machine leaves it out: the component is for another one.
+sed -i 's/^\[components.example\]$/[components.example]\nmachines = ["laptop"]/' "$agents_inst/workstation.toml"
+grep -q '^machines = \["laptop"\]$' "$agents_inst/workstation.toml" || ds_fail "no table of the component"
+write_host laptop
+write_host desktop
+publish_instance
+name_machine desktop
 assert_eq '["example"]' "$(effective .skip.components)"
+assert_eq '{"component:example":"machines"}' "$(effective .reasons)"
 
 : >"$ran"
 assert_exit 0 run_e2e --list
