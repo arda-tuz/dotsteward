@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_REPO_ROOT comes from the harness
+# shellcheck disable=SC2016 # the patterns name backticks, nothing here is to expand
 # What a user follows names the commands by their names: `txn` and `generate`. The old names
 # `update` and `sync` stay through 1.x with a warning and stop working in 2.0.0, so a skill,
 # a document, the template or a message that sends a user to them sends the user to a
