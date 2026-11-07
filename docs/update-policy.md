@@ -28,16 +28,20 @@ tools it uses.
 
 ## The `policy` section
 
-`versions.lock.json` records the policy, and the static checks hold the two
-fixed values:
+The policy is intent: `[policy]` of `workstation.toml`, which every machine reads
+there. The `policy` check of `dotsteward static` holds the two fixed values. The
+versions lock carries no policy; a `policy` an older instance still has in
+`versions.lock.json` is read by nothing, and the `versions-lock` check warns
+until it is removed. A seed that brings one is refused.
 
-| Key | Template value | Meaning |
+| Key | Default | Meaning |
 | --- | --- | --- |
 | `official_sources_only` | `true` | Versions come only from official sources. |
 | `persistent_agentic_updates` | `false` (required) | No agent updates the instance in the background. |
 | `scheduled_repository_updates` | `false` | No scheduled refreshes of the repository. |
 | `native_application_updates` | `true` (required) | Applications with their own updater keep it. |
 | `major_version_review_required` | `true` | A major version change waits for review. |
+| `observed_state_push` | `true` | A machine publishes the state it observes to its own branch `state/<name>`; `false` keeps it on the machine. |
 
 ## Item classes
 

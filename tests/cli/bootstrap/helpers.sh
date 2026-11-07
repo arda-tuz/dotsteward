@@ -173,10 +173,6 @@ bs_installer_sha256=${bs_installer_sha256%% *}
 cat >"$bs_inst/versions.lock.json" <<EOF
 {
   "schema_version": "1.0",
-  "policy": {
-    "official_sources_only": true,
-    "persistent_agentic_updates": false
-  },
   "nix": {
     "version": "2.35.2",
     "installer_url": "$bs_installer_url",

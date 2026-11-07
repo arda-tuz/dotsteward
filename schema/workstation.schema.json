@@ -464,7 +464,7 @@
     },
     "policy": {
       "type": "object",
-      "description": "The rules of the updates. A later release reads them here; the policy of the versions lock still counts.",
+      "description": "The rules of the updates: intent, which every machine reads here (the versions lock carries no policy). dotsteward static holds persistent_agentic_updates to false and native_application_updates to true.",
       "properties": {
         "official_sources_only": {
           "type": "boolean",

@@ -68,7 +68,7 @@ git -C "$gate_inst" reset -q --hard HEAD~1
 mkdir -p "$gate_inst/agent/skills/example-skill/references" "$gate_inst/notes"
 printf '{\n  "nodes": {"root": {}},\n  "version": 7\n}\n' >"$gate_inst/flake.lock"
 printf '{ outputs = _: { formatter = { }; }; }\n' >"$gate_inst/flake.nix"
-printf '{\n  "schema_version": "1.0",\n  "policy": {}\n}\n' >"$gate_inst/versions.lock.json"
+printf '{\n  "schema_version": "1.0"\n}\n' >"$gate_inst/versions.lock.json"
 printf '{\n  "schema_version": "1.0",\n  "skills": [1]\n}\n' >"$gate_inst/agent/skills.lock.json"
 printf -- '---\nname: example-skill\n---\n' >"$gate_inst/agent/skills/example-skill/SKILL.md"
 printf 'guide\n' >"$gate_inst/agent/skills/example-skill/references/guide.md"

@@ -30,8 +30,10 @@
 #   hosts          every hosts/<name>.toml is valid and named like a machine, and
 #                  every machines key of the lock and of the plugin tables names
 #                  known machines (dotsteward host check)
-#   versions-lock  versions.lock.json: schema_version "1.0", no persistent
-#                  agentic updates, native application updates kept
+#   versions-lock  versions.lock.json: schema_version "1.0"; a policy left in
+#                  it is read by nothing (a warning)
+#   policy         workstation.toml [policy]: no persistent agentic updates,
+#                  native application updates kept
 #   allowlist      no update allowlist entry (gate.update_allowlist and the
 #                  committed manifest mirrors) matches the settings buffer
 #   protected      byte-protected files keep their sha256 ([protected])
@@ -97,7 +99,7 @@ usage() {
   sed -n '4,/^set -Eeuo pipefail$/{/^set /d;s/^# \{0,1\}//;p}' "${BASH_SOURCE[0]}"
 }
 
-INSTANCE_CHECKS=(shell bans launcher bootstrap skills hosts versions-lock allowlist protected overlays privacy scripts)
+INSTANCE_CHECKS=(shell bans launcher bootstrap skills hosts versions-lock policy allowlist protected overlays privacy scripts)
 FRAMEWORK_CHECKS=(shell bans command-names seeds privacy)
 
 sandbox=0
@@ -542,16 +544,33 @@ check_versions_lock() {
   fi
   # shellcheck disable=SC2016 # $lock is a jq variable
   if ! json_lines problems "$root/$lock" --arg lock "$lock" '
-    (if .schema_version != "1.0" then "\($lock): schema_version must be \"1.0\"" else empty end),
-    (if has("policy") and (.policy | type) != "object" then "\($lock): policy must be an object" else
-      (if .policy.persistent_agentic_updates != false then
-        "\($lock): policy.persistent_agentic_updates must be false" else empty end),
-      (if .policy.native_application_updates != true then
-        "\($lock): policy.native_application_updates must be true" else empty end)
-    end)'; then
+    if .schema_version != "1.0" then "\($lock): schema_version must be \"1.0\"" else empty end'; then
     fail "$lock cannot be read as a versions lock"
     return 0
   fi
+  for entry in "${problems[@]}"; do
+    fail "$entry"
+  done
+  # The policy is intent, workstation.toml [policy] (the policy check). An older instance may
+  # still carry it in the lock, where no command reads it.
+  if jq -e 'has("policy")' "$root/$lock" >/dev/null 2>&1; then
+    warn "static $current: $lock: policy is read from workstation.toml [policy]; nothing reads it in the lock, remove it"
+  fi
+  return 0
+}
+
+# --- policy -------------------------------------------------------------------
+
+check_policy() {
+  local entry
+  local -a problems=()
+  # shellcheck disable=SC2016 # jq program
+  json_lines problems - '
+    (if .policy.persistent_agentic_updates != false then
+      "workstation.toml: policy.persistent_agentic_updates must be false" else empty end),
+    (if .policy.native_application_updates != true then
+      "workstation.toml: policy.native_application_updates must be true" else empty end)' <<<"$DS_CONFIG_JSON" ||
+    die "cannot read the configuration"
   for entry in "${problems[@]}"; do
     fail "$entry"
   done
@@ -1006,6 +1025,7 @@ for check in "${checks[@]}"; do
     skills) check_skills ;;
     hosts) check_hosts ;;
     versions-lock) check_versions_lock ;;
+    policy) check_policy ;;
     allowlist) check_allowlist ;;
     protected) check_protected ;;
     overlays) check_overlays ;;
