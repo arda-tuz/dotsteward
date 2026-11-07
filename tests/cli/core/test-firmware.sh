@@ -7,6 +7,8 @@
 source "$DS_REPO_ROOT/tests/cli/core/helpers.sh"
 
 ds_use_stubs sudo
+# The logic of Linux, whatever the machine under the test is (test-firmware-platform.sh has darwin).
+export DOTSTEWARD_PLATFORM=linux
 bin=$DS_TEST_ROOT/firmware-bin
 mkdir -p "$bin"
 export PATH=$bin:$PATH
