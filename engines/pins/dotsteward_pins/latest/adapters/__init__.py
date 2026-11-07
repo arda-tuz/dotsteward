@@ -133,6 +133,8 @@ class Request:
     held: bool = False
     note: str | None = None
     values: dict[str, Any] = field(default_factory=dict)
+    # The lock path of the pin object, when the row has one (pins apply).
+    base: LockPath | None = None
 
     @property
     def kind(self) -> str:
@@ -292,7 +294,7 @@ class Adapter:
         try:
             identifier = locks.render(self.values["id"], scope)
             pin = locks.get(scope.base) if scope.base is not None else None
-            request = Request(identifier, self)
+            request = Request(identifier, self, base=scope.base)
             if self.VERSIONED:
                 current = request.current = self._current(locks, scope, pin)
             holdback = self.values["holdback_field"]

@@ -140,6 +140,7 @@ apply_world() {
   _apply_remote example/example-app v3.1.0 v3.2.0
   _apply_remote example/example-cli v2.0.0 v2.1.0
   _apply_remote example/nixpkgs
+  _apply_remote example/dotsteward v1.2.0 v1.2.1 v1.3.0 v1.3.1 v1.4.0 v2.0.0 v2.1.0
   _apply_skill_upstream
 
   json_edit "$versions" '

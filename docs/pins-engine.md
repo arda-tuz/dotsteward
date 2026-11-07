@@ -35,6 +35,7 @@ dotsteward pins check --nix      # also the versions Nix resolves
 dotsteward pins sync             # rewrite derived values
 dotsteward pins sync --skill NAME
 dotsteward pins latest --out report.json
+dotsteward pins apply            # move the pins to the rows of latest
 dotsteward sync                  # pins sync plus the .dotsteward/ mirrors
 ```
 
@@ -134,3 +135,52 @@ The report (`--out`) is `{"schema_version": "1.0", "researched_at": ...,
 "items": [...]}`. One failing source never stops the others: its rows
 become `error` rows. How a refresh uses the report is described in
 [update-policy.md](update-policy.md).
+
+## The writer
+
+`dotsteward pins apply` moves the pins to the rows of `pins latest`, without an
+agent's judgment, and leaves the result in the working tree: it never commits or
+publishes. It researches itself, or takes a saved report with `--latest FILE`;
+`--plan` shows what would happen and writes nothing at all; `--skip ID` (a glob,
+repeatable) leaves rows alone; `--json` prints the summary (`moved`, `groups`,
+`lines`, `items`, `framework_moved`, `flake_inputs_moved`, `report`).
+
+| Row | What happens |
+| --- | --- |
+| `update` | moves |
+| `review` | moves when it is an unconstrained new major or a framework minor or patch, a review item otherwise |
+| `held`, `manual` | a line of the report |
+| `error` | a line of the report; the group it belongs to waits, the others go on |
+
+The writer finds out how a pin moves from what the instance already declares, and
+a row nothing explains is a review item (`pins-no-writer`):
+
+| Pin | Group | What is written |
+| --- | --- | --- |
+| the framework | `framework` | the reference in `flake.nix`, `flake.lock`, `bootstrap.sh` and `.dotsteward/cli.sh` from the new `template/`, the mirrors |
+| a flake input | `channel` (all channel inputs together), `flake:<name>` | the reference, `flake.lock` with `nix flake lock`, the lock fields, the pins that derive from it |
+| a `*_nix_sha256` field | `nix-package:<name>` | the version, the tag fields, each hash from a build with the placeholder hash |
+| a `download-pin` rule | `download:<id>` | the fields the rule names, from the row or from one prefetch |
+| a `text-guard` over a `pypi` pin | `pypi:<file>` | the hash-pinned requirements, regenerated with `sampletool pip compile` |
+| an `npm-bundle` rule | `npm:<dir>` | `package.json`, `package-lock.json` with an audit, the mirrors, the bundle hash |
+| a vendored skill | `skill:<name>` | the whole directory, the revision and the digests |
+
+A group moves as a whole: on a failure every byte it touched is restored, the step
+is `failed` and the other groups go on. A second run with the same rows does nothing,
+because a pin that already holds the value of its row does not move.
+
+These stay for a person or an agent, as items of `review.json`: a pin with a
+`*_reason` field, a version another rule derives, a `version` in the component's
+configuration or a new major of a security override (`pins-constrained`); a newer
+series of a channel (`series-available`); a framework major (`framework-major`); a
+changed watched path (`pins-review`), since moving it is an inspection; a release
+without the asset (`asset-missing`); and for a skill a recorded `source_transform`
+(`skill-transform`), a vendored copy that is not upstream at the pinned revision
+(`skill-local-delta`), a finding of `dotsteward scan` in the new version
+(`skill-scan-finding`) or an upstream without the directory (`skill-source-missing`).
+Repo-owned skills have no row and are never touched. A plugin marketplace
+(`observed_marketplace_revision`) updates itself: a line of the report.
+
+Exit codes are those of a run report ([exit-codes.md](exit-codes.md)): 0 done, 1 a
+group failed, 3 review items wait, 6 an upstream could not be read. The run report is
+`pins-apply`.

@@ -29,7 +29,7 @@ status as a failure.
 | `init` | 0, 1, 2 | 2: usage error; on 1 and 2 the directory is left as it was |
 | `install` | 0, 1, 3 | 3: the preflight took the adaptive route and stopped the phase |
 | `login-shell` | 0, 1, child | |
-| `pins` | 0, 1, 2 | 1: inconsistencies or a refusal; 2: usage error or broken input (no instance, invalid configuration, invalid manifest mirror or rule, unreadable lock file, failed Nix evaluation) |
+| `pins` | 0, 1, 2, 3, 6 | 1: inconsistencies or a refusal; 2: usage error or broken input (no instance, invalid configuration, invalid manifest mirror or rule, unreadable lock file, failed Nix evaluation); 3 and 6 from `pins apply` as a run report: review items wait, an upstream could not be read |
 | `preflight` | 0, 1, 3 | 0: fast route; 3: adaptive route (after a warning) |
 | `probes` | 0, 1 | |
 | `rebuild` | 0, 1, child | |

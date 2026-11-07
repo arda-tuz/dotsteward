@@ -457,6 +457,16 @@ let
         "tests/engines/pins/latest"
       ])
     ];
+    pins-apply = fs.unions [
+      runner
+      cli
+      catalog
+      (paths [
+        "engines/pins"
+        "tests/engines/pins/apply"
+        "tests/engines/pins/check"
+      ])
+    ];
     privacy = fs.unions [
       runner
       cli

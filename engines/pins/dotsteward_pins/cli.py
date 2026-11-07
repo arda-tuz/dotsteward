@@ -3,6 +3,7 @@
     dotsteward pins [--instance DIR] check [--nix]
     dotsteward pins [--instance DIR] sync [--nix] [--skill NAME]...
     dotsteward pins [--instance DIR] latest [--out FILE] [--all] [--jobs N]
+    dotsteward pins [--instance DIR] apply [--latest FILE] [--plan] [--skip ID]... [--json] [--jobs N]
 
 check   cross-checks the lock files with every rule and validates every
         pins latest declaration (offline, read-only, no query); --nix also
@@ -11,13 +12,15 @@ sync    rewrites the derived values of the lock files; --nix also writes
         the evaluated resolved versions; --skill NAME refreshes the digests
         of a vendored skill
 latest  reports the newest stable upstream versions (dotsteward_pins.latest)
+apply   moves the pins to the rows of pins latest (dotsteward_pins.apply)
 
 Output lines start with ``[pins]``; problems go to standard error as
 ``[pins] ERROR: ...``. Exit status: 0 success, 1 inconsistencies or a
 refusal (unknown --skill, untracked files before a Nix call, a sync rule
 that cannot run), 2 usage errors and broken inputs (no instance, invalid
 configuration, missing or invalid manifest mirror, invalid rule or latest
-declaration, unreadable lock file, failed Nix evaluation).
+declaration, unreadable lock file, failed Nix evaluation). ``apply`` has
+the outcomes of a run report: 0, 1, 3 and 6 (dotsteward_pins.apply).
 
 The ``latest`` subcommand is implemented by ``dotsteward_pins.latest.runner``,
 called as ``runner.run(instance, args) -> int`` with the parsed ``out``,
@@ -27,20 +30,17 @@ called as ``runner.run(instance, args) -> int`` with the parsed ``out``,
 from __future__ import annotations
 
 import argparse
-import datetime
 import importlib
 import sys
 from collections.abc import Sequence
 
-from dotsteward_cli import atomic
-
-from .checker import GROUP_ERRORS, Checker, describe_os_error
+from .checker import Checker, describe_os_error
 from .instance import EngineError, Instance, Refusal, load
-from .lockfile import SKILLS, VERSIONS, DeclarationError, dump, generated_at
+from .lockfile import DeclarationError
 from .rules import Context, build_rules
+from .syncer import sync_locks
 
 PREFIX = "[pins]"
-MAX_SYNC_PASSES = 10
 
 
 def _error(message: str) -> None:
@@ -79,6 +79,18 @@ def build_parser() -> argparse.ArgumentParser:
     latest.add_argument("--out", metavar="FILE", help="write the full JSON report to FILE")
     latest.add_argument("--all", action="store_true", help="also list rows that follow other pins")
     latest.add_argument("--jobs", type=_jobs, default=8, metavar="N", help="parallel queries (default 8)")
+    apply_parser = commands.add_parser("apply", help="move the pins to the rows of pins latest; commits nothing")
+    apply_parser.add_argument("--latest", metavar="FILE", help="use this pins latest report instead of researching")
+    apply_parser.add_argument("--plan", action="store_true", help="show what would happen and write nothing")
+    apply_parser.add_argument(
+        "--skip",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="leave the rows with this id (a glob) alone (repeatable)",
+    )
+    apply_parser.add_argument("--json", action="store_true", help="print the summary as JSON on standard output")
+    apply_parser.add_argument("--jobs", type=_jobs, default=8, metavar="N", help="parallel queries (default 8)")
     return parser
 
 
@@ -118,48 +130,7 @@ def run_check(instance: Instance, nix: bool) -> int:
 
 
 def run_sync(instance: Instance, nix: bool, skills: Sequence[str]) -> int:
-    if nix:
-        instance.refuse_untracked()
-    rules = [rule for rule in build_rules(instance) if rule.SYNCS]
-    locks = instance.load_locks()
-    if skills:
-        entries = locks.documents.get(SKILLS, {}).get("skills", [])
-        known = {item.get("name") for item in entries if isinstance(item, dict)}
-        unknown = sorted(set(skills) - known)
-        if unknown:
-            raise Refusal(f"skill not in lock: {', '.join(unknown)}")
-    before = {kind: dump(document) for kind, document in locks.documents.items()}
-    ctx = Context(instance, locks, nix=nix, extra_skills=frozenset(skills))
-
-    for _ in range(MAX_SYNC_PASSES):
-        snapshot = {kind: dump(document) for kind, document in locks.documents.items()}
-        failures = []
-        for rule in rules:
-            try:
-                rule.sync(ctx)
-            except GROUP_ERRORS as error:
-                failures.append(f"{rule.group}: missing or invalid lock field ({error!r})")
-            except OSError as error:
-                failures.append(f"{rule.group}: {describe_os_error(error, instance.root)}")
-        if failures:
-            raise Refusal(*failures)
-        if snapshot == {kind: dump(document) for kind, document in locks.documents.items()}:
-            break
-    else:
-        raise EngineError(f"sync did not settle after {MAX_SYNC_PASSES} passes; the derive rules form a cycle")
-
-    now = datetime.datetime.now(datetime.UTC)
-    written = []
-    for kind, path, label in (
-        (VERSIONS, instance.versions_path, instance.versions_label),
-        (SKILLS, instance.skills_path, instance.skills_label),
-    ):
-        document = locks.documents.get(kind)
-        if document is None or dump(document) == before[kind]:
-            continue
-        document["generated_at"] = generated_at(kind, now)
-        atomic.atomic_write(path, dump(document))
-        written.append(label)
+    written = sync_locks(instance, nix, skills)
     if written:
         print(f"{PREFIX} Synced files: {', '.join(written)}")
     else:
@@ -191,6 +162,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return run_check(instance, args.nix)
         if args.command == "sync":
             return run_sync(instance, args.nix, args.skill)
+        if args.command == "apply":
+            from .apply.runner import run as run_apply
+
+            return run_apply(instance, args)
         return run_latest(instance, args)
     except Refusal as refusal:
         for message in refusal.messages:

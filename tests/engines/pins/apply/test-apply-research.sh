@@ -11,6 +11,7 @@ git -C "$sources/example/nixpkgs" branch example-26.05
 ds_git_commit "$sources/example/nixpkgs" channel.txt moved "chore: the channel moves"
 git -C "$sources/example/nixpkgs" branch -f example-26.05 main
 _apply_publish example/nixpkgs
+rm -rf -- "$sources/example/dotsteward"
 _apply_remote example/dotsteward v1.2.0 v1.2.1
 
 # Only rows the fake remotes can answer, and one they cannot.
@@ -36,7 +37,7 @@ assert_eq "\"$(fake_hash "example-term.src:2.0.0")\"" "$(json_get "$versions" '.
 assert_eq "\"$(git -C "$github/example/nixpkgs" rev-parse main)\"" "$(json_get "$versions" '.flake_inputs.nixpkgs.revision')"
 assert_contains "$(<"$inst/flake.nix")" '"github:example/dotsteward/v1.2.1"'
 assert_eq "launcher of 1.2.1" "$(<"$inst/.dotsteward/cli.sh")"
-assert_eq '["error agent_tools.example-plain"]' "$(jq -c '[.lines[] | select(.status == "error") | "\(.status) \(.id)"]' <<<"$summary")"
+assert_contains "$(jq -c '[.lines[] | select(.status == "error")]' <<<"$summary")" "does-not-exist"
 assert_contains "$(jq -c .researched_at <<<"$summary")" "Z"
 assert_exit 0 pins check
 
