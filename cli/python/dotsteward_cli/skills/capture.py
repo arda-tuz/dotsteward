@@ -21,10 +21,13 @@ the next full gate proves the same tree again.
 
 What keeps a skill back leaves it working here and is told once: a privacy finding or a red
 check (no commit), a refusal of the remote (no push), a link out of the tree, a size above
-the limit, no name in the frontmatter. The same digest is neither tried nor told again.
-Without a network the skill stays in the list with ``reason = offline``, and every hook
-that runs afterwards tries again. Redacted findings land in ``last-capture.json``; the
-matched text never does.
+the limit, no name in the frontmatter. The same digest is neither tried nor told again,
+with two exceptions. A red check or a refused commit belongs to a tree, so a look that
+comes hours later or with ``--full`` tries again, and a tip that has not moved costs one
+fetch and no check. A refusal of the remote waits for a person: ``skills retry``. Without a
+network the skill stays in the list with ``reason = offline``, and every hook that runs
+afterwards tries again; whatever keeps a skill waiting for more than a day is said. Redacted
+findings land in ``last-capture.json``; the matched text never does.
 
 One capture at a time: a busy ``capture.lock`` ends the run with status 0, and the holder
 reads pending.json again before it ends.
@@ -58,6 +61,8 @@ DEFAULT_MAX_MIB = 100
 _FRONTMATTER_NAME = re.compile(r"^name:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
 _KEPT_FINDINGS = 50
 _SAFE_NAME = re.compile(r"[A-Za-z0-9._-]+")
+_DETAIL_LINES = 6
+_DETAIL_CHARACTERS = 800
 
 
 class ChecksRed(Exception):
@@ -373,10 +378,18 @@ class _Attempt:
         self.finished: list[Work] = []
 
 
+def _kept_back_as_before(item: Mapping[str, Any], digest: str, tip: str) -> bool:
+    """The same content was kept back, and what kept it back has not changed."""
+    if item.get("blocked_digest") != digest:
+        return False
+    return item.get("reason") not in reconcile.TREE_REASONS or item.get("blocked_tip") in (None, tip)
+
+
 def _apply_copy(
     context: Mapping[str, Any],
     work: Work,
     worktree: str,
+    tip: str,
     tree: Mapping[str, str],
     document: dict[str, Any],
     base: Mapping[str, Any],
@@ -393,7 +406,7 @@ def _apply_copy(
     path = work.path if work.path and os.path.isdir(work.path) else None
     form = normal.normal_form(os.path.realpath(path), os.path.join(worktree, ".gitignore")) if path else None
     declared = _frontmatter_name(path) if path else None
-    if form is not None and work.item.get("blocked_digest") == form.digest:
+    if form is not None and _kept_back_as_before(work.item, form.digest, tip):
         attempt.repeated.append(work)
         return []
     reason = _rejection(path, form, declared, limit_mib)
@@ -525,7 +538,7 @@ def _build_on(
         elif item.answer.get("forget"):
             allowed += _apply_forget(item, worktree, loaded_tree, document, attempt)
         else:
-            allowed += _apply_copy(context, item, worktree, loaded_tree, document, base, attempt, limit)
+            allowed += _apply_copy(context, item, worktree, tip, loaded_tree, document, base, attempt, limit)
     if not attempt.applied:
         return None, attempt
     allowed += _announce_machine(context, worktree)
@@ -548,11 +561,21 @@ def _build_on(
 # --- what a run makes of it ---------------------------------------------------------------
 
 
-def _set_blocked(state_root: str, work: Work, reason: str, digest: str | None) -> None:
+def _last_lines(text: str) -> str:
+    """The end of what a tool said, for ``skills status``."""
+    return "\n".join(text.strip().splitlines()[-_DETAIL_LINES:])[-_DETAIL_CHARACTERS:]
+
+
+def _set_blocked(
+    state_root: str, work: Work, reason: str, digest: str | None, *, tip: str | None = None, detail: str = ""
+) -> None:
     fields = {
         "state": reconcile.BLOCKED,
         "reason": reason,
         "blocked_digest": digest,
+        "blocked_tip": tip,
+        "blocked_at": time.time(),
+        "detail": _last_lines(detail),
         "digest": digest,
         "last_asked": None,
     }
@@ -607,7 +630,7 @@ def _settle(state_root: str, attempt: _Attempt, published: publish.Published, su
     for work in attempt.repeated:
         previous = work.item
         if previous.get("blocked_digest"):
-            fields = {"state": reconcile.BLOCKED, "digest": previous.get("blocked_digest")}
+            fields = {"state": reconcile.BLOCKED, "digest": previous.get("blocked_digest"), "blocked_at": time.time()}
             state.set_item(state_root, work.key, fields)
     for work in attempt.finished:
         state.drop_item(state_root, work.key)
@@ -639,15 +662,15 @@ def _record_applied(state_root: str, attempt: _Attempt, commit: str, summary: Su
             summary.captured.append(applied.entry_name)
 
 
-def _mark_waiting(state_root: str, work: Sequence[Work], reason: str, summary: Summary) -> None:
+def _mark_waiting(state_root: str, work: Sequence[Work], reason: str, summary: Summary, detail: str = "") -> None:
     now = time.time()
     for item in work:
-        since = item.item.get("offline_since") if item.item.get("reason") == reason else None
         fields = {
             **_identity_fields(item),
             "state": reconcile.CAPTURE,
             "reason": reason,
-            "offline_since": since or now,
+            "detail": _last_lines(detail),
+            "offline_since": item.item.get("offline_since") or now,
             "attempts": int(item.item.get("attempts") or 0) + 1,
         }
         state.set_item(state_root, item.key, fields)
@@ -660,8 +683,10 @@ def _cycle(context: Mapping[str, Any], tree: Mapping[str, str], work: Sequence[W
     instance = str(context["instance"])
     state_root = str(context["state_root"])
     last: dict[str, _Attempt] = {}
+    tips: list[str] = []
 
     def build(tip: str) -> str | None:
+        tips.append(tip)
         commit, attempt = _build_on(context, tree, work, tip, summary)
         last["attempt"] = attempt
         return commit
@@ -679,7 +704,8 @@ def _cycle(context: Mapping[str, Any], tree: Mapping[str, str], work: Sequence[W
         if item.path:
             with contextlib.suppress(normal.NormalFormError, OSError):
                 digest = normal.normal_form(os.path.realpath(item.path), os.path.join(instance, ".gitignore")).digest
-        _set_blocked(state_root, item, red.reason, digest)
+        detail = "" if red.reason == "privacy" else "\n".join(red.findings)
+        _set_blocked(state_root, item, red.reason, digest, tip=tips[-1] if tips else None, detail=detail)
         summary.findings += red.findings
         summary.blocked.append(item.name)
         summary.codes.append(report.PRIVACY_STOP if red.reason == "privacy" else report.FAILED)
@@ -687,7 +713,7 @@ def _cycle(context: Mapping[str, Any], tree: Mapping[str, str], work: Sequence[W
         return
     except ChecksUnavailable as unavailable:
         _say(f"the checks of the instance cannot run: {unavailable}")
-        _mark_waiting(state_root, work, "checks-unavailable", summary)
+        _mark_waiting(state_root, work, "checks-unavailable", summary, str(unavailable))
         return
     attempt = last.get("attempt")
     if published.outcome == publish.OK:
@@ -705,13 +731,13 @@ def _cycle(context: Mapping[str, Any], tree: Mapping[str, str], work: Sequence[W
                     digest = normal.normal_form(
                         os.path.realpath(item.path), os.path.join(instance, ".gitignore")
                     ).digest
-            _set_blocked(state_root, item, "remote-refused", digest)
+            _set_blocked(state_root, item, "remote-refused", digest, detail=published.detail)
             summary.blocked.append(item.name)
             summary.codes.append(report.FAILED)
         return
     if published.outcome == publish.NETWORK:
         _say(f"no network or no answer from the remote: {published.detail}")
-        _mark_waiting(state_root, work, "offline", summary)
+        _mark_waiting(state_root, work, "offline", summary, published.detail)
         return
     _say("other machines kept pushing; the skills wait for the next run")
     _mark_waiting(state_root, work, "race", summary)
@@ -815,6 +841,7 @@ def run_now(
         return summary
     handled: set[str] = set()
     ran = False
+    work: list[Work] = []
     try:
         sleeper.log(state_root, "run")
         while True:
@@ -833,6 +860,7 @@ def run_now(
     except (normal.NormalFormError, OSError, ValueError, config.DotstewardError, host.Refusal) as error:
         _say(f"the capture failed: {error}")
         sleeper.log(state_root, f"failed: {error}")
+        _mark_waiting(state_root, work, "capture-failed", summary, str(error))
         summary.codes.append(report.FAILED)
     finally:
         if ran:

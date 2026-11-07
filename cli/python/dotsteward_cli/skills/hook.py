@@ -163,7 +163,7 @@ def _waiting(document: Mapping[str, Any], now: float) -> list[Mapping[str, Any]]
         status = item.get("state")
         if status in {"ask", "conflict", "blocked", "name-taken", "deleted"}:
             waiting.append(item)
-        elif status == "capture" and item.get("reason") == "offline":
+        elif status == "capture" and item.get("reason"):
             since = item.get("offline_since")
             if isinstance(since, (int, float)) and now - since >= OFFLINE_NOTICE_SECONDS:
                 waiting.append(item)
@@ -204,7 +204,7 @@ def _question(items: Sequence[Mapping[str, Any]]) -> str:
     if "blocked" in groups:
         lines.append(
             f"- Not published: {', '.join(groups['blocked'])}. The reason is in dotsteward skills status; "
-            "the skill keeps working here."
+            "the skill keeps working here. Once the cause is gone: dotsteward skills retry <name>."
         )
     if "name-taken" in groups:
         lines.append(
@@ -221,7 +221,8 @@ def _question(items: Sequence[Mapping[str, Any]]) -> str:
     if "offline" in groups:
         lines.append(
             f"- Waiting for a push for more than a day: {', '.join(groups['offline'])}. "
-            "Check the network and the credentials of the instance remote; see dotsteward skills status."
+            "The reason is in dotsteward skills status; it may be the network or the credentials of the "
+            "instance remote."
         )
     remaining = len(items) - said
     if remaining > 0:

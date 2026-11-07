@@ -121,7 +121,10 @@ def _status(args: argparse.Namespace, loaded: config.Instance) -> int:
             print(f"[dotsteward] {skill['name']}: link out of the tree or broken: {path}")
     for key, item in sorted(document["pending"].items()):
         if isinstance(item, dict):
-            print(f"[dotsteward] {key}: {item.get('state')} ({item.get('origin')})")
+            why = f": {item['reason']}" if item.get("reason") else ""
+            print(f"[dotsteward] {key}: {item.get('state')} ({item.get('origin')}){why}")
+            for line in str(item.get("detail") or "").splitlines():
+                print(f"[dotsteward] {key}: {line}")
     print(f"[dotsteward] {in_sync} of {len(document['own'])} own skills in sync")
     return 0
 
@@ -266,6 +269,10 @@ def _restore(args: argparse.Namespace, loaded: config.Instance) -> int:
     return track.restore(loaded, args.name)
 
 
+def _retry(args: argparse.Namespace, loaded: config.Instance) -> int:
+    return track.retry(loaded, args.name)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dotsteward skills",
@@ -360,6 +367,15 @@ def _parser() -> argparse.ArgumentParser:
         description="Copies the skill of the remote to the canonical skill root.",
     )
     back.add_argument("name", metavar="SKILL")
+    again = commands.add_parser(
+        "retry",
+        help="try a skill that was kept back again, now",
+        description=(
+            "For a skill that is blocked (dotsteward skills status says why) once the cause is gone: "
+            "a refusal of the remote is never tried again by itself."
+        ),
+    )
+    again.add_argument("name", metavar="SKILL")
     hooks = commands.add_parser(
         "hooks",
         help="the hooks of skill tracking in the configuration of an agent",
@@ -414,6 +430,8 @@ def main(argv: Sequence[str]) -> int:
             return _forget(args, loaded)
         if args.command == "restore":
             return _restore(args, loaded)
+        if args.command == "retry":
+            return _retry(args, loaded)
         return _hooks(args, loaded)
     except config.DotstewardError as error:
         for line in error.lines():

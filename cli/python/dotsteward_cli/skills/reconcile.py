@@ -35,6 +35,9 @@ DELETED = "deleted"
 LOCAL_EDIT = "local-edit"
 NAME_TAKEN = "name-taken"
 NOT_REFRESHED = "not-refreshed"
+# What kept a skill back belongs to the tree, not to the skill.
+TREE_REASONS = frozenset({"checks-red", "commit-refused"})
+_TREE_RETRY_SECONDS = 6 * 3600
 DECLINED = "declined"
 FORGOTTEN = "forgotten"
 _KEPT_OUT = frozenset({DECLINED, FORGOTTEN})
@@ -366,6 +369,8 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
         elif key not in base and key not in plan.set_items and _blocked_changed(item, since, full, context):
             plan.looked_at = now
             plan.set_items[key] = {"state": CAPTURE, "reason": None, "detected_at": now}
+        elif key not in plan.set_items and _tree_may_have_moved(item, now, full):
+            plan.set_items[key] = {"state": CAPTURE}
     if document.get("reconciled_at") is None:
         plan.looked_at = now
     return plan
@@ -383,6 +388,16 @@ def _blocked_changed(item: Any, since: Any, full: bool, context: Mapping[str, An
     if not full and isinstance(since, (int, float)) and not _changed_since(path, float(since)):
         return False
     return _local_digest(path, context) != item.get("blocked_digest")
+
+
+def _tree_may_have_moved(item: Any, now: float, full: bool) -> bool:
+    """A red check waits for another tree. Whether there is one takes a fetch, which is the
+    business of a capture, so a skill goes there every few hours; it does not run the checks
+    again on the same tip."""
+    if not isinstance(item, dict) or item.get("state") != BLOCKED or item.get("reason") not in TREE_REASONS:
+        return False
+    blocked_at = item.get("blocked_at")
+    return full or not isinstance(blocked_at, (int, float)) or now - blocked_at >= _TREE_RETRY_SECONDS
 
 
 def _vanished(item: Any) -> bool:

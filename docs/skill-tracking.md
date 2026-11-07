@@ -50,7 +50,8 @@ target. `skills status` names what ignore rules leave out, so that a line such a
 ## The capture
 
 Ten minutes after the last change of a skill (`[skills] capture_delay_seconds`), or when
-the session ends, whichever comes first, `dotsteward skills capture` publishes it. It works
+the session that wrote it ends, whichever comes first, `dotsteward skills capture` publishes
+it. It works
 in a worktree of its own below the state root, so a dirty checkout is no obstacle and the
 checkout never moves; `agents install` knows a checkout that stayed behind, and `dotsteward
 upgrade` moves it. A file deleted here leaves the repository. An existing lock entry changes
@@ -66,14 +67,16 @@ one of the repository.
 | What keeps a skill back | What happens | Exit |
 | --- | --- | --- |
 | a privacy finding | no commit; the rule and the place in `last-capture.json`, never the text | 4 |
-| a red check, or a refusal of the remote | no commit or no push, `blocked` | 1 |
+| a red check | no commit, `blocked`; a new tip of the remote gets a new try, by itself within hours | 1 |
+| a refusal of the remote | no push, `blocked`; `dotsteward skills status` shows what the remote said, and `dotsteward skills retry <name>` tries again once the cause is gone | 1 |
 | a link out of the tree (`unsafe-link`), above the size limit (`too-large`), no `name` in the frontmatter (`skill-invalid`) | no commit, `blocked` | 1 |
 | a conflict | no commit | 3 |
 | no network | the name waits in `pending.json`, no commit piles up, the next hook tries again | 6 |
 
 The skill keeps working here. You hear of it once: in the next session somebody attends,
 through `notify-send` where there is one, and in `dotsteward skills status`; the same content
-is neither tried nor told again. After a day without a network the session says so too, so a
+is neither tried nor told again. Whatever keeps a skill waiting for more than a day (no
+network, a launcher that cannot run, a capture that failed) is said in the session too, so a
 dead credential does not stay silent.
 
 `dotsteward skills forget <name>` takes a skill from all machines. `dotsteward skills restore
@@ -92,7 +95,7 @@ takes the entries out again when `[skills] tracking` is off.
 | `SessionStart` | compares; says what waits, if somebody attends the session |
 | `PostToolUse` | a file tool wrote below a skill root: evidence, and the debounce |
 | `Stop` | compares; Claude Code only: one block per session with what waits |
-| `SessionEnd` | captures now, detached, when something waits |
+| `SessionEnd` | captures what this session wrote now, detached; everything else keeps its delay |
 
 A hook cannot fail or delay an agent: it always exits 0, also with a broken CLI or a
 read-only home, and it ends at once with `DOTSTEWARD_HOOKS_OFF=1`. In a subagent it only

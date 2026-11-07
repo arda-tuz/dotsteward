@@ -32,7 +32,7 @@ LOG_FILE = "capture.log"
 _LONGEST_NAP_SECONDS = 30.0
 _DEADLINE_LOCK_WAIT_SECONDS = 1.0
 _LOG_LIMIT_BYTES = 256 * 1024
-RETRY_REASONS = frozenset({"offline", "race", "checks-unavailable"})
+RETRY_REASONS = frozenset({"offline", "race", "checks-unavailable", "capture-failed"})
 
 
 def delay_seconds(context: Mapping[str, Any]) -> float:

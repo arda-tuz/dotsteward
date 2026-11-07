@@ -1,5 +1,5 @@
-"""The answers to what skill tracking asks: ``track``, ``resolve``, ``diff``, ``forget``
-and ``restore``.
+"""The answers to what skill tracking asks: ``track``, ``resolve``, ``diff``, ``forget``,
+``restore`` and ``retry``.
 
 An answer is a note on the pending item, which ``capture`` carries out, so it survives a
 missing network like any other change. ``--all`` of a downloaded skill pins its upstream:
@@ -405,6 +405,30 @@ def forget(loaded: config.Instance, name: str) -> int:
             "origin": origin.OWN,
             "answer": {"forget": True},
             "reason": None,
+            "detected_at": time.time(),
+        }
+        state.set_item(state_root, key, fields)
+        return _finish(context, loaded, name)
+    except AnswerRefused as refused:
+        _say(f"ERROR: {refused}")
+        return report.FAILED
+
+
+def retry(loaded: config.Instance, name: str) -> int:
+    try:
+        context = _context(loaded)
+        state_root = str(context["state_root"])
+        key = state.skill_key(name)
+        item = state.load_pending(state_root)["items"].get(key)
+        if not isinstance(item, dict) or item.get("state") != reconcile.BLOCKED:
+            raise AnswerRefused(f"{name} is not kept back")
+        fields = {
+            "state": reconcile.CAPTURE,
+            "reason": None,
+            "detail": "",
+            "blocked_digest": None,
+            "blocked_tip": None,
+            "blocked_at": None,
             "detected_at": time.time(),
         }
         state.set_item(state_root, key, fields)
