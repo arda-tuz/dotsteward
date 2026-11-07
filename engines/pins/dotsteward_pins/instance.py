@@ -13,7 +13,7 @@ Configuration used: ``[pins] versions_lock`` and ``excluded_flake_inputs``,
 Rules: the ``pins.rules`` (and ``pins.latest``) of the committed manifest
 mirror ``.dotsteward/manifest.<system>.json`` of every system in
 ``[nix] systems``, united in order; an entry repeated by several systems
-counts once. A missing mirror is an error (run ``dotsteward sync``), never
+counts once. A missing mirror is an error (run ``dotsteward generate``), never
 an empty rule set.
 """
 
@@ -117,7 +117,7 @@ class Instance:
             label = f".dotsteward/manifest.{system}.json"
             path = self.root / label
             if not path.is_file():
-                raise EngineError(f"missing manifest mirror {label}; run 'dotsteward sync'")
+                raise EngineError(f"missing manifest mirror {label}; run 'dotsteward generate'")
             try:
                 document = load_json(path)
             except ValueError as error:
@@ -160,7 +160,7 @@ class Instance:
         would silently be missing, so they are refused.
 
         Untracked generated mirrors are not refused: they are outputs of the
-        evaluation that ``dotsteward sync`` may have just written, the
+        evaluation that ``dotsteward generate`` may have just written, the
         evaluated attributes never read them, and this engine reads them from
         disk."""
         try:

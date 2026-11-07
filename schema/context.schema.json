@@ -83,7 +83,7 @@
         },
         "candidate": {
           "$ref": "#/$defs/absolutePath",
-          "description": "<root>/update/candidate.json, written by `update prepare`."
+          "description": "<root>/update/candidate.json, written by `txn prepare`."
         },
         "validation": {
           "$ref": "#/$defs/absolutePath",

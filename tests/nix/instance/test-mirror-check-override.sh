@@ -4,7 +4,7 @@
 # .dotsteward/ mirrors describe the framework that flake.lock pins, so when
 # the evaluated framework is another one (`--override-input dotsteward`, as
 # the contribute trial and `gate --framework-override` run it) the staleness
-# check does not apply and the check passes; `dotsteward sync` refreshes the
+# check does not apply and the check passes; `dotsteward generate` refreshes the
 # mirrors when the instance moves to that framework. A matching or unknown
 # framework narHash keeps the check as it is.
 # shellcheck source=tests/nix/instance/helpers.sh
@@ -43,7 +43,7 @@ assert_inst_eq '"dotsteward-manifest"' "($(inst "$pinned")).checks.x86_64-linux.
 sed -i '0,/"schema_version": 1/s//"schema_version": 2/' "$copy/.dotsteward/manifest.x86_64-linux.json"
 for hash in "$pinned" ""; do
   assert_inst_fails "($(inst "$hash")).checks.x86_64-linux.dotsteward-manifest.drvPath" \
-    "dotsteward: .dotsteward/manifest.x86_64-linux.json is stale" "run \`dotsteward sync\`"
+    "dotsteward: .dotsteward/manifest.x86_64-linux.json is stale" "run \`dotsteward generate\`"
 done
 
 # Another framework (an override): stale and missing mirrors are not checked,

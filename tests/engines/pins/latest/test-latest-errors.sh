@@ -90,7 +90,7 @@ assert_exit 2 latest
 assert_contains "$DS_STDERR" "[pins] ERROR: $label: pins.latest is not a list"
 rm -f -- "$manifest"
 assert_exit 2 latest
-assert_contains "$DS_STDERR" "[pins] ERROR: missing manifest mirror $label; run 'dotsteward sync'"
+assert_contains "$DS_STDERR" "[pins] ERROR: missing manifest mirror $label; run 'dotsteward generate'"
 cp -- "$latest_fixtures/instance/.dotsteward/manifest.x86_64-linux.json" "$manifest"
 sed -i "s|@HTTPFIX@|$url|g" "$manifest"
 

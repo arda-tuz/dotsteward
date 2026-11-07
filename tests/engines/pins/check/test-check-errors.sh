@@ -52,7 +52,7 @@ assert_not_contains "$DS_STDERR" "Traceback"
 pins_fresh
 sed -i 's/^state_version = .*/&\nsystems = ["x86_64-linux", "aarch64-darwin"]/' "$inst/workstation.toml"
 assert_exit 2 pins check
-assert_eq "${E}missing manifest mirror .dotsteward/manifest.aarch64-darwin.json; run 'dotsteward sync'" "$DS_STDERR"
+assert_eq "${E}missing manifest mirror .dotsteward/manifest.aarch64-darwin.json; run 'dotsteward generate'" "$DS_STDERR"
 assert_eq "" "$DS_STDOUT"
 
 # The darwin mirror repeats every rule (counted once) and adds one.
@@ -80,7 +80,7 @@ check_fails 1 "${E}nix_packages.example-shell.notes: expected 'follows nixpkgs',
 pins_fresh
 rm "$mirror"
 assert_exit 2 pins check
-assert_eq "${E}missing manifest mirror .dotsteward/manifest.x86_64-linux.json; run 'dotsteward sync'" "$DS_STDERR"
+assert_eq "${E}missing manifest mirror .dotsteward/manifest.x86_64-linux.json; run 'dotsteward generate'" "$DS_STDERR"
 
 pins_fresh
 printf '{ "schema_version": 1, ' >"$mirror"

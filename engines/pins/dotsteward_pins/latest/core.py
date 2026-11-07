@@ -35,7 +35,7 @@ from .upstream import github_repo
 
 NIX_REPOSITORY = "NixOS/nix"
 SNAPSHOT_NOTE = "local snapshot; compare with the upstream source manually"
-NIXPKGS_NOTE = "run 'dotsteward sync --nix' after a nixpkgs update"
+NIXPKGS_NOTE = "run 'dotsteward generate --nix' after a nixpkgs update"
 
 
 def _path(*keys: str) -> str:

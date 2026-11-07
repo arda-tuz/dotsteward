@@ -4,7 +4,7 @@
 # (mode 0600, written atomically) as soon as the generation is activated:
 # generation (the activation package), profile, revision and tree_oid (the
 # instance HEAD), root (the checkout), framework_override (or null) and
-# activated_at. `dotsteward update publish` reads it to require a passing
+# activated_at. `dotsteward txn publish` reads it to require a passing
 # E2E for an activated tree. --build-only records nothing, and a failed
 # activation keeps the previous record.
 # shellcheck source=tests/cli/rebuild/helpers.sh

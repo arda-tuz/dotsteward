@@ -2,7 +2,7 @@
 # shellcheck disable=SC2154,SC2164 # DS_* variables and errexit (which stops a failed cd) come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # jq programs and literal texts are single-quoted on purpose
 # All or nothing: when a step fails (nix flake lock, the mirrors
-# of dotsteward sync, its pins sync, dotsteward pins check, the git commit)
+# of dotsteward generate, its pins sync, dotsteward pins check, the git commit)
 # or init is terminated while a step runs, the target is as it was: a
 # missing directory stays missing, an empty one stays empty (with its
 # mode), a template directory keeps every byte; the temporary directory is
@@ -49,7 +49,7 @@ fails_at() {
 for kind in missing empty template; do
   fails_at "nix flake lock" 1 "$kind" DS_INIT_NIX_FAIL='flake lock *'
   fails_at "dotsteward generate --nix" 1 "$kind" DS_INIT_NIX_FAIL='eval *#dotstewardMirrors'
-  # The pins sync of `dotsteward sync`, then the pins check after it (the
+  # The pins sync of `dotsteward generate`, then the pins check after it (the
   # pins engine exits 2 for a broken input).
   fails_at "dotsteward generate --nix" 2 "$kind" DS_INIT_NIX_FAIL='eval *#lib.pinnedVersions'
   rm -f "$DS_STUB_STATE/nix/fail-matches"

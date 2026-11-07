@@ -7,7 +7,7 @@ the pin already holds does not move.
 
 Under the instance lock, in the order framework, channel inputs, flake inputs, build
 pins, downloads, requirements, bundles, skills, every group writes as a whole or
-restores every byte it touched. After them one ``dotsteward sync --nix`` writes the
+restores every byte it touched. After them one ``dotsteward generate --nix`` writes the
 mirrors and the versions Nix resolves. Nothing is committed and nothing is published.
 
 Exit status: the outcome of the run report ``pins-apply``: 0 done, 3 review items wait

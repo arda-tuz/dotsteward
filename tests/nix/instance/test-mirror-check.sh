@@ -3,7 +3,7 @@
 # checks.<system>.dotsteward-manifest: every committed mirror under
 # .dotsteward/ equals the evaluated value (all systems and platforms, so a
 # darwin problem also fails the Linux check); a stale or missing mirror fails
-# the evaluation and names `dotsteward sync`.
+# the evaluation and names `dotsteward generate`.
 # shellcheck source=tests/nix/instance/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/instance/helpers.sh"
 
@@ -12,7 +12,7 @@ inst="instance { root = /. + \"$copy\"; }"
 
 # Without mirrors.
 assert_inst_fails "($inst).checks.x86_64-linux.dotsteward-manifest.drvPath" \
-  "dotsteward: .dotsteward/manifest.x86_64-linux.json is missing" "run \`dotsteward sync\`"
+  "dotsteward: .dotsteward/manifest.x86_64-linux.json is missing" "run \`dotsteward generate\`"
 
 # Fresh mirrors pass on every system.
 write_mirrors "$inst" "$copy"
@@ -33,7 +33,7 @@ assert_inst_eq '"dotsteward-manifest"' \
 # One changed byte in any mirror fails every system's check.
 sed -i '0,/"schema_version": 1/s//"schema_version": 2/' "$copy/.dotsteward/manifest.aarch64-darwin.json"
 assert_inst_fails "($inst).checks.x86_64-linux.dotsteward-manifest.drvPath" \
-  "dotsteward: .dotsteward/manifest.aarch64-darwin.json is stale" "run \`dotsteward sync\`"
+  "dotsteward: .dotsteward/manifest.aarch64-darwin.json is stale" "run \`dotsteward generate\`"
 write_mirrors "$inst" "$copy"
 printf '# local edit\n' >>"$copy/.dotsteward/stage0.linux.env"
 assert_inst_fails "($inst).checks.aarch64-darwin.dotsteward-manifest.drvPath" \

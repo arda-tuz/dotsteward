@@ -178,7 +178,6 @@ class Tools:
         return self.run([program, *arguments], timeout=BUILD_TIMEOUT, cwd=cwd)
 
     def generate(self, *flags: str) -> None:
-        """Today's `dotsteward sync`: `dotsteward generate` once T1 lands."""
-        result = self.dotsteward("--instance", str(self.root), "sync", *flags)
+        result = self.dotsteward("--instance", str(self.root), "generate", *flags)
         if result.returncode != 0:
-            raise GroupFailure(f"dotsteward sync failed: {_tail(result.stderr)}")
+            raise GroupFailure(f"dotsteward generate failed: {_tail(result.stderr)}")

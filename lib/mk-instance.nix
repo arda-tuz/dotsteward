@@ -40,7 +40,7 @@
 #                                 extraChecks
 #   dotstewardManifest.<system>   the evaluated manifest
 #   dotstewardMirrors             exact contents of the .dotsteward/ mirror
-#                                 files, written by `dotsteward sync`
+#                                 files, written by `dotsteward generate`
 #   apps.<system>.default         the instance CLI
 #
 # Components: every enabled name of [components]; a catalog component is
@@ -506,7 +506,7 @@ let
   # The evaluated framework differs from the pinned one: an override
   # (`--override-input dotsteward`, the contribute trial and `gate
   # --framework-override`). The mirrors describe the pinned framework, so
-  # their staleness is not checked then; `dotsteward sync` refreshes them
+  # their staleness is not checked then; `dotsteward generate` refreshes them
   # when the instance moves to the new framework (contribute upgrade).
   evaluatedFrameworkHash = inputs.dotsteward.narHash or null;
   frameworkOverridden =
@@ -524,7 +524,7 @@ let
     in
     if frameworkOverridden then
       pkgsFor.${system}.runCommand "dotsteward-manifest" { } ''
-        echo "framework overridden (pinned ${pinnedFrameworkHash}, evaluated ${evaluatedFrameworkHash}): mirror staleness not checked; dotsteward sync refreshes the mirrors on upgrade"
+        echo "framework overridden (pinned ${pinnedFrameworkHash}, evaluated ${evaluatedFrameworkHash}): mirror staleness not checked; dotsteward generate refreshes the mirrors on upgrade"
         touch "$out"
       ''
     else if problems != [ ] then

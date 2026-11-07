@@ -3,7 +3,7 @@
 # The files of template/: exactly the listed paths, no symbolic
 # links, executable exactly where the file is a script, text that ends with
 # a newline and has no carriage returns. No update.sh: the retired wrapper
-# of `dotsteward update` and `dotsteward gate`, which the launcher runs
+# of `dotsteward txn` and `dotsteward gate`, which the launcher runs
 # directly.
 # shellcheck source=tests/instance/template/helpers.sh
 source "$DS_REPO_ROOT/tests/instance/template/helpers.sh"

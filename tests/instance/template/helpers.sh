@@ -77,7 +77,7 @@ commit_all() {
 
 # template_instance DIR: the template as `nix flake init -t` leaves it,
 # copied to DIR, plus the flake.lock of the template inputs and the
-# .dotsteward/ mirrors `dotsteward sync` writes, committed to a fresh git
+# .dotsteward/ mirrors `dotsteward generate` writes, committed to a fresh git
 # repository (a new instance after `dotsteward init` chose no component).
 template_instance() {
   local dir=$1

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """A fake nix for the pins apply tests: the commands the writer and
-`dotsteward sync` call, offline, over the instance's own files.
+`dotsteward generate` call, offline, over the instance's own files.
 
     flake lock                relocks every input whose flake.nix reference
                               changed; the commit comes from the fake GitHub

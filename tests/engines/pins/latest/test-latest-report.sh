@@ -178,7 +178,7 @@ assert_eq '{"id":"nix_packages.example-manual","kind":"manual","current":"35.0.0
   "$(row nix_packages.example-manual)"
 assert_eq '{"id":"nix_packages.example-lint","kind":"follows-example-watch","current":"0.11.0","latest":null,"status":"follows","source":"example-watch","details":{"note":"pinned by the example-watch lint requirements"}}' \
   "$(row nix_packages.example-lint)"
-assert_eq '{"id":"nix_packages.example-shell","kind":"follows-nixpkgs","current":"5.9","latest":null,"status":"follows","source":"nixpkgs","details":{"note":"run '"'"'dotsteward sync --nix'"'"' after a nixpkgs update"}}' \
+assert_eq '{"id":"nix_packages.example-shell","kind":"follows-nixpkgs","current":"5.9","latest":null,"status":"follows","source":"nixpkgs","details":{"note":"run '"'"'dotsteward generate --nix'"'"' after a nixpkgs update"}}' \
   "$(row nix_packages.example-shell)"
 assert_eq '{"id":"ubuntu_packages.example-app","kind":"local-apt","current":"1.0.0","latest":"1.2.3","status":"follows","source":"apt-cache policy","details":{}}' \
   "$(row ubuntu_packages.example-app)"
