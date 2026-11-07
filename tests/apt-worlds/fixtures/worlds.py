@@ -352,7 +352,7 @@ fi
 
 def _failing_package():
     record = rec("example-broken", "1.0-1", "example-broken")
-    record["scripts"] = {"postinst": '#!/bin/sh\n[ ! -e /run/dotsteward-test/fail-unrelated ]\n'}
+    record["scripts"] = {"postinst": "#!/bin/sh\n[ ! -e /run/dotsteward-test/fail-unrelated ]\n"}
     return record
 
 

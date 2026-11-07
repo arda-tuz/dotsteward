@@ -196,9 +196,9 @@ assert_json "$ENGINE" '.pin.present == false and .hook.present == false'
 
 # A series change takes the module of the fallback kernel along, when the archive has one.
 commit_world series-keeps-fallback '{"mode": "all", "accept": ["series:nvidia=615-open"]}'
-assert_eq "$K38+1" "$(version_of "$MODULE-615-open-7.0.0-38-generic")"
-assert_eq "$K42" "$(version_of "$MODULE-615-open-7.0.0-42-generic")"
-assert_eq "" "$(version_of "$MODULE-595-open-7.0.0-38-generic")"
+assert_eq "$K38+1" "$(version_of linux-modules-nvidia-615-open-7.0.0-38-generic)"
+assert_eq "$K42" "$(version_of linux-modules-nvidia-615-open-7.0.0-42-generic)"
+assert_eq "" "$(version_of "$MODULE-7.0.0-38-generic")"
 assert_json "$ENGINE" '[.items[].code] | index("module-loss") == null'
 # Without one the report says what goes.
 commit_world new-series-nvidia '{"mode": "all", "accept": ["series:nvidia=615-open"]}'

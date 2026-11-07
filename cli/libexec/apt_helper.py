@@ -459,9 +459,7 @@ def version_of(cache, name, wanted):
 
 def loses_running(losses, running):
     """Whether a module of the running kernel is among LOSSES: its ABI, not a part of it."""
-    return any(
-        (match := ABI_PACKAGE_RE.match(name.split(":")[0])) and match.group(1) == running for name in losses
-    )
+    return any((match := ABI_PACKAGE_RE.match(name.split(":")[0])) and match.group(1) == running for name in losses)
 
 
 def abi_of_release(release):
@@ -1570,7 +1568,12 @@ def take_lock(session):
 def dpkg_rows():
     """(status abbreviation, name) of every package dpkg knows."""
     done = subprocess.run(
-        [dpkg_binary() + "-query", f"--admindir={dpkg_admin_dir()}", "-W", "-f=${db:Status-Abbrev} ${binary:Package}\\n"],
+        [
+            dpkg_binary() + "-query",
+            f"--admindir={dpkg_admin_dir()}",
+            "-W",
+            "-f=${db:Status-Abbrev} ${binary:Package}\\n",
+        ],
         capture_output=True,
         text=True,
         check=False,
