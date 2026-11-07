@@ -26,6 +26,9 @@ printf 'rev=%s\nnarHash=sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n' "
 cat >"$up_inst/.dotsteward/cli.sh" <<LAUNCHER
 #!$BASH
 printf 'pinned-cli %s reexec=%s\n' "\$*" "\${DOTSTEWARD_UPGRADE_REEXEC:-}" >>"$UP_LOG"
+# The lock of the run before does not come along: this process can take it itself.
+PYTHONPATH="$DS_REPO_ROOT/cli/python" PYTHONDONTWRITEBYTECODE=1 python3 -s -P -m dotsteward_cli.internal \
+  lock run --holder probe --state-root "$DOTSTEWARD_STATE_ROOT" -- true || exit 97
 exit 42
 LAUNCHER
 chmod 0755 "$up_inst/.dotsteward/cli.sh"
