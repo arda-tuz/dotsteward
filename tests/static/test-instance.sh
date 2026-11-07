@@ -10,7 +10,7 @@ command -v shellcheck >/dev/null 2>&1 || ds_fail "the static tests need shellche
 
 inst=$DS_TEST_ROOT/inst
 make_instance "$inst"
-all="shell bans launcher bootstrap skills hosts versions-lock allowlist protected overlays privacy scripts"
+all="shell bans launcher bootstrap skills hosts versions-lock policy allowlist protected overlays privacy scripts"
 
 cd "$inst"
 assert_exit 0 static

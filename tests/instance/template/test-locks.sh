@@ -21,18 +21,12 @@ jq -e . "$versions" >/dev/null || ds_fail "template/versions.lock.json is not va
 assert_eq "$(python3 -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1])), indent=2, ensure_ascii=False))' "$versions")" \
   "$(<"$versions")" "versions.lock.json serialization"
 
-assert_eq '["schema_version","generated_at","policy","nix","flake_inputs","nix_packages"]' \
+# The policy is intent (workstation.toml [policy]), not a shared lock value.
+assert_eq '["schema_version","generated_at","nix","flake_inputs","nix_packages"]' \
   "$(jq -c keys_unsorted "$versions")" "versions.lock.json sections"
 assert_json "$versions" '.schema_version == "1.0"'
 assert_json "$versions" '.generated_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\+00:00$")' \
   "generated_at is an ISO time with +00:00"
-assert_json "$versions" '.policy == {
-  official_sources_only: true,
-  persistent_agentic_updates: false,
-  scheduled_repository_updates: false,
-  native_application_updates: true,
-  major_version_review_required: true
-}' "policy"
 # Only core's pinned package before init: tomlkit, from the locked nixpkgs
 # (`dotsteward generate --nix` writes its resolved version).
 assert_json "$versions" '.nix_packages | keys == ["tomlkit"]' "only core's package before init"

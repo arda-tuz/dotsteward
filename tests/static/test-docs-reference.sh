@@ -18,7 +18,7 @@
 #   docs/overlays.md quotes the precedence sentence of the skills;
 # - docs/privacy.md names every option of `scan` and every key of
 #   privacy/policy.toml (a table key as <table>.<key>);
-# - docs/update-policy.md names every key of the template lock's policy;
+# - docs/update-policy.md names every key of [policy] of workstation.toml;
 # - docs/writing-components.md names every file all catalog components have;
 # - docs/architecture.md names every catalog component and, in its
 #   Versioning section, every file that carries a copy of VERSION (the
@@ -182,8 +182,8 @@ if text is not None:
 
 text = docs["update-policy"]
 if text is not None:
-    with open(os.path.join(root, "template/versions.lock.json")) as handle:
-        policy = list(json.load(handle)["policy"])
+    with open(os.path.join(root, "schema/workstation.schema.json")) as handle:
+        policy = list(json.load(handle)["properties"]["policy"]["properties"])
     require_spans("docs/update-policy.md", text, policy, "policy key")
 
 text = docs["writing-components"]

@@ -67,7 +67,7 @@ assert_jq "$staged/versions.lock.json" '.generated_at | test($re + "\\+00:00$")'
 assert_jq "$staged/agent/skills.lock.json" '.generated_at | test($re + "Z$")' --arg re "$iso_utc"
 assert_jq "$staged/versions.lock.json" '.generated_at != $template' \
   --arg template "$(jq -r .generated_at "$tpl/versions.lock.json")"
-assert_eq '["schema_version","generated_at","policy","nix","flake_inputs","nix_packages","agent_tools","desktop_packages"]' \
+assert_eq '["schema_version","generated_at","nix","flake_inputs","nix_packages","agent_tools","desktop_packages"]' \
   "$(jq -c keys_unsorted "$staged/versions.lock.json")" "versions.lock.json sections in order"
 assert_eq '["tomlkit","starship","zsh","herdr","pi"]' "$(jq -c '.nix_packages | keys_unsorted' "$staged/versions.lock.json")" \
   "the template's package first, then the seeds' in catalog order"
@@ -131,13 +131,13 @@ conflict '.versions_lock.nix_packages.tomlkit = { expected: "locked nixpkgs pack
   'the seeds conflict in versions.lock.json at nix_packages.tomlkit.resolved: the template sets'
 conflict '.versions_lock.agent_tools.shared.version = 1' \
   'the seeds conflict in versions.lock.json at agent_tools.shared.version: the seed of shell sets "1.0.0", the seed of codex sets 1'
-conflict '.versions_lock.policy = { native_application_updates: false }' \
-  'the seeds conflict in versions.lock.json at policy.native_application_updates: the template sets true, the seed of codex sets false'
+conflict '.versions_lock.nix = { version: "0.0.1" }' \
+  'the seeds conflict in versions.lock.json at nix.version: the template sets'
 conflict '.skills_lock.layout = { canonical_user_directory: "~/.skills" }' \
   'the seeds conflict in agent/skills.lock.json at layout.canonical_user_directory: the template sets "~/.agents/skills", the seed of codex sets "~/.skills"'
-# Equal is equal in type too: false is not 0.
-conflict '.versions_lock.policy = { persistent_agentic_updates: 0 }' \
-  'the seeds conflict in versions.lock.json at policy.persistent_agentic_updates: the template sets false, the seed of codex sets 0'
+# Equal is equal in type too: a number is not its text.
+conflict ".versions_lock.nix = { installer_size: \"$(jq .nix.installer_size "$DS_REPO_ROOT/template/versions.lock.json")\" }" \
+  'the seeds conflict in versions.lock.json at nix.installer_size: the template sets'
 
 # --- invalid seeds ----------------------------------------------------------------------------
 
@@ -166,6 +166,9 @@ invalid_seed codex 'del(.versions_lock)' "invalid seed modules/components/codex/
 invalid_seed codex '.component = "herdr"' \
   "invalid seed modules/components/codex/seed.json: component 'herdr' does not match its directory codex"
 invalid_seed codex '.skills_lock = { nix_tools: "x" }' "invalid seed modules/components/codex/seed.json: skills_lock.nix_tools"
+# The policy is intent, workstation.toml [policy]: no lock carries it, and no seed brings it.
+invalid_seed codex '.versions_lock.policy = { native_application_updates: true }' \
+  "invalid seed modules/components/codex/seed.json: versions_lock.policy: the policy is workstation.toml [policy], not a lock value"
 invalid_seed herdr 'del(.versions_lock.flake_inputs)' \
   "invalid seed modules/components/herdr/seed.json: flake input herdr has no versions_lock.flake_inputs entry"
 invalid_seed herdr '.flake_inputs = { nixpkgs: .flake_inputs.herdr } | .versions_lock.flake_inputs = { nixpkgs: .versions_lock.flake_inputs.herdr }' \

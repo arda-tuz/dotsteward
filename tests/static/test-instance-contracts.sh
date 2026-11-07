@@ -239,23 +239,35 @@ printf 'schema_version = 1\nunknown_key = true\n' >hosts/nobody.toml
 fails hosts "hosts/nobody.toml:"
 rm -rf hosts
 
-# --- versions-lock -----------------------------------------------------------
+# --- policy and versions-lock ---------------------------------------------------
+# The policy is intent: workstation.toml [policy] holds it, and its defaults are the two fixed values.
 fresh
-jq '.policy.persistent_agentic_updates = true' versions.lock.json >lock.tmp && mv lock.tmp versions.lock.json
-fails versions-lock "versions.lock.json: policy.persistent_agentic_updates must be false"
+assert_exit 0 static --only policy --only versions-lock
+assert_not_contains "$DS_STDERR" "policy"
 fresh
-jq '.policy.native_application_updates = false' versions.lock.json >lock.tmp && mv lock.tmp versions.lock.json
-fails versions-lock "versions.lock.json: policy.native_application_updates must be true"
+printf '\n[policy]\npersistent_agentic_updates = true\n' >>workstation.toml
+fails policy "workstation.toml: policy.persistent_agentic_updates must be false"
 fresh
-jq 'del(.policy)' versions.lock.json >lock.tmp && mv lock.tmp versions.lock.json
-fails versions-lock "versions.lock.json: policy.persistent_agentic_updates must be false" \
-  "versions.lock.json: policy.native_application_updates must be true"
+printf '\n[policy]\nnative_application_updates = false\n' >>workstation.toml
+fails policy "workstation.toml: policy.native_application_updates must be true"
+fresh
+printf '\n[policy]\npersistent_agentic_updates = false\nnative_application_updates = true\n' >>workstation.toml
+assert_exit 0 static --only policy
+# The versions lock holds no policy any more. One that an older instance still carries is read
+# by nothing, whatever it says: static names it and stays green.
+fresh
+jq '.policy = {persistent_agentic_updates: true, native_application_updates: false}' versions.lock.json >lock.tmp &&
+  mv lock.tmp versions.lock.json
+assert_exit 0 static --only policy --only versions-lock
+assert_contains "$DS_STDERR" \
+  "[dotsteward] WARNING: static versions-lock: versions.lock.json: policy is read from workstation.toml [policy]; nothing reads it in the lock, remove it"
 fresh
 jq '.schema_version = "2.0"' versions.lock.json >lock.tmp && mv lock.tmp versions.lock.json
 fails versions-lock 'versions.lock.json: schema_version must be "1.0"'
 fresh
 jq '.policy = "none"' versions.lock.json >lock.tmp && mv lock.tmp versions.lock.json
-fails versions-lock "versions.lock.json: policy must be an object"
+assert_exit 0 static --only versions-lock
+assert_contains "$DS_STDERR" "versions.lock.json: policy is read from workstation.toml [policy]"
 assert_not_contains "$DS_STDERR" "failed unexpectedly"
 fresh
 printf '{ broken\n' >versions.lock.json
@@ -323,8 +335,8 @@ assert_exit 0 static --only overlays
 # --- every failure of a run is reported --------------------------------------
 fresh
 printf '# local change\n' >>.dotsteward/cli.sh
-jq '.policy.native_application_updates = false' versions.lock.json >lock.tmp && mv lock.tmp versions.lock.json
+printf '\n[policy]\nnative_application_updates = false\n' >>workstation.toml
 assert_exit 1 static
 assert_contains "$DS_STDERR" "static launcher:"
-assert_contains "$DS_STDERR" "static versions-lock:"
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: static checks failed (instance): launcher versions-lock"
+assert_contains "$DS_STDERR" "static policy:"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: static checks failed (instance): launcher policy"
