@@ -26,7 +26,7 @@ Every row comes from a declaration: the built-in rows from the lock files, the o
 | `skill-source` | vendored skills (`skills.<name>`) | GitHub compare filtered to the vendored files and the skill structure; `release_bound` skills compare against the latest release tag |
 | `local-apt` | local APT floors (with `--all`) | `apt-cache policy` on this machine |
 | `manual` | pins without an automatic source | the source named in the row |
-| `follows` | versions derived from another pin (with `--all`) | none; refresh with `./.dotsteward/cli.sh sync --nix` after the pin they follow moves |
+| `follows` | versions derived from another pin (with `--all`) | none; refresh with `./.dotsteward/cli.sh generate --nix` after the pin they follow moves |
 | `framework` | the dotsteward framework (`framework`) | the newest stable release of the framework upstream from `flake.lock`; `review` when newer (`framework-upgrade.md`) |
 
 A `holdback_reason` on a lock entry turns a newer upstream version into a `held` row that shows the reason. Upstream format changes produce an `error` row, never a silent pass.

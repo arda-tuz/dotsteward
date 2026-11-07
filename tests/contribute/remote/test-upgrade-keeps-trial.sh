@@ -48,7 +48,7 @@ assert_contains "$DS_STDERR" "[dotsteward] ERROR: upgrade: txn prepare failed; t
 assert_contains "$DS_STDOUT" "$keeps_trial"
 no_recovery
 assert_eq upgrade "$(field .step)" "step after a red prepare"
-stand_in_clear update
+stand_in_clear txn
 
 # The gate: the changes stay uncommitted, which would refuse a recovery.
 stand_in_fail gate '--scope maintain'
@@ -106,7 +106,7 @@ reset_calls
 assert_exit 1 run_contribute upgrade --main
 assert_contains "$DS_STDOUT" "or end the run with abort or report, which return the machine to the pinned framework"
 no_recovery
-stand_in_clear update
+stand_in_clear txn
 reset_calls
 assert_exit 0 run_contribute abort
 assert_eq "$(

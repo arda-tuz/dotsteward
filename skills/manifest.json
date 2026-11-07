@@ -5,19 +5,19 @@
       "name": "dotsteward-contribute",
       "directory": "dotsteward-contribute",
       "skill_sha256": "b243497881ed14e8d399b55a2371af9a572c2f78cf7d78cc2138d1eeaa9f5a21",
-      "directory_sha256": "40edabf6f493d1fd71da1c0ebfab7166a8fcfa0f278d03e2f7ab467b911a9835"
+      "directory_sha256": "5fe1ad62bfd5d716b5e819080f6b7aee2b64dcca20255786560766e75fdce33d"
     },
     {
       "name": "dotsteward-maintain",
       "directory": "dotsteward-maintain",
-      "skill_sha256": "a9a161d67d780be97e7ac813007fa5ccdb079201b3abe45fdb298ac256bf0789",
-      "directory_sha256": "41b30737a0a751737bedc7eea6a6daf0674d7e76097fd32f878d3f084c847f7c"
+      "skill_sha256": "5ca4b953ec2afb9647e828ee1bb80293217e858a8033659307e8731f8ed2d8a8",
+      "directory_sha256": "71f7706d67efa025092ed40018388665b19a0534938ea0f926aee5b9d9660fd2"
     },
     {
       "name": "dotsteward-update",
       "directory": "dotsteward-update",
-      "skill_sha256": "9a130aa5dbd207c0f8c8e599a77040392e257b7921054ae063adb874f4d53945",
-      "directory_sha256": "c3d48b3f4dab138be1cdc0190f568566c8b8a5b7aaf7f157ea8859f8ae127530"
+      "skill_sha256": "b496749f6d5934b6a7652f02bce54930e7530830b418399cd6761a6a5f4d6832",
+      "directory_sha256": "7704ae05fc4eae7111755c6693cac5171dcab07ec35297ed8550cd156624374b"
     }
   ]
 }

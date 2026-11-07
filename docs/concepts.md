@@ -89,7 +89,7 @@ probes, the installer and the rollback read it.
 
 Steps that run before anything is built, such as the very first bootstrap,
 read **mirrors** of the manifest committed in the instance under
-`.dotsteward/`. `dotsteward sync` regenerates them, and a Nix check fails
+`.dotsteward/`. `dotsteward generate` regenerates them, and a Nix check fails
 when a mirror is stale.
 
 ## Lock files and pins
@@ -108,9 +108,9 @@ values, and asks official sources for newer stable releases.
 
 ## The gate and transactions
 
-Every change to an instance is a **transaction**: `update prepare` records
+Every change to an instance is a **transaction**: `txn prepare` records
 a base, the change is made, the **gate** (`dotsteward gate`) proves the
-resulting tree, and `update publish` pushes a commit whose tree is exactly
+resulting tree, and `txn publish` pushes a commit whose tree is exactly
 the proven tree. The gate runs the static checks (including the privacy
 scan), the pins check, `nix flake check` and the CLI probes of a built
 generation; a passed tree is remembered, so an unchanged tree is not proven
@@ -118,7 +118,7 @@ twice. The gate also hands the generation it built to `rebuild`: for the
 same tree, profile, user, home and framework override, `rebuild` activates
 that generation instead of evaluating and building it again. When the
 transaction also activated its tree on the machine
-(`rebuild --switch`), `update publish` requires a passing `dotsteward e2e`
+(`rebuild --switch`), `txn publish` requires a passing `dotsteward e2e`
 of that tree, generation and profile, so a red E2E publishes nothing.
 
 A transaction has a **scope**: `update` (only pinned versions may change,

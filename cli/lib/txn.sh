@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Maintenance transaction helpers shared by `dotsteward gate`, `dotsteward
-# e2e`, `dotsteward rebuild` and `dotsteward update prepare|publish|status`
+# e2e`, `dotsteward rebuild` and `dotsteward txn prepare|publish|status`
 # (prepare records a base, the gate proves a tree, rebuild --switch
 # activates it and e2e verifies the machine, publish ships a commit whose
 # tree is the proven tree).
@@ -228,7 +228,7 @@ txn_resolve_base() {
   length=40
   [[ $format == sha256 ]] && length=64
   [[ $base =~ ^[0-9a-f]+$ && ${#base} -eq $length ]] ||
-    die "no valid base OID; run 'dotsteward update prepare' first or pass --expected-base"
+    die "no valid base OID; run 'dotsteward txn prepare' first or pass --expected-base"
   git -C "$root" cat-file -e "$base^{commit}" 2>/dev/null ||
     die "base OID is not a commit of this clone: $base"
   printf '%s\n' "$base"

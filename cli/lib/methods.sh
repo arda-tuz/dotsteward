@@ -123,7 +123,7 @@ methods_manifest_load() {
     [[ -f $file ]] || die "manifest not found: $file"
   else
     file=$DS_INSTANCE_ROOT/.dotsteward/manifest.$system.json
-    [[ -f $file ]] || die "manifest not found: $file (run 'dotsteward sync' to regenerate the mirrors)"
+    [[ -f $file ]] || die "manifest not found: $file (run 'dotsteward generate' to regenerate the mirrors)"
   fi
   json=$(jq -ce 'select(type == "object")' "$file" 2>/dev/null) || die "invalid manifest: $file"
   version=$(jq -r '.schema_version' <<<"$json")

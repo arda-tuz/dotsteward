@@ -3,7 +3,7 @@
 # shellcheck disable=SC2153 # DS_REPO_ROOT comes from tests/lib/harness.sh
 # C5: every `dotsteward <sub> [--flag]` in a fenced block of SKILL.md or a
 # reference exists: `dotsteward <sub> --help` succeeds and prints every flag
-# (and the step word of two-word commands such as `update prepare`).
+# (and the step word of two-word commands such as `txn prepare`).
 # shellcheck source=tests/skills/selftest/helpers.sh
 source "$DS_REPO_ROOT/tests/skills/selftest/helpers.sh"
 
@@ -18,8 +18,8 @@ st_expect_clean sc_check_cli "$skill"
 # Every command was asked for its help, the one-word commands and the steps;
 # --help of a command is asked only once.
 calls=$(<"$SC_FAKE_CLI_LOG")
-for expected in 'context --help' 'gate --help' 'e2e --help' 'rebuild --help' 'update --help' \
-  'update prepare --help' 'update status --help' 'update publish --help'; do
+for expected in 'context --help' 'gate --help' 'e2e --help' 'rebuild --help' 'txn --help' \
+  'txn prepare --help' 'txn status --help' 'txn publish --help'; do
   [[ $'\n'$calls$'\n' == *$'\n'"$expected"$'\n'* ]] || ds_fail "help not asked: [$expected] in [$calls]"
 done
 assert_eq 1 "$(grep -c -x 'gate --help' "$SC_FAKE_CLI_LOG")" "help is cached"
@@ -44,8 +44,8 @@ add_block 'dotsteward gate --scope maintain --no-such-flag'
 st_expect_finding 'C5 example-skill/references/commands.md:27: `dotsteward gate`: --no-such-flag is not in its --help' \
   sc_check_cli "$skill"
 reset_commands
-add_block 'dotsteward e2e --expected-remote-base "$(dotsteward update status --base-oid)"'
-st_expect_finding '`dotsteward update status`: --base-oid is not in its --help' sc_check_cli "$skill"
+add_block 'dotsteward e2e --expected-remote-base "$(dotsteward txn status --base-oid)"'
+st_expect_finding '`dotsteward txn status`: --base-oid is not in its --help' sc_check_cli "$skill"
 reset_commands
 
 # A flag known only to another command does not count, and `--flag=value`
@@ -55,14 +55,14 @@ st_expect_finding '`dotsteward rebuild`: --scope is not in its --help' sc_check_
 reset_commands
 
 # A step that the command does not list.
-add_block 'dotsteward update rollback --scope update'
-st_expect_finding '`dotsteward update rollback`: rollback is not in `dotsteward update --help`' sc_check_cli "$skill"
+add_block 'dotsteward txn rollback --scope update'
+st_expect_finding '`dotsteward txn rollback`: rollback is not in `dotsteward txn --help`' sc_check_cli "$skill"
 reset_commands
 
-# The flags of a step may come from the step's own --help (update prepare)
-# or the command's (update publish).
-add_block 'dotsteward update prepare --official-sources-only'
-add_block 'dotsteward update publish --expected-base "$base"'
+# The flags of a step may come from the step's own --help (txn prepare)
+# or the command's (txn publish).
+add_block 'dotsteward txn prepare --official-sources-only'
+add_block 'dotsteward txn publish --expected-base "$base"'
 st_expect_clean sc_check_cli "$skill"
 reset_commands
 

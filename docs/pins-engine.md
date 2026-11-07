@@ -36,7 +36,7 @@ dotsteward pins sync             # rewrite derived values
 dotsteward pins sync --skill NAME
 dotsteward pins latest --out report.json
 dotsteward pins apply            # move the pins to the rows of latest
-dotsteward sync                  # pins sync plus the .dotsteward/ mirrors
+dotsteward generate                  # pins sync plus the .dotsteward/ mirrors
 ```
 
 Exit codes: 0 consistent, 1 an inconsistency or a refusal, 2 a usage error

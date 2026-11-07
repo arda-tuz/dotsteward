@@ -29,8 +29,8 @@ done
 # retired, and no document names it).
 contains_all README.md \
   './bootstrap.sh --profile' './rebuild.sh --profile' '--switch' './rollback.sh' \
-  './.dotsteward/cli.sh update prepare' './.dotsteward/cli.sh gate' \
-  './.dotsteward/cli.sh update publish' './.dotsteward/cli.sh update status' \
+  './.dotsteward/cli.sh txn prepare' './.dotsteward/cli.sh gate' \
+  './.dotsteward/cli.sh txn publish' './.dotsteward/cli.sh txn status' \
   'workstation.toml' 'versions.lock.json' 'flake.nix' 'flake.lock' 'home.nix' 'home/AGENTS.md' \
   'components/' 'agent/skills.lock.json' 'agent/overlays/' 'local-maintained-files/' 'tests/' \
   '.dotsteward/' 'dotsteward-maintain' 'dotsteward-update' 'dotsteward-contribute'
@@ -41,9 +41,9 @@ contains_all AGENTS.md \
   '.dotsteward/' 'bootstrap.sh' 'git add -A' 'dotsteward gate'
 # The gate comes before every push, the first push of a new instance
 # included, in the order the dotsteward-init skill follows: gate, then
-# `git push -u origin main` for the first push, `dotsteward update publish`
+# `git push -u origin main` for the first push, `dotsteward txn publish`
 # afterwards.
-contains_all AGENTS.md 'first push' 'git push -u origin main' 'dotsteward update publish' 'never force-push'
+contains_all AGENTS.md 'first push' 'git push -u origin main' 'dotsteward txn publish' 'never force-push'
 first_push=$(tr '\n' ' ' <"$tpl/AGENTS.md" | tr -s ' ')
 [[ $first_push == *"before every push, the first push of a new instance included"* ]] ||
   ds_fail "AGENTS.md does not put the gate before the first push of a new instance"
@@ -51,7 +51,7 @@ first_push=$(tr '\n' ' ' <"$tpl/AGENTS.md" | tr -s ' ')
 # components/README.md: enabling the example and writing a component.
 contains_all components/README.md \
   'components/example/default.nix.disabled' 'components/example-term/default.nix' \
-  '[components.example-term]' 'agent_tools.example-term' 'dotsteward sync' 'docs/writing-components.md' \
+  '[components.example-term]' 'agent_tools.example-term' 'dotsteward generate' 'docs/writing-components.md' \
   'package.nix'
 
 # agent/overlays/README.md: the overlay of each framework skill, exactly the

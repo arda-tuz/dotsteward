@@ -19,7 +19,7 @@ Maintain one system: this machine is the observed input, the instance checkout i
 - **Stage before Nix** (`git add -A`): flakes ignore untracked files, and the gate refuses them.
 - **Bound the network** with `timeout 60` on every command you run by hand that reaches the network. If the binary cache (`gate.cache_url`) is unreachable, stop and report; never use mirrors or extra substituters.
 - **Read narrowly.** Read `references/framework-map.md`, then only what it lists for the affected components: their `maintenance.md` and `README.md` in the framework source, the instance files they touch, and the overlay. Use `git grep -n` for everything else.
-- **Protected and generated files.** The paths under `protected` in the context are byte-protected. Never hand-edit `flake.lock` (change inputs with `nix flake lock` or `nix flake update <input>`), the `.dotsteward/` mirrors, `bootstrap.sh` or `.dotsteward/cli.sh` (framework-owned bytes). Versions live in `versions.lock.json`; after changing pins run `dotsteward sync`.
+- **Protected and generated files.** The paths under `protected` in the context are byte-protected. Never hand-edit `flake.lock` (change inputs with `nix flake lock` or `nix flake update <input>`), the `.dotsteward/` mirrors, `bootstrap.sh` or `.dotsteward/cli.sh` (framework-owned bytes). Versions live in `versions.lock.json`; after changing pins run `dotsteward generate`.
 - **No secrets or machine state in Git:** credentials, tokens, sessions, caches, histories, databases, sockets, logs, machine identifiers and project indexes stay out.
 - **Settings files only through the buffer.** Application settings files that the application writes itself are never linked or replaced. Only the entries of the settings buffer (`settings.buffer_dir` of the context) are synchronized, by `dotsteward settings` (`references/local-maintained-files.md`). This skill is the only one that writes the buffer; decisions on conflicts and deletions are always the user's.
 - **Framework files are read-only.** Never edit installed framework files (the skill links, the store paths, the framework input); framework changes go through `dotsteward-contribute`.
@@ -42,7 +42,7 @@ Maintain one system: this machine is the observed input, the instance checkout i
    test "$(git remote get-url origin)" = "$(dotsteward context --json | jq -r .instance.remote)"
    git status --porcelain
    dotsteward preflight --read-only --json --profile "$(dotsteward context --json | jq -r .profiles.current)"
-   dotsteward update prepare --official-sources-only --scope maintain
+   dotsteward txn prepare --official-sources-only --scope maintain
    dotsteward settings status
    ```
 
@@ -73,7 +73,7 @@ When the user wants local settings written to the repository, or accepts pending
 Update every affected layer, following `references/integration-contract.md`:
 
 1. the installation: `[components.<name>]` in `workstation.toml` for a catalog component (`enable`, `method` or `method_by_platform`, `profiles`, `options`), `components/<name>/default.nix` (and `package.nix` for an instance package) for a private one, `home.nix` for plain Home Manager configuration;
-2. the pins in `versions.lock.json` at the lock paths the component's rules read (and `flake.nix` plus `nix flake lock` for a new flake input), then `dotsteward sync`, which regenerates the `.dotsteward/` mirrors and the derived lock values;
+2. the pins in `versions.lock.json` at the lock paths the component's rules read (and `flake.nix` plus `nix flake lock` for a new flake input), then `dotsteward generate`, which regenerates the `.dotsteward/` mirrors and the derived lock values;
 3. an idempotent installer: the framework methods (`nix`, `official-binary`, `pypi`, `deb`, `app-archive`, `external`) already are; a component hook script must be safe to rerun and honour `DOTSTEWARD_CHECK_ONLY=1`, and `dotsteward install --profile <profile> --check-only` must pass;
 4. a static assertion (an instance script in `[gate] static`, or a component check) and a real smoke or E2E check (`checks.commands`, `checks.e2e`, `probes`);
 5. backup, adoption and rollback coverage when a user file is replaced (`bootstrap.backupPaths`, `rebuild.adoptPaths`, `rollback.managedLinks`, `rollback.forceLinkedRestore`);
@@ -106,17 +106,17 @@ The order is fixed, because the rebuild and the E2E checks need a clean committe
 profile=$(dotsteward context --json | jq -r .profiles.current)
 git commit -m "<type>: <summary>"
 dotsteward rebuild --profile "$profile" --switch
-dotsteward e2e --profile "$profile" --expected-remote-base "$(dotsteward update status --json | jq -r .candidate.base_oid)"
-dotsteward update publish --scope maintain
+dotsteward e2e --profile "$profile" --expected-remote-base "$(dotsteward txn status --json | jq -r .candidate.base_oid)"
+dotsteward txn publish --scope maintain
 ```
 
 - Use a conventional commit subject (`feat`, `fix`, `perf`, `refactor`, `docs`, `chore`, `test`, `build`, `ci`, `style`, `revert`; the list is `commit.conventional_types` of the context); the publish step rejects any other subject.
 - Run the rebuild only when local activation is requested or clearly expected, and publish only when the user wants the remote updated.
-- If E2E fails, fix it, add a new commit (no amend), run the gate again, then the rebuild with `--switch` (E2E verifies the activated generation, not the commit), then E2E again. A failed check means no push: `update publish` refuses a tree that is active on this machine until E2E passed for it. When the cause lies in the framework (a catalog component, an engine, a hook), the fix goes through `dotsteward-contribute`, whose `upgrade` requires the instance `HEAD` to equal `origin/<branch>`: save the diff of the unpublished commit, reset the branch to `origin/<branch>`, and after the upgrade apply the diff again as a new transaction (prepare, sync, gate, commit, rebuild, E2E, publish).
+- If E2E fails, fix it, add a new commit (no amend), run the gate again, then the rebuild with `--switch` (E2E verifies the activated generation, not the commit), then E2E again. A failed check means no push: `txn publish` refuses a tree that is active on this machine until E2E passed for it. When the cause lies in the framework (a catalog component, an engine, a hook), the fix goes through `dotsteward-contribute`, whose `upgrade` requires the instance `HEAD` to equal `origin/<branch>`: save the diff of the unpublished commit, reset the branch to `origin/<branch>`, and after the upgrade apply the diff again as a new transaction (prepare, sync, gate, commit, rebuild, E2E, publish).
 - If the rebuild warns that the login shell is still on a versioned Nix path, ask the user to run the same rebuild once in a terminal; moving the login shell needs `sudo`.
 - **Adopt-mode profiles do not install system-level components.** The rebuild of a profile in `adopt` mode never installs a component whose method is system-level (`deb` on Linux, `app-archive` on macOS). When the transaction adds one, ask the user to run `dotsteward --instance <instance.path> install --profile "$profile" --component <name>` (repeatable; fill in `instance.path` of the context, since their terminal need not be in the instance checkout) after the commit and before the rebuild; it needs `sudo`, so the user runs it in their own terminal. Without it the rebuild stops at the command probe with `required command not found: <command>`. The same command brings in a raised floor of an installed component, which the rebuild does not enforce; `dotsteward --instance <instance.path> install --profile "$profile" --component <name> --check-only` confirms the result.
 - The publish step checks the validated tree, the remote base and the commit subjects, pushes without force and verifies the remote OID.
 
 ## 6. Report
 
-Report what became reproducible, the locked versions, the local activation status, the gate step durations (`validation.step_seconds` of `dotsteward update status --json`), the tests run, the commit and remote OIDs, the exclusions made for secrets or machine state, and any unresolved upstream risk. Write the report in the language the overlay asks for, else in the user's language.
+Report what became reproducible, the locked versions, the local activation status, the gate step durations (`validation.step_seconds` of `dotsteward txn status --json`), the tests run, the commit and remote OIDs, the exclusions made for secrets or machine state, and any unresolved upstream risk. Write the report in the language the overlay asks for, else in the user's language.

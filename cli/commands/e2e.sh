@@ -50,7 +50,7 @@
 # never for a run a signal ended), tree_oid and head_oid (null outside a
 # git work tree), generation (null without one), profile,
 # framework_override, repo_checks (false with --skip-repo-checks), findings
-# (their number), root, recorded_at. `dotsteward update publish` requires
+# (their number), root, recorded_at. `dotsteward txn publish` requires
 # a passed record of an activated tree.
 # Hooks run for the components active in the profile, in [components]
 # order, then declaration order, when their profiles include the profile,

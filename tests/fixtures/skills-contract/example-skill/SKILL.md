@@ -21,7 +21,7 @@ On the gate, publish preconditions, decision ownership, secrets, force push and 
 4. Prepare the transaction:
 
    ```bash
-   dotsteward update prepare --official-sources-only --scope maintain
+   dotsteward txn prepare --official-sources-only --scope maintain
    ```
 
 ## Validate and publish
@@ -33,8 +33,8 @@ Use a conventional commit subject (`feat`, `fix`, `perf`, `refactor`, `docs`, `c
 git add -A
 dotsteward gate --scope maintain
 git commit -m "feat: add the example component"
-dotsteward e2e --expected-remote-base "$(dotsteward update status --json | jq -r .candidate.base_oid)"
-./.dotsteward/cli.sh update publish --scope maintain
+dotsteward e2e --expected-remote-base "$(dotsteward txn status --json | jq -r .candidate.base_oid)"
+./.dotsteward/cli.sh txn publish --scope maintain
 ```
 
 The command map is in `references/commands.md`; the framework upgrade step is in

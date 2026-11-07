@@ -109,7 +109,7 @@ sed -i 's/chore: refresh pins/chore: refresh/' "$inst/workstation.toml"
 assert_exit 0 doctor_json
 assert_eq warn "$(status mirrors)"
 assert_contains "$(message mirrors)" "manifest.$system.json"
-assert_contains "$(message mirrors)" "dotsteward sync"
+assert_contains "$(message mirrors)" "dotsteward generate"
 cp "$context_fixtures/instance/workstation.toml" "$inst/workstation.toml"
 assert_exit 0 doctor_json
 assert_eq ok "$(status mirrors)"

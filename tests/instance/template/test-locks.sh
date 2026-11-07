@@ -34,7 +34,7 @@ assert_json "$versions" '.policy == {
   major_version_review_required: true
 }' "policy"
 # Only core's pinned package before init: tomlkit, from the locked nixpkgs
-# (`dotsteward sync --nix` writes its resolved version).
+# (`dotsteward generate --nix` writes its resolved version).
 assert_json "$versions" '.nix_packages | keys == ["tomlkit"]' "only core's package before init"
 assert_json "$versions" '.nix_packages.tomlkit.expected == "locked nixpkgs package"' "tomlkit follows nixpkgs"
 assert_json "$versions" '.nix_packages.tomlkit.resolved | test("^[0-9]+([.][0-9]+)+$")' "tomlkit resolved version"

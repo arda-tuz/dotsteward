@@ -80,18 +80,18 @@ the maintain skill writes the buffer ([settings-buffer.md](settings-buffer.md)).
 
 ## A refresh, step by step
 
-1. `dotsteward update prepare --official-sources-only --scope update`
+1. `dotsteward txn prepare --official-sources-only --scope update`
    records the base in a clean clone; it warns when the binary cache does
    not answer or the Nix store is short of space.
 2. `dotsteward pins latest --out report.json` researches every pin; rows
    with `update` or `review` are the candidates.
 3. The chosen versions go into `versions.lock.json` and `flake.nix`, with
-   hashes computed from the official artifacts; `dotsteward sync --nix`
+   hashes computed from the official artifacts; `dotsteward generate --nix`
    refreshes the derived values and mirrors.
 4. `dotsteward gate --scope update` proves the tree once: static checks,
    privacy scan, `pins check`, `nix flake check` and the CLI probes.
 5. One commit with the update subject, then
-   `dotsteward update publish --scope update` pushes it without force,
+   `dotsteward txn publish --scope update` pushes it without force,
    only when the remote branch is still at the base and the committed
    tree is the proven tree.
 
@@ -106,7 +106,7 @@ The framework is an exact pin like any other, with the `framework` row of
 and the newest tag is read first. Then the tag in `flake.nix` moves,
 `nix flake update dotsteward` locks it, `bootstrap.sh` and
 `.dotsteward/cli.sh` are refreshed from the new release's `template/`,
-`dotsteward sync` runs, and the same single gate decides. A red gate leaves
+`dotsteward generate` runs, and the same single gate decides. A red gate leaves
 the instance on the old release. Framework skills move only with this step:
 they are never entries of the skills lock. An instance that follows a
 commit of the framework's `main` (`dotsteward contribute upgrade --main`)

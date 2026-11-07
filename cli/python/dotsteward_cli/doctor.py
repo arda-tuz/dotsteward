@@ -226,7 +226,7 @@ def check_mirrors(instance: config.Instance) -> dict[str, Any]:
         return _check(
             "mirrors",
             "warn",
-            "; ".join(problems) + "; run `dotsteward sync`",
+            "; ".join(problems) + "; run `dotsteward generate`",
             problems=problems,
         )
     return _check(

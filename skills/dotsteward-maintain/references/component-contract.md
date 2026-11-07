@@ -97,4 +97,4 @@ A synthetic command `example-term` installed from its official release on Linux 
 }
 ```
 
-Then enable it with `[components.example-term] enable = true` (and `profiles` when it belongs to some profiles only), add `agent_tools.example-term` to `versions.lock.json` with the official URL, size and SHA-256, run `dotsteward sync`, stage everything and run the gate.
+Then enable it with `[components.example-term] enable = true` (and `profiles` when it belongs to some profiles only), add `agent_tools.example-term` to `versions.lock.json` with the official URL, size and SHA-256, run `dotsteward generate`, stage everything and run the gate.

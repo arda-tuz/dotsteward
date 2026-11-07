@@ -84,7 +84,7 @@ The launcher now runs the new release's CLI (the key of its cache is the hash of
 
 ```bash
 git add -A
-./.dotsteward/cli.sh sync
+./.dotsteward/cli.sh generate
 ./.dotsteward/cli.sh pins latest --out "$work/latest.json"
 ```
 
@@ -109,7 +109,7 @@ git add -A
 nix flake update dotsteward
 git checkout HEAD -- bootstrap.sh .dotsteward/cli.sh
 git add -A
-./.dotsteward/cli.sh sync --nix
+./.dotsteward/cli.sh generate --nix
 ./.dotsteward/cli.sh gate
 ```
 

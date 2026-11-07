@@ -6,7 +6,7 @@
 # every check passed), tree_oid, head_oid, generation (null without one),
 # profile, framework_override, repo_checks (false with
 # --skip-repo-checks), findings (their number), root and recorded_at.
-# `dotsteward update publish` reads it; --list records nothing.
+# `dotsteward txn publish` reads it; --list records nothing.
 # shellcheck source=tests/cli/e2e/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/e2e/helpers.sh"
 

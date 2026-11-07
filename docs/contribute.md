@@ -191,11 +191,11 @@ Fixes and Other.
 ## Upgrade
 
 `dotsteward contribute upgrade --tag TAG` runs in your instance:
-`update prepare --scope maintain`, the `dotsteward` input of `flake.nix`
+`txn prepare --scope maintain`, the `dotsteward` input of `flake.nix`
 moved to the tag, `nix flake update dotsteward`, the launcher and
-`bootstrap.sh` refreshed from the release's `template/`, `sync`, the gate,
+`bootstrap.sh` refreshed from the release's `template/`, `generate`, the gate,
 a commit with `commit.upgrade_subject`, `rebuild --switch`, `e2e` and
-`update publish --scope maintain`. It is safe to run again; it resumes at
+`txn publish --scope maintain`. It is safe to run again; it resumes at
 the instance commit.
 
 `--main` moves the instance to the merged commit instead, the one the

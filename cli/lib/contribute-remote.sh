@@ -24,7 +24,7 @@
 #                            main's CI for the merged commit of run ID as one
 #                            JSON object (for `contribute status`)
 #
-# The instance commands (gate, rebuild, e2e, update, sync) run with
+# The instance commands (gate, rebuild, e2e, txn, generate) run with
 # DOTSTEWARD_FRAMEWORK_OVERRIDE removed from their environment, so a
 # framework override is exactly the --framework-override flag the trial
 # passes and never leaks into the recovery or the upgrade. They run
@@ -46,7 +46,7 @@
 #   upgrade_to       the release tag, or main: the upgrade follows the
 #                    merged commit on main (upgrade --main)
 #   instance_base    the instance commit the upgrade started from (the
-#                    remote branch at `update prepare`)
+#                    remote branch at `txn prepare`)
 #   upgrade_commit   the framework upgrade commit of the instance
 #   carry            the instance commits carried across the upgrade
 #                    (upgrade --carry): head (the saved HEAD, also kept as
@@ -1540,8 +1540,8 @@ _contribute_refresh_template() {
 
 # --- upgrade: carried instance commits ----------------------------------------------
 
-# The generated mirrors of the instance (`dotsteward sync` writes them; keep
-# identical to mirror_name_pattern of cli/commands/sync.sh).
+# The generated mirrors of the instance (`dotsteward generate` writes them; keep
+# identical to mirror_name_pattern of cli/commands/generate.sh).
 CONTRIBUTE_MIRROR_PATH='^\.dotsteward/(manifest\.[A-Za-z0-9_-]+\.json|stage0\.[a-z]+\.env)$'
 
 # _contribute_carry_ref: the ref that keeps the carried instance commits of
@@ -1613,7 +1613,7 @@ _contribute_carry_conflicts() {
 # _contribute_carry_apply UPGRADE_COMMIT: the carried commits applied again
 # on top of the upgrade commit (git cherry-pick, TZ=UTC; their messages and
 # authors kept). A conflict in the generated mirrors only is resolved with
-# the upgrade's mirrors, which sync regenerates next (a commit left empty by
+# the upgrade's mirrors, which generate regenerates next (a commit left empty by
 # that is dropped); any other conflict stops the upgrade with the
 # cherry-pick in progress, to be resolved by hand and continued with `git
 # cherry-pick --continue` before the upgrade runs again. A HEAD above the
@@ -1650,7 +1650,7 @@ _contribute_carry_apply() {
           if ((${#real[@]})) || { [[ -z $paths ]] && ! git -C "$DS_INSTANCE_ROOT" diff --cached --quiet; }; then
             die "carrying the instance commit $(git -C "$DS_INSTANCE_ROOT" rev-parse --short=12 CHERRY_PICK_HEAD) conflicts with the upgrade in ${real[*]:-the instance}: resolve it in $DS_INSTANCE_ROOT, git add the files and run 'git cherry-pick --continue' (repeat until it is done; 'git cherry-pick --abort' starts the carry over), then run: $(_contribute_upgrade_command)"
           fi
-          # Only generated mirrors conflict: the upgrade's stay, sync
+          # Only generated mirrors conflict: the upgrade's stay, generate
           # regenerates them from the carried changes next.
           while IFS= read -r path; do
             [[ -n $path ]] || continue
@@ -1673,12 +1673,12 @@ _contribute_carry_apply() {
   _contribute_set '.carry.applied = true'
 }
 
-# _contribute_carry_finish: after the carried commits: sync (their mirrors
+# _contribute_carry_finish: after the carried commits: generate (their mirrors
 # from the upgraded framework, folded into the last carried commit when
 # they changed) and the gate of the whole tree, which publish needs.
 _contribute_carry_finish() {
-  _contribute_pinned sync ||
-    _contribute_red "upgrade: dotsteward sync failed on the carried commits; fix them, then run: $(_contribute_upgrade_command)"
+  _contribute_pinned generate ||
+    _contribute_red "upgrade: dotsteward generate failed on the carried commits; fix them, then run: $(_contribute_upgrade_command)"
   git -C "$DS_INSTANCE_ROOT" add -A
   if ! git -C "$DS_INSTANCE_ROOT" diff --cached --quiet; then
     (cd -- "$DS_INSTANCE_ROOT" && TZ=UTC git commit --quiet --amend --no-edit) </dev/null ||
@@ -1798,10 +1798,10 @@ contribute_cmd_upgrade() {
       [[ $head == "$base" ]] ||
         die "the instance moved since the upgrade started (HEAD ${head:0:12}, started at ${base:0:12}); restore it or start the upgrade over"
     fi
-    if ! _contribute_instance update prepare --official-sources-only --scope maintain; then
+    if ! _contribute_instance txn prepare --official-sources-only --scope maintain; then
       [[ -z $(_contribute_get carry) ]] ||
-        _contribute_red "upgrade: update prepare failed; the instance is at origin/$DS_INSTANCE_BRANCH, and the carried commits stay saved as $(_contribute_carry_ref)"
-      _contribute_red "upgrade: update prepare failed; the instance is unchanged"
+        _contribute_red "upgrade: txn prepare failed; the instance is at origin/$DS_INSTANCE_BRANCH, and the carried commits stay saved as $(_contribute_carry_ref)"
+      _contribute_red "upgrade: txn prepare failed; the instance is unchanged"
     fi
     if [[ -z $base ]]; then
       base=$(git -C "$DS_INSTANCE_ROOT" rev-parse HEAD)
@@ -1814,8 +1814,8 @@ contribute_cmd_upgrade() {
       _contribute_red "upgrade: nix flake update dotsteward failed; the changes stay uncommitted, run upgrade again"
     _contribute_verify_lock "$kind" "$(if [[ $kind == tag ]]; then printf '%s' "$tag"; else printf '%s' "$merged"; fi)" "$commit" "$label"
     _contribute_refresh_template "$rev" "$label"
-    _contribute_pinned sync ||
-      _contribute_red "upgrade: dotsteward sync failed; the changes stay uncommitted, run upgrade again"
+    _contribute_pinned generate ||
+      _contribute_red "upgrade: dotsteward generate failed; the changes stay uncommitted, run upgrade again"
     git -C "$DS_INSTANCE_ROOT" add -A
     _contribute_pinned gate --scope maintain ||
       _contribute_red "upgrade: the gate failed on the upgraded instance; the changes stay uncommitted (staged), nothing is published"
@@ -1851,7 +1851,7 @@ contribute_cmd_upgrade() {
       _contribute_red "upgrade: rebuild --switch failed; run upgrade again once it is fixed"
     # The upgraded generation replaces whatever a failed recovery left.
     _contribute_set '.trial_switched = false | if .recovery == "failed" then .recovery = null else . end'
-    # origin is the instance commit when an earlier `update publish` pushed it
+    # origin is the instance commit when an earlier `txn publish` pushed it
     # and its answer was lost: e2e then checks the instance against origin as
     # it is, not against the base that origin has left.
     local remote_now=""
@@ -1872,8 +1872,8 @@ contribute_cmd_upgrade() {
   if [[ $instance_commit == "$base" ]]; then
     log "nothing to publish: the instance's published commit ${base:0:12} already uses $label"
   else
-    _contribute_pinned update publish --scope maintain --expected-base "$base" ||
-      _contribute_red "upgrade: update publish failed; run upgrade again once it is fixed"
+    _contribute_pinned txn publish --scope maintain --expected-base "$base" ||
+      _contribute_red "upgrade: txn publish failed; run upgrade again once it is fixed"
   fi
   if [[ -n $(_contribute_get carry) ]]; then
     git -C "$DS_INSTANCE_ROOT" update-ref -d "$(_contribute_carry_ref)" 2>/dev/null || true

@@ -55,7 +55,7 @@ in_order "$skill" \
   "git remote get-url origin" \
   "git status --porcelain" \
   "dotsteward preflight --read-only --json --profile" \
-  "dotsteward update prepare --official-sources-only --scope maintain" \
+  "dotsteward txn prepare --official-sources-only --scope maintain" \
   "dotsteward settings status"
 assert_contains "$(grep -F 'dotsteward preflight --read-only' "$skill")" ".profiles.current" \
   "preflight uses the current profile of the context"
@@ -65,7 +65,7 @@ assert_contains "$(<"$skill")" "../dotsteward-update/references/" "plan links th
 assert_contains "$(fenced "$skill")" "dotsteward pins latest" "plan researches candidates with pins latest"
 
 # Implement: pins then sync; a new instance skill gets its lock digests.
-in_order "$skill" "versions.lock.json" "dotsteward sync"
+in_order "$skill" "versions.lock.json" "dotsteward generate"
 assert_contains "$(fenced "$skill")" "dotsteward pins sync --skill" "new instance skill refreshes its digests"
 assert_contains "$(<"$skill")" "--check-only" "installers keep a --check-only validation"
 assert_contains "$(<"$skill")" "gate.updatePaths" "the update allowlist comes from gate.updatePaths"
@@ -83,11 +83,11 @@ in_order "$skill" \
   "git commit" \
   "dotsteward rebuild --profile" \
   "dotsteward e2e --profile" \
-  "dotsteward update publish --scope maintain"
+  "dotsteward txn publish --scope maintain"
 assert_contains "$(fenced "$skill" | grep -F 'dotsteward rebuild')" "--switch" "rebuild switches"
 # shellcheck disable=SC2016 # the literal command text
 assert_contains "$(fenced "$skill" | grep -F 'dotsteward e2e')" \
-  '--expected-remote-base "$(dotsteward update status --json | jq -r .candidate.base_oid)"' \
+  '--expected-remote-base "$(dotsteward txn status --json | jq -r .candidate.base_oid)"' \
   "e2e takes the prepared base"
 
 # A red E2E: a new commit, the gate, the rebuild that activates it, then E2E
@@ -118,7 +118,7 @@ in_order "$settings_ref" \
   "dotsteward settings resolve" \
   "dotsteward settings flush" \
   "dotsteward gate --scope maintain" \
-  "dotsteward update publish --scope maintain" \
+  "dotsteward txn publish --scope maintain" \
   "dotsteward settings reconcile"
 for word in track track-file untrack validate; do
   grep -q "dotsteward settings $word" "$settings_ref" ||

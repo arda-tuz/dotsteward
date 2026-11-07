@@ -7,7 +7,7 @@
 # check of the template instance itself is built.
 #
 # The template instance is what `nix flake init -t` leaves after
-# `nix flake lock` and `dotsteward sync`: template/ with the flake.lock of
+# `nix flake lock` and `dotsteward generate`: template/ with the flake.lock of
 # its inputs (tests/instance/template/instance-lock.nix) and the .dotsteward/
 # mirrors rendered from the evaluated instance. Its checks are the
 # generations of both profiles, the current mirrors, the consistent

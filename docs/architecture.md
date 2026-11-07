@@ -58,7 +58,7 @@ The `dotsteward` CLI is a Nix package built with the instance's nixpkgs. Instanc
 | `rebuild` | build and activate the committed tree, apply settings, install agent skills, verify the login shell |
 | `rollback` | return to the previous generation and restore backups |
 | `gate` | the single validation gate (static checks, privacy scan, pin consistency, `nix flake check`, CLI probes) with a memo keyed by the tree |
-| `update prepare\|publish\|status` | transaction base and non-forced publishing |
+| `txn prepare\|publish\|status` | transaction base and non-forced publishing |
 | `e2e` | end-to-end checks of the live machine |
 | `pins check\|sync\|latest` | pin consistency and official upstream candidates |
 | `settings <command>` | the local settings buffer |

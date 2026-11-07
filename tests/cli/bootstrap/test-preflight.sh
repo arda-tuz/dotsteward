@@ -131,7 +131,7 @@ assert_contains "$DS_STDERR" "unsafe HOME"
 # The mirror must exist and describe this platform.
 mv "$bs_inst/.dotsteward/stage0.linux.env" "$DS_TEST_ROOT/stage0.linux.env"
 assert_exit 1 run_preflight --read-only
-assert_eq "[dotsteward] ERROR: .dotsteward/stage0.linux.env not found in $bs_inst (run 'dotsteward sync' and commit it)" \
+assert_eq "[dotsteward] ERROR: .dotsteward/stage0.linux.env not found in $bs_inst (run 'dotsteward generate' and commit it)" \
   "$DS_STDERR"
 mv "$DS_TEST_ROOT/stage0.linux.env" "$bs_inst/.dotsteward/stage0.linux.env"
 stage0_env_set linux 'DS_STAGE0_SCHEMA_VERSION=2'

@@ -10,7 +10,7 @@
 # macOS /bin/bash (3.2) and BSD tools as well as on Ubuntu, without jq,
 # python or GNU-only options. Its inputs are the instance's stage-0 mirror
 # .dotsteward/stage0.<platform>.env (DS_STAGE0_* variables, rendered from
-# workstation.toml, the components and the lock by `dotsteward sync`) and,
+# workstation.toml, the components and the lock by `dotsteward generate`) and,
 # for --install-nix-only without a mirror, the versions.lock.json beside
 # the script.
 #

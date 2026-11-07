@@ -27,7 +27,7 @@
 #   C7  the overlay precedence sentence (SC_PRECEDENCE_SENTENCE, whitespace
 #       and emphasis free); the classification step: `dotsteward context
 #       --json`, then an overlay mention, then references/classification.md,
-#       all before the flow's first write (`update prepare`, `contribute
+#       all before the flow's first write (`txn prepare`, `contribute
 #       setup` or `contribute start`); references/classification.md equal to
 #       tests/fixtures/skills-contract/classification.md; the hand-over skill
 #       named in SKILL.md
@@ -635,10 +635,10 @@ sc_check_classification() {
     sc_finding C7 "$name/SKILL.md" "no classification step (references/classification.md) after the overlay step"
     return 0
   fi
-  write=$(_sc_first_line "$skill" 0 '(dotsteward|cli\.sh) +(update +prepare|contribute +(setup|start))')
+  write=$(_sc_first_line "$skill" 0 '(dotsteward|cli\.sh) +(txn +prepare|contribute +(setup|start))')
   if [[ -n $write ]] && ((write < classification)); then
     sc_finding C7 "$name/SKILL.md:$write" \
-      "the first write (\`$(sed -n "${write}p" "$skill" | grep -oE '(update +prepare|contribute +(setup|start))' | head -n 1 | sed 's/^/dotsteward /')\`) comes before the classification step (references/classification.md)"
+      "the first write (\`$(sed -n "${write}p" "$skill" | grep -oE '(txn +prepare|contribute +(setup|start))' | head -n 1 | sed 's/^/dotsteward /')\`) comes before the classification step (references/classification.md)"
   fi
 }
 

@@ -41,7 +41,7 @@ assert_eq "$published" "$(jq -r .base_oid "$gate_validation")"
 : >"$DS_CALL_LOG"
 for bad in abc "${published:0:39}" "${published}0" "${published^^}" HEAD; do
   assert_exit 1 run_gate --scope maintain --force --expected-base "$bad"
-  assert_eq "[dotsteward] ERROR: no valid base OID; run 'dotsteward update prepare' first or pass --expected-base" "$DS_STDERR"
+  assert_eq "[dotsteward] ERROR: no valid base OID; run 'dotsteward txn prepare' first or pass --expected-base" "$DS_STDERR"
 done
 # A well-formed object id that names no commit of this clone.
 missing=0123456789abcdef0123456789abcdef01234567

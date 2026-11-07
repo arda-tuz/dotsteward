@@ -46,7 +46,7 @@ released_run second-feature 0.1.2
 base=$(git -C "$ct_inst" rev-parse HEAD)
 stand_in_fail txn 'publish*'
 assert_exit 1 run_contribute upgrade --tag v0.1.2
-stand_in_clear update
+stand_in_clear txn
 elsewhere=$DS_TEST_ROOT/elsewhere-instance
 git clone -q "$rt_inst_bare" "$elsewhere"
 git -C "$elsewhere" commit -q --allow-empty -m 'chore: a change of another machine'

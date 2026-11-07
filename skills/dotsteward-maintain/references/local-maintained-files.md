@@ -84,7 +84,7 @@ Run every command from the instance checkout after the Start section of `SKILL.m
    ```
 
 4. `git add -A`, then the gate (`dotsteward gate --scope maintain`), then a commit with `commit.settings_subject` of the context (or include the change in the transaction's own commit).
-5. Rebuild, E2E and `dotsteward update publish --scope maintain` as in `SKILL.md`, then advance this machine's base:
+5. Rebuild, E2E and `dotsteward txn publish --scope maintain` as in `SKILL.md`, then advance this machine's base:
 
    ```bash
    dotsteward settings reconcile

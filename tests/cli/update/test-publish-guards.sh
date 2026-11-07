@@ -63,7 +63,7 @@ assert_exit 0 run_update prepare --official-sources-only --scope maintain
 # An invalid base, from the option or from candidate.json.
 change_and_commit "docs: second change"
 write_validation
-refused "no valid base OID; run 'dotsteward update prepare' first or pass --expected-base" \
+refused "no valid base OID; run 'dotsteward txn prepare' first or pass --expected-base" \
   --scope maintain --expected-base "${base:0:12}"
 missing=0123456789abcdef0123456789abcdef01234567
 refused "base OID is not a commit of this clone: $missing" --scope maintain --expected-base "$missing"

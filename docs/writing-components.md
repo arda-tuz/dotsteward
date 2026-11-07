@@ -84,7 +84,7 @@ A component module receives the usual Home Manager arguments (`config`,
 
    ```sh
    git add -A
-   dotsteward sync
+   dotsteward generate
    dotsteward pins check
    dotsteward static
    dotsteward gate --scope maintain

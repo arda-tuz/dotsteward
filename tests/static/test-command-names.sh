@@ -9,6 +9,6 @@ cd "$DS_REPO_ROOT" || ds_fail "no repository"
 mapfile -t found < <(
   grep -rnE '(dotsteward|cli\.sh) (update|sync)\b|`(update (prepare|publish|status)|sync)\b' \
     README.md skills docs template cli nix modules 2>/dev/null |
-    grep -vE '^(docs/cli\.md|cli/commands/(update|sync)\.sh):' || true
+    grep -vE '^(docs/cli\.md|cli/commands/(update|sync)\.sh):|the old name of' || true
 )
 ((${#found[@]} == 0)) || ds_fail "old command names: $(printf '%s\n' "${found[@]}" | cut -c1-120)"

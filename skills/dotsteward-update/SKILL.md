@@ -3,7 +3,7 @@ name: dotsteward-update
 description: Refresh every pinned version, revision, hash, lockfile, vendored skill and installer baseline of the user's dotsteward instance repository, the dotsteward framework release included, to the newest mutually compatible stable releases, validate once and publish to the instance branch. Use only when the user explicitly asks to update or refresh the instance or its dotfiles, move managed tools to the latest stable releases, upgrade the dotsteward framework, audit stale pins, or run periodic maintenance. Do not use it to add, remove or reconfigure components or to write locally changed application settings to the repository (use dotsteward-maintain for both), to change the framework itself (use dotsteward-contribute), or for changes meant only for this machine.
 ---
 
-# dotsteward update
+# dotsteward txn
 
 Refresh the new-machine baseline of the instance on explicit request only. Work in a temporary clone, take candidates only from official upstream sources, validate the combined result once, and publish directly to the instance branch without force. Never create a timer, background watcher or persistent agent, and never activate the result on this machine.
 
@@ -24,8 +24,8 @@ On the gate, publish preconditions, decision ownership, secrets, force push and 
 ## Rules that keep the run fast and predictable
 
 - **One gate.** `./.dotsteward/cli.sh gate` in the clone is the only validation command. In the update scope it runs preflight, the static contracts (privacy scan included), the pins check with Nix, one `nix flake check` and the CLI probes of the check profile, and it refuses any changed path outside the update allowlist. Never run `nix flake check`, the static checks, the pins check or profile builds separately. The gate answers at once from its memo when the tree has not changed, so there is no reason to "double-check".
-- **Run the gate once per final tree, as one long command.** A cold gate after a nixpkgs move can take 20 minutes or more. In Claude Code start it with `run_in_background` and wait for the completion notification; in Codex give it a timeout of at least 45 minutes. Do not poll with `sleep`, `ps` or `tail`. On failure read the printed tail (the full log is `paths.log` of `./.dotsteward/cli.sh update status --json`), fix, `git add -A`, run it again.
-- **The clone's launcher runs every command in the clone.** `./.dotsteward/cli.sh` runs the CLI that the clone's `flake.lock` pins, so after a framework upgrade the sync and the gate already use the new release. `dotsteward` on `PATH` belongs to the active generation; use it only for `context` before the clone exists.
+- **Run the gate once per final tree, as one long command.** A cold gate after a nixpkgs move can take 20 minutes or more. In Claude Code start it with `run_in_background` and wait for the completion notification; in Codex give it a timeout of at least 45 minutes. Do not poll with `sleep`, `ps` or `tail`. On failure read the printed tail (the full log is `paths.log` of `./.dotsteward/cli.sh txn status --json`), fix, `git add -A`, run it again.
+- **The clone's launcher runs every command in the clone.** `./.dotsteward/cli.sh` runs the CLI that the clone's `flake.lock` pins, so after a framework upgrade `generate` and the gate already use the new release. `dotsteward` on `PATH` belongs to the active generation; use it only for `context` before the clone exists.
 - **Stage before Nix.** Run `git add -A` before any Nix command; flakes ignore untracked files and the gate refuses them.
 - **Bound the network.** Prefix ad-hoc network commands with `timeout 60`.
 - **Cache outage means stop.** If the gate or the prepare step reports that the binary cache (`gate.cache_url`) does not answer, stop and report. Never use mirrors, extra substituters or a private store.
@@ -46,7 +46,7 @@ remote=$(jq -r .instance.remote "$work/context.json")
 branch=$(jq -r .instance.branch "$work/context.json")
 timeout 120 git clone --quiet --branch "$branch" --reference-if-able "$instance_path" --dissociate "$remote" "$work/repo"
 cd "$work/repo"
-./.dotsteward/cli.sh update prepare --official-sources-only
+./.dotsteward/cli.sh txn prepare --official-sources-only
 ./.dotsteward/cli.sh pins latest --out "$work/latest.json"
 ```
 
@@ -69,7 +69,7 @@ The prepare step records the base OID in the state directory and prints warnings
 
 ## 3. Apply
 
-Edit primary fields only; the sync derives every mirror.
+Edit primary fields only; `generate` derives every mirror.
 
 | Changing | Edit | Then |
 | --- | --- | --- |
@@ -78,14 +78,14 @@ Edit primary fields only; the sync derives every mirror.
 | A download pin (`download-pin` rules: release archives, desktop packages, the Nix installer) | version, url, size and sha256 at the declared lock path of `versions.lock.json` | nothing else |
 | A Nix package build pin (`nix_packages.<name>` with source and `*_nix_sha256` fields) | the version and hash fields of the lock | hashes per `references/sources-and-hashes.md` |
 | An npm bundle (`npm-bundle` rules) | the declared `package.json` | regenerate the lockfile, audit it, refresh the bundle hash per `references/sources-and-hashes.md` |
-| A vendored skill (`skills.<name>` rows) | replace the whole skill directory and set `revision` in the skills lock | `./.dotsteward/cli.sh sync --skill <name>` |
-| A derived value (`derive`, `skills-lock-mirror`, `nix-resolved` and `skill-digests` rules) | nothing | the sync writes it |
+| A vendored skill (`skills.<name>` rows) | replace the whole skill directory and set `revision` in the skills lock | `./.dotsteward/cli.sh generate --skill <name>` |
+| A derived value (`derive`, `skills-lock-mirror`, `nix-resolved` and `skill-digests` rules) | nothing | `generate` writes it |
 
-Finish with the sync, which regenerates the `.dotsteward/` mirrors and then the derived lock values (flake input records, mirrors, resolved versions from the Nix evaluation, repo-owned skill digests):
+Finish with `generate`, which regenerates the `.dotsteward/` mirrors and then the derived lock values (flake input records, mirrors, resolved versions from the Nix evaluation, repo-owned skill digests):
 
 ```bash
 git add -A
-./.dotsteward/cli.sh sync --nix
+./.dotsteward/cli.sh generate --nix
 ```
 
 ## 4. Validate once
@@ -101,8 +101,8 @@ The gate runs in the update scope. Any edit after a passing gate needs a new gat
 
 ```bash
 git commit -m "$(jq -r .commit.update_subject "$work/context.json")"
-./.dotsteward/cli.sh update publish
-./.dotsteward/cli.sh update status --json | jq '.validation | {tree_oid, gate_version, total_seconds, step_seconds}'
+./.dotsteward/cli.sh txn publish
+./.dotsteward/cli.sh txn status --json | jq '.validation | {tree_oid, gate_version, total_seconds, step_seconds}'
 cd "$instance_path" && rm -rf -- "$work"
 ```
 
@@ -112,7 +112,7 @@ On a profile in `adopt` mode that rebuild never installs or upgrades system-leve
 
 ## 6. Report
 
-A table of row id, old, new, kind and evidence (release URL or digest); held and manual items with their reasons; migrations; for a framework upgrade the old and new tag, the upstream and a summary of the release notes; the research time (`researched_at`); gate step durations (`step_seconds` from `update status --json`); commit and remote OIDs; and a statement that the local machine was left unchanged. Write the report in the language the overlay names, else in the user's language.
+A table of row id, old, new, kind and evidence (release URL or digest); held and manual items with their reasons; migrations; for a framework upgrade the old and new tag, the upstream and a summary of the release notes; the research time (`researched_at`); gate step durations (`step_seconds` from `txn status --json`); commit and remote OIDs; and a statement that the local machine was left unchanged. Write the report in the language the overlay names, else in the user's language.
 
 ## References
 

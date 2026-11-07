@@ -47,7 +47,7 @@ st_replace "$md" '3. Classify the request with `references/classification.md` be
   '3. Framework and mixed'
 printf '\nThe classes are in references/classification.md.\n' >>"$md"
 st_expect_finding 'C7 example-skill/SKILL.md:' sc_check_classification "$skill" dotsteward-contribute
-assert_contains "$ST_OUT" 'the first write (`dotsteward update prepare`) comes before the classification step (references/classification.md)'
+assert_contains "$ST_OUT" 'the first write (`dotsteward txn prepare`) comes before the classification step (references/classification.md)'
 cp "$ST_FIXTURES/example-skill/SKILL.md" "$md"
 st_replace "$md" '3. Classify the request with `references/classification.md` before any write. Framework and mixed' \
   '3. Framework and mixed'

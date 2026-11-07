@@ -7,9 +7,9 @@
 #   U2  the fenced commands of SKILL.md run, in this order: a temporary
 #       dotsteward-update.* directory, a clone of instance.remote with
 #       --reference-if-able <instance.path> --dissociate, update prepare
-#       --official-sources-only, pins latest --out, sync --nix, git add -A,
-#       the gate, git commit with commit.update_subject, update publish,
-#       update status --json, removal of the temporary directory
+#       --official-sources-only, pins latest --out, generate --nix, git add -A,
+#       the gate, git commit with commit.update_subject, txn publish,
+#       txn status --json, removal of the temporary directory
 #   U3  the candidate table has the statuses update, review, held, manual
 #       and error; nixpkgs and Home Manager move together; the framework
 #       upgrade runs only when the framework row is review; the report
@@ -17,7 +17,7 @@
 #       in the user's language; the settings buffer is never touched
 #   U4  references/framework-upgrade.md: gh release list, gh release view,
 #       the tag in flake.nix, nix flake update dotsteward, bootstrap.sh and
-#       .dotsteward/cli.sh refreshed from the new template/, sync, then the
+#       .dotsteward/cli.sh refreshed from the new template/, generate, then the
 #       gate through the clone's launcher; a red gate keeps the old tag
 #   U5  the skill never activates, pushes or hard-codes a system or a state
 #       path: no rebuild --switch, no git push, no x86_64-linux or
@@ -79,14 +79,14 @@ skill_lines=$(fenced "$skill")
 expect_order U2 SKILL.md "$skill_lines" \
   'temporary directory' 'mktemp -d .*dotsteward-update\.X+' \
   'clone of the instance' 'git clone .*--reference-if-able .*--dissociate' \
-  'update prepare' '(dotsteward|cli\.sh) +update +prepare +--official-sources-only' \
+  'txn prepare' '(dotsteward|cli\.sh) +txn +prepare +--official-sources-only' \
   'pins latest --out' '(dotsteward|cli\.sh) +pins +latest .*--out' \
-  'sync --nix' '(dotsteward|cli\.sh) +sync +--nix' \
+  'generate --nix' '(dotsteward|cli\.sh) +generate +--nix' \
   'git add -A' 'git add -A' \
   'gate' '(dotsteward|cli\.sh) +gate' \
   'git commit' 'git commit' \
-  'update publish' '(dotsteward|cli\.sh) +update +publish' \
-  'update status --json' '(dotsteward|cli\.sh) +update +status +--json' \
+  'txn publish' '(dotsteward|cli\.sh) +txn +publish' \
+  'txn status --json' '(dotsteward|cli\.sh) +txn +status +--json' \
   'cleanup' 'rm -rf -- "\$work"'
 clone=$(grep -E 'git clone' <<<"$skill_lines" | head -n 1)
 [[ $clone == *instance_path* || $clone == *'.instance.path'* ]] ||
@@ -121,7 +121,7 @@ if [[ -f $upgrade ]]; then
     'nix flake update dotsteward' 'nix +flake +update +dotsteward' \
     'refresh bootstrap.sh' 'template/bootstrap\.sh' \
     'refresh .dotsteward/cli.sh' 'template/\.dotsteward/cli\.sh' \
-    'sync' '(dotsteward|cli\.sh) +sync' \
+    'generate' '(dotsteward|cli\.sh) +generate' \
     'gate through the launcher' '\./\.dotsteward/cli\.sh +gate'
   grep -qi 'old tag' "$upgrade" || finding U4 references/framework-upgrade.md "a red gate does not keep the old tag"
 else
@@ -141,7 +141,7 @@ while IFS= read -r file; do
     finding U5 "$file" "names a system literally (use .platform.system)"
   fi
   if grep -q '\.local/state' "$skill_dir/$file"; then
-    finding U5 "$file" "hard-codes a state path (use update status --json)"
+    finding U5 "$file" "hard-codes a state path (use txn status --json)"
   fi
 done < <(_sc_markdown_files "$skill_dir")
 grep -q '\.platform\.system' "$skill_dir/references/sources-and-hashes.md" 2>/dev/null ||

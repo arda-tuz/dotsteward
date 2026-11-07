@@ -52,7 +52,7 @@ archives. Its suffix keeps it out of the instance. To try it:
    }
    ```
 
-4. Run `git add -A`, then `dotsteward sync` to refresh the `.dotsteward/`
+4. Run `git add -A`, then `dotsteward generate` to refresh the `.dotsteward/`
    mirrors, and `dotsteward pins check` and `dotsteward static`.
 
 A real component replaces the names, release locations and paths with those of

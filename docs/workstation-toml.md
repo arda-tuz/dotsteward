@@ -37,7 +37,7 @@ user name or home without any edit.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `instance.remote` | required | Exactly what `git remote get-url origin` prints in a clone. The gate, `update publish` and the end-to-end checks compare it byte for byte. |
+| `instance.remote` | required | Exactly what `git remote get-url origin` prints in a clone. The gate, `txn publish` and the end-to-end checks compare it byte for byte. |
 | `instance.name` | the directory name | Display name. |
 | `instance.branch` | `"main"` | The published branch. |
 | `instance.checkout` | `~/<instance.name>` | The canonical clone on every machine. |
@@ -95,7 +95,7 @@ The parameters of the validation gate (`dotsteward gate`).
 | `gate.nix_max_jobs` | derived from the machine | `--max-jobs` of the gate's Nix builds (`DOTSTEWARD_NIX_MAX_JOBS`). |
 | `gate.nix_cores` | derived from the machine | `--cores` of the gate's Nix builds (`DOTSTEWARD_NIX_CORES`). |
 | `gate.min_free_gib` | `5` | Free GiB the gate requires in `/nix/store` (`DOTSTEWARD_MIN_FREE_GB`). |
-| `gate.prepare_warn_free_gib` | `15` | Below this many free GiB, `update prepare` warns. |
+| `gate.prepare_warn_free_gib` | `15` | Below this many free GiB, `txn prepare` warns. |
 | `gate.cache_url` | `"https://cache.nixos.org"` | The binary cache the gate requires to answer (`DOTSTEWARD_CACHE_URL`). |
 | `gate.static` | `[]` | Instance static scripts, run by the gate's static step and by `checks.instance-static`. |
 | `gate.update_allowlist` | `[]` | Extended regular expressions added to the paths an update-scope transaction may change. |
@@ -127,7 +127,7 @@ of its own instead ([contribute.md](contribute.md#the-framework-gate)).
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `commit.update_subject` | `"chore: update pinned tool versions"` | The subject `update publish` requires on the last commit of an update-scope transaction. |
+| `commit.update_subject` | `"chore: update pinned tool versions"` | The subject `txn publish` requires on the last commit of an update-scope transaction. |
 | `commit.settings_subject` | `"chore: sync local maintained settings"` | The subject of a settings write-back commit. |
 | `commit.upgrade_subject` | `"chore(dotsteward): upgrade to {version}"` | The subject of a framework upgrade commit; `{version}` is the release without its `v`. |
 

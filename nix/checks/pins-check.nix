@@ -1,5 +1,5 @@
 # Pins engine, check and sync (tests/engines/pins/check): `dotsteward pins
-# check|sync` and `dotsteward sync` against a synthetic instance that
+# check|sync` and `dotsteward generate` against a synthetic instance that
 # declares every rule kind, run offline in the build sandbox (stub nix for
 # --nix and the mirror evaluation). Then shellcheck over the commands and
 # the tests.
