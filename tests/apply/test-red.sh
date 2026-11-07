@@ -1,17 +1,28 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from the harness and the helpers
 # What goes red stops the transaction where it is, and the same command goes on once it is fixed:
-# a red gate commits nothing; a red rebuild leaves the commit local and runs no E2E; a red E2E
-# never publishes. The fix is a new commit (no amend), and the next apply proves the new tree with
-# the gate, activates it and runs E2E again before anything is pushed.
+# a red generate or a red gate commits nothing; a red rebuild leaves the commit local and runs no
+# E2E; a red E2E never publishes. The fix is a new commit (no amend), and the next apply proves the
+# new tree with the gate, activates it and runs E2E again before anything is pushed.
 # shellcheck source=tests/apply/helpers.sh
 source "$DS_REPO_ROOT/tests/apply/helpers.sh"
 
 base=$(remote_oid)
 assert_exit 0 begin
 
-# --- the gate says no: nothing is committed ---------------------------------------------------
+# --- generate fails: nothing is committed, the gate does not run ------------------------------
 edit "a change the gate refuses"
+: >"$UP_CONTROL/generate-red"
+clear_log
+assert_exit 1 apply -m "docs: a change" --activate --publish
+assert_eq "$base" "$(head_oid)" "nothing was committed"
+assert_no_step '^static '
+assert_eq failed "$(apply_step generate)"
+review_json '[.items[] | select(.command == "apply" and .code == "generate-failed")] | length == 1'
+review_json '.items[] | select(.code == "generate-failed") | .run == "dotsteward apply -m \"docs: a change\" --activate --publish"'
+rm -f -- "$UP_CONTROL/generate-red"
+
+# --- the gate says no: nothing is committed ---------------------------------------------------
 : >"$UP_CONTROL/static-red"
 clear_log
 assert_exit 1 apply -m "docs: a change" --activate --publish

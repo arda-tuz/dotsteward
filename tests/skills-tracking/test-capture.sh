@@ -50,6 +50,8 @@ assert_eq "{}" "$(item a mine .)" "nothing waits"
 [[ ! -e $(state_of a)/skills/worktree ]] || ds_fail "the worktree is gone"
 assert_eq 1 "$(git -C "$checkout" worktree list --porcelain | grep -c '^worktree ')"
 assert_json "$(state_of a)/skills/last-capture.json" '.status == "ok" and .captured == ["mine"]'
+# The narrow proof of a skill commit is no record of the gate: it answers no gate of the tree.
+[[ ! -e $(state_of a)/update/validation.json ]] || ds_fail "a capture wrote a record of the gate"
 # Where a copy lives is the business of `agents install`.
 [[ -d $skill && ! -L $skill ]] || ds_fail "capture does not move the skill"
 # Nothing waits: no second commit, no fetch needed.

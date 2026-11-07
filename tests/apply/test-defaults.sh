@@ -19,7 +19,7 @@ assert_no_step '^e2e '
 assert_eq "$base" "$(remote_oid)" "nothing is published by default"
 assert_eq "$base" "$(git -C "$up_inst" rev-parse HEAD^)"
 apply_report '.data.activate == false and .data.publish == false'
-apply_report '[.steps[].name] == ["stage", "gate", "commit"]'
+apply_report '[.steps[].name] == ["stage", "generate", "gate", "commit"]'
 assert_contains "$DS_STDOUT" "dotsteward apply --activate --publish"
 
 # Publishing without an activation: no rebuild, no E2E.
