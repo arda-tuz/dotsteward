@@ -6,7 +6,7 @@
 # shellcheck source=tests/apply/helpers.sh
 source "$DS_REPO_ROOT/tests/apply/helpers.sh"
 
-owner=$(git -C "$up_inst" log --reverse --format='%an <%ae>' | head -n 1)
+owner=$(git -C "$up_inst" log -1 --format='%an <%ae>' "$(git -C "$up_inst" rev-list --max-parents=0 HEAD)")
 printf '' >"$GIT_CONFIG_GLOBAL"
 git -C "$up_inst" config --unset user.name 2>/dev/null || true
 git -C "$up_inst" config --unset user.email 2>/dev/null || true
