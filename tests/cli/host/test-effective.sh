@@ -148,6 +148,26 @@ assert_exit 1 run_skills effective --json
 assert_contains "$DS_STDERR" "hosts/desktop.toml: invalid TOML"
 write_host desktop
 
+# All of these are messages for every command, never a Python traceback.
+no_traceback() {
+  assert_exit 1 run_agents check
+  assert_contains "$DS_STDERR" "$1"
+  assert_not_contains "$DS_STDERR" "Traceback"
+  assert_exit 1 run_e2e
+  assert_not_contains "$DS_STDERR" "Traceback"
+  assert_exit 1 run_skills effective
+  assert_not_contains "$DS_STDERR" "Traceback"
+}
+printf 'not json\n' >"$(machine_file)"
+no_traceback "[dotsteward] ERROR: cannot read $(machine_file)"
+name_machine desktop
+write_host desktop 'nonsense = 1'
+no_traceback "[dotsteward] ERROR: hosts/desktop.toml: unknown key nonsense"
+write_host desktop
+assert_exit 1 env DOTSTEWARD_MACHINE=Not_A_Name "$agents_fw/cli/dotsteward" --instance "$agents_inst" agents check --profile workstation </dev/null
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: DOTSTEWARD_MACHINE: invalid machine name"
+assert_not_contains "$DS_STDERR" "Traceback"
+
 # A lock that cannot be read is the business of the commands that need it.
 cp -- "$agents_lock" "$DS_TEST_ROOT/lock.json"
 printf 'not json\n' >"$agents_lock"

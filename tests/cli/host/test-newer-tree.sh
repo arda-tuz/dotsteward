@@ -97,6 +97,7 @@ write_host laptop 'a_later_key = 1'
 assert_exit 1 ds agents check --profile workstation
 assert_contains "$DS_STDERR" "hosts/laptop.toml: unknown key a_later_key"
 assert_contains "$DS_STDERR" "$way_out"
+assert_not_contains "$DS_STDERR" "Traceback"
 pin_framework "$running"
 assert_exit 1 ds agents check --profile workstation
 assert_contains "$DS_STDERR" "hosts/laptop.toml: unknown key a_later_key"
