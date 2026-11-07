@@ -308,10 +308,20 @@ def _look_at_own(
                 "last_asked": None,
             }
         return
+    if isinstance(item, dict) and item.get("state") == NAME_TAKEN:
+        # It waits for a rename or for the other copy to go; this one is not news.
+        where = item.get("path")
+        same = isinstance(where, str) and os.path.realpath(where) == os.path.realpath(path)
+        if isinstance(where, str) and os.path.isdir(where) and (not same or item.get("blocked_digest") == digest):
+            return
     if digest == base.get("base_sha256"):
         # A copy that could not take what the repository holds is no local change gone away.
         waits = isinstance(item, dict) and item.get("reason") == NOT_REFRESHED
-        if isinstance(item, dict) and item.get("state") in {CAPTURE, BLOCKED, CONFLICT, DELETED} and not waits:
+        if (
+            isinstance(item, dict)
+            and item.get("state") in {CAPTURE, BLOCKED, CONFLICT, DELETED, NAME_TAKEN}
+            and not waits
+        ):
             plan.drop_items.append(key)
         return
     if isinstance(item, dict) and item.get("state") == BLOCKED and item.get("blocked_digest") == digest:

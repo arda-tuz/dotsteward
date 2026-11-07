@@ -82,6 +82,19 @@ dead credential does not stay silent.
 A copy of a skill that still carries its `name` never lands on that skill: it waits as
 `name-taken` until you rename it, and then lands as a skill of its own.
 
+Two different local copies of one skill (a leftover in another root, a directory named
+after the skill beside its own) stop as well: nothing says which one is the skill. When one
+is gone, `dotsteward skills retry <name>` goes on.
+
+A copy on the remote that this machine has not seen is overwritten only by `dotsteward skills
+resolve <name> --ours`: an answer to "track it?" ends in a conflict then. A file the ignore
+rules of the skill on the remote leave out never goes there, not after `--ours` either
+(`ignored-file`).
+
+The name is the identity of a skill. `--never` and `forget` are recorded by name in the host
+file of this machine, so they hold after a rename of the directory and after its state is
+gone; a skill with a new name in its frontmatter is a new skill, and is tracked as one.
+
 `dotsteward skills forget <name>` takes a skill from all machines. `dotsteward skills restore
 <name>` brings one you deleted back from the repository. What `--never` and `forget` keep out
 stays out when an agent edits the copy later; only another answer takes it back. A copy

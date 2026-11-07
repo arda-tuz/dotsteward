@@ -12,6 +12,21 @@ For each skill three digests decide, against the tip of the remote this time:
     r == b           this machine had the old one: copy, commit
     otherwise        conflict: no commit, nothing changes here, the user answers
 
+Three rules hold for every path into a commit, each in one place of ``_apply_copy``, whatever
+the answer was:
+
+- A copy of the remote that this machine has not seen is overwritten only by ``resolve
+  --ours``. An answer to "track it?" says that a skill is yours, not that the copy another
+  machine published may go. Only a pinned third-party copy turns into yours by ``--own``.
+- A file that the ignore rules of the skill on the remote leave out does not go there, also
+  when the local copy lost the rule. The rules in the copy itself act in the normal form.
+- Two different local copies of one name stop: nothing says which one is the skill.
+
+A name is the identity of a skill, in the directory or in the frontmatter. What ``--never``
+and ``forget`` keep out is recorded by name in ``hosts/<machine>.toml``, so it holds after a
+rename of the directory and after the state of this machine is gone; a new name is a new
+skill.
+
 A file deleted here leaves the repository, because the copy replaces the directory. An
 existing entry changes its digests only, so what another machine wrote into it stays. The
 commit passes two checks of the instance, run by the CLI the tree pins: ``static`` (the
@@ -44,7 +59,7 @@ import stat
 import subprocess
 import sys
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -260,7 +275,7 @@ def _say(message: str) -> None:
 
 
 def _write_host_file(
-    context: Mapping[str, Any], worktree: str, machine: str, decline: str | None, accepted: str | None = None
+    context: Mapping[str, Any], worktree: str, machine: str, decline: str | None, accepted: Collection[str] = ()
 ) -> str:
     """Writes the host file of MACHINE in the worktree; its path below the tree."""
     relative = os.path.join("hosts", f"{machine}.toml")
@@ -364,6 +379,35 @@ def _kept_back_as_before(item: Mapping[str, Any], digest: str, tip: str) -> bool
     return item.get("reason") not in reconcile.TREE_REASONS or item.get("blocked_tip") in (None, tip)
 
 
+def _other_copy(context: Mapping[str, Any], work: Work, path: str, names: set[str], digest: str) -> str | None:
+    """Another local copy of this skill with another content, under one of NAMES."""
+    real = os.path.realpath(path)
+    places = [os.path.join(str(root), name) for root in context.get("roots") or [] for name in sorted(names)]
+    record = state.base_entry(state.load_base(str(context["state_root"])), work.name)
+    if record and isinstance(record.get("local_path"), str):
+        places.append(record["local_path"])
+    excludes = os.path.join(str(context["instance"]), ".gitignore")
+    for place in places:
+        if os.path.realpath(place) == real or not os.path.isfile(os.path.join(place, reconcile.SKILL_FILE)):
+            continue
+        try:
+            if normal.normal_form(os.path.realpath(place), excludes, reconcile.limit_bytes(context)).digest != digest:
+                return place
+        except (normal.TooLarge, normal.NormalFormError, OSError):
+            return place
+    return None
+
+
+def _ignored_on_the_remote(destination: str, form: normal.NormalForm) -> list[str]:
+    """The files of FORM that the ``.gitignore`` of the skill in the tree leaves out."""
+    try:
+        with open(os.path.join(destination, ".gitignore"), "rb") as handle:
+            rules = handle.read()
+    except OSError:
+        return []
+    return normal.ignored_by(rules, [os.fsdecode(name) for name in form.files])
+
+
 def _apply_copy(
     context: Mapping[str, Any],
     work: Work,
@@ -377,11 +421,12 @@ def _apply_copy(
     """Replays one skill onto the tree; the paths the commit may touch."""
     machine = reconcile.machine_name(context)
     declined_here = reconcile.declined_in(worktree, machine)
-    if work.name in declined_here and not work.answer:
+    path = work.path if work.path and os.path.isdir(work.path) else None
+    declined_names = declined_here & {work.name, _frontmatter_name(path) if path else None}
+    if declined_names and not work.answer:
         # The tip knows the answer, whatever this machine forgot.
         attempt.declined.append(work)
         return []
-    path = work.path if work.path and os.path.isdir(work.path) else None
     excludes = os.path.join(worktree, ".gitignore")
     try:
         form = normal.normal_form(os.path.realpath(path), excludes, reconcile.limit_bytes(context)) if path else None
@@ -428,18 +473,27 @@ def _apply_copy(
     if entry is not None and remote == local and (own or not answer.get("own")):
         attempt.in_sync.append((work, entry_name, local))
         return []
-    answered = bool(answer.get("ours") or answer.get("own"))
     if entry is None:
         if known is not None and known == local:
             attempt.finished.append(work)
             return []
-        if known is not None and not answered:
+        if known is not None and not (answer.get("ours") or answer.get("own")):
             attempt.conflicts.append(work)
             return []
-    elif not answered and (not own or known != remote):
+    elif not (answer.get("ours") or (known == remote if own else answer.get("own"))):
         attempt.conflicts.append(work)
         return []
     destination = os.path.join(worktree, tree["vendor"], directory)
+    other = _other_copy(context, work, path, {basename, declared, directory, entry_name}, local)
+    if other is not None:
+        work.item.update(taken_reason="two-copies", detail=other)
+        attempt.taken.append(work)
+        return []
+    ignored = _ignored_on_the_remote(destination, form)
+    if ignored:
+        attempt.rejected.append((work, "ignored-file", local))
+        work.item["detail"] = "\n".join(ignored)
+        return []
     _copy_form(form, destination)
     if normal.plain_digest(destination) != local:
         # The copy changed under our feet: next time.
@@ -464,9 +518,8 @@ def _apply_copy(
             entry["revision"] = _sentinel(context)
     attempt.applied.append(Applied(work, entry_name, local))
     allowed = [os.path.join(tree["vendor"], directory)]
-    if machine and (answer.get("here") or work.name in declined_here):
-        accepted = work.name if work.name in declined_here else None
-        allowed.append(_write_host_file(context, worktree, machine, None, accepted=accepted))
+    if machine and (answer.get("here") or declined_names):
+        allowed.append(_write_host_file(context, worktree, machine, None, accepted=declined_names))
     return allowed
 
 
@@ -481,7 +534,12 @@ def _apply_decline(context: Mapping[str, Any], work: Work, worktree: str, attemp
 
 
 def _apply_forget(
-    work: Work, worktree: str, tree: Mapping[str, str], document: dict[str, Any], attempt: _Attempt
+    context: Mapping[str, Any],
+    work: Work,
+    worktree: str,
+    tree: Mapping[str, str],
+    document: dict[str, Any],
+    attempt: _Attempt,
 ) -> list[str]:
     entries: list[Any] = document["skills"]
     entry = _entry_named(entries, work.name) or _entry_of_copy(entries, work.name)
@@ -492,7 +550,12 @@ def _apply_forget(
     shutil.rmtree(os.path.join(worktree, tree["vendor"], directory), ignore_errors=True)
     entries.remove(entry)
     attempt.applied.append(Applied(work, str(entry["name"]), None, forgotten=True))
-    return [os.path.join(tree["vendor"], directory)]
+    allowed = [os.path.join(tree["vendor"], directory)]
+    machine = reconcile.machine_name(context)
+    if machine:
+        # This machine stays out of it, also when its state is gone.
+        allowed.append(_write_host_file(context, worktree, machine, str(entry["name"])))
+    return allowed
 
 
 def _subject(applied: Sequence[Applied]) -> str:
@@ -522,7 +585,7 @@ def _build_on(
         if item.answer.get("never"):
             allowed += _apply_decline(context, item, worktree, attempt)
         elif item.answer.get("forget"):
-            allowed += _apply_forget(item, worktree, loaded_tree, document, attempt)
+            allowed += _apply_forget(context, item, worktree, loaded_tree, document, attempt)
         else:
             allowed += _apply_copy(context, item, worktree, tip, loaded_tree, document, base, attempt)
     if not attempt.applied:
@@ -590,7 +653,14 @@ def _settle(state_root: str, attempt: _Attempt, published: publish.Published, su
     """Records what the last attempt decided about each skill."""
     for work in attempt.conflicts:
         digest = work.item.get("digest")
-        fields = {"state": reconcile.CONFLICT, "reason": None, "digest": digest, "conflict_digest": digest}
+        # An answer that led here is used up: only resolve goes on from a conflict.
+        fields = {
+            "state": reconcile.CONFLICT,
+            "reason": None,
+            "answer": None,
+            "digest": digest,
+            "conflict_digest": digest,
+        }
         if work.item.get("conflict_digest") != digest:
             fields["last_asked"] = None
         state.set_item(state_root, work.key, {**_identity_fields(work), **fields})
@@ -598,7 +668,14 @@ def _settle(state_root: str, attempt: _Attempt, published: publish.Published, su
         summary.codes.append(report.PENDING)
     for work in attempt.taken:
         digest = work.item.get("digest")
-        fields = {"state": reconcile.NAME_TAKEN, "reason": None, "blocked_digest": digest, "last_asked": None}
+        fields = {
+            "state": reconcile.NAME_TAKEN,
+            "reason": work.item.get("taken_reason"),
+            "detail": work.item.get("detail") or "",
+            "answer": None,
+            "blocked_digest": digest,
+            "last_asked": None,
+        }
         state.set_item(state_root, work.key, {**_identity_fields(work), **fields})
         summary.conflicts.append(work.name)
         summary.codes.append(report.PENDING)
@@ -608,7 +685,7 @@ def _settle(state_root: str, attempt: _Attempt, published: publish.Published, su
         state.forget_base(state_root, work.name)
         summary.done.append(work.name)
     for work, reason, digest in attempt.rejected:
-        _set_blocked(state_root, work, reason, digest)
+        _set_blocked(state_root, work, reason, digest, detail=str(work.item.get("detail") or ""))
         _say(f"skill {work.name} was not published: {reason}")
         summary.blocked.append(work.name)
         summary.codes.append(report.FAILED)
@@ -765,6 +842,8 @@ def _ready(
             continue
         if only_due and not sleeper.is_due(item, now, delay):
             continue
+        if only_due and _still_being_edited(item, now, delay):
+            continue
         path = item.get("path")
         answer = item.get("answer")
         if not answer and isinstance(path, str) and not os.path.isdir(path):
@@ -774,6 +853,14 @@ def _ready(
             Work(key, name, item, path if isinstance(path, str) else None, answer if isinstance(answer, dict) else {})
         )
     return work
+
+
+def _still_being_edited(item: Mapping[str, Any], now: float, delay: float) -> bool:
+    """A retry was due, and the copy changed meanwhile: it waits for its delay like a fresh one."""
+    path = item.get("path")
+    if item.get("due") or item.get("answer") or not isinstance(path, str):
+        return False
+    return _newest_change(path) + delay > now
 
 
 def _newest_change(path: str) -> float:

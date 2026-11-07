@@ -33,7 +33,8 @@ Command line, for ``cli/lib/skills.sh``::
 ``decide`` prints the decision; with ``--mode install`` it records it. ``record``
 says that the copy at PATH now equals the lock. ``keep`` saves what the normal form of an
 incoming copy leaves out, so that a refresh does not take it away. ``refreshed`` puts that
-back and looks at the copy: b moves only when it now equals the lock (``in-sync``). A copy
+back, as far as a rule of the new copy still covers it, and looks at the copy: b moves
+only when it now equals the lock (``in-sync``). A copy
 that was not refreshed (a link out of the skill roots) has not taken what the repository
 holds, so b stays and the state is ``conflict``: with b moved, the next capture would read
 the old copy as a change of this machine and push it over the other machine's. Exit status:
@@ -176,7 +177,11 @@ def _refreshed(name: str, found: str, digest: str, kept: str, instance: str, sta
     """After a refresh of the copy at FOUND: the decision, and what it means for b."""
     real = os.path.realpath(found)
     if kept:
-        normal.restore_left_out(kept, real)
+        for path in normal.restore_left_out(kept, real, excludes_file(instance)):
+            print(
+                f"[dotsteward] skill {name}: {path}: no ignore rule covers it now; it stays in the backup",
+                file=sys.stderr,
+            )
     local, _ = local_digest(found, instance)
     key = state.skill_key(name)
     if local == digest:

@@ -88,6 +88,7 @@ assert_eq offline "$(item c editing .reason)"
 tip=$(remote_tip)
 printf 'the second half, through a shell\n' >>"$(home_of c)/.claude/skills/editing/SKILL.md"
 touch -d '-30 seconds' "$(home_of c)/.claude/skills/editing/SKILL.md"
+_capture_cleanup
 printf '1000\n' >"$(state_of c)/skills/deadline"
 assert_exit 0 on c timeout 60 "$DS_REPO_ROOT/cli/dotsteward" skills capture --wait </dev/null
 assert_eq "$tip" "$(remote_tip)" "an edit that goes on waits for its delay"

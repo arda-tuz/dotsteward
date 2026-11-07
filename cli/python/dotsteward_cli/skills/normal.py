@@ -30,7 +30,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 
 EXCLUDED_DIRECTORIES = frozenset({b".git", b"__pycache__", b"__pypackages__"})
@@ -189,8 +189,11 @@ def keep_left_out(directory: str, excludes_file: str | None, keep: str) -> None:
             _copy_entry(source, os.path.join(keep, relative))
 
 
-def restore_left_out(keep: str, directory: str) -> None:
-    """Puts what ``keep_left_out`` kept back into DIRECTORY; what the new copy holds wins."""
+def restore_left_out(keep: str, directory: str, excludes_file: str | None) -> list[str]:
+    """Puts what ``keep_left_out`` kept back into DIRECTORY; what the new copy holds wins.
+    Only what a rule of the new copy still leaves out comes back: anything else would be
+    content of the skill from now on, and would be published. Returns those names."""
+    restored: list[str] = []
     for current, directories, files in os.walk(keep):
         relative = os.path.relpath(current, keep)
         for name in list(directories) + files:
@@ -202,6 +205,44 @@ def restore_left_out(keep: str, directory: str) -> None:
                     shutil.copystat(source, target)
             elif not os.path.lexists(target):
                 _copy_entry(source, target)
+                restored.append(os.path.normpath(os.path.join(relative, name)))
+    listed = {os.fsdecode(name.rstrip(b"/")) for name in _lists(directory, excludes_file)[0]}
+    uncovered = sorted(name for name in restored if name in listed)
+    for name in uncovered:
+        os.unlink(os.path.join(directory, name))
+    for current, directories, files in os.walk(directory, topdown=False):
+        if not directories and not files and current != directory:
+            with contextlib.suppress(OSError):
+                os.rmdir(current)
+    return uncovered
+
+
+def ignored_by(rules: bytes, names: Iterable[str]) -> list[str]:
+    """Which of the relative NAMES the text RULES of a ``.gitignore`` leaves out."""
+    given = [os.fsencode(name) for name in names]
+    if not rules.strip() or not given:
+        return []
+    with tempfile.TemporaryDirectory(prefix="dotsteward-skill-") as empty:
+        git_dir = os.path.join(empty, "git")
+        os.makedirs(os.path.join(git_dir, "objects"))
+        os.mkdir(os.path.join(git_dir, "refs"))
+        with open(os.path.join(git_dir, "HEAD"), "w", encoding="ascii") as head:
+            head.write("ref: refs/heads/main\n")
+        work_tree = os.path.join(empty, "tree")
+        os.mkdir(work_tree)
+        with open(os.path.join(work_tree, ".gitignore"), "wb") as handle:
+            handle.write(rules)
+        result = subprocess.run(
+            ["git", f"--git-dir={git_dir}", f"--work-tree={work_tree}", "check-ignore", "--no-index", "-z", "--stdin"],
+            cwd=work_tree,
+            env=_clean_env(),
+            input=b"\0".join(given) + b"\0",
+            capture_output=True,
+            check=False,
+        )
+    if result.returncode not in (0, 1):
+        raise NormalFormError(result.stderr.decode(errors="replace").strip() or "git check-ignore failed")
+    return sorted(os.fsdecode(name) for name in result.stdout.split(b"\0") if name)
 
 
 def plain_digest(directory: str) -> str:

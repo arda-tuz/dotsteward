@@ -33,7 +33,7 @@ import socket
 import subprocess
 import sys
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -500,7 +500,7 @@ def _commit_on_tip(instance: config.Instance, tip: str, name: str, text: str) ->
 
 
 def declined_text(
-    current: str | None, facts: Mapping[str, Any], skill: str | None, *, accepted: str | None = None
+    current: str | None, facts: Mapping[str, Any], skill: str | None, *, accepted: Collection[str] = ()
 ) -> str:
     """The text of the host file over CURRENT, with SKILL added to declined.skills and
     ACCEPTED taken out of it; for the commit of a skill, which brings the host file along.
@@ -512,8 +512,8 @@ def declined_text(
             document["declined"] = tomlkit.table()
         names = sorted({*(str(name) for name in document["declined"].get("skills", [])), skill})
         document["declined"]["skills"] = names
-    if accepted is not None and "declined" in document:
-        names = [str(name) for name in document["declined"].get("skills", []) if str(name) != accepted]
+    if accepted and "declined" in document:
+        names = [str(name) for name in document["declined"].get("skills", []) if str(name) not in accepted]
         document["declined"]["skills"] = names
     text: str = tomlkit.dumps(document)
     return text

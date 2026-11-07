@@ -267,6 +267,7 @@ def _backup(state_root: str, path: str) -> str:
 def _install_from(
     context: Mapping[str, Any], loaded: config.Instance, tip: str, entry: Mapping[str, Any], path: str
 ) -> str:
+    # What the normal form leaves out stays, as long as a rule of the new copy covers it.
     """Replaces the copy at PATH with the skill of the commit TIP; the lock digest."""
     state_root = str(context["state_root"])
     instance = str(context["instance"])
@@ -284,7 +285,8 @@ def _install_from(
         shutil.rmtree(real, ignore_errors=True)
         os.makedirs(os.path.dirname(real), exist_ok=True)
         shutil.move(staged, real)
-        normal.restore_left_out(kept, real)
+        for name in normal.restore_left_out(kept, real, os.path.join(instance, ".gitignore")):
+            _say(f"{entry.get('name')}: {name}: no ignore rule covers it now; it stays in the backup")
     digest = entry.get("directory_sha256")
     return str(digest) if isinstance(digest, str) and digest else normal.plain_digest(path)
 
@@ -410,7 +412,7 @@ def retry(loaded: config.Instance, name: str) -> int:
         state_root = str(context["state_root"])
         key = state.skill_key(name)
         item = state.load_pending(state_root)["items"].get(key)
-        if not isinstance(item, dict) or item.get("state") != reconcile.BLOCKED:
+        if not isinstance(item, dict) or item.get("state") not in {reconcile.BLOCKED, reconcile.NAME_TAKEN}:
             raise AnswerRefused(f"{name} is not kept back")
         fields = {
             "state": reconcile.CAPTURE,

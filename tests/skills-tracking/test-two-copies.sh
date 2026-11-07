@@ -89,10 +89,10 @@ git -C "$elsewhere" push -q origin main
 git -C "$(clone_of a)" pull -q --ff-only
 assert_exit 0 ds a agents install --profile workstation --skip-validation
 tip=$(remote_tip)
-cp -a "$(home_of a)/.agents/skills/xdir" "$root/xn"
-printf 'a copy under the name\n' >>"$root/xn/SKILL.md"
-wrote a xn
-settle a xn
+under_name=$(home_of a)/.agents/skills/xn
+cp -a "$(home_of a)/.agents/skills/xdir" "$under_name"
+printf 'a copy under the name\n' >>"$under_name/SKILL.md"
+write_to "$under_name"
 EXPECT_STATUS=3 ds_code a skills capture --now
 assert_eq "$tip" "$(remote_tip)"
 assert_not_contains "$(remote_file agent/skills/xdir/SKILL.md)" "a copy under the name"
