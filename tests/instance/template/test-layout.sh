@@ -25,6 +25,9 @@ expected_files=(
   home.nix
   home/AGENTS.md
   local-maintained-files/buffer.toml
+  platforms/macos-15.toml
+  platforms/ubuntu-22.04.toml
+  platforms/ubuntu-26.04.toml
   rebuild.sh
   rollback.sh
   tests/README.md
