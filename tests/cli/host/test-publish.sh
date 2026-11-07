@@ -167,6 +167,33 @@ assert_exit 0 env GIT_SSH_COMMAND="$lost" "$agents_fw/cli/dotsteward" --instance
 [[ -e $DS_TEST_ROOT/lost ]] || ds_fail "the lost answer did not happen"
 assert_eq "$before_lost" "$(git -C "$e2e_bare" rev-parse "$(remote_tip)^")" "a second commit was made"
 
+# No login yet on this machine: the same wait as without a network, whatever the forge
+# says instead of the repository.
+for answer in 'git@github.com: Permission denied (publickey).' 'ERROR: Repository not found.'; do
+  nologin=$DS_TEST_ROOT/nologin-ssh.sh
+  printf '#!%s\nprintf "%%s\\n" %q >&2\nexit 1\n' "$BASH" "$answer" >"$nologin"
+  chmod 0755 "$nologin"
+  assert_exit 6 env GIT_SSH_COMMAND="$nologin" "$agents_fw/cli/dotsteward" --instance "$agents_inst" host publish </dev/null
+  assert_contains "$DS_STDERR" "hosts/laptop.toml waits"
+  assert_contains "$DS_STDERR" "$answer"
+done
+
+# A login that may read and not write: the remote says no, a refusal.
+readonly_ssh=$DS_TEST_ROOT/read-only-ssh.sh
+{
+  printf '#!%s\n' "$BASH"
+  printf 'if [[ $* == *git-receive-pack* ]]; then\n'
+  printf '  printf "ERROR: Permission to example-org/workstation.git denied to a-reader.\\n" >&2\n'
+  printf '  exit 1\n'
+  printf 'fi\n'
+  printf 'exec %q "$@"\n' "$GIT_SSH_COMMAND"
+} >"$readonly_ssh"
+chmod 0755 "$readonly_ssh"
+assert_exit 0 run_host init --tags read-only
+assert_exit 1 env GIT_SSH_COMMAND="$readonly_ssh" "$agents_fw/cli/dotsteward" --instance "$agents_inst" host publish </dev/null
+assert_contains "$DS_STDERR" "the remote refused the push"
+assert_contains "$DS_STDERR" "Permission to"
+
 # The remote refuses: a refusal, not a wait.
 hook=$e2e_bare/hooks/pre-receive
 printf '#!%s\nprintf "not today\\n" >&2\nexit 1\n' "$BASH" >"$hook"
