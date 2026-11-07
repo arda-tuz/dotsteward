@@ -22,12 +22,13 @@ The drop-in keeps unattended-upgrades from removing kernels and dependencies on 
 own:
 
 ```text
-// Managed by dotsteward (apt-policy component): no automatic removal of kernels and dependencies.
+// Managed by dotsteward: no automatic removal of kernels and dependencies.
 Unattended-Upgrade::Remove-Unused-Kernel-Packages "false";
 Unattended-Upgrade::Remove-New-Unused-Dependencies "false";
 ```
 
-A fresh install writes it, and so does `dotsteward upgrade` in its sudo window when the
+These are the bytes that `dotsteward upgrade` wrote before the component took the
+file over, so a machine that has it already needs no write. A fresh install writes it, and so does `dotsteward upgrade` in its sudo window when the
 file is missing or differs; an adopted machine takes it in with `dotsteward install
 --profile PROFILE --component apt-policy`. The pin file of the gated classes
 (`/etc/apt/preferences.d/60dotsteward`) and its dpkg hook are not part of the

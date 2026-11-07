@@ -1,3 +1,3 @@
-// Managed by dotsteward (apt-policy component): no automatic removal of kernels and dependencies.
+// Managed by dotsteward: no automatic removal of kernels and dependencies.
 Unattended-Upgrade::Remove-Unused-Kernel-Packages "false";
 Unattended-Upgrade::Remove-New-Unused-Dependencies "false";
