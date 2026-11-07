@@ -92,12 +92,11 @@ world_plan driver-respin
 real=$WORLD/etc/apt/preferences.d/60dotsteward
 unattended=$WORLD/etc/apt/apt.conf.d/52dotsteward-unattended-upgrades
 policy
-assert_json "$POLICY" '.pin.changed == true and .pin.present == true and .unattended.changed == true'
+assert_json "$POLICY" '.pin.changed == true and .pin.present == true and (has("unattended") | not)'
 assert_eq "$(jq -r .gated.pin "$PLAN")" "$(<"$real")" "the file is the pin of the plan"
 assert_file_mode "$real" 644
-assert_contains "$(<"$unattended")" 'Unattended-Upgrade::Remove-Unused-Kernel-Packages "false";'
-assert_contains "$(<"$unattended")" 'Unattended-Upgrade::Remove-New-Unused-Dependencies "false";'
-assert_file_mode "$unattended" 644
+# The drop-in of unattended-upgrades is the apt-policy component's, a system file.
+[[ ! -e $unattended ]] || ds_fail "policy wrote the drop-in of the apt-policy component"
 
 # The target of this world stands nowhere in it, and the next plan still finds the target.
 assert_not_contains "$(<"$real")" "$D106"
@@ -107,7 +106,7 @@ plan_target "$K42" "$K42+1" "$D106"
 
 # Idempotent; a wrong file and a wrong mode are repaired; nothing is left next to it.
 policy
-assert_json "$POLICY" '.pin.changed == false and .unattended.changed == false'
+assert_json "$POLICY" '.pin.changed == false'
 printf 'Package: *\nPin: version *\nPin-Priority: 1001\n' >"$real"
 policy
 assert_json "$POLICY" '.pin.changed == true'
@@ -130,7 +129,7 @@ policy '{"gated": false}'
 assert_json "$POLICY" '.pin.changed == true and .pin.present == false'
 [[ ! -e $real ]] || ds_fail "enable = false leaves the pin file"
 policy '{"gated": false}'
-assert_json "$POLICY" '.pin.changed == false and .unattended.changed == false'
+assert_json "$POLICY" '.pin.changed == false'
 
 world_up no-classes
 printf 'an older file\n' >"$WORLD/etc/apt/preferences.d/60dotsteward"

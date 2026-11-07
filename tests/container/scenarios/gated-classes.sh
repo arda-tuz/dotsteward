@@ -23,9 +23,9 @@ assert_contains "$without" "Inst linux-image-7.0.0-44-generic"
 assert_contains "$without" "Inst example-lib"
 
 engine_ok policy
-assert_json "$ENGINE" '.pin.changed == true and .unattended.changed == true'
+assert_json "$ENGINE" '.pin.changed == true and (has("unattended") | not)'
 pin_matches_dpkg
-assert_contains "$(</etc/apt/apt.conf.d/52dotsteward-unattended-upgrades)" 'Remove-Unused-Kernel-Packages "false"'
+[[ ! -e /etc/apt/apt.conf.d/52dotsteward-unattended-upgrades ]] || ds_fail "policy wrote the drop-in of apt-policy"
 assert_contains "$(<"$PIN_HOOK")" "post-invoke="
 before=$(gated_state)
 [[ -n $before ]] || ds_fail "the world has no gated package"
