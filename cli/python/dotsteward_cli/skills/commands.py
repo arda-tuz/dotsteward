@@ -129,6 +129,7 @@ def _status(args: argparse.Namespace, loaded: config.Instance) -> int:
         print(json.dumps(document, indent=2, sort_keys=True))
         return 0
     in_sync = 0
+    shown_dropped: set[str] = set()
     for skill in document["own"]:
         if skill["state"] == threeway.IN_SYNC:
             in_sync += 1
@@ -136,6 +137,7 @@ def _status(args: argparse.Namespace, loaded: config.Instance) -> int:
             print(f"[dotsteward] {skill['name']}: {skill['state']}")
         for path in skill["dropped"]:
             print(f"[dotsteward] {skill['name']}: left out by an ignore rule: {path}")
+            shown_dropped.add(f"{skill['name']}:{path}")
         for path in skill["unsafe_links"]:
             print(f"[dotsteward] {skill['name']}: link out of the tree or broken: {path}")
     for key, item in sorted(document["pending"].items()):
@@ -147,6 +149,17 @@ def _status(args: argparse.Namespace, loaded: config.Instance) -> int:
                 print(f"[dotsteward] {key}: no copy is left: dotsteward skills forget --clear {item.get('name')}")
             for line in str(item.get("detail") or "").splitlines():
                 print(f"[dotsteward] {key}: {line}")
+    # What the last capture published and left out, which the checkout may not have yet.
+    last = document.get("last_capture")
+    if isinstance(last, dict):
+        captured = [str(name) for name in last.get("captured") or []]
+        if captured:
+            print(f"[dotsteward] last capture: published {', '.join(captured)}")
+        dropped = last.get("dropped")
+        for name, paths in sorted(dropped.items()) if isinstance(dropped, dict) else []:
+            for path in paths if isinstance(paths, list) else []:
+                if f"{name}:{path}" not in shown_dropped:
+                    print(f"[dotsteward] {name}: left out by an ignore rule: {path}")
     print(f"[dotsteward] {in_sync} of {len(document['own'])} own skills and plugins in sync")
     return 0
 
