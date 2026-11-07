@@ -52,8 +52,9 @@ update of a plugin you did not track never tracks it. No question comes for a pl
 project scope, of a marketplace that is not a GitHub one, of Claude Code itself (`synced`,
 `builtin`), or while the instance does not enable claude-code. Finding them reads those two
 files, only after they changed, and starts no process. Plugins of Codex marketplaces are not
-tracked yet. A name holds one own plugin: one of Claude Code and one of Codex with the same
-directory name are no two plugins. An own plugin that is for other machines only
+tracked yet. A name is one own plugin: an own plugin of the other agent with the name of a tracked one
+is `name-taken` (reason `other-agent`), said in the session and in `skills status`, and
+never published; renamed, it is a plugin of its own. An own plugin that is for other machines only
 (`machines`) holds its name here too: a directory of that name is `name-taken`, like a
 skill.
 

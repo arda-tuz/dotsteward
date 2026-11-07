@@ -633,6 +633,12 @@ def _apply_plugin_copy(
     if entry is not None and isinstance(entry.get("machines"), list) and machine not in entry["machines"]:
         attempt.taken.append(work)
         return []
+    agents = entry.get("agents") if entry is not None else None
+    if isinstance(agents, list) and agents and plugins.agent_of(path) not in agents:
+        # One name, one own plugin: a copy of another agent never lands on it.
+        work.item["taken_reason"] = reconcile.OTHER_AGENT
+        attempt.taken.append(work)
+        return []
     attempt.dropped[entry_name] = form.dropped
     if entry is not None and remote == local:
         attempt.in_sync.append((work, entry_name, local))

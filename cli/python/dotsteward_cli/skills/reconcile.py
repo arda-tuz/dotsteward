@@ -40,6 +40,8 @@ NAME_TAKEN = "name-taken"
 NOT_REFRESHED = "not-refreshed"
 # The place of an own plugin is taken here by something else.
 OCCUPIED = "occupied"
+# An own plugin of another agent holds the name of a tracked one.
+OTHER_AGENT = "other-agent"
 # What kept a skill back belongs to the tree, not to the skill.
 TREE_REASONS = frozenset({"checks-red", "commit-refused"})
 _TREE_RETRY_SECONDS = 6 * 3600
@@ -396,7 +398,8 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
         named |= names
         machines = entry.get("machines")
         if isinstance(machines, list) and machine not in machines:
-            _name_taken(name, directory, found, base, items, plan, now, state.SKILL)
+            if directory in found:
+                _name_taken(name, found[directory], base, items, plan, now, state.SKILL)
             continue
         if _is_own(entry, context):
             own.add(name)
@@ -409,14 +412,18 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
         plugin_names |= {name, directory}
         machines = entry.get("machines")
         if isinstance(machines, list) and machine not in machines:
-            _name_taken(name, directory, found, base, items, plan, now, state.PLUGIN)
+            if directory in found:
+                _name_taken(name, found[directory], base, items, plan, now, state.PLUGIN)
             continue
         own_plugins.add(name)
-        path = _own_plugin_path(found, base, name, directory)
+        agents = _agents_of(entry)
+        path = _own_plugin_path(base, name, directory, agents)
         record = state.base_entry(base, name, state.PLUGIN)
-        if path is None and record is None and directory in found:
+        _other_agents(name, directory, agents, path, context, items, plan, now)
+        place = os.path.join(plugins.plugin_root(agents[0]), directory)
+        if path is None and record is None and os.path.lexists(place):
             # Its place is taken here by something that is no plugin: said, not installed.
-            _name_taken(name, directory, found, base, items, plan, now, state.PLUGIN, occupied=True)
+            _name_taken(name, place, base, items, plan, now, state.PLUGIN, occupied=True)
             continue
         taken = items.get(state.plugin_key(name))
         if isinstance(taken, dict) and taken.get("state") == NAME_TAKEN and taken.get("reason") == OCCUPIED:
@@ -430,7 +437,9 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
         elif kind == state.PLUGIN and name not in own_plugins and name not in plugin_names:
             record = state.base_entry(base, name, state.PLUGIN)
             if record is not None:
-                path = _own_plugin_path(found, base, name, name)
+                agents = _recorded_agents(base, name) or [plugins.AGENT]
+                path = _own_plugin_path(base, name, name, agents)
+                _other_agents(name, name, agents, path, context, items, plan, now)
                 _look_at_own(name, path, record, document, context, plan, full=full, now=now, kind=state.PLUGIN)
     # A skill whose lock name is not its directory: captured, the checkout not there yet.
     named |= {
@@ -480,8 +489,7 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
 
 def _name_taken(
     name: str,
-    directory: str,
-    found: Mapping[str, str],
+    path: str,
     base: Mapping[str, Any],
     items: Mapping[str, Any],
     plan: Plan,
@@ -490,11 +498,10 @@ def _name_taken(
     *,
     occupied: bool = False,
 ) -> None:
-    """A copy here under the name of an entry that is for other machines only: it holds the
+    """A copy at PATH under the name of an entry that is for other machines only: it holds the
     name, so it is said, never captured. OCCUPIED: the entry is for this machine, and its
     place is taken by something of another kind."""
-    path = found.get(directory)
-    if state.base_entry(base, name, kind) is not None or path is None:
+    if state.base_entry(base, name, kind) is not None:
         return
     if (_kind_of(path) == kind) == occupied:
         return
@@ -556,14 +563,74 @@ def _vanished(item: Any) -> bool:
     )
 
 
-def _own_plugin_path(found: Mapping[str, str], base: Mapping[str, Any], name: str, directory: str) -> str | None:
-    """The local copy of an own plugin: in ~/.claude/skills, then where it was last seen."""
-    for candidate in (directory, name):
-        if candidate in found and plugins.is_own_plugin_dir(found[candidate]):
-            return found[candidate]
+def _agents_of(entry: Mapping[str, Any]) -> list[str]:
+    agents = entry.get("agents")
+    return [str(agent) for agent in agents] if isinstance(agents, list) and agents else [plugins.AGENT]
+
+
+def _recorded_agents(base: Mapping[str, Any], name: str) -> list[str] | None:
+    """The agent of the copy this machine last had in sync, for a checkout behind its lock."""
     record = state.base_entry(base, name, state.PLUGIN)
     known = record.get("local_path") if record else None
-    if isinstance(known, str) and plugins.is_own_plugin_dir(known):
+    if not isinstance(known, str):
+        return None
+    root = os.path.dirname(os.path.normpath(known))
+    if root == plugins.codex_plugins_dir():
+        return [plugins.CODEX_AGENT]
+    return [plugins.AGENT] if root == plugins.claude_skills_dir() else None
+
+
+def shadow_key(name: str, agent: str) -> str:
+    """The item of an own plugin of AGENT that holds the name of a tracked one of another
+    agent: no plain name, so it never meets a real one."""
+    return state.plugin_key(f"{name}/{agent}")
+
+
+def _other_agents(
+    name: str,
+    directory: str,
+    agents: list[str],
+    path: str | None,
+    context: Mapping[str, Any],
+    items: Mapping[str, Any],
+    plan: Plan,
+    now: float,
+) -> None:
+    """A name is one own plugin: a plugin of another agent under it is name-taken
+    (other-agent), never captured, and the item goes once the name is free there."""
+    roots = context.get("roots") or []
+    for agent in (plugins.AGENT, plugins.CODEX_AGENT):
+        if agent in agents:
+            continue
+        key = shadow_key(name, agent)
+        other = os.path.join(plugins.plugin_root(agent), directory)
+        held = plugins.plugin_root(agent) in roots and plugins.agent_of(other) == agent and other != path
+        item = items.get(key)
+        if held and not (isinstance(item, dict) and item.get("path") == other):
+            plan.set_items[key] = {
+                "kind": state.PLUGIN,
+                "name": name,
+                "path": other,
+                "state": NAME_TAKEN,
+                "origin": origin.UNKNOWN,
+                "reason": OTHER_AGENT,
+                "detected_at": now,
+                "last_asked": None,
+            }
+        elif not held and isinstance(item, dict):
+            plan.drop_items.append(key)
+
+
+def _own_plugin_path(base: Mapping[str, Any], name: str, directory: str, agents: list[str]) -> str | None:
+    """The local copy of an own plugin, in the root of one of its AGENTS, then where it was
+    last seen; a copy of another agent is none."""
+    for candidate in (directory, name):
+        copy = plugins.own_copy(candidate, agents)
+        if copy is not None:
+            return copy
+    record = state.base_entry(base, name, state.PLUGIN)
+    known = record.get("local_path") if record else None
+    if isinstance(known, str) and plugins.agent_of(known) in agents:
         return known
     return None
 
@@ -634,11 +701,27 @@ def note_writes(
     declined_plugins: set[str] | None = None
     for path, name, below in hits:
         plugin_entry = plugin_by_name.get(name)
-        if plugin_entry is not None or state.plugin_key(name) in base or plugins.is_own_plugin_dir(path):
+        # Only a plugin directory is a plugin: a write of a skill at that place is the skill's.
+        if plugins.is_own_plugin_dir(path):
             plugin_name = str(plugin_entry["name"]) if plugin_entry is not None else name
             key = state.plugin_key(plugin_name)
             known_item = document["items"].get(key)
-            if isinstance(known_item, dict) and known_item.get("state") in KEPT_OUT:
+            if isinstance(known_item, dict) and known_item.get("state") in {*KEPT_OUT, NAME_TAKEN}:
+                continue
+            agents = _agents_of(plugin_entry) if plugin_entry is not None else _recorded_agents(base, plugin_name)
+            if agents is not None and plugins.agent_of(path) not in agents:
+                # One name, one own plugin: the copy of another agent is told, never captured.
+                if not isinstance(document["items"].get(shadow_key(plugin_name, str(plugins.agent_of(path)))), dict):
+                    plan.set_items[shadow_key(plugin_name, str(plugins.agent_of(path)))] = {
+                        "kind": state.PLUGIN,
+                        "name": plugin_name,
+                        "path": path,
+                        "state": NAME_TAKEN,
+                        "origin": origin.UNKNOWN,
+                        "reason": OTHER_AGENT,
+                        "detected_at": now,
+                        "last_asked": None,
+                    }
                 continue
             machines = plugin_entry.get("machines") if plugin_entry is not None else None
             if isinstance(machines, list) and machine not in machines:
