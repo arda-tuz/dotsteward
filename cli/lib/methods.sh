@@ -150,6 +150,15 @@ methods_components() {
     | .name'
 }
 
+# methods_inactive_components PROFILE: the components of the manifest that are not active on this
+# machine in PROFILE, as a JSON list: what methods_components leaves out, so that nothing of
+# theirs (a managed link, a settings target) is expected here either.
+methods_inactive_components() {
+  (($# == 1)) || die "usage: methods_inactive_components PROFILE"
+  methods_components "$1" | jq -R . | jq -cs --argjson manifest "$DS_MANIFEST_JSON" \
+    '. as $active | [$manifest.components[].name | select(. as $name | $active | index($name) | not)]'
+}
+
 methods_component() {
   (($# == 1)) || die "usage: methods_component NAME"
   local entry

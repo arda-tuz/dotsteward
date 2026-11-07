@@ -51,6 +51,8 @@ name_machine() {
     named_at: "2026-01-01T00:00:00Z",
     host: { system: "x86_64-linux", profile: "workstation", platform: "ubuntu-24.04", tags: [] }
   }' | jq "${2:-.}" >"$(machine_file)"
+  # A new name in `host init` is a new start: what the instance holds then is known.
+  rm -f -- "$DOTSTEWARD_STATE_ROOT/machine/known.json"
 }
 
 effective() {

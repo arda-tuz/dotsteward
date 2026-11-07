@@ -3,40 +3,43 @@
 The repository always moves forward; what lands on this machine depends on the answer:
 install, ask later, or never on this machine. Nothing keeps a cursor or a queue of
 questions: every run compares the tree with what this machine holds, so ``waiting`` is a
-pure look at the checkout, ``<state>/skills/base.json`` and ``<state>/machine/known.json``:
+pure look at the checkout, ``<state>/skills/base.json``, the copies and
+``<state>/machine/known.json``:
 
     skill, own           new: in scope, in the lock, no b, no copy here
                          changed: lock != b and the copy is still b (threeway: incoming)
                          removed: b exists, the lock has no such skill for this machine
-    skill, third party   new: in scope, in the lock, not known, no copy here
+    skill, third party   new: in scope, in the lock, no copy here
+                         clash: `agents install` found a copy that never was a pin of the lock
     plugin               new: in scope, not known
     component            new: enabled, in scope, for this profile, not known
 
 Everything else another machine changes needs no question: the pins of the producer and
 the rest of the intent arrive with the next ``rebuild``, as a whole tree. What another
 machine scoped away from this one (``machines``) is never new here: ``machine.effective``
-takes it out first.
+takes it out first, and also settles ``requires``.
 
-``known.json`` is ``{schema_version, machine, components, plugins, skills: {name: digest},
-never: {components, skills, plugins}}``. An accepted skill stands there with the digest it was
-accepted at, so ``agents install`` takes it the usual way; ``never`` holds an answer until
-the host file in the checkout does. A machine set up before this release has no
-known.json: ``agents install`` writes what it holds, and nothing is asked. A machine
-without a name has no other machines to hear from, and behaves as it always did.
+``known.json`` is ``{schema_version, components, plugins}``: only what has no copy to look at.
+A machine set up before this release has no such file: ``agents install`` writes what is for it
+now, and nothing is asked. A machine without a name has no other machines to hear from, and
+behaves as it always did.
 
-A change is this machine's own when a commit that is not published yet touches its path,
-or when the last commit that did says ``Dotsteward-Machine: <this machine>``: such an
-item is accepted without a question. No such line names an unknown machine.
+A change is this machine's own when a commit that is not published yet makes it, or when the
+commit that made it says ``Dotsteward-Machine: <this machine>`` (``publish.stamp`` puts that on
+everything that leaves): such an item is accepted without a question. No such line names an
+unknown machine. A new skill goes by the commit that added its SKILL.md, so a later batch commit
+of a producer neither answers the question nor renames it.
 
-Answers: ``Install`` (``base.json`` or ``known.json``, then ``agents install``; a component
-waits for the next rebuild), nothing for ``Ask later``, and ``Never`` (``declined`` in
-``hosts/<name>.toml`` with a commit of its own, published without force; without a network
-the answer holds here and is published by a later run).
+Answers: ``Install`` (one `agents install` that takes the item, DOTSTEWARD_INCOMING_ACCEPT: an
+install that fails stays a question; a component is written to known.json and waits for the next
+rebuild), nothing for ``Ask later``, and ``Never`` (``declined`` in ``hosts/<name>.toml`` with a
+commit of its own, published without force; without a network the answer holds through
+``machine/never.json`` and a later run publishes it).
 
 Exit status: 0 done, 1 refusal, 2 usage error; ``incoming`` without a subcommand also 3,
 when questions wait and no terminal can answer them (``review.json`` holds them).
 
-Python API: ``waiting``, ``read_known``, ``write_baseline``, ``settle``, ``ask``,
+Python API: ``waiting``, ``read_known``, ``forget_state``, ``write_baseline``, ``settle``, ``ask``,
 ``answer``, ``move_forward``.
 
 Command line (``cli/commands/incoming.sh``)::
@@ -68,6 +71,9 @@ NEW = "new"
 CHANGED = "changed"
 REMOVED = "removed"
 _KIND_KEYS = {"skill": "skills", "plugin": "plugins", "component": "components"}
+NEVER_FILE = os.path.join("machine", "never.json")
+ACCEPT_ENV = "DOTSTEWARD_INCOMING_ACCEPT"
+CLASH = "clash"
 _FETCH_SCOPE = "incoming"
 # `machine.effective` asks `waiting` in every command: what no question needs is imported
 # where it is used, so a machine without a question pays for reading two files.
@@ -95,46 +101,63 @@ def _say(message: str) -> None:
 # --- known.json -------------------------------------------------------------------------
 
 
-def _known_path(state_root: str | os.PathLike[str]) -> Path:
-    return Path(state_root) / KNOWN_FILE
-
-
-def read_known(state_root: str | os.PathLike[str], name: str) -> dict[str, Any] | None:
-    """What the machine NAME knows, None when it has not said yet. A file that cannot be
-    read says nothing, and so does a file of another name (this state took a new name):
-    a question too few is better than a question about everything."""
+def read_known(state_root: str | os.PathLike[str]) -> dict[str, Any] | None:
+    """What this machine knows, None when it has not said yet. A file that cannot be read says
+    nothing: a question too few is better than a question about everything."""
     try:
-        document = json.loads(_known_path(state_root).read_text(encoding="utf-8"))
+        document = json.loads((Path(state_root) / KNOWN_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    return document if isinstance(document, dict) and document.get("machine") == name else None
+    return document if isinstance(document, dict) else None
 
 
-def _write_known(state_root: str | os.PathLike[str], document: Mapping[str, Any]) -> None:
+def _write_machine_file(state_root: str | os.PathLike[str], name: str, document: Mapping[str, Any]) -> None:
     from dotsteward_cli import atomic
 
-    path = _known_path(state_root)
+    path = Path(state_root) / name
     atomic.make_private_dirs(state_root)
     atomic.make_private_dirs(path.parent)
     atomic.atomic_write_json(path, document, mode=0o600)
 
 
-def _table(document: Mapping[str, Any], key: str) -> dict[str, Any]:
-    value = document.get(key)
-    return dict(value) if isinstance(value, dict) else {}
-
-
 def _names(document: Mapping[str, Any] | None, key: str) -> set[str]:
     values = document.get(key) if document else None
-    return {str(value) for value in values} if isinstance(values, (list, dict)) else set()
+    return {str(value) for value in values} if isinstance(values, list) else set()
 
 
-def never_answers(state_root: str | os.PathLike[str], name: str) -> dict[str, list[str]]:
+def forget_state(state_root: str | os.PathLike[str]) -> None:
+    """A new start under a name: what the instance holds then is the base of it."""
+    for name in (KNOWN_FILE, NEVER_FILE):
+        (Path(state_root) / name).unlink(missing_ok=True)
+
+
+def never_answers(state_root: str | os.PathLike[str]) -> dict[str, list[str]]:
     """The answers ``Never`` the host file in the checkout does not hold yet."""
-    never = (read_known(state_root, name) or {}).get("never")
-    if not isinstance(never, dict):
+    try:
+        document = json.loads((Path(state_root) / NEVER_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
         return {}
-    return {str(key): [str(name) for name in value] for key, value in never.items() if isinstance(value, list)}
+    if not isinstance(document, dict):
+        return {}
+    return {key: [str(name) for name in value] for key, value in document.items() if isinstance(value, list)}
+
+
+def _write_never(state_root: str | os.PathLike[str], never: Mapping[str, list[str]]) -> None:
+    kept = {key: names for key, names in never.items() if names}
+    if kept:
+        _write_machine_file(state_root, NEVER_FILE, kept)
+    else:
+        (Path(state_root) / NEVER_FILE).unlink(missing_ok=True)
+
+
+def _accepted(env: Mapping[str, str] | None) -> set[str]:
+    """The ids the `agents install` of an answer is told to take."""
+    env = os.environ if env is None else env
+    try:
+        value = json.loads(env.get(ACCEPT_ENV) or "[]")
+    except ValueError:
+        return set()
+    return {str(item) for item in value} if isinstance(value, list) else set()
 
 
 # --- the facts of the tree --------------------------------------------------------------
@@ -175,25 +198,17 @@ def _lock_digest(entry: Mapping[str, Any]) -> str:
     return str(entry.get("directory_sha256") or entry.get("skill_sha256") or "")
 
 
-def _unpublished(root: Path, *where: str, text: str | None = None) -> bool:
-    """Whether a commit no remote has seen touches WHERE, or adds or removes TEXT there. Every
-    fetch leaves its tip in origin/* or refs/dotsteward/*, so a checkout moved to a tip has no
-    such commit."""
+def _unpublished(root: Path, where: Sequence[str], pick: Sequence[str] = ()) -> bool:
+    """Whether a commit no remote has seen makes the change: PICK (log options) among those that
+    touch WHERE. Every fetch leaves its tip in origin/* or refs/dotsteward/*, so a checkout moved to
+    a tip has no such commit."""
     arguments = ["log", "-1", "--format=%H", "HEAD", "--not", "--remotes=origin", "--glob=refs/dotsteward/*"]
-    if text is not None:
-        arguments.append(f"-S{text}")
-    return bool(_git(root, *arguments, "--", *where).strip())
+    return bool(_git(root, *arguments, *pick, "--", *where).strip())
 
 
-def _source(root: Path, *where: str, text: str | None = None, pattern: str | None = None) -> dict[str, Any]:
-    """The last commit that touched WHERE, added or removed TEXT there, or changed a line
-    with PATTERN: the machine its message names, and when."""
-    arguments = ["log", "-1", "--format=%cI%x00%B"]
-    if text is not None:
-        arguments.append(f"-S{text}")
-    if pattern is not None:
-        arguments.append(f"-G{pattern}")
-    answer = _git(root, *arguments, "--", *where)
+def _source(root: Path, where: Sequence[str], pick: Sequence[str] = ()) -> dict[str, Any]:
+    """The commit that made the change: the machine its message names, and when."""
+    answer = _git(root, "log", "-1", "--format=%cI%x00%B", *pick, "--", *where)
     moment, _, message = answer.partition("\0")
     found = _TRAILER.findall(message)
     return {"by": found[-1] if found else None, "when": moment.strip() or None}
@@ -205,7 +220,7 @@ def _pretty_time(moment: str | None) -> str:
     if not moment:
         return "unknown time"
     try:
-        return datetime.datetime.fromisoformat(moment).strftime("%Y-%m-%d %H:%M")
+        return datetime.datetime.fromisoformat(moment).astimezone(datetime.UTC).strftime("%Y-%m-%d %H:%M UTC")
     except ValueError:
         return moment
 
@@ -213,26 +228,7 @@ def _pretty_time(moment: str | None) -> str:
 # --- what waits --------------------------------------------------------------------------
 
 
-def _item(
-    instance: config.Instance,
-    this: str,
-    kind: str,
-    change: str,
-    name: str,
-    where: Sequence[str],
-    text: str | None = None,
-    pattern: str | None = None,
-    sources: Sequence[str] | None = None,
-    **extra: Any,
-) -> dict[str, Any] | None:
-    """The question about NAME, None when the change is this machine's own: WHERE are the
-    paths of the change, SOURCES (default: the same), TEXT and PATTERN find its commit."""
-    root = instance.root
-    if _unpublished(root, *where, text=None if sources else text):
-        return None
-    origin = _source(root, *(sources or where), text=text, pattern=pattern)
-    if origin["by"] == this:
-        return None
+def _question(kind: str, change: str, name: str, origin: Mapping[str, Any], **extra: Any) -> dict[str, Any]:
     item_id = f"{kind}:{name}"
     return {
         "id": item_id,
@@ -244,6 +240,28 @@ def _item(
         "answer": f"dotsteward incoming answer {item_id} --install|--never",
         **extra,
     }
+
+
+def _item(
+    instance: config.Instance,
+    this: str,
+    kind: str,
+    change: str,
+    name: str,
+    where: Sequence[str],
+    pick: Sequence[str] = (),
+    mine: Sequence[str] | None = None,
+    **extra: Any,
+) -> dict[str, Any] | None:
+    """The question about NAME, None when the change is this machine's own: WHERE and PICK find the
+    commit that made it, MINE (default: WHERE and PICK) a commit that is not published yet."""
+    root = instance.root
+    if _unpublished(root, *((mine, ()) if mine is not None else (where, pick))):
+        return None
+    origin = _source(root, where, pick)
+    if origin["by"] == this:
+        return None
+    return _question(kind, change, name, origin, **extra)
 
 
 def _left_behind(
@@ -271,7 +289,6 @@ def _skill_items(
     instance: config.Instance,
     state_root: str,
     this: str,
-    known: Mapping[str, Any],
     reasons: Mapping[str, str],
     lock: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
@@ -280,18 +297,17 @@ def _skill_items(
 
     entries = machine.entries_of(lock, "skills")
     base = skill_state.load_base(state_root)
-    accepted = _table(known, "skills")
     own = _own_revisions(instance)
     lock_file = str(instance.config["skills"]["lock"])
-    where: layout.Layout | None = None
+    roots = layout.read(instance)
+    pending = skill_state.load_pending(state_root)["items"]
     items: list[dict[str, Any] | None] = []
     in_scope: set[str] = set()
     for entry in entries:
         name, directory = entry.get("name"), entry.get("directory")
         if not isinstance(name, str) or not isinstance(directory, str):
             continue
-        reason = reasons.get(f"skill:{name}")
-        if reason in (machine.REASON_MACHINES, machine.REASON_DECLINED):
+        if reasons.get(f"skill:{name}") in (machine.REASON_MACHINES, machine.REASON_DECLINED):
             continue
         in_scope.add(name)
         if entry.get("deployment", "copy") != "copy":
@@ -300,16 +316,18 @@ def _skill_items(
         record = skill_state.base_entry(base, name) if entry.get("revision") in own else None
         vendor = _vendor_path(instance, directory)
         if record is None:
-            if name in accepted:
+            copy = layout.find_copy(roots, entry)
+            if copy is None:
+                added = f"{vendor}/SKILL.md"
+                items.append(_item(instance, this, "skill", NEW, name, [added], ["--diff-filter=A"]))
                 continue
-            where = where or layout.read(instance)
-            if layout.find_copy(where, entry) is not None:
-                continue
-            items.append(_item(instance, this, "skill", NEW, name, [vendor]))
-        elif record["base_sha256"] != digest and accepted.get(name) != digest:
-            where = where or layout.read(instance)
+            noted = pending.get(skill_state.skill_key(name))
+            if isinstance(noted, dict) and noted.get("state") == CLASH and noted.get("digest") != digest:
+                origin = _source(instance.root, [f"{vendor}/SKILL.md"], ["--diff-filter=A"])
+                items.append(_question("skill", CLASH, name, origin, path=copy))
+        elif record["base_sha256"] != digest:
             try:
-                answer = threeway.assess(name, layout.find_copy(where, entry), digest, str(instance.root), state_root)
+                answer = threeway.assess(name, layout.find_copy(roots, entry), digest, str(instance.root), state_root)
             except (OSError, RuntimeError):
                 # A copy that cannot be read is no reason for a command to fail; `skills status` says it.
                 continue
@@ -317,24 +335,30 @@ def _skill_items(
                 items.append(_item(instance, this, "skill", CHANGED, name, [vendor], path=answer["path"]))
     for name, record in _left_behind(instance, base, in_scope, reasons):
         local = record.get("local_path")
-        if not (isinstance(local, str) and os.path.isfile(os.path.join(local, "SKILL.md"))):
+        if not (isinstance(local, str) and os.path.isdir(local)):
             continue
         vendor = _vendor_path(instance, os.path.basename(local))
-        scoped_away = reasons.get(f"skill:{name}") == machine.REASON_MACHINES
-        items.append(
-            _item(
-                instance,
-                this,
-                "skill",
-                REMOVED,
-                name,
-                [vendor],
-                sources=[lock_file] if scoped_away else [vendor, lock_file],
-                pattern='"machines"' if scoped_away else None,
-                text=None if scoped_away else f'"{name}"',
-                path=local,
+        if reasons.get(f"skill:{name}") == machine.REASON_MACHINES:
+            items.append(
+                _item(
+                    instance,
+                    this,
+                    "skill",
+                    REMOVED,
+                    name,
+                    [lock_file],
+                    ['-G"machines"'],
+                    [lock_file],
+                    path=local,
+                    scoped_away=True,
+                )
             )
-        )
+        else:
+            items.append(
+                _item(
+                    instance, this, "skill", REMOVED, name, [vendor, lock_file], [f'-S"{name}"'], [vendor], path=local
+                )
+            )
     return [item for item in items if item is not None]
 
 
@@ -346,11 +370,11 @@ def _plugin_items(
     lock_file = str(instance.config["skills"]["lock"])
     for plugin in sorted({str(p["spec"]) for p in machine.plugin_entries(instance) if isinstance(p.get("spec"), str)}):
         if plugin not in seen and f"plugin:{plugin}" not in reasons:
-            items.append(_item(instance, this, "plugin", NEW, plugin, [config.CONFIG_FILE], text=plugin))
+            items.append(_item(instance, this, "plugin", NEW, plugin, [config.CONFIG_FILE], [f"-S{plugin}"]))
     for entry in machine.entries_of(lock, "own_plugins"):
         own = entry.get("name")
         if isinstance(own, str) and own not in seen and f"plugin:{own}" not in reasons:
-            items.append(_item(instance, this, "plugin", NEW, own, [lock_file], text=own))
+            items.append(_item(instance, this, "plugin", NEW, own, [lock_file], [f"-S{own}"]))
     return [item for item in items if item is not None]
 
 
@@ -368,7 +392,7 @@ def _component_items(
         profiles = table.get("profiles")
         if profiles is not None and profile not in profiles:
             continue
-        items.append(_item(instance, this, "component", NEW, name, [config.CONFIG_FILE], text=f"[components.{name}]"))
+        items.append(_item(instance, this, "component", NEW, name, [config.CONFIG_FILE], [f"-S[components.{name}]"]))
     return [item for item in items if item is not None]
 
 
@@ -383,113 +407,124 @@ def waiting(
     if name is None:
         return []
     state_root = config.state_root(instance, env)
-    known = read_known(state_root, name)
-    if known is None:
-        return []
-    if _lock_broken(instance):
+    known = read_known(state_root)
+    if known is None or _lock_broken(instance):
         return []
     lock = machine.read_lock(instance)
-    return [
-        *_skill_items(instance, state_root, name, known, reasons, lock),
+    items = [
+        *_skill_items(instance, state_root, name, reasons, lock),
         *_plugin_items(instance, name, known, reasons, lock),
         *_component_items(instance, state_root, name, known, reasons),
     ]
+    accepted = _accepted(env)
+    return [item for item in items if item["id"] not in accepted]
 
 
 def _current(instance: config.Instance, env: Mapping[str, str] | None = None) -> dict[str, Any]:
     return machine.effective(instance, env)
 
 
-def _current_set(instance: config.Instance, scope: Mapping[str, Any]) -> dict[str, Any]:
-    """What is in scope for this machine now, as known.json holds it."""
+def _current_set(instance: config.Instance, scope: Mapping[str, Any], state_root: str) -> dict[str, list[str]]:
+    """The components and plugins that are for this machine now, as known.json holds them. What is
+    out of scope stays out of it, so a wider scope is a question later."""
     reasons = scope["reasons"]
     lock = machine.read_lock(instance)
-    skills = {}
-    for entry in machine.entries_of(lock, "skills"):
-        name = entry.get("name")
-        if isinstance(name, str) and reasons.get(f"skill:{name}") not in (
-            machine.REASON_MACHINES,
-            machine.REASON_DECLINED,
-        ):
-            skills[name] = _lock_digest(entry)
     plugins = {str(p["spec"]) for p in machine.plugin_entries(instance) if isinstance(p.get("spec"), str)}
     plugins |= {str(p["name"]) for p in machine.entries_of(lock, "own_plugins") if isinstance(p.get("name"), str)}
-    plugins = {plugin for plugin in plugins if reasons.get(f"plugin:{plugin}") != machine.REASON_MACHINES}
-    components = {name for name, _ in machine.enabled_components(instance)}
-    components = {name for name in components if reasons.get(f"component:{name}") != machine.REASON_MACHINES}
-    return {"skills": skills, "plugins": sorted(plugins), "components": sorted(components)}
+    profile = machine.machine_profile(instance, state_root, scope["name"])
+    components = {
+        name
+        for name, table in machine.enabled_components(instance)
+        if reasons.get(f"component:{name}") in (None, machine.REASON_NOT_ACTIVATED, machine.REASON_REQUIRES)
+        and (table.get("profiles") is None or profile in table["profiles"])
+    }
+    return {
+        "plugins": sorted(plugin for plugin in plugins if f"plugin:{plugin}" not in reasons),
+        "components": sorted(components),
+    }
 
 
 def write_baseline(instance: config.Instance, env: Mapping[str, str] | None = None) -> bool:
-    """A named machine without known.json knows what it holds now: no question comes out of
+    """A named machine without known.json knows what is for it now: no question comes out of
     it. Whether it wrote the file."""
     state_root = config.state_root(instance, env)
     scope = _current(instance, env)
-    if scope["name"] is None or read_known(state_root, scope["name"]) is not None or _lock_broken(instance):
+    if scope["name"] is None or read_known(state_root) is not None or _lock_broken(instance):
         return False
-    _write_known(
-        state_root, {"schema_version": SCHEMA_VERSION, "machine": scope["name"], **_current_set(instance, scope)}
+    _write_machine_file(
+        state_root, KNOWN_FILE, {"schema_version": SCHEMA_VERSION, **_current_set(instance, scope, state_root)}
     )
     return True
 
 
-def _accept(state_root: str, this: str, item: Mapping[str, Any], digest: str | None = None) -> None:
-    known = read_known(state_root, this) or {"schema_version": SCHEMA_VERSION, "machine": this}
-    if item["kind"] == "skill":
-        skills = _table(known, "skills")
-        skills[str(item["name"])] = digest or ""
-        known["skills"] = skills
-    else:
-        key = _KIND_KEYS[str(item["kind"])]
-        known[key] = sorted(_names(known, key) | {str(item["name"])})
-    _write_known(state_root, known)
+def _accept_components(state_root: str, names: Collection[str]) -> None:
+    known = read_known(state_root) or {"schema_version": SCHEMA_VERSION}
+    known["components"] = sorted(_names(known, "components") | set(names))
+    _write_machine_file(state_root, KNOWN_FILE, known)
 
 
 def settle(instance: config.Instance, env: Mapping[str, str] | None = None) -> None:
     """What an `agents install` leaves behind on a named machine: the baseline of a machine
-    that has none, everything of its own in known.json, and the answers of its own that
-    took a skill away."""
+    that has none, what asks nothing in known.json, and the skills it removed itself."""
     from dotsteward_cli.skills import state as skill_state
 
     if write_baseline(instance, env):
         return
     scope = _current(instance, env)
-    if scope["name"] is None:
-        return
     state_root = config.state_root(instance, env)
-    known = read_known(state_root, scope["name"])
-    if known is None:
+    known = read_known(state_root)
+    if scope["name"] is None or known is None or _lock_broken(instance):
         return
-    current = _current_set(instance, scope)
-    open_ids = {item["id"] for item in waiting(instance, scope["name"], scope["reasons"], env)}
-    reasons = scope["reasons"]
-    held = _table(known, "skills")
+    current = _current_set(instance, scope, state_root)
+    open_ids = {item["id"] for item in scope["incoming"]}
     updated = dict(known)
-    # What is here and asks nothing is known from now on, so later commits cannot make it new.
-    for name, digest in current["skills"].items():
-        if f"skill:{name}" not in open_ids and reasons.get(f"skill:{name}") != machine.REASON_INCOMING:
-            held.setdefault(name, digest)
-    updated["skills"] = held
     for key, kind in (("plugins", "plugin"), ("components", "component")):
         updated[key] = sorted(_names(known, key) | {name for name in current[key] if f"{kind}:{name}" not in open_ids})
     if updated != known:
-        _write_known(state_root, updated)
-    # A skill this machine removed itself in a commit: its copy goes with the record.
+        _write_machine_file(state_root, KNOWN_FILE, updated)
+    # A skill this machine removed itself in a commit: its copy goes with the record. One it only
+    # scoped away stays: that says nothing about the copy.
+    entries = machine.entries_of(machine.read_lock(instance), "skills")
+    in_scope = {
+        str(entry.get("name")) for entry in entries if scope["reasons"].get(f"skill:{entry.get('name')}") is None
+    }
+    in_lock = {entry.get("name") for entry in entries}
     base = skill_state.load_base(state_root)
-    if _lock_broken(instance):
-        return
-    in_lock = {entry.get("name") for entry in machine.entries_of(machine.read_lock(instance), "skills")}
-    for name, record in list(_left_behind(instance, base, current["skills"], reasons)):
+    for name, record in list(_left_behind(instance, base, in_scope, scope["reasons"])):
         if name not in in_lock and f"skill:{name}" not in open_ids:
             _remove_copy(instance, state_root, name, record)
+
+
+def clash(instance: config.Instance, name: str, digest: str, path: str, *, record: bool) -> bool:
+    """Whether the copy at PATH of a third party skill, with DIGEST, is something else than an older
+    pin of the lock: a name another machine brought and this machine already used. Only a machine
+    that has a base can tell; the history of the lock says what the name ever was."""
+    from dotsteward_cli.skills import state as skill_state
+
+    state_root = config.state_root(instance)
+    if read_known(state_root) is None or f"skill:{name}" in _accepted(None):
+        return False
+    root = instance.root
+    if _git(root, "rev-parse", "--is-shallow-repository").strip() == "true":
+        return False
+    lock_file = str(instance.config["skills"]["lock"])
+    if _git(root, "log", "-1", "--format=%H", f"-S{digest}", "--", lock_file).strip():
+        return False
+    if record:
+        skill_state.set_item(
+            state_root,
+            skill_state.skill_key(name),
+            {"kind": "skill", "name": name, "path": path, "state": CLASH, "origin": "unknown", "digest": digest},
+        )
+    return True
 
 
 # --- doing what the answer says ---------------------------------------------------------
 
 
-def _agents_install(instance: config.Instance, scope: Mapping[str, Any]) -> None:
+def _agents_install(instance: config.Instance, scope: Mapping[str, Any], accepted: Sequence[str]) -> None:
     """The one way a skill and a plugin land: `agents install`, for the skills, the links and
-    the hooks at once."""
+    the hooks at once, told what it may take. An install that fails stays a question."""
     import subprocess
 
     profile = scope["profile"] or instance.config["profiles"]["check"]
@@ -506,13 +541,16 @@ def _agents_install(instance: config.Instance, scope: Mapping[str, Any]) -> None
         ],
         stdin=subprocess.DEVNULL,
         stdout=sys.stderr,
+        env={**os.environ, ACCEPT_ENV: json.dumps(list(accepted))},
         check=False,
     )
     if result.returncode != 0:
-        raise Refusal(f"agents install failed (exit {result.returncode}); the answer stands, the next rebuild goes on")
+        raise Refusal(f"agents install failed (exit {result.returncode}); it stays a question")
 
 
 def _remove_copy(instance: config.Instance, state_root: str, name: str, record: Mapping[str, Any]) -> None:
+    """The copy goes, after a backup, with the links to it. A copy that is a link out of the skill
+    roots is the user's tree: only the link goes."""
     import datetime
     import shutil
 
@@ -521,24 +559,28 @@ def _remove_copy(instance: config.Instance, state_root: str, name: str, record: 
     from dotsteward_cli.skills import state as skill_state
 
     local = record.get("local_path")
-    if isinstance(local, str) and os.path.isdir(local):
-        stamp = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H%M%SZ")
-        backups = Path(state_root) / "backups" / f"{stamp}-skills"
-        atomic.make_private_dirs(backups.parent)
-        atomic.make_private_dirs(backups)
+    if isinstance(local, str) and os.path.lexists(local):
         real = os.path.realpath(local)
-        shutil.copytree(real, backups / os.path.basename(real), symlinks=True, dirs_exist_ok=True)
         where = layout.read(instance)
+        managed = (*where.search_roots, *where.link_roots, where.scoped_store)
+        inside = any(real.startswith(os.path.realpath(root) + os.sep) for root in managed)
         for root in (*where.link_roots, *where.agent_roots.values()):
             for candidate in (name, os.path.basename(local)):
                 path = os.path.join(root, candidate)
-                if os.path.islink(path) and os.path.realpath(path) == real:
+                if os.path.islink(path) and path != local and os.path.realpath(path) == real:
                     os.unlink(path)
         if os.path.islink(local):
             os.unlink(local)
-        if os.path.isdir(real):
+        if inside and os.path.isdir(real):
+            stamp = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H%M%SZ")
+            backups = Path(state_root) / "backups" / f"{stamp}-skills"
+            atomic.make_private_dirs(backups.parent)
+            atomic.make_private_dirs(backups)
+            shutil.copytree(real, backups / os.path.basename(real), symlinks=True, dirs_exist_ok=True)
             shutil.rmtree(real)
-        _say(f"skill {name}: removed; the copy is in {backups}")
+            _say(f"skill {name}: removed; the copy is in {backups}")
+        else:
+            _say(f"skill {name}: the link is gone; {real} stays")
     skill_state.forget_base(state_root, name)
     skill_state.drop_item(state_root, skill_state.skill_key(name))
 
@@ -564,54 +606,63 @@ def _lock_entry(instance: config.Instance, name: str) -> dict[str, Any] | None:
     return None
 
 
-def _install(
-    instance: config.Instance, this: str, item: Mapping[str, Any], *, now: bool, env: Mapping[str, str]
-) -> str:
+def _install(instance: config.Instance, item: Mapping[str, Any], env: Mapping[str, str]) -> str:
     """Does what Install says for ITEM; what it did, for a person."""
+    from dotsteward_cli.skills import layout
     from dotsteward_cli.skills import state as skill_state
 
     state_root = config.state_root(instance, env)
     kind, name, change = str(item["kind"]), str(item["name"]), str(item["change"])
-    if kind == "skill" and change == REMOVED:
+    if change == REMOVED:
         record = skill_state.base_entry(skill_state.load_base(state_root), name)
         if record is not None:
             _remove_copy(instance, state_root, name, record)
         return f"skill {name}: removed from this machine"
+    if kind == "component":
+        taken = [name, *item.get("needs", [])]
+        _accept_components(state_root, taken)
+        return f"component {', '.join(taken)}: the next 'dotsteward upgrade' or rebuild activates it"
+    _agents_install(instance, _current(instance, env), [str(item["id"])])
     if kind == "skill":
         entry = _lock_entry(instance, name) or {}
-        _accept(state_root, this, item, _lock_digest(entry))
-    else:
-        _accept(state_root, this, item)
-    if kind == "component":
-        return f"component {name}: the next 'dotsteward upgrade' or rebuild activates it"
-    if not now:
-        return f"{kind} {name}: accepted; the next rebuild installs it"
-    _agents_install(instance, _current(instance, env))
-    if kind == "skill" and change == CHANGED:
-        record = skill_state.base_entry(skill_state.load_base(state_root), name)
-        if record is None or record["base_sha256"] != _lock_digest(_lock_entry(instance, name) or {}):
-            return f"skill {name}: this copy did not take it; see 'dotsteward skills status'"
+        if change == CHANGED:
+            record = skill_state.base_entry(skill_state.load_base(state_root), name)
+            if record is None or record["base_sha256"] != _lock_digest(entry):
+                return f"skill {name}: this copy did not take it; see 'dotsteward skills status'"
+        elif layout.find_copy(layout.read(instance), entry) is None:
+            raise Refusal(f"skill {name} did not land; it stays a question")
+        if change == CLASH:
+            skill_state.drop_item(state_root, skill_state.skill_key(name))
     return f"installed {kind} {name}"
 
 
 def _never(instance: config.Instance, this: str, item: Mapping[str, Any], env: Mapping[str, str]) -> str:
     """Does what Never says for ITEM: at once on this machine, in the host file as soon as
-    the remote answers."""
+    the remote answers. A skill also says so in pending.json, where skill tracking looks: a copy
+    that stays is no new skill of this machine."""
     from dotsteward_cli.skills import state as skill_state
 
     state_root = config.state_root(instance, env)
     kind, name = str(item["kind"]), str(item["name"])
-    known = read_known(state_root, this) or {"schema_version": SCHEMA_VERSION, "machine": this}
-    never = _table(known, "never")
+    never = never_answers(state_root)
     key = _KIND_KEYS[kind]
-    listed = never.get(key)
-    never[key] = sorted({*(str(value) for value in (listed if isinstance(listed, list) else [])), name})
-    known["never"] = never
-    _write_known(state_root, known)
+    never[key] = sorted({*never.get(key, []), name})
+    _write_never(state_root, never)
     if kind == "skill":
         skill_state.forget_base(state_root, name)
-        skill_state.drop_item(state_root, skill_state.skill_key(name))
-    _publish_never(instance, this, env)
+        skill_state.set_item(
+            state_root,
+            skill_state.skill_key(name),
+            {"kind": "skill", "name": name, "path": item.get("path"), "state": "declined", "origin": "own"},
+        )
+    try:
+        _publish_never(instance, this, env)
+    except _NotEvaluated:
+        # This answer cannot stand: it stays a question. Others in the file are not about it.
+        now = never_answers(state_root)
+        now[key] = [other for other in now.get(key, []) if other != name]
+        _write_never(state_root, now)
+        raise
     return f"{kind} {name}: never on this machine"
 
 
@@ -658,21 +709,17 @@ def _publish_never(instance: config.Instance, this: str, env: Mapping[str, str])
     from dotsteward_cli import host, report
 
     state_root = config.state_root(instance, env)
-    pending = never_answers(state_root, this)
+    pending = never_answers(state_root)
     if not any(pending.values()):
         return
     check = (lambda commit: _evaluates(instance, this, commit)) if pending.get("components") else None
     try:
         code = host.publish(instance, env, declined=pending, check=check)
-    except _NotEvaluated:
-        # This answer cannot stand: it stays a question.
-        known = read_known(state_root, this)
-        if known is not None:
-            never = {key: value for key, value in _table(known, "never").items() if key != "components"}
-            _write_known(state_root, {**known, "never": never})
-        raise
     except host.Refusal as refused:
         raise Refusal(f"{refused}; the answer holds here and waits") from refused
+    if code == report.PRIVACY_STOP:
+        _say("the privacy scan stopped the host file: the answer holds here; look at the finding above")
+        return
     if code != report.OK:
         _say("the answer waits for the remote: it holds here, a later 'dotsteward incoming' publishes it")
         return
@@ -683,20 +730,14 @@ def _publish_never(instance: config.Instance, this: str, env: Mapping[str, str])
 def _clear_never(instance: config.Instance, this: str, env: Mapping[str, str]) -> None:
     """An answer that stands in the host file of the checkout needs no second place."""
     state_root = config.state_root(instance, env)
-    known = read_known(state_root, this)
-    if known is None or not isinstance(known.get("never"), dict):
-        return
     declined = (machine.read_host(instance.root, this) or {}).get("declined", {})
-    never = {
-        key: [str(value) for value in values if str(value) not in declined.get(key, [])]
-        for key, values in known["never"].items()
-        if isinstance(values, list)
-    }
-    if any(never.values()):
-        if never != known["never"]:
-            _write_known(state_root, {**known, "never": never})
-    else:
-        _write_known(state_root, {key: value for key, value in known.items() if key != "never"})
+    _write_never(
+        state_root,
+        {
+            key: [name for name in names if name not in declined.get(key, [])]
+            for key, names in never_answers(state_root).items()
+        },
+    )
 
 
 def move_forward(instance: config.Instance, *, quiet: bool = False) -> None:
@@ -728,22 +769,58 @@ def move_forward(instance: config.Instance, *, quiet: bool = False) -> None:
 # --- the question ------------------------------------------------------------------------
 
 
+_CHANGE_WORDS = {CLASH: "a copy here has this name"}
+_WHY_LEFT = {
+    "declined": "which this machine declined",
+    "machines": "which is for other machines",
+    "tags": "which is for other machine tags",
+    "disabled": "which the instance does not enable",
+}
+
+
 def describe(item: Mapping[str, Any]) -> str:
     who = f"machine {item['by']}" if item.get("by") else "an unknown machine"
-    return f"{item['kind']} {item['name']} ({item['change']}) - {who}, {_pretty_time(item.get('when'))}"
+    change = (
+        "no longer for this machine" if item.get("scoped_away") else _CHANGE_WORDS.get(item["change"], item["change"])
+    )
+    related = ""
+    if item.get("needs"):
+        related += f", needs {', '.join(item['needs'])}"
+    if item.get("needed_by"):
+        related += f", needed by {', '.join(item['needed_by'])}"
+    return f"{item['kind']} {item['name']} ({change}{related}) - {who}, {_pretty_time(item.get('when'))}"
 
 
 def _prompt(item: Mapping[str, Any]) -> str:
     if item["change"] == REMOVED:
-        choices = "[R]emove, keep and ask [L]ater, [N]ever ask again on this machine, show the [D]ifference"
+        choices = "[R]emove, keep and ask [L]ater, [N]ever ask again on this machine, show [D]etails"
+    elif item["change"] == CLASH:
+        choices = "[I]nstall over it with a backup, ask [L]ater, [N]ever on this machine, show [D]etails"
     else:
-        choices = "[I]nstall, ask [L]ater, [N]ever on this machine, show the [D]ifference"
+        choices = "[I]nstall, ask [L]ater, [N]ever on this machine, show [D]etails"
     return f"{describe(item)}. {choices}: "
+
+
+def _component_text(instance: config.Instance, name: str) -> list[str]:
+    from dotsteward_cli.skills import layout
+
+    table = instance.config["components"].get(name, {})
+    lines = [
+        f"{key}: {value}" for key, value in table.items() if value not in (None, {}, [], False) and key != "enable"
+    ]
+    for entry in layout.manifest(instance).get("components") or []:
+        if entry.get("name") == name:
+            lines.append(f"method: {entry.get('method')}")
+            lines += [f"needs: {', '.join(entry['requires'])}"] if entry.get("requires") else []
+    return lines
 
 
 def show_text(instance: config.Instance, item: Mapping[str, Any], env: Mapping[str, str] | None = None) -> str:
     """What an answer is about: what an install would change here."""
     import subprocess
+
+    from dotsteward_cli.skills import normal
+    from dotsteward_cli.skills import state as skill_state
 
     root = instance.root
     lines = [describe(item)]
@@ -751,6 +828,13 @@ def show_text(instance: config.Instance, item: Mapping[str, Any], env: Mapping[s
     if item["kind"] == "skill":
         if item["change"] == REMOVED:
             lines.append(f"the repository holds no {name} for this machine any more; the copy here: {item.get('path')}")
+            record = skill_state.base_entry(skill_state.load_base(config.state_root(instance, env)), name)
+            try:
+                digest = normal.normal_form(os.path.realpath(str(item.get("path"))), None).digest
+            except (OSError, RuntimeError):
+                digest = None
+            if record is not None and digest != record["base_sha256"]:
+                lines.append("it was edited here since it was last in sync; a removal keeps a backup")
         else:
             entry = _lock_entry(instance, name) or {}
             source = root / _vendor_path(instance, str(entry.get("directory") or name))
@@ -773,8 +857,7 @@ def show_text(instance: config.Instance, item: Mapping[str, Any], env: Mapping[s
             if plugin.get("spec") == name:
                 lines.append(json.dumps(plugin, indent=2, sort_keys=True, ensure_ascii=False))
     else:
-        table = instance.config["components"].get(name, {})
-        lines.append(json.dumps(table, indent=2, sort_keys=True, ensure_ascii=False, default=str))
+        lines += _component_text(instance, name)
     return "\n".join(lines)
 
 
@@ -785,12 +868,24 @@ def _read_answer(prompt: str) -> str:
     return line.strip().lower()[:1] if line else "l"
 
 
+def _tell(run: report.RunReport, requires: Mapping[str, Sequence[Mapping[str, str]]]) -> None:
+    """What `requires` means here is for the person here: said now and kept as a note."""
+    for entry in requires["arriving"]:
+        text = f"component {entry['component']} comes with this tree: {entry['needed_by']} needs it"
+        _say(text)
+        run.item("component-needed", pending=False, message=text, **entry)
+    for entry in requires["unmet"]:
+        why = _WHY_LEFT.get(entry["why"], f"which this machine leaves out ({entry['why']})")
+        text = f"component {entry['component']} is left out: it needs {entry['needs']}, {why}"
+        _say(text)
+        run.item("requires-unmet", pending=False, message=text, **entry)
+
+
 def ask(
     instance: config.Instance,
     run: report.RunReport,
     *,
     terminal: bool,
-    install_now: bool = True,
     env: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """The question about what waits, one item at a time; for `dotsteward incoming` and for
@@ -798,35 +893,40 @@ def ask(
     Ask later and an entry of RUN, which makes the run end in 3. What still waits comes back."""
     env = os.environ if env is None else env
     write_baseline(instance, env)
-    scope = _current(instance, env)
-    this = scope["name"]
+    this = _current(instance, env)["name"]
     if this is None:
         return []
     try:
         _publish_never(instance, this, env)
+    except _NotEvaluated as refused:
+        _say(f"ERROR: {refused}; these answers are questions again")
+        state_root = config.state_root(instance, env)
+        _write_never(state_root, {**never_answers(state_root), "components": []})
     except Refusal as refused:
         _say(f"ERROR: {refused}")
     scope = _current(instance, env)
+    _tell(run, scope["requires"])
     items: list[dict[str, Any]] = list(scope["incoming"])
     state_root = config.state_root(instance, env)
     if not terminal:
         for item in items:
             run.item(_REVIEW_CODE, **{key: item[key] for key in item if key in _REVIEW_FIELDS})
         return items
+    if items:
+        _say(f"{len(items)} change{'s' if len(items) != 1 else ''} from other machines wait for an answer")
     left: list[dict[str, Any]] = []
     for item in items:
-        removal = item["change"] == REMOVED
-        accepted = ("r" if removal else "i", "l", "n", "")
+        accepted = ("r" if item["change"] == REMOVED else "i", "l", "n", "")
         while True:
-            answer = _read_answer(_prompt(item))
-            if answer == "d":
+            given = _read_answer(_prompt(item))
+            if given == "d":
                 print(show_text(instance, item, env), file=sys.stderr, flush=True)
-            elif answer in accepted:
+            elif given in accepted:
                 break
         try:
-            if answer == accepted[0]:
-                said = _install(instance, this, item, now=install_now, env=env)
-            elif answer == "n":
+            if given == accepted[0]:
+                said = _install(instance, item, env)
+            elif given == "n":
                 said = _never(instance, this, item, env)
             else:
                 left.append(item)
@@ -841,7 +941,7 @@ def ask(
     return left
 
 
-_REVIEW_FIELDS = ("id", "kind", "change", "name", "by", "when", "show", "answer")
+_REVIEW_FIELDS = ("id", "kind", "change", "name", "by", "when", "show", "answer", "needs", "needed_by")
 
 
 def answer(instance: config.Instance, item_id: str, *, never: bool, env: Mapping[str, str] | None = None) -> str:
@@ -852,8 +952,7 @@ def answer(instance: config.Instance, item_id: str, *, never: bool, env: Mapping
         raise Refusal("this machine has no name yet: 'dotsteward host init' names it")
     state_root = config.state_root(instance, env)
     item = _find(scope["incoming"], item_id)
-    this = scope["name"]
-    said = _never(instance, this, item, env) if never else _install(instance, this, item, now=True, env=env)
+    said = _never(instance, scope["name"], item, env) if never else _install(instance, item, env)
     _drop_review(state_root, item_id)
     return said
 
@@ -887,8 +986,8 @@ def _parser() -> Any:
         help="answer one item",
         description=(
             "--install installs a skill or a plugin at once, removes what the repository no longer holds for this "
-            "machine, and leaves a component to the next upgrade or rebuild; --never records the answer in the host "
-            "file of this machine. To ask later, do nothing."
+            "machine, and leaves a component to the next upgrade or rebuild, with what it needs; --never records the "
+            "answer in the host file of this machine. To ask later, do nothing."
         ),
         allow_abbrev=False,
     )
@@ -909,17 +1008,24 @@ def _print_items(items: Sequence[Mapping[str, Any]]) -> None:
         print(f"  {item['answer']}")
 
 
+def _answers_lock(state_root: str) -> Any:
+    """One answer at a time on a machine."""
+    from dotsteward_cli import atomic, locks
+
+    atomic.make_private_dirs(state_root)
+    atomic.make_private_dirs(Path(state_root) / "machine")
+    return locks.FileLock(Path(state_root) / "machine" / "incoming.lock")
+
+
 def _ask_command(args: Any, instance: config.Instance, env: Mapping[str, str]) -> int:
-    from dotsteward_cli import atomic, locks, report
+    from dotsteward_cli import report
 
     state_root = config.state_root(instance, env)
     scope = _current(instance, env)
     if scope["name"] is None:
         _say("this machine has no name, so nothing is asked; 'dotsteward host init' names it")
         return report.OK
-    lock = locks.FileLock(Path(state_root) / "machine" / "incoming.lock")
-    atomic.make_private_dirs(state_root)
-    atomic.make_private_dirs(Path(state_root) / "machine")
+    lock = _answers_lock(state_root)
     lock.acquire()
     try:
         move_forward(instance)
@@ -941,12 +1047,18 @@ def _ask_command(args: Any, instance: config.Instance, env: Mapping[str, str]) -
 def main(argv: Sequence[str] | None = None) -> int:
     from dotsteward_cli import locks, report
 
-    if list(sys.argv[1:] if argv is None else argv) == ["settle"]:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments == ["settle"]:
         # For `agents install`, not for a person.
         try:
             settle(config.load_instance())
         except (config.DotstewardError, OSError) as failure:
             print(f"[dotsteward] WARNING: incoming: {failure}", file=sys.stderr)
+        return report.OK
+    if arguments[:1] == ["clash"]:
+        # For `agents install` and `agents check`, not for a person.
+        name, digest, path, mode = arguments[2], arguments[4], arguments[6], arguments[8]
+        print("clash" if clash(config.load_instance(), name, digest, path, record=mode == "install") else "no")
         return report.OK
     parser = _parser()
     try:
@@ -971,7 +1083,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             text = show_text(instance, item, env)
             print(json.dumps({**item, "text": text}, indent=2, ensure_ascii=False) if args.json else text)
             return report.OK
-        said = answer(instance, args.id, never=args.never, env=env)
+        lock = _answers_lock(config.state_root(instance, env))
+        lock.acquire()
+        try:
+            said = answer(instance, args.id, never=args.never, env=env)
+        finally:
+            lock.release()
         print(json.dumps({"id": args.id, "done": said}) if args.json else f"[dotsteward] {said}")
         return report.OK
     except UsageError as usage:

@@ -597,8 +597,19 @@ let
     let
       hosts = hostsOfSystem system;
       evaluated = map (host: host.name) hosts;
+      # Whoever reads a failure may sit at another machine: the line before it says which one
+      # it is about. Home Manager throws the failed assertions, so this is how to get at them.
       paths = map (
-        host: builtins.unsafeDiscardStringContext hostConfigurations.${host.name}.activationPackage.drvPath
+        host:
+        let
+          path = hostConfigurations.${host.name}.activationPackage.drvPath;
+        in
+        builtins.unsafeDiscardStringContext (
+          if (builtins.tryEval path).success then
+            path
+          else
+            builtins.trace "dotsteward: machine ${host.name} does not evaluate with hosts/${host.name}.toml:" path
+        )
       ) hosts;
     in
     builtins.deepSeq paths (

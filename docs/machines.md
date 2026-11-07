@@ -77,20 +77,35 @@ than the tags keeps working. Nix reads `system`, `profile`, `tags` and
 machine.
 
 A component that is left out on a machine is not active there: `helpers.isActive` decides,
-in every module. The manifest does not change with it: `machines` and `tags` are data in its
-component entries, there is one manifest per system, and the commands of the CLI leave the
-component out by `skills effective`. `checks.<system>.manifest-consistent` holds every
-machine to that.
+in every module. The manifest does not change with it: `machines`, `tags`, `requires` and its
+`managed_links` are data in its component entries, there is one manifest per system, and the
+commands of the CLI leave the component out by `skills effective`.
+`checks.<system>.manifest-consistent` holds every machine to that.
+
+Nothing of a component that is not active is expected on the machine, whatever left it out
+(`machines`, `tags`, an answer, a profile): one predicate, `methods_components`, says what is
+active for `agents install`, for the managed links and the settings targets of `e2e`. A settings
+entry of such a component waits in the buffer: the targets file of a generation holds every
+target with `active`, so it is no unknown target; `rollback` still reads every link.
 
 `hostConfigurations.<name>` is the configuration of a machine, under the check identity.
 `checks.<system>.hosts-eval` evaluates each distinct tag set of the machines of that system
-without building it, so an assertion of any machine stops the gate of every machine. A
-component says what it needs with `requires`; leaving that out is such an assertion, and the
-message names both. `gate` builds and probes the configuration of the machine it runs on
+without building it, so an assertion of any machine stops the gate of every machine, and says
+which machine it is about. `gate` builds and probes the configuration of the machine it runs on
 when the tree has its file on the primary system (`checks.<system>.home` otherwise, and under
 a framework pin older than this output), and records `host` and `tags_sha256` in
 `generation.json`. `rebuild` reuses that generation only for the tags it would use itself,
 so what differs only by an answer of this machine is proved by its own build and E2E.
+
+## What a component needs
+
+A component says what it needs with `requires`. That is a statement about one machine at a
+time, which the CLI of that machine reads from the manifest; Nix never fails for it, so no
+machine's gate depends on another machine's answer. What a component this machine runs needs
+comes with the tree, without a question, and the report names both. When both are new, the
+questions say so, and installing the one takes the other along. A component that needs what
+this machine leaves out is left out too (`requires` in `skills effective`, a `no:` tag on
+this machine), and the person here is told, in the output and in `review.json`.
 
 ## What other machines changed
 
@@ -104,7 +119,8 @@ the machine that made the change:
 | Own skill changed, local copy unchanged | backup, new copy | the old copy stays | `declined.skills`, the copy stays, tracking ends |
 | Own skill removed, or this machine left its `machines` | backup, removed here | the copy stays | `declined.skills`, the copy stays, not asked again |
 | New plugin | installed | not installed | `declined.plugins` |
-| New component | active from the next `upgrade` or rebuild | a `no:` tag on this machine | `declined.components` |
+| New component | active from the next `upgrade` or rebuild; nothing expects it before | a `no:` tag on this machine | `declined.components` |
+| Third party skill, a copy here has that name | backup, the skill of the lock | the copy stays | `declined.skills`, the copy stays |
 
 Everything else needs no question: pins and the rest of the intent arrive as a whole tree
 with the next rebuild. A change here and there is a conflict, which `dotsteward skills
@@ -118,17 +134,20 @@ Without a terminal every item is ask later: `review.json` holds it under the cod
 Nothing keeps a cursor or a queue: every run compares the tree with what the machine
 holds. Ask later therefore stores nothing. Never goes to `hosts/<name>.toml`, because it is
 the intent of the machine and a reinstall under the same name finds it; without a network
-it holds on the machine and a later `incoming` or `upgrade` publishes it. A `no:` tag in a host
-file must leave that machine evaluating, or it would stop the gates of the others, so Never
-on a component evaluates the machine first and refuses when Nix says no.
+it holds through `<state>/machine/never.json` and a later `incoming` or `upgrade` publishes it. A `no:` tag in a host
+file must leave that machine evaluating, or an assertion of it would stop the gates of the others,
+so Never on a component evaluates the machine first and refuses when Nix says no.
 
 The change is this machine's own, and no question, when a commit that is not published
 yet touches its path or the last commit that did says `Dotsteward-Machine: <this
-machine>`; every commit the framework makes for an instance says that. A commit with no such
-line comes from an unknown machine. `<state>/machine/known.json` holds the third party skills,
-plugins and components the machine knows; a machine without the file (a fresh install, or
-one set up before this release) takes what the instance holds now as known, on its first `agents
-install`, and nothing is asked.
+machine>`; every commit the framework makes for an instance says that. `dotsteward update publish` puts that line
+on every commit it sends from a named machine, also on a plain `git commit`, with the same tree,
+author and dates; a commit with no such line comes from an unknown machine. `<state>/machine/known.json`
+holds the plugins and components the machine knows; a skill is answered by its copy and
+`base.json`, so a skill that left and comes back asks again. A machine without the file (a fresh
+install, or one set up before this release) takes what is for it now as known, on its first
+`agents install`, and nothing is asked. A third party skill whose copy here never was a pin of the
+lock is the user's own under that name: it stays and is a question.
 
 ## The producer
 

@@ -633,7 +633,9 @@ _e2e_managed_links() {
     fi
     _e2e_fail_or_continue
     unit_failed=1
-  done < <(jq -j '(.managed_links // [])[] | ., "\u0000"' <<<"$DS_MANIFEST_JSON")
+  done < <(jq -j --argjson inactive "$(methods_inactive_components "$profile")" '
+    [.components[]? | select(.name as $name | $inactive | index($name)) | (.managed_links // [])[]] as $out
+    | ((.managed_links // []) - $out)[] | ., "\u0000"' <<<"$DS_MANIFEST_JSON")
   ((unit_failed == 0)) || exit 1
 }
 
@@ -738,7 +740,8 @@ _e2e_agents() {
 # _e2e_settings_args: the settings options of this run.
 _e2e_settings_args() {
   printf '%s\0' --repo "$DS_INSTANCE_ROOT" --home "$HOME" \
-    --state-dir "$(state_root)/local-maintained-files" --targets-file "$DS_MANIFEST_FILE"
+    --state-dir "$(state_root)/local-maintained-files" --targets-file "$DS_MANIFEST_FILE" \
+    --inactive-components "$(methods_inactive_components "$profile")"
 }
 
 _e2e_settings_files() {

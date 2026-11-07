@@ -81,7 +81,9 @@ done
 # A skill Home Manager links on every machine cannot be declined on one.
 lock_edit '(.skills[] | select(.name == "beta")).deployment = "home-manager"'
 write_host desktop 'declined = { skills = ["beta"] }'
-assert_contains "$(problems)" "hosts/desktop.toml: declined skill beta has the home-manager deployment"
+# It is a word for whoever reads it, not a failure: the person at another machine cannot change that file.
+assert_exit 0 run_host check
+assert_contains "$DS_STDERR" "hosts/desktop.toml: declined skill beta has the home-manager deployment"
 lock_edit '(.skills[] | select(.name == "beta")) |= del(.deployment)'
 assert_exit 0 run_host check
 rm -- "$agents_inst/hosts/desktop.toml"

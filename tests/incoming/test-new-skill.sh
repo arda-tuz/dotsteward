@@ -35,7 +35,7 @@ assert_eq 0 "$(find "$(home_of laptop2)/.agents/skills" -name foo | wc -l)" "age
 # again, and it is no failure.
 out=$(ask_on_tty laptop2 $'x\nl' incoming)
 assert_contains "$out" 'skill foo (new) - machine laptop1'
-assert_contains "$out" '[I]nstall, ask [L]ater, [N]ever on this machine, show the [D]ifference'
+assert_contains "$out" '[I]nstall, ask [L]ater, [N]ever on this machine, show [D]etails'
 assert_eq 'skill:foo' "$(waiting laptop2)"
 assert_eq 0 "$(find "$(home_of laptop2)/.agents/skills" -name foo | wc -l)"
 [[ ! -f $(state_of laptop2)/review.json ]] || assert_json "$(state_of laptop2)/review.json" \

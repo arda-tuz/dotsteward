@@ -43,7 +43,8 @@
 #   record); the commit subjects (update scope: the last one is exactly
 #   commit.update_subject; maintain scope: every one after the base is a
 #   conventional commit); a fresh fetch (60 s) finds origin/<branch>
-#   still at the base; HEAD is pushed to <branch> without force (180 s) and
+#   still at the base; on a named machine every commit to publish gets the line
+#   Dotsteward-Machine: <name>, whoever wrote it, with the same tree, author and dates; HEAD is pushed to <branch> without force (180 s) and
 #   the remote branch is verified to be HEAD (60 s). When the fetch finds
 #   the remote branch already at HEAD, the commit is already published:
 #   nothing is pushed and the exit status is 0. Finally the canonical
@@ -75,6 +76,8 @@ source "$lib_dir/lib.sh"
 source "$lib_dir/config.sh"
 # shellcheck source=cli/lib/txn.sh
 source "$lib_dir/txn.sh"
+# shellcheck source=cli/lib/python.sh
+source "$lib_dir/python.sh"
 
 # The conventional commit types, as `dotsteward context` reports them.
 CONVENTIONAL_SUBJECT='^(feat|fix|perf|refactor|docs|chore|test|build|ci|style|revert)(\([a-z0-9._/-]+\))?!?: .+'
@@ -319,6 +322,12 @@ cmd_publish() {
     return 0
   fi
   [[ $remote == "$base" ]] || die "remote $branch changed since prepare: $remote, not the base OID $base"
+  # What leaves names the machine it comes from: another machine asks about it by that name.
+  # The tree stays the one the gate and E2E proved.
+  if [[ -n ${DS_MACHINE_NAME:-} ]]; then
+    head=$(ds_python dotsteward_cli.publish stamp "$root" "$base" "$DS_MACHINE_NAME") ||
+      die "cannot name the machine in the commits to publish"
+  fi
   git_net 180 -C "$root" push origin "HEAD:refs/heads/$branch" </dev/null || die "push failed"
   verified=$(git_net 60 -C "$root" ls-remote origin "refs/heads/$branch" </dev/null |
     awk -v ref="refs/heads/$branch" '$2 == ref { print $1 }') || verified=""

@@ -53,6 +53,8 @@ REASON_DECLINED = "declined"
 REASON_DELETED = "deleted"
 REASON_INCOMING = "incoming"
 REASON_TAGS = "tags"
+REASON_REQUIRES = "requires"
+REASON_NOT_ACTIVATED = "not-activated"
 
 
 def valid_name(name: str) -> bool:
@@ -275,9 +277,86 @@ def _host_build(instance: config.Instance, name: str | None, host: Mapping[str, 
     }
 
 
+def _settle_requires(
+    instance: config.Instance, name: str | None, questions: list[dict[str, Any]], reasons: dict[str, str]
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
+    """What `requires` means on this machine, and only here: what a component it runs needs arrives
+    with the tree, without a question; a component that needs what this machine leaves out is
+    left out too, and the person here is told. Nix never fails for it, so no other machine's
+    gate does. A question says which other question it hangs together with."""
+    told: dict[str, list[dict[str, str]]] = {"arriving": [], "unmet": []}
+    new = {question["name"] for question in questions if question["kind"] == "component"}
+    left = {key.removeprefix("component:"): why for key, why in reasons.items() if key.startswith("component:")}
+    if name is None or not (new or left):
+        return questions, told
+    from dotsteward_cli.skills import layout
+
+    entries = layout.manifest(instance).get("components") or []
+    needs = {str(entry.get("name")): [str(item) for item in entry.get("requires") or []] for entry in entries}
+    enabled = {component for component, _ in enabled_components(instance)}
+    running = enabled - set(left) - new
+    pending = sorted(running)
+    while pending:
+        for needed in needs.get(pending.pop(), []):
+            if needed in new:
+                told["arriving"].append({"component": needed, "needed_by": _first_needing(needs, running, needed)})
+                new.discard(needed)
+                running.add(needed)
+                pending.append(needed)
+    changed = True
+    while changed:
+        changed = False
+        for component in sorted(running):
+            for needed in needs.get(component, []):
+                why = left.get(needed) or ("disabled" if needed not in enabled else None)
+                if why is not None and component in running:
+                    told["unmet"].append({"component": component, "needs": needed, "why": why})
+                    reasons[f"component:{component}"] = REASON_REQUIRES
+                    left[component] = REASON_REQUIRES
+                    running.discard(component)
+                    changed = True
+    kept = [q for q in questions if q["kind"] != "component" or q["name"] in new]
+    for question in kept:
+        if question["kind"] == "component":
+            closure = _needs_closure(needs, question["name"]) & new
+            question["needs"] = sorted(closure)
+            question["needed_by"] = sorted(other for other in new if question["name"] in _needs_closure(needs, other))
+    return kept, told
+
+
+def _first_needing(needs: Mapping[str, list[str]], running: Collection[str], needed: str) -> str:
+    return next(component for component in sorted(running) if needed in needs.get(component, []))
+
+
+def _needs_closure(needs: Mapping[str, list[str]], name: str) -> set[str]:
+    """What NAME needs, directly or not."""
+    found: set[str] = set()
+    pending = list(needs.get(name, []))
+    while pending:
+        item = pending.pop()
+        if item not in found:
+            found.add(item)
+            pending += needs.get(item, [])
+    return found
+
+
+def _note_not_activated(instance: config.Instance, state: str, reasons: dict[str, str]) -> None:
+    """A component the active generation was built without, which nothing keeps out any more: it
+    is accepted and not there yet. Nothing expects it until the rebuild, whose tags let it in."""
+    try:
+        tags = json.loads((Path(state) / "current" / "activation.json").read_text(encoding="utf-8")).get("tags")
+    except (OSError, ValueError, AttributeError):
+        return
+    if not isinstance(tags, list):
+        return
+    for component, _ in enabled_components(instance):
+        if f"no:{component}" in tags:
+            reasons.setdefault(f"component:{component}", REASON_NOT_ACTIVATED)
+
+
 def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -> dict[str, Any]:
     """What applies to this machine: ``{name, profile, tags, skip: {components, skills,
-    plugins}, reasons, incoming, nix_tags, nix_tags_sha256, host_build}``. ``skip`` holds
+    plugins}, reasons, incoming, requires, nix_tags, nix_tags_sha256, host_build}``. ``skip`` holds
     sorted names, ``reasons`` one word for each, under ``skill:<name>``, ``plugin:<name>``
     and ``component:<name>``. A plugin goes by its spec. The profile never falls back to a
     default of the instance. ``incoming`` is what waits for an answer
@@ -294,7 +373,7 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
     if name is not None:
         from dotsteward_cli import incoming
 
-        for key, values in incoming.never_answers(state, name).items():
+        for key, values in incoming.never_answers(state).items():
             declined[key] = [*declined.get(key, []), *values]
 
     reasons: dict[str, str] = {}
@@ -329,16 +408,19 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
     # What another machine brought and this machine did not answer yet. A new item stays out
     # of every command; the copy of a changed one stays and is checked, only not replaced.
     questions = incoming.waiting(instance, name, reasons, env)
+    questions, requires = _settle_requires(instance, name, questions, reasons)
     for question in questions:
         if question["change"] == incoming.NEW:
             reasons[f"{question['kind']}:{question['name']}"] = REASON_INCOMING
 
     profile = host.get("profile") or recorded.get("profile") or recorded_profile(state, instance)
+    _note_not_activated(instance, state, reasons)
     nix_tags: list[str] = []
     if name is not None:
         # Every declined component, enabled or not, as mkInstance reads the host file.
         left_out = [question["name"] for question in questions if question["kind"] == "component"]
         left_out += declined.get("components", [])
+        left_out += [entry["component"] for entry in requires["unmet"]]
         nix_tags = sorted({*machine_tags, f"machine:{name}", *(f"no:{component}" for component in left_out)})
     return {
         "name": name,
@@ -351,6 +433,7 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
         },
         "reasons": dict(sorted(reasons.items())),
         "incoming": questions,
+        "requires": requires,
         "nix_tags": nix_tags,
         "nix_tags_sha256": tags_digest(nix_tags),
         "host_build": _host_build(instance, name, host),
@@ -447,14 +530,6 @@ def check_problems(instance: config.Instance) -> list[str]:
             problems.append(f"{label}: system {host['system']} is not in nix.systems")
         if "profile" in host and host["profile"] not in instance.config["profiles"]["names"]:
             problems.append(f"{label}: profile {host['profile']} is not in profiles.names")
-        for entry in entries_of(read_lock(instance), "skills"):
-            if (
-                entry.get("name") in host.get("declined", {}).get("skills", [])
-                and entry.get("deployment") == "home-manager"
-            ):
-                problems.append(
-                    f"{label}: declined skill {entry['name']} has the home-manager deployment, on every machine"
-                )
     lock = read_lock(instance)
     lock_name = instance.config["skills"]["lock"]
     for entry in entries_of(lock, "skills"):
@@ -474,6 +549,25 @@ def check_problems(instance: config.Instance) -> list[str]:
         if answers.setdefault(plugin.get("spec"), plugin.get("machines")) != plugin.get("machines"):
             problems.append(f"{label}: the components list it for different machines")
     return problems
+
+
+def check_warnings(instance: config.Instance) -> list[str]:
+    """What the tree says that no machine can be asked to change here: a machine declined a skill
+    that another machine then gave the home-manager deployment, which is on every machine."""
+    root = instance.root
+    entries = {entry.get("name"): entry for entry in entries_of(read_lock(instance), "skills")}
+    found = []
+    for name in known_names(root):
+        try:
+            declined = (read_host(root, name) or {}).get("declined", {}).get("skills", [])
+        except config.DotstewardError:
+            continue
+        for skill in declined:
+            if entries.get(skill, {}).get("deployment") == "home-manager":
+                found.append(
+                    f"{HOSTS_DIR}/{name}.toml: declined skill {skill} has the home-manager deployment, on every machine"
+                )
+    return found
 
 
 # --- Command line ---------------------------------------------------------------------

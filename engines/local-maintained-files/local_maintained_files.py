@@ -329,7 +329,8 @@ def resolve_context(args: argparse.Namespace) -> Context:
     reload_hooks: dict[str, ReloadHook] = {}
     if targets_file is not None:
         targets_file = os.path.abspath(targets_file)
-        component_targets, reload_hooks = load_targets_file(targets_file, platform_name)
+        inactive = json.loads(args.inactive_components) if args.inactive_components else []
+        component_targets, reload_hooks = load_targets_file(targets_file, platform_name, inactive)
 
     return Context(
         repo=repo,
@@ -346,13 +347,16 @@ def resolve_context(args: argparse.Namespace) -> Context:
 
 
 def _without_component(spec: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in spec.items() if key != "component"}
+    return {key: value for key, value in spec.items() if key not in ("component", "active")}
 
 
-def load_targets_file(path: str, platform_name: str) -> tuple[dict[str, Target], dict[str, ReloadHook]]:
+def load_targets_file(
+    path: str, platform_name: str, inactive: collections.abc.Collection[str] = ()
+) -> tuple[dict[str, Target], dict[str, ReloadHook]]:
     """Component targets and the reload registry of a targets file: the
     generation's ({schema_version, targets, reload_hooks}) or a manifest
-    ({schema_version, settings_targets, reload_hooks})."""
+    ({schema_version, settings_targets, reload_hooks}). A target whose component is not active on
+    this machine waits: "active": false in the file, or its component in INACTIVE."""
     try:
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
@@ -379,6 +383,8 @@ def load_targets_file(path: str, platform_name: str) -> tuple[dict[str, Target],
         targets = {name: Target(name, _without_component(spec), platform_name) for name, spec in raw_targets.items()}
     except LmfError as error:
         raise LmfError(*(f"{where}: {message}" for message in error.messages)) from error
+    for name, spec in raw_targets.items():
+        targets[name].waiting = spec.get("active") is False or spec.get("component") in inactive
     return targets, hooks
 
 
@@ -490,6 +496,8 @@ class Target:
         if unknown:
             raise LmfError(f"targets.{name}: unknown fields {sorted(unknown)}")
         self.name = name
+        # The component of this target is not active on this machine: its entries wait.
+        self.waiting = False
         self.path, self.unavailable = select_path(name, spec.get("path"), platform_name)
         self.format = spec.get("format")
         self.create_if_missing = spec.get("create_if_missing")
@@ -614,7 +622,9 @@ class Buffer:
         if "entries" not in self.doc:
             self.doc["entries"] = tomlkit.aot()
         if validate:
-            self.targets, self.entries = parse_buffer(self.doc, context)
+            self.targets, self.all_entries = parse_buffer(self.doc, context)
+            # An entry of a component this machine leaves out waits: kept, and not looked at.
+            self.entries = [entry for entry in self.all_entries if entry.target is None or not entry.target.waiting]
 
     def repo_file_value(self, entry: Entry) -> Any:
         if entry.absent:
@@ -1065,7 +1075,7 @@ class Session:
                 if row.base is None or not same(row.base, published):
                     advanced += 1
                 self.state.set_base(row.entry, published)
-        self.state.prune({entry.identity for entry in self.buffer.entries})
+        self.state.prune({entry.identity for entry in self.buffer.all_entries})
         self.state.save()
         for row in self.rows:
             if row.state not in ("error", "deferred"):
@@ -1408,7 +1418,7 @@ def parse_key(args: argparse.Namespace) -> list[str]:
 
 
 def command_track(session: Session, args: argparse.Namespace) -> int:
-    if any(entry.id == args.id for entry in session.buffer.entries):
+    if any(entry.id == args.id for entry in session.buffer.all_entries):
         raise LmfError(f"the id already exists: {args.id}")
     if not ID_PATTERN.fullmatch(args.id):
         raise LmfError(f"invalid id: {args.id}")
@@ -1443,7 +1453,7 @@ def command_track(session: Session, args: argparse.Namespace) -> int:
 
 
 def command_track_file(session: Session, args: argparse.Namespace) -> int:
-    if any(entry.id == args.id for entry in session.buffer.entries):
+    if any(entry.id == args.id for entry in session.buffer.all_entries):
         raise LmfError(f"the id already exists: {args.id}")
     probe = tomlkit.table()
     probe["id"] = args.id
@@ -1517,6 +1527,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--home", default=os.path.expanduser("~"), help="home directory of the live files")
     parser.add_argument("--state-dir", help="machine state (default: <state root>/local-maintained-files)")
     parser.add_argument("--targets-file", help="component settings targets and reload hooks (JSON)")
+    parser.add_argument(
+        "--inactive-components", help="JSON list of components not active here: the entries of their targets wait"
+    )
     # The last-resort defaults baked into the local-maintained-files alias.
     parser.add_argument("--repo-default", help=argparse.SUPPRESS)
     parser.add_argument("--state-dir-default", help=argparse.SUPPRESS)

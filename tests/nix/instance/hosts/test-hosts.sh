@@ -127,7 +127,7 @@ failing="instance { root = /. + \"$root\"; homeModules = [ ({ lib, dotsteward, .
   assertions = [ { assertion = !(lib.elem \"no:example-term\" dotsteward.tags); message = \"example-home needs example-term\"; } ];
 }) ]; }"
 assert_inst_fails "($failing).checks.x86_64-linux.hosts-eval.drvPath" \
-  "machine desktop: example-home needs example-term"
+  "dotsteward: machine laptop3 does not evaluate with hosts/laptop3.toml:" "example-home needs example-term"
 
 # Links are data of their component, and the generation says which targets are active.
 assert_inst_eq '["~/.example-term/AGENTS.md"]' "(lib.findFirst (c: c.name == \"example-term\") null ($hosted).dotstewardManifest.x86_64-linux.components).managed_links" \

@@ -36,7 +36,7 @@ needs code specific to one component.
 | `enable` | bool, default `false` | Set by `lib.mkInstance` from `[components.<name>] enable`. |
 | `profiles` | null or list of profile names | Profiles where the component is active; `null` means every profile. It is the only way to scope a component to profiles. |
 | `machines`, `tags` | null or list of names | Set by mkInstance from `[components.<name>]`: the machines and the machine tags the component is for ([machines.md](machines.md)). |
-| `requires` | list of component names | Components this one needs where it is active. Leaving one out (`machines`, `tags`, a machine that declines it) fails the evaluation of that machine, with a message that names both. |
+| `requires` | list of component names | Components this one needs. It comes along where this one is active; a machine that leaves one out (`machines`, `tags`, an answer) leaves this one out too and is told. No evaluation fails for it ([machines.md](machines.md)). |
 | `platforms` | list of `linux`, `darwin`; default both | Platforms the component supports. |
 | `method` | one of the install methods | The resolved method: `method_by_platform` of the instance, then `method`, then the component default (set it with `lib.mkDefault`). |
 | `supportedMethods` | `{ linux; darwin; }` | The methods the component implements on each platform. |

@@ -129,8 +129,14 @@ let
       // lib.optionalAttrs (component.selfUpdate != null) { self_update = component.selfUpdate; }
       # Data, like profiles: the CLI scopes by them. Only when set, so the mirror of
       # an instance that scopes nothing keeps its bytes.
+      # Data, like profiles: the CLI scopes by them, on the machine they concern. Only when
+      # set, so the mirror of an instance that scopes nothing keeps its bytes.
       // lib.optionalAttrs (component.machines != null) { inherit (component) machines; }
       // lib.optionalAttrs (component.tags != null) { inherit (component) tags; }
+      // lib.optionalAttrs (component.requires != [ ]) { inherit (component) requires; }
+      // lib.optionalAttrs (component.rollback.managedLinks != [ ]) {
+        managed_links = component.rollback.managedLinks;
+      }
     ) enabled;
 
     settings_targets = helpers.settingsTargets system dotsteward.lib.platform enabled;

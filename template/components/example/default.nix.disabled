@@ -55,8 +55,8 @@ in
       "linux"
       "darwin"
     ];
-    # Components this one needs where it is active: leaving one out on a machine
-    # (machines, tags, declined) fails the evaluation of that machine.
+    # Components this one needs: a machine that leaves one out (machines, tags,
+    # an answer) leaves this one out too, and is told. No evaluation fails for it.
     requires = [ ];
     supportedMethods = {
       linux = [

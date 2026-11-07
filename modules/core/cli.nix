@@ -32,11 +32,19 @@ let
 
   cliPackage = packages.dotsteward or (dotsteward.lib.mkCli pkgs);
 
+  # Every target of the instance, each saying whether this generation has its component:
+  # a buffer entry of a component this machine leaves out waits, it is no unknown target.
+  enabled = helpers.enabled cfg config.dotsteward.components;
+  activeNames = map ({ name, ... }: name) active;
+  settingsTargets = lib.mapAttrs (_: target: target // { active = lib.elem target.component activeNames; }) (
+    helpers.settingsTargets system dotsteward.lib.platform enabled
+  );
+
   targetsFile = pkgs.writeText "dotsteward-settings-targets.json" (
     builtins.toJSON {
       schema_version = 1;
-      targets = helpers.settingsTargets system dotsteward.lib.platform active;
-      reload_hooks = helpers.reloadHooks active;
+      targets = settingsTargets;
+      reload_hooks = helpers.reloadHooks enabled;
     }
   );
 
@@ -87,6 +95,14 @@ in
       defaultText = lib.literalExpression "packages.dotsteward";
       readOnly = true;
       description = "The dotsteward CLI installed in the generation.";
+    };
+
+    settingsTargets = lib.mkOption {
+      internal = true;
+      readOnly = true;
+      type = lib.types.attrsOf lib.types.anything;
+      default = settingsTargets;
+      description = "The settings targets of this generation's targets file, each with active.";
     };
 
     aliasPackage = lib.mkOption {

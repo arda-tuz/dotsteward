@@ -156,7 +156,8 @@ the remote of an instance: it fetches the branch into `refs/dotsteward/<scope>/t
 and starts again on the new tip when the remote moved. The result says `OK`, `NETWORK`,
 `REFUSED` or `EXHAUSTED`, with the commit that landed and what git said; a push that ends
 without an answer is settled by a fetch. `classify(result)` names a failure of git: nothing
-was decided, the remote said no, or the remote moved.
+was decided, the remote said no, or the remote moved. `stamp(repository, base, machine)` is the
+one place that names the machine on what `txn publish` sends, whoever wrote the commits.
 
 ### Run reports
 
@@ -198,7 +199,7 @@ hook runs before any Python is available.
 
 `dotsteward_cli.machine` holds the name of this machine and what applies to it
 ([machines.md](machines.md)). `effective(instance, env=None)` is the one answer: `{name,
-profile, tags, skip: {components, skills, plugins}, reasons, incoming, nix_tags,
+profile, tags, skip: {components, skills, plugins}, reasons, incoming, requires, nix_tags,
 nix_tags_sha256, host_build}`. Nothing stores it, and a new
 reason to leave something out goes there, so every command follows. `name_taken` lists the
 skills of the lock that are for other machines while this one has a skill of that name.
@@ -215,7 +216,7 @@ ran `config_load` has `DS_MACHINE_NAME` and the JSON lists `DS_SKIP_COMPONENTS_J
 `dotsteward_cli.incoming` holds what other machines changed ([machines.md](machines.md)).
 `waiting(instance, name, reasons, env=None)` computes the questions from the tree and the state
 of this machine and writes nothing; `machine.effective` calls it, so every command leaves out
-what has no answer yet. `ask(instance, run, terminal=, install_now=True, env=None)` is the
+what has no answer yet. `ask(instance, run, terminal=, env=None)` is the
 question, for `dotsteward incoming` and for what brings the repository forward by itself: on a terminal one item at a time,
 without one an entry of `run` for each, which makes the run end in 3. It returns what still
 waits. `move_forward(instance)` is the fast-forward of a clean checkout. `answer(instance, id,

@@ -55,7 +55,7 @@ assert_eq 'skill:kept' "$(waiting laptop2)"
 
 # It does not come back as a new skill of this machine, and the answer holds.
 assert_exit 0 ds laptop2 skills reconcile --full
-assert_eq none "$(item laptop2 never '.state // "none"')"
+assert_eq declined "$(item laptop2 never '.state // "none"')"
 assert_exit 0 ds laptop2 incoming answer skill:kept --install
 assert_eq '' "$(waiting laptop2)"
 
@@ -72,11 +72,11 @@ url=$(git -C "$(clone_of laptop2)" remote get-url origin)
 git -C "$(clone_of laptop2)" remote set-url origin "$world/gone.git"
 assert_exit 0 ds laptop2 incoming answer skill:offline --never
 assert_exit 0 ds laptop2 skills reconcile --full
-assert_eq none "$(item laptop2 offline '.state // "none"')"
+assert_eq declined "$(item laptop2 offline '.state // "none"')"
 git -C "$(clone_of laptop2)" remote set-url origin "$url"
 assert_exit 0 ds laptop2 incoming
 assert_contains "$(remote_file hosts/laptop2.toml)" '"offline"'
-assert_eq none "$(item laptop2 offline '.state // "none"')"
+assert_eq declined "$(item laptop2 offline '.state // "none"')"
 up_to_date laptop1
 
 # This machine leaves the machines of a skill: the same question, and the source is named.

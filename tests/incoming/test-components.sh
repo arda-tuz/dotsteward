@@ -198,7 +198,7 @@ add_component_on lone
 up_to_date laptop2
 assert_exit 0 ds laptop2 incoming answer component:lone --never
 up_to_date laptop1
-set_requires running-tool '["lone"]'
+set_requires running-tool '["new-dep", "lone"]'
 git -C "$(clone_of laptop1)" add -A
 git -C "$(clone_of laptop1)" commit -q -m $'feat: needs lone\n\nDotsteward-Machine: laptop1'
 git -C "$(clone_of laptop1)" push -q origin main

@@ -15,7 +15,7 @@ The repository always moves forward. What lands on this machine depends on the u
    dotsteward incoming --json
    ```
 
-   This brings a clean checkout forward and prints `{machine, items}`. Each item has `id`, `kind` (`skill`, `plugin`, `component`), `change` (`new`, `changed`, `removed`), `name`, `by` (the machine that made the change, `null` for an unknown machine), `when`, and the commands `show` and `answer`. The same items are in `review.json` under the code `incoming`. Exit 3 only means that questions wait; the rest of the machine is fine.
+   This brings a clean checkout forward and prints `{machine, items}`. Each item has `id`, `kind` (`skill`, `plugin`, `component`), `change` (`new`, `changed`, `removed`, `clash`: a copy here has that name and never was in the lock), `name`, `by` (the machine that made the change, `null` for an unknown machine), `when`, and the commands `show` and `answer`. The same items are in `review.json` under the code `incoming`. Exit 3 only means that questions wait; the rest of the machine is fine.
 
    `dotsteward incoming list --json` gives the same list without a fetch, and a machine without a name has no items: `dotsteward host init` names it.
 
@@ -29,7 +29,7 @@ The repository always moves forward. What lands on this machine depends on the u
 
 | The user says | Run | What happens |
 | --- | --- | --- |
-| Install it (or, for `removed`, remove it) | `dotsteward incoming answer <id> --install` | A skill or plugin lands at once, a changed own skill is backed up first; a `removed` skill is backed up and removed here; a component is activated by the next `dotsteward upgrade` or rebuild, and the command says so |
+| Install it (or, for `removed`, remove it) | `dotsteward incoming answer <id> --install` | A skill or plugin lands at once, a changed own skill is backed up first, a `clash` replaces the copy here after a backup; a `removed` skill is backed up and removed here (a link out of the skill roots only loses the link); a component and what it needs (`needs`) are activated by the next `dotsteward upgrade` or rebuild, and the command says so. An install that fails stays a question |
 | Ask later | nothing | Nothing is stored, the same question comes with the next update, and nothing of the item is installed |
 | Never on this machine | `dotsteward incoming answer <id> --never` | The answer goes to `hosts/<this machine>.toml` in a commit of its own, without force, and holds after a reinstall under the same name; without a network it holds here and a later run publishes it. A copy that is here stays and is no longer tracked |
 
@@ -39,6 +39,6 @@ The repository always moves forward. What lands on this machine depends on the u
 
 - A change of an item the user changed locally too is no item here: it is a conflict, `dotsteward skills status` shows it and `dotsteward skills resolve` answers it.
 - Something meant for other machines (`machines`, or `tags` of a component that this machine does not carry) is never an item. Do not bring it up or install it by hand.
-- `--never` on a component is refused when this machine then no longer evaluates (another component needs it). Say which one needs it; the choice stays with the user.
+- `--never` on a component is refused when this machine then no longer evaluates. Say what Nix said; the choice stays with the user. What a component of this machine needs is no question: `component-needed` and `requires-unmet` in `review.json` are notes for the user, name both components (`requires-unmet`: the component is left out on this machine until what it needs is back).
 - Pins, hashes, third-party skill updates and every other change of the repository take no question: the next rebuild applies them.
 - Do not edit `hosts/*.toml`, `known.json` or `base.json` by hand.

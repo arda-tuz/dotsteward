@@ -56,5 +56,5 @@ assert_not_contains "$(remote_file hosts/laptop2.toml)" '"bar"'
 git -C "$(clone_of laptop2)" remote set-url origin "$url"
 assert_exit 0 ds laptop2 incoming
 assert_contains "$(remote_file hosts/laptop2.toml)" '"bar"'
-assert_json "$(state_of laptop2)/machine/known.json" '(.never.skills // []) == []'
+[[ ! -e $(state_of laptop2)/machine/never.json ]] || ds_fail "the answer stays in a second place"
 assert_eq '' "$(waiting laptop2)"

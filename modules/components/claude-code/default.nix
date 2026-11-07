@@ -54,10 +54,14 @@
   config,
   lib,
   pins,
+  profile,
   dotsteward,
   ...
 }:
 let
+  activeHere = (import ../../core/helpers.nix { inherit lib; }).isActive profile (
+    dotsteward.lib.platform.platformOf dotsteward.system
+  ) (dotsteward.tags or [ ]);
   inherit (builtins)
     attrNames
     elem
@@ -532,7 +536,7 @@ in
     docs = ./README.md;
   };
 
-  dotsteward.shell.zshrc.blocks = lib.mkIf (component.enable && shell.enable && launchList != [ ]) {
+  dotsteward.shell.zshrc.blocks = lib.mkIf (activeHere name component && activeHere "shell" shell && launchList != [ ]) {
     claude-code-launch-environment = {
       order = 75;
       text = launchBlock;

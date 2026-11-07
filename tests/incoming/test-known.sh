@@ -22,7 +22,6 @@ up_to_date laptop1
 up_to_date laptop2
 assert_exit 0 ds laptop2 incoming answer skill:readd --install
 [[ ! -e $(home_of laptop2)/.agents/skills/readd ]] || ds_fail "the removal did not remove"
-assert_exit 0 ds laptop1 skills restore readd >/dev/null 2>&1 || true
 hand_skill laptop1 readd
 printf 'totally different skill\n' >>"$(clone_of laptop1)/agent/skills/readd/SKILL.md"
 hand_digest=$(local_digest "$(clone_of laptop1)/agent/skills/readd")
@@ -51,6 +50,29 @@ assert_eq 'skill:failing' "$(waiting laptop2)"
 assert_json "$known" 'has("skills") | not'
 assert_exit 0 ds laptop2 incoming answer skill:failing --install
 assert_eq '' "$(waiting laptop2)"
+
+# M8: a new name on the same machine keeps what waits and what was declined.
+captured laptop1 pend1
+up_to_date laptop1
+captured laptop1 pend2
+up_to_date laptop1
+up_to_date laptop2
+url=$(git -C "$(clone_of laptop2)" remote get-url origin)
+git -C "$(clone_of laptop2)" remote set-url origin "$world/gone.git"
+assert_exit 0 ds laptop2 incoming answer skill:pend2 --never
+git -C "$(clone_of laptop2)" remote set-url origin "$url"
+renamed() {
+  on laptop2 env DOTSTEWARD_MACHINE=laptop2b "$DS_REPO_ROOT/cli/dotsteward" "$@" </dev/null
+}
+assert_exit 0 renamed incoming list --json
+assert_json - '[.items[].id] | (index("skill:pend1") != null and index("skill:pend2") == null)' <<<"$DS_STDOUT"
+assert_exit 0 renamed agents install --profile workstation --skip-validation
+[[ ! -e $(home_of laptop2)/.agents/skills/pend1 ]] || ds_fail "pend1 landed without an answer"
+[[ ! -e $(home_of laptop2)/.agents/skills/pend2 ]] || ds_fail "a declined skill landed"
+EXPECT_STATUS=3 ds_code laptop2 incoming
+assert_contains "$(remote_file hosts/laptop2.toml)" '"pend2"'
+assert_exit 0 ds laptop2 incoming answer skill:pend1 --install
+up_to_date laptop1
 
 # M7: a third party skill under a name this machine already uses for something of its own: the copy
 # stays, and it is a question. A copy from an older pin of the lock is no such thing.
@@ -86,29 +108,6 @@ assert_eq '' "$(waiting laptop2)"
 assert_exit 0 agents laptop2 install --skip-validation
 assert_contains "$(<"$(home_of laptop2)/.agents/skills/clash/SKILL.md")" 'a new upstream version'
 
-# M8: a new name on the same machine keeps what waits and what was declined.
-captured laptop1 pend1
-up_to_date laptop1
-captured laptop1 pend2
-up_to_date laptop1
-up_to_date laptop2
-url=$(git -C "$(clone_of laptop2)" remote get-url origin)
-git -C "$(clone_of laptop2)" remote set-url origin "$world/gone.git"
-assert_exit 0 ds laptop2 incoming answer skill:pend2 --never
-git -C "$(clone_of laptop2)" remote set-url origin "$url"
-renamed() {
-  DOTSTEWARD_MACHINE=laptop2 ds laptop2 "$@"
-}
-assert_exit 0 renamed incoming list --json
-assert_json - '[.items[].id] == ["skill:pend1"]' <<<"$DS_STDOUT"
-assert_exit 0 agents laptop2 install --skip-validation
-[[ ! -e $(home_of laptop2)/.agents/skills/pend1 ]] || ds_fail "pend1 landed without an answer"
-[[ ! -e $(home_of laptop2)/.agents/skills/pend2 ]] || ds_fail "a declined skill landed"
-assert_exit 0 ds laptop2 incoming
-assert_contains "$(remote_file hosts/laptop2.toml)" '"pend2"'
-assert_exit 0 ds laptop2 incoming answer skill:pend1 --install
-up_to_date laptop1
-
 # M10: known only when it was for this machine: a wider scope is a question, tags and profile alike.
 clone=$(clone_of laptop1)
 mkdir -p "$clone/components/wide" "$clone/components/profiled"
@@ -119,9 +118,8 @@ git -C "$clone" add -A
 git -C "$clone" commit -q -m $'feat: scoped\n\nDotsteward-Machine: laptop1'
 git -C "$clone" push -q origin main
 up_to_date laptop2
-assert_exit 0 ds laptop2 incoming answer component:profiled --never >/dev/null 2>&1 || true
 assert_exit 0 agents laptop2 install --skip-validation
-assert_json "$known" '.components | index("wide") == null'
+assert_json "$known" '.components | (index("wide") == null and index("profiled") == null)'
 sed -i '/^tags = \["nvidia"\]$/d' "$clone/workstation.toml"
 git -C "$clone" add -A
 git -C "$clone" commit -q -m $'feat: for everybody\n\nDotsteward-Machine: laptop1'

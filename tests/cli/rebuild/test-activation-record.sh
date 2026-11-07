@@ -19,7 +19,7 @@ assert_exit 0 run_rebuild --profile workstation --switch
 generation=$(<"$rb_current/last-built-activation")
 assert_file_mode "$activation" 600
 assert_json "$activation" '(keys_unsorted) == ["schema_version", "generation", "profile", "revision", "tree_oid",
-  "root", "framework_override", "tags_sha256", "activated_at"]'
+  "root", "framework_override", "tags", "tags_sha256", "activated_at"]'
 jq -e --arg generation "$generation" --arg revision "$(git -C "$rb_inst" rev-parse HEAD)" \
   --arg tree "$(git -C "$rb_inst" rev-parse 'HEAD^{tree}')" --arg root "$rb_inst" '
   .schema_version == "1.0" and .generation == $generation and .profile == "workstation"

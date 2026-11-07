@@ -16,6 +16,14 @@ failed or timed out, the remote hung up: nothing was decided, try later. ``REFUS
 remote answered no, or a hook did: trying again says the same, and a person must hear of
 it, so a dead credential does not stay silent as an eternal "offline". ``RACE``: the remote
 moved between the fetch and the push. A skill and a host file publish through here so far.
+
+``stamp`` is the one place that names the machine on what `txn publish` sends: an agent's plain
+`git commit` and the writer of `upgrade` do not have to know about it. A commit that already
+names a machine keeps its name; a commit that gets the line keeps its tree, author and dates.
+
+Command line::
+
+    python3 -m dotsteward_cli.publish stamp REPOSITORY BASE MACHINE
 """
 
 from __future__ import annotations
@@ -25,6 +33,7 @@ import random
 import re
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -55,6 +64,8 @@ _RACE_WORDS = re.compile(
     r"\[rejected\]|non-fast-forward|fetch first|cannot lock ref|failed to update ref|stale info|incorrect old value",
     re.IGNORECASE,
 )
+MACHINE_TRAILER = "Dotsteward-Machine"
+_NAMED = re.compile(rf"^{MACHINE_TRAILER}:", re.MULTILINE)
 _REPOSITORY_VARIABLES = (
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -183,6 +194,53 @@ def fetch_tip(repository: str | os.PathLike[str], branch: str, scope: str) -> tu
     return OK, git(repository, "rev-parse", "--verify", f"{ref}^{{commit}}").stdout.strip(), ""
 
 
+def stamp(repository: str | os.PathLike[str], base: str, machine: str) -> str:
+    """HEAD after every commit of BASE..HEAD names a machine: MACHINE where none is named. Only the
+    messages change, so the checkout stays clean. A history with a merge stays as it is."""
+    head = git(repository, "rev-parse", "HEAD").stdout.strip()
+    rows = git(repository, "rev-list", "--reverse", "--topo-order", "--parents", f"{base}..HEAD").stdout.splitlines()
+    commits = [row.split() for row in rows]
+    if any(len(row) != 2 for row in commits):
+        return head
+    parent = base
+    for commit, old_parent in commits:
+        message = git(repository, "log", "-1", "--format=%B", commit).stdout.rstrip("\n")
+        named = _NAMED.search(message) is not None
+        if named and old_parent == parent:
+            parent = commit
+            continue
+        if not named:
+            message = f"{message}\n\n{MACHINE_TRAILER}: {machine}"
+        fields = git(repository, "log", "-1", "--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%T", commit).stdout
+        author, email, date, committer, committer_email, committer_date, tree = fields.rstrip("\n").split("\0")
+        made = git(
+            repository,
+            "commit-tree",
+            tree,
+            "-p",
+            parent,
+            "-F",
+            "-",
+            stdin=message + "\n",
+            env={
+                "GIT_AUTHOR_NAME": author,
+                "GIT_AUTHOR_EMAIL": email,
+                "GIT_AUTHOR_DATE": date,
+                "GIT_COMMITTER_NAME": committer,
+                "GIT_COMMITTER_EMAIL": committer_email,
+                "GIT_COMMITTER_DATE": committer_date,
+            },
+        )
+        if made.code != 0:
+            raise OSError(f"git commit-tree failed: {made.stderr.strip()}")
+        parent = made.stdout.strip()
+    if parent != head:
+        moved = git(repository, "update-ref", "-m", "dotsteward: name the machine", "HEAD", parent, head)
+        if moved.code != 0:
+            raise OSError(f"git update-ref failed: {moved.stderr.strip()}")
+    return parent
+
+
 def is_ancestor(repository: str | os.PathLike[str], commit: str, of: str) -> bool:
     return git(repository, "merge-base", "--is-ancestor", commit, of).code == 0
 
@@ -220,3 +278,19 @@ def publish(
             return Published(verdict, tip=tip, detail=pushed.stderr.strip())
         return Published(NETWORK, tip=tip, detail=pushed.stderr.strip())
     return Published(EXHAUSTED, tip=tip)
+
+
+def main(argv: Sequence[str]) -> int:
+    if len(argv) != 4 or argv[0] != "stamp":
+        print("usage: python3 -m dotsteward_cli.publish stamp REPOSITORY BASE MACHINE", file=sys.stderr)
+        return 2
+    try:
+        print(stamp(argv[1], argv[2], argv[3]))
+    except OSError as error:
+        print(f"[dotsteward] ERROR: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

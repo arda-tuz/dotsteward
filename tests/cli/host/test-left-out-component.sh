@@ -28,6 +28,8 @@ value = "dark"
 TOML
 publish_instance
 assert_exit 0 run_agents install
+mkdir -p "$HOME/.example"
+printf '{\n  "theme": "light"\n}\n' >"$HOME/.example/config.json"
 
 # Active: held to its link and its target.
 assert_exit 1 run_e2e --json --keep-going

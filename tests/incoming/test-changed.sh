@@ -60,5 +60,5 @@ assert_eq "$before" "$(<"$copy/SKILL.md")"
 assert_eq none "$(base laptop2 foo)"
 assert_eq '' "$(waiting laptop2)"
 assert_exit 0 ds laptop2 skills reconcile --full
-assert_eq none "$(item laptop2 foo '.state // "none"')"
+assert_eq declined "$(item laptop2 foo '.state // "none"')"
 assert_exit 0 agents laptop2 check

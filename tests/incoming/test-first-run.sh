@@ -30,7 +30,7 @@ assert_exit 0 agents laptop2 install --skip-validation
 [[ -f $(home_of laptop2)/.agents/skills/vendored/SKILL.md ]] || ds_fail "vendored was not installed"
 [[ -f $(home_of laptop2)/.agents/skills/ours/SKILL.md ]] || ds_fail "ours was not installed"
 assert_eq 600 "$(stat -c %a "$known")"
-assert_json "$known" '.skills | has("vendored") and has("ours")'
+assert_json "$known" 'keys == ["components", "plugins", "schema_version"]'
 assert_eq '' "$(waiting laptop2)"
 
 # From then on a new third party skill is a question, like an own skill.

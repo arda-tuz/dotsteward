@@ -606,6 +606,26 @@ _skills_refresh() {
   log "skill differed from the lock; backed up and refreshed: $name (backup: $backup_root)"
 }
 
+# _skills_refresh_third_party NAME PATH SOURCE DIGEST: _skills_refresh, unless this machine has a
+# named copy that never was a pin of the lock: something of the user's under a name another
+# machine brought. It stays, and `dotsteward incoming` asks.
+_skills_refresh_third_party() {
+  local name=$1 path=$2 expected=$4 real digest mode=install answer
+  if [[ -n ${DS_MACHINE_NAME:-} ]] && real=$(realpath -e -- "$path" 2>/dev/null); then
+    digest=$(directory_sha256 "$real")
+    if [[ $digest != "$expected" ]]; then
+      ((SKILLS_CHECK_ONLY)) && mode=check
+      answer=$(ds_python dotsteward_cli.incoming clash --name "$name" --digest "$digest" --path "$real" --mode "$mode") ||
+        skills_fail skill-unresolvable "$real" "cannot read the skill $name ($real)"
+      if [[ $answer == clash ]]; then
+        log "skill $name: a copy here has this name and never was in the lock; it stays until 'dotsteward incoming' has an answer"
+        return 0
+      fi
+    fi
+  fi
+  _skills_refresh "$@"
+}
+
 # --- Entries --------------------------------------------------------------
 
 skills_framework_entries() {
@@ -711,7 +731,7 @@ skills_process_instance() {
         "installed skill digest differs from the lock: $name ($found); the native copy leaves out metadata.json, .git, __pycache__ and __pypackages__ and follows symlinks"
     fi
   elif [[ $deployment != home-manager && -n $directory_sha ]]; then
-    _skills_refresh "$name" "$found" "$source" "$directory_sha"
+    _skills_refresh_third_party "$name" "$found" "$source" "$directory_sha"
   fi
 
   canonical_entry=$(skills_canonical_entry "$found")
@@ -921,7 +941,7 @@ _skills_process_scoped() {
         "installed skill digest differs from the lock: $name ($found); the native copy leaves out metadata.json, .git, __pycache__ and __pypackages__ and follows symlinks"
     fi
   elif [[ -n $directory_sha ]]; then
-    _skills_refresh "$name" "$found" "$source" "$directory_sha"
+    _skills_refresh_third_party "$name" "$found" "$source" "$directory_sha"
   fi
 
   real=$(realpath -e -- "$found" 2>/dev/null) ||

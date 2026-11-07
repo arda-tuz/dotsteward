@@ -60,7 +60,7 @@ _TAG = re.compile(r"[a-z0-9][a-z0-9-]*", re.ASCII)
 
 # The private ref of the fetches here: refs/dotsteward/host/tip.
 PUBLISH_SCOPE = "host"
-MACHINE_TRAILER = "Dotsteward-Machine"
+MACHINE_TRAILER = publishing.MACHINE_TRAILER
 
 # What git prints when the remote knows the login and says no: more tries change nothing.
 # Any other failure of a fetch is the network or a login this machine does not have yet
@@ -303,7 +303,7 @@ def cmd_init(args: argparse.Namespace, instance: config.Instance, env: Mapping[s
     if record is None:
         # A new start under this name: what the instance holds now is the base of it, without
         # a question. A second `host init` on a machine that has its name changes nothing.
-        Path(state, incoming.KNOWN_FILE).unlink(missing_ok=True)
+        incoming.forget_state(state)
     if name in registered:
         _log(f"this machine is {name}; {machine.HOSTS_DIR}/{name}.toml says what it declined")
     else:
@@ -779,6 +779,8 @@ def cmd_check(args: argparse.Namespace, instance: config.Instance, env: Mapping[
         _error(problem)
     if problems:
         return EXIT_REFUSAL
+    for warning in machine.check_warnings(instance):
+        _warn(warning)
     _log(f"machines: {len(machine.known_names(instance.root))} registered, no problem")
     return 0
 

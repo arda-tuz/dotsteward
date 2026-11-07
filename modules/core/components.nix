@@ -79,16 +79,6 @@ in
   };
 
   config = {
-    # What an active component needs is active too, on every machine: mkInstance
-    # evaluates each of them (checks.<system>.hosts-eval).
-    assertions = lib.concatMap (
-      { name, component }:
-      map (needed: {
-        assertion = lib.any (other: other.name == needed) active;
-        message = "dotsteward: component ${needed} is left out on this machine, and ${name} needs it";
-      }) component.requires
-    ) active;
-
     dotsteward.managedLinks =
       config.dotsteward.core.managedLinks
       ++ lib.concatMap ({ component, ... }: component.rollback.managedLinks) enabled;
