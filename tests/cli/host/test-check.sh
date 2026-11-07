@@ -56,6 +56,23 @@ assert_contains "$(problems)" "plugin scoped@market: machines names nobody"
 sed -i 's/machines = \["nobody"\]/machines = ["laptop"]/' "$agents_inst/workstation.toml"
 assert_exit 0 run_host check
 
+# One plugin, two answers: which machines it is for could not be told.
+{
+  printf '\n[components.other]\nenable = true\n'
+  printf '[[components.other.options.plugins]]\nspec = "scoped@market"\n'
+} >>"$agents_inst/workstation.toml"
+assert_contains "$(problems)" "plugin scoped@market: the components list it for different machines"
+sed -i '/^\[components.other\]$/,$d' "$agents_inst/workstation.toml"
+assert_exit 0 run_host check
+
+# A skill Home Manager links on every machine cannot be declined on one.
+lock_edit '(.skills[] | select(.name == "beta")).deployment = "home-manager"'
+write_host desktop 'declined = { skills = ["beta"] }'
+assert_contains "$(problems)" "hosts/desktop.toml: declined skill beta has the home-manager deployment"
+lock_edit '(.skills[] | select(.name == "beta")) |= del(.deployment)'
+assert_exit 0 run_host check
+rm -- "$agents_inst/hosts/desktop.toml"
+
 # The host files.
 write_host desktop 'nonsense = 1'
 assert_contains "$(problems)" "hosts/desktop.toml: unknown key nonsense"

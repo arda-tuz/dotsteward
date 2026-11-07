@@ -114,6 +114,12 @@ for key in machines tags; do
   assert_contains "$DS_STDERR" "components.example.$key: expected null"
   assert_contains "$DS_STDERR" "$way_out"
 done
+# A value of a list a later release has grown.
+cp -- "$DS_TEST_ROOT/good.toml" "$agents_inst/workstation.toml"
+printf '\n[components.example]\nenable = true\nupdater = "a-later-updater"\n' >>"$agents_inst/workstation.toml"
+assert_exit 1 ds agents check --profile workstation
+assert_contains "$DS_STDERR" "components.example.updater: expected one of"
+assert_contains "$DS_STDERR" "$way_out"
 cp -- "$DS_TEST_ROOT/good.toml" "$agents_inst/workstation.toml"
 sed -i 's/^\[skills\]$/[skills]\ntracking = true\ncapture_delay_seconds = 30\ncapture_max_mib = 10/' "$agents_inst/workstation.toml"
 printf '\n[hosts]\nproducer = "laptop"\n' >>"$agents_inst/workstation.toml"
