@@ -24,6 +24,9 @@
 #                  directories, names, digests, licenses, no symbolic links
 #                  and no framework skills (expected_skill_count, a copy of
 #                  the number of entries, is ignored)
+#   hosts          every hosts/<name>.toml is valid and named like a machine, and
+#                  every machines key of the lock and of the plugin tables names
+#                  known machines (dotsteward host check)
 #   versions-lock  versions.lock.json: schema_version "1.0", no persistent
 #                  agentic updates, native application updates kept
 #   allowlist      no update allowlist entry (gate.update_allowlist and the
@@ -91,7 +94,7 @@ usage() {
   sed -n '4,/^set -Eeuo pipefail$/{/^set /d;s/^# \{0,1\}//;p}' "${BASH_SOURCE[0]}"
 }
 
-INSTANCE_CHECKS=(shell bans launcher bootstrap skills versions-lock allowlist protected overlays privacy scripts)
+INSTANCE_CHECKS=(shell bans launcher bootstrap skills hosts versions-lock allowlist protected overlays privacy scripts)
 FRAMEWORK_CHECKS=(shell bans command-names seeds privacy)
 
 sandbox=0
@@ -459,6 +462,15 @@ check_skills() {
     declared=${declared%[\"\']}
     [[ $declared == "$name" ]] || fail "$name: SKILL.md declares name ${declared:-nothing}"
   done
+  return 0
+}
+
+# check_hosts: the host files and the machines keys, as `host check` holds them.
+check_hosts() {
+  local line
+  while IFS= read -r line; do
+    [[ -z $line ]] || fail "${line#\[dotsteward\] ERROR: }"
+  done < <("$framework_root/cli/dotsteward" --instance "$root" host check 2>&1 >/dev/null || true)
   return 0
 }
 
@@ -939,6 +951,7 @@ for check in "${checks[@]}"; do
     launcher) check_launcher ;;
     bootstrap) check_bootstrap ;;
     skills) check_skills ;;
+    hosts) check_hosts ;;
     versions-lock) check_versions_lock ;;
     allowlist) check_allowlist ;;
     protected) check_protected ;;

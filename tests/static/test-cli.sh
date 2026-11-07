@@ -11,7 +11,7 @@ assert_exit 0 "$DS_CLI" --help
 
 assert_exit 0 static --help
 assert_contains "$DS_STDOUT" "Usage: dotsteward [--instance DIR] static [--sandbox] [--only CHECK]..."
-for word in --sandbox --only launcher bootstrap skills versions-lock allowlist protected overlays \
+for word in --sandbox --only launcher bootstrap skills hosts versions-lock allowlist protected overlays \
   shell bans privacy scripts command-names seeds; do
   assert_contains "$DS_STDOUT" "$word"
 done
