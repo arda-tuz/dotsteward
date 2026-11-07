@@ -476,7 +476,7 @@ class Apply(_Checkout):
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return ""
-        if not isinstance(record, dict) or record.get("result") != "passed":
+        if not isinstance(record, dict) or record.get("result") != "passed" or record.get("scope") != "maintain":
             return ""
         return str(record.get("tree_oid") or "")
 

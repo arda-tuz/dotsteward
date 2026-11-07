@@ -50,8 +50,8 @@ questions, or the adaptive route, which opens nothing; 6 no network, nothing ope
    conventional subject (`commit.conventional_types` of `dotsteward context --json`); without one
    apply refuses with exit 2 before it stages anything. A checkout on the published tip with no
    change has nothing to apply.
-3. **The gate.** `gate --scope maintain` proves the tree, or answers from its memo. Red, nothing is
-   committed (`gate-failed`, with the log).
+3. **The gate.** `gate --scope maintain` proves the tree, or answers from its memo of the same tree
+   in the same scope. Red, nothing is committed (`gate-failed`, with the log).
 4. **The commit.** With `SUBJECT` and the trace line of this machine (`Dotsteward-Machine: <name>`,
    [machines.md](machines.md#the-trace-line)), in UTC, never amended. Its tree must be the tree the
    gate proved.

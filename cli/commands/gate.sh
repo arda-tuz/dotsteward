@@ -56,9 +56,9 @@
 #
 # Memo: a passed record answers without running a step when the tree id,
 # `nix --version`, the gate version (the framework VERSION), the framework
-# override and the sha256 of the configured privacy denylist all equal the
-# record's; scope and root are not part of the key. A failed run keeps the
-# previous record.
+# override, the sha256 of the configured privacy denylist and the scope all
+# equal the record's (txn publish takes a record of its own scope only); the
+# root is not part of the key. A failed run keeps the previous record.
 #
 # validation.json (schema_version "1.1"): result, tree_oid, base_oid, scope,
 # nix_version, gate_version, framework_override (or null), denylist_sha256
@@ -182,8 +182,8 @@ log_file=$(txn_log_file)
 
 # The memo key as JSON: absent values are null.
 memo_key=$(jq -cn --arg tree "$tree_oid" --arg nix "$nix_version" --arg gate "$gate_version" \
-  --arg override "$override" --arg denylist "$denylist_sha256" '{
-    tree_oid: $tree, nix_version: $nix, gate_version: $gate,
+  --arg override "$override" --arg denylist "$denylist_sha256" --arg scope "$scope" '{
+    tree_oid: $tree, nix_version: $nix, gate_version: $gate, scope: $scope,
     framework_override: (if $override == "" then null else $override end),
     denylist_sha256: (if $denylist == "" then null else $denylist end)}')
 
