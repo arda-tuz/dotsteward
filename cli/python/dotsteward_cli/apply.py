@@ -239,6 +239,13 @@ class Begin(_Checkout):
         if behind:
             done = self._git("merge", "--quiet", "--ff-only", self.tip)
             if done.code != 0:
+                paths = [line.strip() for line in done.stderr.splitlines() if line.startswith("\t")]
+                if paths:
+                    return (
+                        f"the fast-forward to {self.tip[:12]} would overwrite local changes of {', '.join(paths)}: "
+                        "keep a copy of those changes outside the checkout and undo them, run dotsteward maintain "
+                        "begin, then make them again on the new tip"
+                    )
                 return f"cannot fast-forward to {self.tip[:12]}: {done.stderr.strip()}"
             _say("maintain", f"fast-forwarded to {self.tip[:12]}")
         return None
@@ -311,6 +318,7 @@ class Begin(_Checkout):
             "settings_pending": self.settings,
             "warnings": self.warnings,
             "ask": self.ask,
+            "refused": self.refused,
             "next": f'edit the instance, then: dotsteward apply -m "<type>: <summary>"{flags}',
         }
 
@@ -863,7 +871,10 @@ def _print_document(document_out: int | None, document: dict[str, Any]) -> None:
 
 def main_apply(argv: Sequence[str] | None = None) -> int:
     options = _apply_parser().parse_args(list(sys.argv[1:] if argv is None else argv))
-    if options.subject is not None and not _SUBJECT.match(options.subject):
+    if options.subject is not None and ("\n" in options.subject or "\r" in options.subject):
+        _error("the subject is one line: the commit message is the subject and the trace line of this machine")
+        return EXIT_USAGE
+    if options.subject is not None and not _SUBJECT.fullmatch(options.subject):
         _error(f"the subject is not a conventional commit ({', '.join(context.CONVENTIONAL_TYPES)}): {options.subject}")
         return EXIT_USAGE
     terminal = firmware.on_terminal()
@@ -910,11 +921,10 @@ def main_maintain(argv: Sequence[str] | None = None) -> int:
     except config.DotstewardError as error:
         print("\n".join(error.lines()), file=sys.stderr)
         return report.FAILED
-    if run.refused is None:
-        if document_out is None:
-            run.say()
-        else:
-            _print_document(document_out, run.document())
+    if document_out is not None:
+        _print_document(document_out, run.document())
+    elif run.refused is None:
+        run.say()
     return code
 
 

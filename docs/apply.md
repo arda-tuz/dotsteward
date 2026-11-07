@@ -23,7 +23,8 @@ base, and `apply` finishes them with the rest.
 `--json` prints one document: `open`, `offline`, `base_oid`, `head_oid`, `instance` (`path`,
 `branch`, `remote`), `machine`, `profile`, `activate` and `publish` (the defaults of `apply`),
 `dirty`, `unpublished_commits`, `preflight` (the document of the preflight), `settings_pending`,
-`warnings` (of `txn prepare`), `ask` and `next`. Each entry of `ask` is a question for the user before
+`warnings` (of `txn prepare`), `ask`, `refused` (why it refused, else null) and `next`; a refusal
+prints the document too. Each entry of `ask` is a question for the user before
 anything is written:
 
 | Code | Meaning |
@@ -47,7 +48,7 @@ questions, or the adaptive route, which opens nothing; 6 no network, nothing ope
    refused. An unpublished commit without a conventional subject is refused here, before anything
    is staged or activated, since `txn publish` would refuse it at the end (`nonconventional-commits`).
 2. **Stage.** `git add -A`: Nix and the gate see tracked files only. A change needs `-m`, a
-   conventional subject (`commit.conventional_types` of `dotsteward context --json`); without one
+   conventional subject of one line (`commit.conventional_types` of `dotsteward context --json`); without one
    apply refuses with exit 2 before it stages anything. A git repository inside the checkout would
    be staged as a gitlink, an empty directory elsewhere: apply refuses it (`nested-repository`) and
    leaves it out of the index. A checkout on the published tip with no
