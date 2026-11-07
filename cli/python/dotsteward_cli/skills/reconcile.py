@@ -38,6 +38,8 @@ DELETED = "deleted"
 LOCAL_EDIT = "local-edit"
 NAME_TAKEN = "name-taken"
 NOT_REFRESHED = "not-refreshed"
+# The place of an own plugin is taken here by something else.
+OCCUPIED = "occupied"
 # What kept a skill back belongs to the tree, not to the skill.
 TREE_REASONS = frozenset({"checks-red", "commit-refused"})
 _TREE_RETRY_SECONDS = 6 * 3600
@@ -412,6 +414,13 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
         own_plugins.add(name)
         path = _own_plugin_path(found, base, name, directory)
         record = state.base_entry(base, name, state.PLUGIN)
+        if path is None and record is None and directory in found:
+            # Its place is taken here by something that is no plugin: said, not installed.
+            _name_taken(name, directory, found, base, items, plan, now, state.PLUGIN, occupied=True)
+            continue
+        taken = items.get(state.plugin_key(name))
+        if isinstance(taken, dict) and taken.get("state") == NAME_TAKEN and taken.get("reason") == OCCUPIED:
+            plan.drop_items.append(state.plugin_key(name))
         _look_at_own(name, path, record, document, context, plan, full=full, now=now, kind=state.PLUGIN)
     for key in base:
         kind, _, name = key.partition(":")
@@ -432,8 +441,8 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
     fresh = [
         (name, path)
         for name, path in found.items()
-        if name not in named
-        and name not in plugin_names
+        # A name of the lock keeps out its own kind only.
+        if name not in (plugin_names if _kind_of(path) == state.PLUGIN else named)
         and _item_key(path, name) not in base
         and _item_key(path, name) not in items
         and _is_candidate(path)
@@ -478,11 +487,16 @@ def _name_taken(
     plan: Plan,
     now: float,
     kind: str,
+    *,
+    occupied: bool = False,
 ) -> None:
     """A copy here under the name of an entry that is for other machines only: it holds the
-    name, so it is said, never captured."""
+    name, so it is said, never captured. OCCUPIED: the entry is for this machine, and its
+    place is taken by something of another kind."""
     path = found.get(directory)
-    if state.base_entry(base, name, kind) is not None or path is None or _kind_of(path) != kind:
+    if state.base_entry(base, name, kind) is not None or path is None:
+        return
+    if (_kind_of(path) == kind) == occupied:
         return
     key = state.item_key(kind, name)
     item = items.get(key)
@@ -494,6 +508,7 @@ def _name_taken(
         "path": path,
         "state": NAME_TAKEN,
         "origin": origin.UNKNOWN,
+        "reason": OCCUPIED if occupied else None,
         "detected_at": now,
         "last_asked": None,
     }

@@ -723,6 +723,11 @@ skills_process_own_plugin() {
   # The plugin root is where this copy lives: a refresh of an incoming one may replace it.
   SKILLS_MANAGED_ROOTS+=("$root")
   found=$root/$directory
+  if [[ -e $found && ! -f $found/$SKILLS_OWN_MARKER ]]; then
+    # Something of this machine holds the name, a skill most likely: it stays.
+    _skills_placement_note "own plugin $name: $found is no plugin and stays; the plugin is not installed (name-taken, see 'dotsteward skills status')"
+    return 0
+  fi
   if [[ -L $found ]]; then
     skills_fail plugin-not-directory "$found" \
       "own plugin $name: $found is a link; the agent loads an own plugin from a real directory"
