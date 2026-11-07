@@ -171,6 +171,15 @@ plan_changes upgrade nvidia-driver-595-open nvidia-dkms-595-open
 world_plan same-string
 assert_json "$PLAN" '.gated.kernel.meta == "linux-generic-hwe-24.04" and .gated.kernel.flavour == "generic-hwe-24.04" and .gated.kernel.series == "7.0" and .gated.nvidia.series == "595-open"'
 
+# The kernel of the release itself instead of a hardware enablement kernel: the same engine.
+world_plan ga-kernel
+plan_applicable
+assert_json "$PLAN" '.gated.kernel.meta == "linux-generic" and .gated.kernel.flavour == "generic" and .gated.kernel.series == "6.8"'
+assert_json "$PLAN" '.gated.nvidia.module_meta == "linux-modules-nvidia-595-open-generic"'
+plan_target "6.8.0-149.149" "6.8.0-149.149" "$D99"
+plan_changes install linux-image-6.8.0-149-generic "$MODULE-6.8.0-149-generic"
+plan_changes upgrade linux-generic "$MODULE-generic"
+
 # The tracked mode marks the set by hand instead of a full upgrade: the plan is the same.
 for name in same-string plus-n driver-respin driver-respin-both packaging-bump kernel-and-driver; do
   world_plan "$name"

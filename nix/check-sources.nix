@@ -630,6 +630,7 @@ let
     "tests/apt-worlds"
     "tests/channels"
     "tests/ci"
+    "tests/container"
     "tests/vm"
     ".githooks/pre-push"
     ".github/workflows/channels.yml"

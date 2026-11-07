@@ -132,12 +132,12 @@ def module_abi(n, abi, version, up, src="7.0", kind="-open", phased=None, base="
     ]
 
 
-def module_meta(n, abi, version, driver_version, src="7.0", kind="-open", phased=None, base="generic"):
+def module_meta(n, abi, version, driver_version, src="7.0", kind="-open", phased=None, base="generic", flavour=FLAVOUR):
     """The module meta package: it provides the DKMS package the driver depends on."""
     up = upstream(driver_version)
     return [
         rec(
-            f"linux-modules-nvidia-{n}{kind}-{FLAVOUR}",
+            f"linux-modules-nvidia-{n}{kind}-{flavour}",
             version,
             f"linux-restricted-modules-hwe-{src}",
             depends=f"linux-modules-nvidia-{n}{kind}-{abi}-{base} (= {version}), nvidia-kernel-common-{n} (>= {up})",
@@ -327,6 +327,74 @@ def world(new=(), *, installed=None, archive=None, suites=None, description=""):
 NEW_KERNEL_44 = kernel("7.0.0-44", K44)
 
 
+def _hooked(records, name):
+    """A package whose maintainer scripts wait while a flag exists and fail while another exists: a
+    test can stop dpkg at a known point of a commit. They also keep what the pin file says while
+    dpkg runs."""
+    hook = """#!/bin/sh
+state=/run/dotsteward-test
+[ -d "$state" ] || exit 0
+cp /etc/apt/preferences.d/60dotsteward "$state/pin-during-commit" 2>/dev/null
+if [ -e "$state/hang-STAGE" ]; then
+  : >"$state/in-STAGE"
+  while [ -e "$state/hang-STAGE" ]; do sleep 0.1; done
+  echo "example hook: STAGE goes on"
+fi
+[ ! -e "$state/fail-STAGE" ]
+"""
+    for record in records:
+        if record["name"] == name:
+            record["scripts"] = {stage: hook.replace("STAGE", stage) for stage in ("preinst", "postinst")}
+    return records
+
+
+def _controls(*names):
+    """Packages outside the gated classes, for the updates that keep flowing."""
+    return [rec(name, "2.0-1", name) for name in names]
+
+
+CONTROLS = ("example-lib", "example-other", "example-tracked")
+
+
+def _bind_records():
+    """A kernel with its module, a new upstream driver: all that a user of libapt must not move."""
+    return (
+        _hooked(kernel("7.0.0-44", K44), "linux-image-7.0.0-44-generic")
+        + module("595", "7.0.0-44", K44, D106)
+        + driver("595", D106)
+    )
+
+
+def _general_availability(records):
+    """The kernel of the release itself: Sources without -hwe-<series>, meta package without -hwe."""
+    renamed = {
+        "linux-meta-hwe-6.8": "linux-meta",
+        "linux-signed-hwe-6.8": "linux-signed",
+        "linux-hwe-6.8": "linux",
+        "linux-main-signed-hwe-6.8": "linux-main-signed",
+        "linux-restricted-modules-hwe-6.8": "linux-restricted-modules",
+        "linux-restricted-signatures-hwe-6.8": "linux-restricted-signatures",
+    }
+    return [{**record, "source": renamed.get(record["source"], record["source"])} for record in records]
+
+
+def _ga_kernel(abi, version):
+    return kernel_meta(abi, version, "6.8", flavour="generic") + kernel_abi(abi, version, "6.8")
+
+
+def _ga_module(abi, version):
+    return module_meta("595", abi, version, D99, "6.8", flavour="generic") + module_abi(
+        "595", abi, version, UP99, "6.8"
+    )
+
+
+GA_INSTALLED = [
+    *_general_availability(_ga_kernel("6.8.0-147", "6.8.0-147.147") + _ga_module("6.8.0-147", "6.8.0-147.147")),
+    *driver("595", D99, dkms=False),
+    *support(),
+]
+
+
 def _driver_respin(extra=()):
     return driver("595", D106) + module("595", "7.0.0-42", K42 + "+1", D106) + list(extra)
 
@@ -426,6 +494,17 @@ WORLDS = {
         archive=NO_NVIDIA,
         description="a machine without the NVIDIA class: the kernel moves alone",
     ),
+    "no-classes": world(
+        installed=support(),
+        archive=support(),
+        description="no kernel and no driver: a container, a machine without gated classes",
+    ),
+    "ga-kernel": world(
+        _general_availability(_ga_kernel("6.8.0-149", "6.8.0-149.149") + _ga_module("6.8.0-149", "6.8.0-149.149")),
+        installed=GA_INSTALLED,
+        archive=GA_INSTALLED,
+        description="the kernel of the release itself: no version and no name of a flavour is data",
+    ),
     "dkms-machine": world(
         NEW_KERNEL_44 + driver("595", D106),
         installed=kernel_installed() + driver("595", D99) + support(),
@@ -521,6 +600,13 @@ WORLDS = {
         [rec("example-tracked", "2.0-1", "example-tracked", depends="nvidia-driver-615-open"), *_driver_615()],
         description="an upgrade outside the classes asks for another NVIDIA series",
     ),
+    "other-series-new": world(
+        [
+            rec("example-tracked", "2.0-1", "example-tracked", depends="nvidia-driver-700-open"),
+            rec("nvidia-driver-700-open", "700.1-0ubuntu0.24.04.1", "nvidia-graphics-drivers-700"),
+        ],
+        description="an upgrade outside the classes pulls a driver of another series next to the installed one",
+    ),
     "module-conflict": world(
         [*NEW_KERNEL_44, *_module_with_conflict()],
         description="the new module pushes out the module of an ABI that the driver still suits: no rule allows that",
@@ -571,6 +657,34 @@ WORLDS = {
     "old-abi-conflict": world(
         [rec("example-tracked", "2.0-1", "example-tracked", conflicts="linux-tools-7.0.0-38-generic")],
         description="an upgrade removes a package of an old ABI: allowed unless that ABI is protected",
+    ),
+    # ---- real commits in a container
+    "bind": world(
+        [*_bind_records(), *_controls(*CONTROLS)],
+        suites={SECURITY: [*_bind_records(), *_controls(*CONTROLS)]},
+        description="new gated packages and control packages, in -updates and -security",
+    ),
+    "conffile": world(
+        [
+            rec(
+                "example-conf",
+                "2.0-1",
+                "example-conf",
+                files={"etc/example-conf.conf": "packaged 2\n"},
+                conffiles=["/etc/example-conf.conf"],
+            )
+        ],
+        installed=[
+            *BASE_INSTALLED,
+            rec(
+                "example-conf",
+                "1.0-1",
+                "example-conf",
+                files={"etc/example-conf.conf": "packaged 1\n"},
+                conffiles=["/etc/example-conf.conf"],
+            ),
+        ],
+        description="a configuration file changed here and in the new package",
     ),
     # ---- what a default-allow plan lets through
     "firmware-split": world(
@@ -647,6 +761,8 @@ def _control(record):
         f"Architecture: {record['arch']}",
         f"Maintainer: {MAINTAINER}",
         f"Source: {record['source']}",
+        # As in the stanza: apt takes a version whose Installed-Size differs for another version.
+        "Installed-Size: 1",
     ]
     if record.get("multi_arch"):
         lines.append(f"Multi-Arch: {record['multi_arch']}")
@@ -686,7 +802,7 @@ def _build_deb(record, pool, scratch):
         if record.get("conffiles"):
             with open(os.path.join(tree, "DEBIAN", "conffiles"), "w", encoding="utf-8") as handle:
                 handle.write("\n".join(record["conffiles"]) + "\n")
-        subprocess.run(["dpkg-deb", "--root-owner-group", "-Zxz", "-b", tree, path], check=True, capture_output=True)
+        subprocess.run(["dpkg-deb", "--root-owner-group", "-Zgzip", "-b", tree, path], check=True, capture_output=True)
         shutil.rmtree(tree)
     return path
 

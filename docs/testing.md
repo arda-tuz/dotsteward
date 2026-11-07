@@ -39,7 +39,8 @@ nix flake check -L                         # every suite in the build sandbox
 `FAIL <file>: <message>` with the file's output, and exits 1 when any file
 failed or none was found. Directories named `fixtures` are never searched.
 `tests/ci`, `tests/host`, `tests/channels` and `tests/vm` run only when
-named explicitly. `DS_TEST_TIMEOUT` (seconds, default 900) bounds each
+named explicitly; `tests/container` runs real containers only when
+`DS_CONTAINER_VERSIONS` names Ubuntu releases. `DS_TEST_TIMEOUT` (seconds, default 900) bounds each
 file.
 
 Up to `--jobs N` files run at once (`DS_TEST_JOBS`, else the number of
@@ -129,6 +130,7 @@ real person.
 | `tests/ci` | clean-machine install and the macOS smoke test with real activation | GitHub Actions only |
 | `tests/channels` | installing `dotsteward-init` through every channel (`local-install.sh`), and that script over stand-ins of the tools (`test-*.sh`) | the installs in GitHub Actions only (`channels.yml`); `test-*.sh` locally and in the host-level tests of `ci.yml` |
 | `tests/apt-worlds` | the apt engine (`cli/libexec/apt_helper.py`) on a real apt and python3-apt, rootless, on synthetic worlds with the records of real kernels and drivers | on the host when `/usr/bin/python3` has python3-apt, in the default run of `tests/run.sh`; otherwise each file says `SKIP`; it cannot run in the build sandbox |
+| `tests/container` | real commits of the apt engine, recovery after `kill -9` and Ctrl-C, and the pin against apt, unattended-upgrades, PackageKit and aptdaemon, on disposable ordinary Ubuntu containers without an init system (`tests/container/run.sh VERSION SCENARIO`); a container never gets the rights of the machine (`tests/static/test-no-system-containers.sh`), and what needs systemd as PID 1 runs on a CI runner or in a throwaway VM | on request: `DS_CONTAINER_VERSIONS="22.04 24.04 26.04" bash tests/run.sh tests/container`; otherwise each file says `SKIP` |
 | `tests/vm` | the virtual machine harness | its self-test locally and in CI (`ci.yml`); VMs only on request |
 
 `tests/lib` holds the harness itself and `tests/fixtures` the shared data.

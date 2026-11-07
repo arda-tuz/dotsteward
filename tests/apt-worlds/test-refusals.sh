@@ -84,19 +84,29 @@ plan_item apt-denied 'and .class == "module-missing" and .packages == ["linux-im
 world_plan driver-ahead '{"gated": false}'
 plan_refused
 plan_item apt-denied 'and .class == "dkms" and .packages == ["nvidia-dkms-595-open"]'
-plan_item apt-denied 'and .class == "removal" and .packages == ["linux-modules-nvidia-595-open-generic-hwe-24.04"]'
+# A driver move inside the series: a plain full upgrade wants to remove every NVIDIA module,
+# because each module package fixes the upstream version of the driver. No rule allows that.
+for module in generic-hwe-24.04 7.0.0-42-generic 7.0.0-38-generic; do
+  plan_item apt-denied "and .class == \"removal\" and .packages == [\"linux-modules-nvidia-595-open-$module\"]"
+done
 world_plan other-series-pull '{"gated": false, "accept": []}'
 plan_refused
 plan_item apt-denied 'and .class == "removal" and .packages == ["nvidia-driver-595-open"]'
+world_plan other-series-new '{"gated": false}'
+plan_refused
+plan_item apt-denied 'and .class == "driver-series" and .packages == ["nvidia-driver-700-open"] and .pulled_by == "example-tracked"'
+assert_json "$PLAN" '[.items[] | select(.code == "apt-denied") | .accept] | all(. == null)'
 world_plan proposed-and-ppa '{"gated": false}'
 plan_refused
 assert_json "$PLAN" '[.items[] | select(.code == "apt-denied" and .class == "origin")] | length > 0'
 
 # Under the gate the same worlds hold the classes back without a refusal.
-world_plan other-series-pull
-plan_applicable
-plan_unchanged
-plan_item kept-back 'and .packages == ["example-tracked"]'
+for name in other-series-pull other-series-new; do
+  world_plan "$name"
+  plan_applicable
+  plan_unchanged
+  plan_item kept-back 'and .packages == ["example-tracked"]'
+done
 
 # A hold is apt's own: nothing to refuse, and the report names it.
 world_plan held-package

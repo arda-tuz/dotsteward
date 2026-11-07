@@ -79,3 +79,71 @@ printf 'Package: example-tracked\nPin: version *\nPin-Priority: -1\n' >"$WORLD/e
 world_plan tracked
 assert_json "$PLAN" '[.changes.upgrade[].name] | index("example-tracked") == null'
 rm -f "$WORLD/etc/apt/preferences.d/example.pref"
+
+# --- the policy step writes the file: what dpkg has, nothing else, whatever stood there
+
+policy() {
+  POLICY=$DS_TEST_ROOT/out/policy.json
+  APT_CONFIG=$WORLD/apt.conf DOTSTEWARD_APT_SUDO='' ds_python dotsteward_cli.apt_plan policy --request - \
+    <<<"${1:-{\}}" >"$POLICY" 2>"$POLICY.err" || ds_fail "policy failed: $(<"$POLICY.err")"
+}
+
+world_plan driver-respin
+real=$WORLD/etc/apt/preferences.d/60dotsteward
+unattended=$WORLD/etc/apt/apt.conf.d/52dotsteward-unattended-upgrades
+policy
+assert_json "$POLICY" '.pin.changed == true and .pin.present == true and .unattended.changed == true'
+assert_eq "$(jq -r .gated.pin "$PLAN")" "$(<"$real")" "the file is the pin of the plan"
+assert_file_mode "$real" 644
+assert_contains "$(<"$unattended")" 'Unattended-Upgrade::Remove-Unused-Kernel-Packages "false";'
+assert_contains "$(<"$unattended")" 'Unattended-Upgrade::Remove-New-Unused-Dependencies "false";'
+assert_file_mode "$unattended" 644
+
+# The target of this world stands nowhere in it, and the next plan still finds the target.
+assert_not_contains "$(<"$real")" "$D106"
+candidates_are_installed
+world_plan driver-respin
+plan_target "$K42" "$K42+1" "$D106"
+
+# Idempotent; a wrong file and a wrong mode are repaired; nothing is left next to it.
+policy
+assert_json "$POLICY" '.pin.changed == false and .unattended.changed == false'
+printf 'Package: *\nPin: version *\nPin-Priority: 1001\n' >"$real"
+policy
+assert_json "$POLICY" '.pin.changed == true'
+candidates_are_installed
+chmod 0600 "$real"
+policy
+assert_json "$POLICY" '.pin.changed == true'
+assert_file_mode "$real" 644
+assert_eq "60dotsteward" "$(find "$WORLD/etc/apt/preferences.d" -mindepth 1 -printf '%f\n')"
+
+# A machine without NVIDIA packages can still install them: only its own classes are held.
+world_plan no-nvidia
+assert_contains "$(jq -r .gated.pin "$PLAN")" "src:linux-meta*:any"
+assert_not_contains "$(jq -r .gated.pin "$PLAN")" "nvidia-graphics-drivers"
+assert_not_contains "$(jq -r .gated.pin "$PLAN")" "linux-restricted"
+
+# `[apt.gated] enable = false`, or a machine with no gated class at all: no pin file.
+world_up driver-respin
+policy '{"gated": false}'
+assert_json "$POLICY" '.pin.changed == true and .pin.present == false'
+[[ ! -e $real ]] || ds_fail "enable = false leaves the pin file"
+policy '{"gated": false}'
+assert_json "$POLICY" '.pin.changed == false and .unattended.changed == false'
+
+world_up no-classes
+printf 'an older file\n' >"$WORLD/etc/apt/preferences.d/60dotsteward"
+policy
+assert_json "$POLICY" '.pin.present == false'
+[[ ! -e $WORLD/etc/apt/preferences.d/60dotsteward ]] || ds_fail "no gated class, no pin file"
+
+# Without root the steps that change the system go nowhere, and say why.
+if (($(id -u) != 0)); then
+  world_up same-string
+  status=0
+  APT_CONFIG=$WORLD/apt.conf DOTSTEWARD_APT_SUDO='' ds_python dotsteward_cli.apt_plan commit --request - \
+    <<<'{"mode": "all"}' >"$DS_TEST_ROOT/out/commit.json" 2>"$DS_TEST_ROOT/out/commit.err" || status=$?
+  assert_eq 1 "$status"
+  assert_contains "$(<"$DS_TEST_ROOT/out/commit.err")" "not-root"
+fi
