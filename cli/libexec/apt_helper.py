@@ -26,7 +26,8 @@ moves them, kernel, module meta package and driver as one unit, all or nothing, 
 never past the phasing of any member. Everything is derived from the records of what
 is installed; no version of a kernel or a driver is data of the framework. The pin file
 in /etc/apt/preferences.d always tells what dpkg has, so that no other user of libapt
-ever sees a target: a plan and a commit read their pin from a temporary directory.
+ever sees a target: a plan and a commit read their pin from a temporary directory, and a
+hook of dpkg keeps the file right after every dpkg, also when a person calls it.
 """
 
 from __future__ import annotations
@@ -54,6 +55,10 @@ except ImportError:
 SCHEMA_VERSION = 1
 PIN_FILE = "60dotsteward"
 PIN_PRIORITY = 990
+# After every run of dpkg the pin file follows what dpkg has, also after `dpkg -i` by hand. A hook
+# that fails costs dpkg nothing. The script is a copy in a place of root: it runs as root.
+PIN_HOOK_FILE = "60dotsteward-pin"
+PIN_SYNC_FILE = "usr/local/lib/dotsteward/pin-sync.py"
 PIN_HEADER = "# Managed by dotsteward: gated classes stay as dpkg has them. Only `dotsteward upgrade` moves them."
 # The Sources of the gated classes: what the pin holds. The other kernel packages
 # (linux-signed-*, linux-hwe-*) carry the ABI in their names: only these pull them in.
@@ -134,15 +139,74 @@ def source_class(name, source):
     return None
 
 
+PIN_PAIR = "Package: src:{source}:any\nPin: version {version}\nPin-Priority: {priority}\n"
+PIN_SYNC_SCRIPT = """#!/usr/bin/python3 -I
+# Managed by dotsteward. The dpkg hook of 60dotsteward-pin: the pin file names what dpkg has, under
+# the rule of what is gated that the file already holds. Only `dotsteward upgrade` changes that rule.
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+GATED_SOURCE = re.compile(r"@GATED@")
+HEADER = "@HEADER@"
+PAIR = "@PAIR@"
+
+
+def main(pin, admin):
+    with open(pin, encoding="utf-8") as handle:
+        text = handle.read()
+    if not text.startswith(HEADER + "\\n"):
+        return
+    parts = text[len(HEADER) + 1 :].split("\\n\\n")
+    rules = [part.strip("\\n") + "\\n" for part in parts if "Pin: version *" in part]
+    query = subprocess.run(
+        ["/usr/bin/dpkg-query", "--admindir=" + admin, "-W", "-f=${db:Status-Abbrev} ${source:Package} ${Version}\\n"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    pairs = set()
+    for line in query.stdout.splitlines():
+        fields = line.split()
+        if len(fields) == 3 and fields[0][1] not in "nc" and GATED_SOURCE.match(fields[1]):
+            pairs.add((fields[1], fields[2]))
+    body = [PAIR.format(source=source, version=version) for source, version in sorted(pairs)]
+    wanted = HEADER + "\\n" + "\\n".join(body + rules)
+    if wanted == text:
+        return
+    descriptor, temporary = tempfile.mkstemp(prefix=".dotsteward-", dir=os.path.dirname(pin))
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(wanted)
+            stream.flush()
+            os.fchmod(stream.fileno(), 0o644)
+            os.fsync(stream.fileno())
+        os.replace(temporary, pin)
+    except BaseException:
+        os.unlink(temporary)
+        raise
+
+
+if __name__ == "__main__":
+    main(sys.argv[1], sys.argv[2])
+"""
+
+
+def pin_sync_script():
+    pair = PIN_PAIR.replace("{priority}", str(PIN_PRIORITY)).replace("\n", "\\n")
+    return (
+        PIN_SYNC_SCRIPT.replace("@GATED@", GATED_SOURCE.pattern).replace("@HEADER@", PIN_HEADER).replace("@PAIR@", pair)
+    )
+
+
 def pin_text(pairs, *, kernel, nvidia):
     """The pin file: each (source, version) at 990, every other version of a gated Source at -1,
     for the classes this machine has: a machine without the NVIDIA stack can still install it.
     `:any` because a `src:` pin without it holds only packages of the native architecture,
     and the driver stack has i386 libraries."""
-    body = [
-        f"Package: src:{source}:any\nPin: version {version}\nPin-Priority: {PIN_PRIORITY}\n"
-        for source, version in pairs
-    ]
+    body = [PIN_PAIR.format(source=source, version=version, priority=PIN_PRIORITY) for source, version in pairs]
     globs = (KERNEL_GLOBS if kernel else ()) + (NVIDIA_GLOBS if nvidia else ())
     if globs:
         names = " ".join(f"src:{name}:any" for name in globs)
@@ -1352,6 +1416,28 @@ def write_file(path, text, mode=0o644):
     return True
 
 
+def apply_pin_hook(pin_path, wanted):
+    """The dpkg hook next to the pin file: it stands and goes with it."""
+    root = apt_pkg.config.find_dir("Dir")
+    script = os.path.join(root, PIN_SYNC_FILE)
+    config = os.path.join(root, "etc/dpkg/dpkg.cfg.d", PIN_HOOK_FILE)
+    changed = False
+    if wanted:
+        os.makedirs(os.path.dirname(script), exist_ok=True)
+        os.makedirs(os.path.dirname(config), exist_ok=True)
+        os.chmod(os.path.dirname(script), 0o755)
+        changed = write_file(script, pin_sync_script(), 0o755)
+        command = f"/usr/bin/python3 -I {script} {pin_path} {dpkg_admin_dir()} >/dev/null 2>&1 || true"
+        header = "# Managed by dotsteward: the pin file follows what dpkg has, whoever calls dpkg."
+        changed = write_file(config, f'{header}\npost-invoke="{command}"\n') or changed
+    else:
+        for path in (config, script):
+            if os.path.exists(path):
+                os.unlink(path)
+                changed = True
+    return {"config": config, "script": script, "present": wanted, "changed": changed}
+
+
 def apply_policy(session, classes):
     """The files of this action from what dpkg has now, whatever they said before."""
     pin_path = os.path.join(session.real_parts, PIN_FILE)
@@ -1365,10 +1451,12 @@ def apply_policy(session, classes):
         if os.path.exists(pin_path):
             os.unlink(pin_path)
             pin_changed = True
+    hook = apply_pin_hook(pin_path, wanted_pin)
     unattended_path = os.path.join(apt_pkg.config.find_dir("Dir::Etc::Parts"), UNATTENDED_FILE)
     unattended_changed = write_file(unattended_path, UNATTENDED_TEXT)
     return {
         "pin": {"path": pin_path, "present": wanted_pin, "changed": pin_changed},
+        "hook": hook,
         "unattended": {"path": unattended_path, "changed": unattended_changed},
         "installed_pairs": classes["pairs"],
     }
