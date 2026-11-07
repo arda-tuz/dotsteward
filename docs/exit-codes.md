@@ -17,14 +17,14 @@ status as a failure.
 | Command | Exit codes | Additions to the convention |
 | --- | --- | --- |
 | `agents` | 0, 1, child | |
-| `apply` | 0, 1, 2, 3, 6, 130 | a run report, see [apply.md](apply.md); 1 also when another command holds the instance lock; 2: usage error, nothing ran; 3: a sudo step waits for a terminal; 6: no network, the push waits; 130: interrupted, the same command goes on |
+| `apply` | 0, 1, 2, 3, 6, 130 | a run report, see [apply.md](apply.md); 1 also when another command holds the instance lock; 2: usage error, nothing ran; 3: a sudo step waits for a terminal, or another machine's commits conflict with these or kept the remote moving (`publish-conflict`, `publish-race`); 6: no network, the push waits; 130: interrupted, the same command goes on |
 | `bootstrap` | 0, 1, 3, child | 1 also when another command holds the instance lock; 3: the preflight took the adaptive route; nothing was written |
 | `component` | the hook's status, 1 | 1 also when the component or hook is unknown or inactive |
 | `context` | 0, 1 | |
 | `contribute` | 0, 1, 3, 4, 5 | 3: `status --wait --timeout` returned while a step still runs; 4: privacy hard stop, nothing may be published; 5: upstream main moved, the run goes back to `check` |
 | `doctor` | 0, 1 | 1: at least one health check failed |
 | `e2e` | 0, 1 | |
-| `gate` | 0, 1 | 0 also when the memo answers for an unchanged tree |
+| `gate` | 0, 1 | 0 also when the memo answers for an unchanged tree; 1 also for a tree this machine does not write (`writer-class`) |
 | `generate` | 0, 1, 2 | 1 and 2 as for `pins`, from the `pins sync` it runs |
 | `host` | 0, 1, 2, 4, 6 | 2: usage error; `host publish`: 4 a privacy finding and 6 no network or no login, in both cases nothing was published; 6 asks to run it again |
 | `incoming` | 0, 1, 2, 3 | 2: usage error; 3: without a subcommand and without a terminal, questions wait in `review.json` |
@@ -42,7 +42,7 @@ status as a failure.
 | `skills` | 0, 1, 2, 3, 4, 6 | 2: usage error; 3: a conflict or a question waits for an answer; 4: a privacy stop, nothing was published; 6: no network, the skill waits and nothing was committed; `skills hook` always exits 0 |
 | `static` | 0, 1, script | otherwise the status of the failing instance script of `gate.static` |
 | `sync` | as `generate` | the old name of `generate`: a warning on standard error, then the same arguments, output and status |
-| `txn` | 0, 1 | `txn publish` exits 0 when the commit is already published |
+| `txn` | 0, 1, 3, 6 | `txn publish` exits 0 when the commit is already published, 3 when the remote moved since the base (another machine came first; nothing was pushed), 6 without a network |
 | `update` | as `txn` | the old name of `txn`: a warning on standard error, then the same arguments, output and status |
 | `upgrade` | 0, 1, 2, 3, 4, 6, 130 | a run report, see below and [upgrade.md](upgrade.md); 2: usage error, nothing ran; 130: Ctrl-C, SIGTERM or SIGHUP stopped the run, its report has `interrupted` and the next run finishes |
 | `version` | 0, 1 | 1: usage error |

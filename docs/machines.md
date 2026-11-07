@@ -161,7 +161,42 @@ framework repository, not about an instance.
 
 `[hosts] producer` names the machine that moves the values that come from upstream:
 `flake.lock`, the pins and the third-party skills. `dotsteward init --machine NAME`
-or `dotsteward host producer NAME` writes it.
+or `dotsteward host producer NAME` writes it. `dotsteward contribute start` runs only there,
+because `contribute upgrade` moves `flake.lock`.
+
+## Who writes what
+
+A value is either a function of the tree, which every machine computes the same way (the
+digests of a skill, the `.dotsteward/` mirrors), or a function of upstream and time, which two
+machines would answer differently (`flake.lock`, versions, hashes, the revisions of third-party
+skills). Every machine writes the intent and its own skills; the producer alone writes the second
+kind. `dotsteward gate` holds every tree to that in every scope, before its memo, and `skills
+capture` its commit; a finding is a `writer-class` line and exit 1:
+
+| Path | On a machine that is not the producer |
+| --- | --- |
+| `versions.lock.json`, `flake.lock` | a value the base has does not change or go; a new key (the first pin of a new component, a new node) and `generated_at` are free |
+| the skill lock | its tool tables (`release_tools`, `nix_tools`, `npm_tools`, `npm_overrides`, `skills_cli`, `layout`) as above; a third-party entry keeps every field but `machines`, unless it becomes the instance's own (`skills track --own`) or goes (`skills forget`); a new entry is free |
+| the files of a third-party skill | do not change while it is one |
+| `packages/*/package-lock.json`, a hashed `requirements*.txt`, `bootstrap.sh`, `.dotsteward/cli.sh` | do not change if the base has them |
+| `hosts/<other>.toml` | never written, on the producer either; `host rename` removes the old file of this machine |
+
+The producer of the base decides, so a commit that names another producer moves no pin. Without
+a name for this machine or a `[hosts] producer` nothing is guarded: one machine, as before.
+`flake.nix` is not compared: a moved input reference shows in `flake.lock`, and the gate never
+writes the lock.
+
+## When two machines publish at once
+
+Every push is a fast-forward and never forced. When the remote moved since the base, `txn
+publish` exits 3 and pushes nothing. `apply` then moves its commits onto the new tip in a clone of
+its own: a mirror both sides changed is taken from the tip and generated again into the top commit,
+`flake.lock` is taken from the tip and `nix flake lock` adds what is missing, and any other change
+of the same lines stops it with `publish-conflict` and the checkout as it was ([apply.md](apply.md)).
+`upgrade` runs the writer again on the new tip instead ([upgrade.md](upgrade.md)). Both prove the
+new tree with the gate, activate it, run E2E against the new base and push again, three times at
+most (`publish-race`). A skill capture replays its copy onto the new tip
+([skill-tracking.md](skill-tracking.md)).
 
 ## A tree newer than the CLI
 

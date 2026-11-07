@@ -157,7 +157,22 @@ and starts again on the new tip when the remote moved. The result says `OK`, `NE
 `REFUSED` or `EXHAUSTED`, with the commit that landed and what git said; a push that ends
 without an answer is settled by a fetch. `classify(result)` names a failure of git: nothing
 was decided, the remote said no, or the remote moved. `stamp(repository, base, machine)` is the
-one place that names the machine on what `txn publish` sends, whoever wrote the commits.
+one place that names the machine on what `txn publish` sends, whoever wrote the commits, and
+`rewrite(repository, commit, *, parent, tree, message)` makes a commit like another one (same
+author, committer and dates, signed when that one was). `push(repository, branch, base, machine)`
+is the one push of `txn publish` (`python3 -m dotsteward_cli.publish push`): `already`, `ok`,
+`race` (the remote is not at the base), `network`, `refused` or `unverified`. A maintain or an
+update transaction pushes at most `ATTEMPTS` (3) times, with `backoff(attempt)` in between; its
+command moves the commits onto the new tip after a race ([apply.md](apply.md),
+[upgrade.md](upgrade.md)).
+
+### Who writes what
+
+`dotsteward_cli.writers.check(instance, base, tree, name, producer, scope)` lists what a candidate
+tree changes against its base that the machine `name` does not write when `producer` is another
+machine ([machines.md](machines.md#who-writes-what)); `check_tree` is the same for a worktree of
+the instance, and `producer_of(root, base)` reads `[hosts] producer` of the base. The gate runs
+`python3 -m dotsteward_cli.writers check` before its memo, and `skills capture` before its commit.
 
 ### Run reports
 
@@ -179,7 +194,8 @@ and exits with its code.
 `dotsteward_cli.runner.Runner(instance, state_root, publish_scope)` is the base of a command
 that puts other commands of this CLI in order, as `upgrade` and `apply` do, under the instance
 lock of its caller. `_ds(ARG...)` runs a command of this CLI on the terminal, `_ds_output`
-keeps its standard output, `_ds_quiet` shows only its `[dotsteward]` lines unless it fails;
+keeps its standard output, `_ds_quiet` shows only its `[dotsteward]` lines unless it fails,
+`_clone_config(work)` gives a clone the local settings and the hooks of the checkout;
 a child that a signal ended (`SIGNALLED`) ends the run with `KeyboardInterrupt`. `_is_active(where)`
 says whether the tree of `where` is the generation that `rebuild --switch` recorded for the
 profile of the run, and `_gate_environment(started)` why a gate could not judge a tree (another

@@ -4,25 +4,36 @@
 behind the remote, the read-only preflight of the profile, ``txn prepare`` in the maintain scope
 and the settings status, and the questions to put to the user before anything is written.
 
-``apply`` finishes it in one command and a fixed order: everything is staged, the gate proves the
-tree in the maintain scope, the commit carries the trace line of this machine; activated, the
-system-level components an adopt-mode profile needs come in, ``rebuild --switch`` activates the
-committed tree and E2E checks it against the base; published, ``txn publish`` pushes it, which
-after an activation needs that E2E. The checkout is the transaction: apply commits there and never
-cleans, stashes or amends; the one reset takes back the commit it just made when a commit hook
-changed its tree away from the proven one, and keeps the changes staged. Like ``upgrade`` there is
-no journal and no resume: every run works out again what is left. The gate answers from its memo
-for a tree it proved, a tree that is active is not rebuilt, a passed E2E of the active tree with
-the repository checks is not run again and a published commit is not pushed again, so the same
-command finishes what a red step, a missing network or a person's sudo step left.
+``apply`` finishes it in one command and a fixed order: everything is staged, ``generate`` writes
+the mirrors of the tree into the same commit, the gate proves the tree in the maintain scope, the
+commit carries the trace line of this machine; activated, the system-level components an
+adopt-mode profile needs come in, ``rebuild --switch`` activates the committed tree and E2E checks
+it against the base; published, ``txn publish`` pushes it, which after an activation needs that
+E2E. The checkout is the transaction: apply commits there and never cleans, stashes or amends;
+one reset takes back the commit it just made when a commit hook changed its tree away from the
+proven one, and keeps the changes staged. Like ``upgrade`` there is no journal and no resume: every
+run works out again what is left. The gate answers from its memo for a tree it proved, a tree that
+is active is not rebuilt, a passed E2E of the active tree with the repository checks is not run
+again and a published commit is not pushed again, so the same command finishes what a red step, a
+missing network or a person's sudo step left.
+
+Another machine that published first (design: the push race) costs a replay, never a merge in the
+checkout: the commits after the base are picked onto the new tip in a clone of their own under
+``<state>/apply/replay``, a mirror both sides changed is taken from the tip and ``flake.lock`` too
+(``nix flake lock`` adds what is missing), ``generate`` folds the mirrors into the top commit, and
+only a finished replay moves the checkout, by ``git reset --keep``. Then the gate, the activation
+and E2E run again against the new base, and the push again, at most three times in a run. A change
+of the same lines on both sides stops it with the checkout as it was (``publish-conflict``).
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -31,7 +42,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from dotsteward_cli import config, context, firmware, locks, machine, report, runner
+from dotsteward_cli import atomic, config, context, doctor, firmware, locks, machine, report, runner, writers
 from dotsteward_cli import publish as publishing
 from dotsteward_cli.host import commit_identity, commit_message
 from dotsteward_cli.upgrade import facts
@@ -46,15 +57,27 @@ _SYSTEM_LEVEL = {"linux": "deb", "darwin": "app-archive"}
 _SETTINGS_WAIT = {"local-changed", "local-deleted"}
 _STEP_WORDS = {"pending": "waits for you", "partial": "skipped, no network", "failed": "failed"}
 _COMMIT_SECONDS = 600
+# What a replay takes from the tip when both sides changed it: values of the tree, made again.
+_DERIVED = (".dotsteward/",)
+_FLAKE_LOCK = "flake.lock"
+_REPLAYED_REF = "refs/dotsteward/apply/replayed"
+_WRITER_PATH = re.compile(r"writer-class: (\S+): only ")
+# txn publish: the remote moved since the base, and no network.
+_TXN_RACE = 3
+_TXN_OFFLINE = 6
 
 _APPLY_DESCRIPTION = (
-    "Finishes a maintain transaction in one command: stages every change of the checkout, runs the gate "
-    "in the maintain scope, commits with SUBJECT and the trace line of this machine, then with --activate "
+    "Finishes a maintain transaction in one command: stages every change of the checkout, regenerates the "
+    "mirrors, runs the gate in the maintain scope, commits with SUBJECT and the trace line of this machine, "
+    "then with --activate "
     "installs the system-level components an adopt-mode profile needs, runs rebuild --switch and E2E "
-    "against the base, and with --publish runs txn publish. [maintain] activate and publish of "
+    "against the base, and with --publish runs txn publish; when another machine published first, it moves "
+    "the commits onto the new tip, proves and activates them again and pushes again, three times at most. "
+    "[maintain] activate and publish of "
     "workstation.toml are the defaults (both false). Run the same command again after a fix or a sudo "
     "step: it does what is left. Exit status: 0 done, 1 a refusal or a red step, 2 usage error, 3 a sudo "
-    "step waits (review.json), 6 no network: the push waits, 130 interrupted."
+    "step or a person waits (review.json: a change of the same lines here and on the remote, or a remote "
+    "that kept moving), 6 no network: the push waits, 130 interrupted."
 )
 _BEGIN_DESCRIPTION = (
     "Opens a maintain transaction: checks that this is the instance checkout on its branch, fast-forwards "
@@ -122,9 +145,9 @@ class _Checkout(runner.Runner):
     def _behind(self) -> list[str]:
         return self._git("rev-list", f"HEAD..{self.tip}").stdout.split()
 
-    def _nonconventional(self) -> list[tuple[str, str]]:
-        """The commits after the tip whose subject txn publish refuses: (oid, subject)."""
-        listing = self._git("log", "--reverse", "--format=%H%x00%s", f"{self.tip}..HEAD").stdout
+    def _nonconventional(self, base: str) -> list[tuple[str, str]]:
+        """The commits after BASE whose subject txn publish refuses: (oid, subject)."""
+        listing = self._git("log", "--reverse", "--format=%H%x00%s", f"{base}..HEAD").stdout
         found = []
         for line in listing.splitlines():
             oid, _, subject = line.partition("\0")
@@ -132,9 +155,9 @@ class _Checkout(runner.Runner):
                 found.append((oid, subject))
         return found
 
-    def _fold_command(self) -> str:
+    def _fold_command(self, base: str) -> str:
         """The way out for such commits: their changes stay, as changes of the transaction."""
-        return f"git -C {self.root} reset --soft {self.tip}"
+        return f"git -C {self.root} reset --soft {base}"
 
     def _changes(self) -> list[str]:
         return [
@@ -179,14 +202,14 @@ class Begin(_Checkout):
                     ),
                 }
             )
-        bad = self._nonconventional()
+        bad = self._nonconventional(self.tip)
         if bad:
             self.ask.append(
                 {
                     "code": "nonconventional-commits",
                     "commits": [oid for oid, _ in bad],
                     "subjects": [subject for _, subject in bad],
-                    "run": self._fold_command(),
+                    "run": self._fold_command(self.tip),
                     "message": (
                         "txn publish refuses these subjects, so apply refuses them: run the command to keep their "
                         "changes as changes of this transaction, then dotsteward apply -m with a conventional subject"
@@ -233,8 +256,9 @@ class Begin(_Checkout):
         behind, ahead = self._behind(), self._ahead()
         if behind and ahead:
             return (
-                f"the checkout and the remote diverged ({len(ahead)} local, {len(behind)} remote commits): "
-                f"run git -C {self.root} pull --rebase, then dotsteward maintain begin"
+                f"the checkout and the remote diverged ({len(ahead)} local, {len(behind)} remote commits): when the "
+                "local ones are an earlier dotsteward apply that lost the race of its push, the same apply moves them "
+                f"onto the tip; else run git -C {self.root} pull --rebase, then dotsteward maintain begin"
             )
         if behind:
             done = self._git("merge", "--quiet", "--ff-only", self.tip)
@@ -384,8 +408,11 @@ class Apply(_Checkout):
         for number in (signal.SIGTERM, signal.SIGHUP):
             signal.signal(number, interrupted)
         try:
-            committed = self._start() and self._stage() and self._gate() and self._commit()
-            if committed and (not self.activate or (self._install() and self._rebuild() and self._e2e())):
+            committed = self._start() and self._stage() and self._generate() and self._gate() and self._commit()
+            if committed and self.base != self.tip and not self.offline:
+                # A run that stopped after a lost race: the commits move onto the tip first.
+                committed = self._move_on()
+            if committed and self._activated():
                 self._publish()
         except KeyboardInterrupt:
             self.interrupted = True
@@ -408,24 +435,26 @@ class Apply(_Checkout):
                     f"the remote moved to {self.tip[:12]} since the transaction began: run dotsteward maintain begin, "
                     "which fast-forwards the checkout, then the same dotsteward apply"
                 )
-            return self._refuse(
-                f"the checkout and the remote diverged: run git -C {self.root} pull --rebase, then dotsteward apply"
-            )
-        bad = self._nonconventional()
+            # Commits of an earlier run that lost the race: they move onto the tip after the gate.
+            self.base = self._git("merge-base", "HEAD", self.tip).stdout.strip()
+            if not self.base:
+                return self._refuse(f"the checkout and the remote {self.tip[:12]} have no commit in common")
+        else:
+            self.base = self.tip
+        bad = self._nonconventional(self.base)
         if bad:
             said = ", ".join(f"{oid[:12]} {subject!r}" for oid, subject in bad)
             self.run.item(
                 "nonconventional-commits",
                 commits=[oid for oid, _ in bad],
-                run=self._fold_command(),
+                run=self._fold_command(self.base),
                 message="txn publish refuses these subjects: keep their changes with the command, then apply -m",
             )
             return self._refuse(
                 f"unpublished commits without a conventional subject, which txn publish refuses: {said}; keep their "
-                f"changes as changes of this transaction with {self._fold_command()}, then run dotsteward apply "
-                '-m "<type>: <summary>"'
+                f"changes as changes of this transaction with {self._fold_command(self.base)}, then run dotsteward "
+                'apply -m "<type>: <summary>"'
             )
-        self.base = self.tip
         self.run.data.update(base=self.base, offline=self.offline)
         return True
 
@@ -480,6 +509,30 @@ class Apply(_Checkout):
     def _staged(self) -> list[str]:
         return self._git("diff", "--cached", "--name-only", "-z").stdout.split("\0")[:-1]
 
+    def _generate(self) -> bool:
+        """The mirrors of the tree and the values derived from it, in the same commit as the change."""
+        started = time.monotonic()
+        status = self._ds_quiet("generate")
+        if status != 0:
+            self._step("generate", report.FAILED, started, exit_status=status)
+            self.run.item(
+                "generate-failed",
+                run=self._again(self.subject),
+                message="dotsteward generate failed: nothing was committed; fix it and run the same command again",
+            )
+            return False
+        added = self._git("add", "-A")
+        if added.code != 0:
+            self._step("generate", report.FAILED, started, detail=added.stderr.strip())
+            return False
+        if self._staged() and not self.subject:
+            self._step("generate", report.FAILED, started, detail="the mirrors changed")
+            return self._refuse(
+                'generate changed the mirrors: give the subject of their commit with -m "<type>: <summary>"'
+            )
+        self._step("generate", report.OK, started)
+        return True
+
     def _gate(self) -> bool:
         started = time.monotonic()
         wall = time.time()
@@ -489,6 +542,8 @@ class Apply(_Checkout):
         if status == 0:
             self._step("gate", report.OK, started)
             return True
+        if f"{writers.CODE}: " in self.quiet_output:
+            return self._writer_class(started)
         environment = self._gate_environment(wall)
         if environment is not None:
             network = environment.startswith("the network")
@@ -508,6 +563,30 @@ class Apply(_Checkout):
             run=self._again(self.subject),
             message="the gate refused the tree: nothing was committed; fix it and run the same command again",
         )
+        return False
+
+    def _writer_class(self, started: float) -> bool:
+        """The tree changes what another machine writes: nothing is committed."""
+        paths = sorted(set(_WRITER_PATH.findall(self.quiet_output)))
+        producer = writers.producer_of(self.root, self.base)
+        pins = [path for path in paths if not path.startswith(f"{machine.HOSTS_DIR}/")]
+        self._step("gate", report.FAILED, started, detail=writers.CODE)
+        _error(f"{writers.CODE}: this machine does not write {', '.join(paths)}: nothing was committed")
+        if pins:
+            self.run.item(
+                writers.CODE,
+                paths=paths,
+                producer=producer,
+                run=f"dotsteward host producer {self.name}",
+                message=(
+                    f"{producer} is the producer: only it moves a pin the base has; take these changes back and let "
+                    "it move them, or make this machine the producer"
+                ),
+            )
+        else:
+            self.run.item(
+                writers.CODE, paths=paths, message="only the machine of a host file writes it: take these changes back"
+            )
         return False
 
     def _validated_tree(self) -> str:
@@ -574,7 +653,22 @@ class Apply(_Checkout):
         _say("apply", f"committed {self.commit[:12]}" if detail is None else f"{detail}: {self.commit[:12]}")
         return True
 
+    def _proved(self, step: str, started: float) -> bool:
+        """The tree of HEAD is the tree the gate proved."""
+        if self._tree_of(self.root) == self._validated_tree():
+            return True
+        self._step(step, report.FAILED, started, detail="the committed tree is not the tree the gate proved")
+        self.run.item(
+            "tree-changed",
+            run=self._again(),
+            message="the tree changed after the gate (a hook?): the gate proves it again on the next run",
+        )
+        return False
+
     # --- activation ---------------------------------------------------------------------------
+
+    def _activated(self) -> bool:
+        return not self.activate or (self._install() and self._rebuild() and self._e2e())
 
     def _mirror_at(self, commit: str) -> dict[str, dict[str, Any]]:
         """The components of the manifest mirror of this machine at COMMIT, by name."""
@@ -742,39 +836,214 @@ class Apply(_Checkout):
             self._step("publish", report.OK, started, detail="already published")
             self.published = True
             return
-        status = self._ds_quiet("txn", "publish", "--scope", "maintain", "--expected-base", self.base)
-        if status == 0:
-            self._step("publish", report.OK, started)
-            self.published = True
-            assert self.commit is not None
-            self._track(self.commit)
-            return
-        outcome, tip, detail = publishing.fetch_tip(self.root, self.branch, _SCOPE)
-        if outcome == publishing.NETWORK:
-            self.offline = True
-            self._step("publish", report.PARTIAL, started, detail="offline: the same command publishes later")
-        elif outcome == publishing.OK and tip != self.base:
-            self._step("publish", report.PENDING, started, detail="the remote moved")
+        for attempt in range(1, publishing.ATTEMPTS + 1):
+            status = self._ds_quiet("txn", "publish", "--scope", "maintain", "--expected-base", self.base)
+            if status == 0:
+                self._step("publish", report.OK, started)
+                self.published = True
+                self.commit = self._head()
+                self.run.data.update(commit=self.commit)
+                self._track(self.commit)
+                return
+            if status == _TXN_OFFLINE:
+                self.offline = True
+                self._step("publish", report.PARTIAL, started, detail="offline: the same command publishes later")
+                return
+            if status != _TXN_RACE:
+                self._step("publish", status, started)
+                self.run.item("publish-refused", message="txn publish or the remote refused the commits: see above")
+                return
+            if attempt == publishing.ATTEMPTS:
+                break
+            _say("apply", "another machine published first: the commits move onto its tip")
+            publishing.backoff(attempt)
+            why = self._fetch()
+            if why is not None:
+                self._step("publish", report.FAILED, started, detail=why)
+                return
+            if self.offline:
+                self._step("publish", report.PARTIAL, started, detail="offline: the same command publishes later")
+                return
+            if not (self._move_on() and self._activated()):
+                return
+            started = time.monotonic()
+        self._step("publish", report.PENDING, started, detail="other machines kept publishing")
+        self.run.item(
+            "publish-race",
+            tip=self.tip,
+            run=self._again(),
+            message=(
+                f"the remote moved {publishing.ATTEMPTS} times (another machine, or a skill capture of this one) while "
+                "this one proved its commits: they stay here; the same command moves them onto the new tip and "
+                "publishes them"
+            ),
+        )
+
+    # --- the replay ---------------------------------------------------------------------------
+
+    def _move_on(self) -> bool:
+        """The commits after the base onto the tip, proved by the gate."""
+        started = time.monotonic()
+        return self._replay() and self._gate() and self._proved("gate", started)
+
+    def _replay(self) -> bool:
+        """The commits of BASE..HEAD picked onto the tip in a clone of their own; the checkout moves
+        only when that is done. False: the checkout is as it was."""
+        started = time.monotonic()
+        tip = self.tip
+        if publishing.is_ancestor(self.root, "HEAD", tip):
+            # The commits are on the remote already: a push whose answer got lost.
+            return self._land(tip, started, detail=f"already on {tip[:12]}")
+        work = Path(self.state_root) / "apply" / "replay"
+        try:
+            replayed = self._pick(work, tip, started)
+            if replayed is None:
+                return False
+            fetched = self._git("fetch", "--quiet", "--no-tags", "--refmap=", str(work), f"+HEAD:{_REPLAYED_REF}")
+            if fetched.code != 0:
+                return self._replay_failed(started, f"git fetch from the replay failed: {fetched.stderr.strip()}")
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        landed = self._land(replayed, started, detail=f"onto {tip[:12]}")
+        self._git("update-ref", "-d", _REPLAYED_REF)
+        return landed
+
+    def _land(self, commit: str, started: float, *, detail: str) -> bool:
+        moved = self._git("reset", "--quiet", "--keep", commit)
+        if moved.code != 0:
+            return self._replay_failed(started, f"git reset --keep in the checkout failed: {moved.stderr.strip()}")
+        self.base = self.tip
+        self.commit = commit
+        self.run.data.update(base=self.base, commit=commit)
+        self._step("replay", report.OK, started, detail=detail)
+        _say("apply", f"the commits are on {self.tip[:12]} now: {commit[:12]}")
+        return True
+
+    def _replay_failed(self, started: float, why: str) -> bool:
+        self._step("replay", report.FAILED, started, detail=why)
+        self.run.item("replay-failed", run=self._again(), message=f"the commits could not move onto the tip: {why}")
+        return False
+
+    def _pick(self, work: Path, tip: str, started: float) -> str | None:
+        """The replayed HEAD of the clone WORK, or None when it stopped (recorded)."""
+        shutil.rmtree(work, ignore_errors=True)
+        atomic.make_private_dirs(work.parent)
+        commits = self._git("rev-list", "--reverse", "--topo-order", f"{self.base}..HEAD").stdout.split()
+        made = self._git("clone", "--quiet", "--shared", "--no-checkout", str(self.root), str(work))
+        if made.code != 0:
+            self._replay_failed(started, f"git clone failed: {made.stderr.strip()}")
+            return None
+        self._clone_config(work)
+        checked = publishing.git(work, "checkout", "--quiet", "--detach", tip)
+        if checked.code != 0:
+            self._replay_failed(started, f"git checkout of the tip failed: {checked.stderr.strip()}")
+            return None
+        identity = commit_identity(self.root, "HEAD")
+        lock_taken = False
+        for commit in commits:
+            picked = publishing.git(work, *identity, "cherry-pick", "--allow-empty", commit, env={"TZ": "UTC"})
+            if picked.code == 0:
+                continue
+            unmerged = publishing.git(work, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0")[:-1]
+            if not unmerged and self._empty_pick(work):
+                # The tip has the change already.
+                continue
+            others = [path for path in unmerged if not (path.startswith(_DERIVED) or path == _FLAKE_LOCK)]
+            if not unmerged or others:
+                publishing.git(work, "cherry-pick", "--abort")
+                if not unmerged:
+                    self._replay_failed(
+                        started, f"git cherry-pick {commit[:12]} failed: {picked.stderr.strip()[-400:]}"
+                    )
+                    return None
+                self._conflict(others, started)
+                return None
+            for path in unmerged:
+                # The tip's side: a value of the tree, made again below.
+                if publishing.git(work, "checkout", "--ours", "--", path).code != 0:
+                    publishing.git(work, "rm", "--quiet", "--cached", "--ignore-unmatch", "--", path)
+                    with contextlib.suppress(FileNotFoundError):
+                        (work / path).unlink()
+                else:
+                    publishing.git(work, "add", "--", path)
+            lock_taken = lock_taken or _FLAKE_LOCK in unmerged
+            done = publishing.git(
+                work, *identity, "-c", "core.editor=true", "cherry-pick", "--continue", env={"TZ": "UTC"}
+            )
+            if done.code != 0 and not self._empty_pick(work):
+                publishing.git(work, "cherry-pick", "--abort")
+                self._replay_failed(started, f"git cherry-pick {commit[:12]} failed: {done.stderr.strip()[-400:]}")
+                return None
+        if lock_taken and not self._lock_flake(work, started):
+            return None
+        return self._fold(work, started)
+
+    @staticmethod
+    def _empty_pick(work: Path) -> bool:
+        """A pick that stopped because its change is on the tip already goes; True when it went."""
+        if publishing.git(work, "diff", "--cached", "--quiet", "HEAD").code != 0:
+            return False
+        return publishing.git(work, "cherry-pick", "--skip").code == 0
+
+    def _conflict(self, paths: Sequence[str], started: float) -> None:
+        self._step("replay", report.PENDING, started, detail=f"the same lines changed on {self.tip[:12]}")
+        message = (
+            f"another machine changed the same lines of {', '.join(paths)}: nothing was pushed and the checkout "
+            "is as it was; the command takes the remote in for you to settle them, then the same apply proves the "
+            "combined tree and publishes"
+        )
+        if self._changes():
             message = (
-                "the remote moved (another machine, or a skill capture of this one): the commits stay here; the "
-                "command takes the remote in, then the same apply proves the combined tree and publishes"
+                "the checkout has uncommitted changes, which a pull --rebase refuses: make them part of this "
+                "transaction with apply -m, or remove them, first; " + message
             )
-            if self._changes():
-                message = (
-                    "the checkout has uncommitted changes, which a pull --rebase refuses: make them part of this "
-                    "transaction with apply -m, or remove them, first; " + message
-                )
-            self.run.item(
-                "publish-race",
-                run=f"git -C {self.root} pull --rebase origin {self.branch} && {self._again()}",
-                message=message,
-            )
-        else:
-            self._step("publish", status, started)
-            self.run.item(
-                "publish-refused",
-                message=f"txn publish or the remote refused the commits: {detail or 'see above'}",
-            )
+        self.run.item(
+            "publish-conflict",
+            paths=list(paths),
+            tip=self.tip,
+            run=f"git -C {self.root} pull --rebase origin {self.branch} && {self._again()}",
+            message=message,
+        )
+
+    def _lock_flake(self, work: Path, started: float) -> bool:
+        """flake.lock of the tip, and what this tree adds to it: nix flake lock only adds what is missing."""
+        locked = subprocess.run(
+            [
+                doctor.find_nix(self.env) or "nix",
+                "--extra-experimental-features",
+                "nix-command flakes",
+                "flake",
+                "lock",
+            ],
+            cwd=work,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if locked.returncode != 0:
+            self._replay_failed(started, f"nix flake lock failed: {locked.stderr.strip()[-400:]}")
+            return False
+        return True
+
+    def _fold(self, work: Path, started: float) -> str | None:
+        """generate in the clone; what it changes goes into the top commit, which keeps its author,
+        dates and message. The replayed HEAD, or None."""
+        argv = [str(config.FRAMEWORK_ROOT / "cli" / "dotsteward"), "--instance", str(work), "generate"]
+        generated = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
+        if generated.returncode in runner.SIGNALLED:
+            raise KeyboardInterrupt
+        if generated.returncode != 0:
+            self._replay_failed(started, f"dotsteward generate failed: {generated.stderr.strip()[-400:]}")
+            return None
+        head = publishing.git(work, "rev-parse", "HEAD").stdout.strip()
+        publishing.git(work, "add", "-A")
+        tree = publishing.git(work, "write-tree").stdout.strip()
+        if tree == publishing.git(work, "rev-parse", "HEAD^{tree}").stdout.strip():
+            return head
+        folded = publishing.rewrite(work, head, tree=tree)
+        publishing.git(work, "update-ref", "HEAD", folded, head)
+        return folded
 
     # --- the end ------------------------------------------------------------------------------
 

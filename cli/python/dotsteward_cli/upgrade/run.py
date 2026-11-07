@@ -31,7 +31,6 @@ import collections
 import contextlib
 import hashlib
 import json
-import os
 import shutil
 import signal
 import stat
@@ -63,6 +62,9 @@ _BRIDGE_REPO = "/var/lib/dotsteward/apt-bridge"
 _APT_LOCK_SECONDS = 300
 _VERSION_SECONDS = 20
 _INTERRUPTED = 130
+# txn publish: the remote moved since the base, and no network.
+_TXN_RACE = 3
+_TXN_OFFLINE = 6
 _SKILL_ITEMS = {
     "ask": ("origin-unknown", "where this skill comes from is not known: say what becomes of it"),
     "conflict": ("skill-conflict", "this skill changed here and on the remote"),
@@ -71,12 +73,6 @@ _SKILL_ITEMS = {
 _NOT_COMPONENTS = {"core", "setup"}
 _SIGNALLED = runner.SIGNALLED
 _APT_BUCKETS = ("install", "upgrade", "remove", "downgrade")
-# The local settings of the checkout that are about the checkout itself, not about how git behaves
-# there: the clone has its own. Everything else is copied, so the clone signs, pushes and asks for
-# credentials as the checkout would; the hooks are the checkout's, by an absolute core.hooksPath.
-_OWN_SECTIONS = ("remote.", "branch.", "extensions.", "submodule.", "worktree.")
-_OWN_KEYS = {"core.bare", "core.worktree", "core.repositoryformatversion", "core.hookspath"}
-_KEPT_REMOTE_KEYS = {"remote.origin.pushurl"}
 _STEP_WORDS = {"pending": "waits for you", "partial": "skipped, no network", "failed": "failed"}
 _KILLED = runner.KILLED
 _NO_RESULT = "unknown"
@@ -128,6 +124,8 @@ class Upgrade(runner.Runner):
         self.work: Path | None = None
         self.waiting: str | None = None
         self.moved: list[dict[str, Any]] = []
+        self.latest: Path | None = None
+        self.skips: Sequence[str] = ()
         self.approved: tuple[firmware.Device, ...] = ()
         self.paths: report.ReportPaths | None = None
         self.e2e_status = 0
@@ -268,27 +266,8 @@ class Upgrade(runner.Runner):
 
     def _copy_config(self) -> None:
         """The local settings and the hooks of the checkout, in the clone."""
-        git_dir = self._git("rev-parse", "--path-format=absolute", "--git-dir").stdout.strip()
-        listing = self._git("config", "--local", "--null", "--list").stdout
-        values: dict[str, list[str]] = {}
-        for entry in listing.split("\0"):
-            key, _, value = entry.partition("\n")
-            lowered = key.lower()
-            if not key or lowered in _OWN_KEYS:
-                continue
-            if lowered.startswith(_OWN_SECTIONS) and lowered not in _KEPT_REMOTE_KEYS:
-                continue
-            if lowered.startswith(("include.", "includeif.")) and not os.path.isabs(os.path.expanduser(value)):
-                # A path relative to the config file of the checkout.
-                value = os.path.join(git_dir, value)
-            values.setdefault(key, []).append(value)
-        for key, found in values.items():
-            self._work_git("config", "--unset-all", key)
-            for value in found:
-                self._work_git("config", "--add", key, value)
-        hooks = self._git("rev-parse", "--path-format=absolute", "--git-path", "hooks").stdout.strip()
-        if hooks:
-            self._work_git("config", "core.hooksPath", hooks)
+        assert self.work is not None
+        self._clone_config(self.work)
 
     def _remove_work(self) -> None:
         shutil.rmtree(self.upgrade_dir / _WORK, ignore_errors=True)
@@ -691,12 +670,7 @@ class Upgrade(runner.Runner):
         if self.offline:
             self.run.step("pins-apply", report.PARTIAL, detail="offline")
             return
-        if not self._open_work(self.tip):
-            return
-        prepared = self._ds_output("txn", "prepare", "--official-sources-only", "--scope", "update")
-        if prepared.returncode != 0:
-            self.run.step("txn-prepare", prepared.returncode)
-            self._remove_work()
+        if not self._open_work(self.tip) or not self._prepare():
             return
         _say("looking for new versions")
         latest = self.upgrade_dir / "latest.json"
@@ -710,6 +684,20 @@ class Upgrade(runner.Runner):
         skips = holds.skip_patterns(self.state_root, latest)
         if not self._week_due():
             skips = [_FLAKE_INPUTS, *skips]
+        # Kept for a lost race: the writer runs again on the new tip with the same rows.
+        self.latest, self.skips = latest, skips
+        self._write(latest, skips)
+
+    def _prepare(self) -> bool:
+        prepared = self._ds_output("txn", "prepare", "--official-sources-only", "--scope", "update")
+        if prepared.returncode != 0:
+            self.run.step("txn-prepare", prepared.returncode)
+            self._remove_work()
+            return False
+        return True
+
+    def _write(self, latest: Path, skips: Sequence[str]) -> None:
+        """The writer in the clone, the gate and the local commit."""
         answer = self._apply(latest, skips)
         if answer is None:
             self._remove_work()
@@ -1146,42 +1134,76 @@ class Upgrade(runner.Runner):
                 message="the commit goes out after a green E2E, which this run could not do",
             )
             return
-        commit = self.waiting
         if not self._validated():
             self.run.step("publish", report.FAILED, detail="the gate does not accept this tree any more")
             self._drop_waiting()
             self._back_to_checkout()
             return
-        status = self._ds_quiet("txn", "publish", "--scope", "update", "--expected-base", self.tip)
-        if status == 0:
-            self.run.step("publish", report.OK)
-            # `txn publish` named the machine in it: what the remote has is what the clone has now.
-            self._keep_waiting(self.moved)
-            commit = str(self.waiting)
-            self._drop_waiting()
-            self._follow(commit)
-            return
-        outcome, tip, detail = publishing.fetch_tip(self.root, self.branch, _PUBLISH_SCOPE)
-        if outcome == publishing.NETWORK:
-            self.offline = True
-            self.run.step("publish", report.PARTIAL, detail="offline: the commit waits for the next run")
-            return
-        if outcome == publishing.OK and tip != self.tip:
-            self.run.step("publish", report.PENDING, detail="the remote moved")
-            self.run.item(
-                "publish-race",
-                run=self._command_again(),
-                message="another machine came first: the next run makes the commit again on its tip",
-            )
-        else:
-            self.run.step("publish", status)
-            self.run.item(
-                "publish-refused",
-                moved=[row.get("id") for row in self.moved],
-                message=f"the remote or a hook refused the commit: {detail or 'see above'}; the next run tries again",
-            )
+        for attempt in range(1, publishing.ATTEMPTS + 1):
+            status = self._ds_quiet("txn", "publish", "--scope", "update", "--expected-base", self.tip)
+            if status == 0:
+                self.run.step("publish", report.OK)
+                # `txn publish` named the machine in it: what the remote has is what the clone has now.
+                self._keep_waiting(self.moved)
+                commit = str(self.waiting)
+                self._drop_waiting()
+                self._follow(commit)
+                return
+            if status == _TXN_OFFLINE:
+                self.offline = True
+                self.run.step("publish", report.PARTIAL, detail="offline: the commit waits for the next run")
+                return
+            if status != _TXN_RACE:
+                self.run.step("publish", status)
+                self.run.item(
+                    "publish-refused",
+                    moved=[row.get("id") for row in self.moved],
+                    message="the remote or a hook refused the commit (see above); the next run tries again",
+                )
+                break
+            if attempt == publishing.ATTEMPTS or self.latest is None:
+                # A commit of an earlier run has no rows of this one to write again from.
+                kept = "other machines kept publishing" if self.latest is not None else "the remote moved"
+                self.run.step("publish", report.PENDING, detail=kept)
+                self.run.item(
+                    "publish-race",
+                    run=self._command_again(),
+                    message=f"{kept} while this machine proved the new pins: the next run makes the commit again",
+                )
+                break
+            _say("another machine published first: the writer runs again on its tip")
+            publishing.backoff(attempt)
+            if not self._write_again():
+                return
         self._drop_waiting()
         self._back_to_checkout()
+
+    def _write_again(self) -> bool:
+        """The lost race of the producer: no text is merged; the writer runs again on the new tip with
+        the rows this run researched, then the gate, the rebuild and E2E, as the first time. False:
+        nothing to publish (recorded)."""
+        outcome, tip, _ = publishing.fetch_tip(self.root, self.branch, _PUBLISH_SCOPE)
+        if outcome != publishing.OK:
+            self.offline = outcome == publishing.NETWORK
+            self.run.step("publish", report.PARTIAL, detail="offline: the commit waits for the next run")
+            return False
+        self.tip = tip
+        self._track(tip)
+        # The saved binaries stay: they are what the machine had before this run.
+        self._drop_waiting(forget_binaries=False)
+        self.run.step("replay", report.OK, detail=f"the writer again on {tip[:12]}")
+        assert self.latest is not None  # see _publish
+        # The new clone starts with the CLI of this run, as the first one did.
+        self.framework_moved = False
+        if self._open_work(tip) and self._prepare():
+            self._write(self.latest, self.skips)
+        if self.waiting is None:
+            # Nothing is left to move on the new tip.
+            self._back_to_checkout()
+            return False
+        self._rebuild()
+        self._e2e()
+        return self.waiting is not None and self.verified
 
     def _behind(self) -> bool:
         """The checkout is behind what the remote has, or had at the last fetch."""

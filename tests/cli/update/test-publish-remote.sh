@@ -1,10 +1,11 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # The remote side of update publish: after a fresh
-# fetch origin/<branch> must still be the base; the push is never forced
-# and its refusal by the remote is reported; the remote branch must then be
-# HEAD. A remote that already holds HEAD (a publish run again) is reported
-# as already published, exit 0, with nothing pushed.
+# fetch origin/<branch> must still be the base, else exit 3 (another machine
+# came first) with nothing pushed; no network is exit 6; the push is never
+# forced and its refusal by the remote is reported; the remote branch must
+# then hold HEAD. A remote that already holds HEAD (a publish run again) is
+# reported as already published, exit 0, with nothing pushed.
 # shellcheck source=tests/cli/update/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/update/helpers.sh"
 
@@ -27,7 +28,7 @@ write_validation
 push_from_elsewhere "docs: change elsewhere"
 moved=$(remote_oid)
 reset_logs
-assert_exit 1 run_update publish --scope maintain
+assert_exit 3 run_update publish --scope maintain
 assert_eq "[dotsteward] ERROR: remote main changed since prepare: $moved, not the base OID $base" "$DS_STDERR"
 assert_eq "$moved" "$(remote_oid)"
 assert_eq "$moved" "$(git -C "$up_inst" rev-parse refs/remotes/origin/main)"
@@ -38,7 +39,7 @@ git -C "$up_bare" update-ref refs/heads/main "$base"
 # --- the fetch fails ------------------------------------------------------------
 
 reset_logs
-assert_exit 1 env DS_FAKESSH_FAIL=1 "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" txn publish --scope maintain
+assert_exit 6 env DS_FAKESSH_FAIL=1 "$DS_REPO_ROOT/cli/dotsteward" --instance "$up_inst" txn publish --scope maintain
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: could not fetch origin/main within 60 s"
 assert_eq "$base" "$(remote_oid)"
 
@@ -92,10 +93,10 @@ assert_eq "[dotsteward] ERROR: HEAD tree is not the validated tree; run 'dotstew
   "$DS_STDERR"
 assert_no_network
 
-# A remote that moved past HEAD is still a refusal.
+# A remote that moved past HEAD is not at the base: exit 3, as for a race.
 write_validation
 push_from_elsewhere "docs: change after the publish"
 reset_logs
-assert_exit 1 run_update publish --scope maintain
+assert_exit 3 run_update publish --scope maintain
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: remote main changed since prepare: $(remote_oid), not the base OID $base"
 assert_call_count 0 nix

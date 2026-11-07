@@ -63,8 +63,8 @@ write_candidate "$(git -C "$up_inst" rev-parse HEAD~1)"
 change_and_commit "docs: fifth"
 write_validation
 reset_logs
-# The recorded base is an ancestor, but the remote is not at it.
-assert_exit 1 run_update publish --scope maintain
+# The recorded base is an ancestor, but the remote is not at it: the race of another machine.
+assert_exit 3 run_update publish --scope maintain
 assert_contains "$DS_STDERR" "remote main changed since prepare"
 assert_exit 0 run_update publish --scope maintain --expected-base "$base"
 assert_eq "$(head_oid)" "$(remote_oid)"

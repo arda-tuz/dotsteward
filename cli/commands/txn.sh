@@ -42,12 +42,19 @@
 #   the repository checks (publishing without an activation needs no E2E
 #   record); the commit subjects (update scope: the last one is exactly
 #   commit.update_subject; maintain scope: every one after the base is a
-#   conventional commit); a fresh fetch (60 s) finds origin/<branch>
-#   still at the base; on a named machine every commit to publish gets the line
-#   Dotsteward-Machine: <name>, whoever wrote it, with the same tree, author and dates; HEAD is pushed to <branch> without force (180 s) and
-#   the remote branch is verified to be HEAD (60 s). When the fetch finds
-#   the remote branch already at HEAD, the commit is already published:
-#   nothing is pushed and the exit status is 0. Finally the canonical
+#   conventional commit); a fresh fetch (60 s, into refs/dotsteward/txn/tip
+#   and origin/<branch>) finds the remote branch still at the base, else
+#   exit 3 and nothing is pushed; on a named machine every commit to publish
+#   gets the line Dotsteward-Machine: <name>, whoever wrote it, with the same
+#   tree, author and dates; HEAD is pushed to <branch> without force (180 s),
+#   and a push rejected as no fast-forward is exit 3 as well; a fetch then
+#   makes sure the remote holds HEAD or a commit after it (another machine
+#   may push at the same moment). When the first fetch finds the remote
+#   branch already at HEAD, the commit is already published: nothing is
+#   pushed and the exit status is 0. Without a network the exit status is 6;
+#   a push whose answer got lost and that landed is published. `dotsteward
+#   apply` and `dotsteward upgrade` move their commits onto the new tip after
+#   an exit 3 and publish again. Finally the canonical
 #   checkout (canonical_repo of <state>/host-overrides/inventory.json, else
 #   instance.checkout) is fast-forwarded when it is a clean clone of
 #   instance.remote on <branch> at the base; any other state is a warning,
@@ -65,7 +72,9 @@
 #                             record is the file's object, or null when the
 #                             file is absent or not a JSON object
 #
-# Exit status: 0 done (already published included), 1 refused or failed.
+# Exit status: 0 done (already published included), 1 refused or failed,
+# 3 publish only: the remote moved since the base (a race another machine won;
+# nothing was pushed), 6 publish only: no network (nothing was pushed).
 set -Eeuo pipefail
 
 lib_dir=${DOTSTEWARD_LIB:-$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/../lib" && pwd)}
@@ -78,6 +87,10 @@ source "$lib_dir/config.sh"
 source "$lib_dir/txn.sh"
 # shellcheck source=cli/lib/python.sh
 source "$lib_dir/python.sh"
+
+# txn publish: the remote moved since the base (another machine came first), and no network.
+EXIT_RACE=3
+EXIT_OFFLINE=6
 
 # The conventional commit types, as `dotsteward context` reports them.
 CONVENTIONAL_SUBJECT='^(feat|fix|perf|refactor|docs|chore|test|build|ci|style|revert)(\([a-z0-9._/-]+\))?!?: .+'
@@ -252,7 +265,7 @@ sync_canonical_checkout() {
 
 cmd_publish() {
   local scope=update expected_base="" root branch base head record recorded_scope override
-  local subject bad remote verified
+  local subject bad remote answer outcome detail
   while (($#)); do
     case $1 in
       --scope | --expected-base)
@@ -313,26 +326,40 @@ cmd_publish() {
     [[ -z $bad ]] || die "commit subject is not a conventional commit: ${bad//$'\n'/, }"
   fi
 
-  # The remote: still at the base, then the push, then the verification.
-  fetch_branch
-  remote=$(remote_branch_oid)
-  if [[ $remote == "$head" ]]; then
-    log "$branch is already $head on the remote; nothing to push"
-    sync_canonical_checkout "$base" "$head"
-    return 0
-  fi
-  [[ $remote == "$base" ]] || die "remote $branch changed since prepare: $remote, not the base OID $base"
-  # What leaves names the machine it comes from: another machine asks about it by that name.
-  # The tree stays the one the gate and E2E proved.
-  if [[ -n ${DS_MACHINE_NAME:-} ]]; then
-    head=$(ds_python dotsteward_cli.publish stamp "$root" "$base" "$DS_MACHINE_NAME") ||
-      die "cannot name the machine in the commits to publish"
-  fi
-  git_net 180 -C "$root" push origin "HEAD:refs/heads/$branch" </dev/null || die "push failed"
-  verified=$(git_net 60 -C "$root" ls-remote origin "refs/heads/$branch" </dev/null |
-    awk -v ref="refs/heads/$branch" '$2 == ref { print $1 }') || verified=""
-  [[ $verified == "$head" ]] ||
-    die "could not verify the remote OID: $branch is ${verified:-missing}, expected $head"
+  # The remote: still at the base, then one push without force (dotsteward_cli.publish). What
+  # leaves names the machine it comes from: another machine asks about it by that name. The tree
+  # stays the one the gate and E2E proved.
+  answer=$(ds_python dotsteward_cli.publish push "$root" "$branch" "$base" "${DS_MACHINE_NAME:-}") ||
+    die "cannot name the machine in the commits to publish"
+  outcome=$(jq -r .outcome <<<"$answer")
+  head=$(jq -r .head <<<"$answer")
+  remote=$(jq -r .tip <<<"$answer")
+  detail=$(jq -r .detail <<<"$answer")
+  [[ -z $detail ]] || printf '%s\n' "$detail" >&2
+  case $outcome in
+    already)
+      log "$branch is already $head on the remote; nothing to push"
+      sync_canonical_checkout "$base" "$head"
+      return 0
+      ;;
+    ok) ;;
+    race)
+      printf '[dotsteward] ERROR: remote %s changed since prepare: %s, not the base OID %s\n' \
+        "$branch" "$remote" "$base" >&2
+      exit "$EXIT_RACE"
+      ;;
+    network)
+      if [[ -z $remote ]]; then
+        printf '[dotsteward] ERROR: could not fetch origin/%s within 60 s\n' "$branch" >&2
+      else
+        printf '[dotsteward] ERROR: push failed: no network\n' >&2
+      fi
+      exit "$EXIT_OFFLINE"
+      ;;
+    unverified) die "could not verify the remote OID: $branch is ${remote:-missing}, expected $head" ;;
+    refused) [[ -n $remote ]] || die "the remote refused the fetch of origin/$branch" ;&
+    *) die "push failed" ;;
+  esac
   sync_canonical_checkout "$base" "$head"
   log "published $head to $branch without force; publishing does not activate the local system"
 }

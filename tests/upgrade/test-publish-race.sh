@@ -54,7 +54,7 @@ work_gone
 assert_eq "" "$(waiting_commit)"
 last_report '[.steps[] | select(.name == "replay")] | length == 1'
 last_report '[.steps[] | select(.name == "publish")] | last | .status == "ok"'
-review_json '[.items[] | select(.code == "publish-race")] == []'
+[[ ! -e $DOTSTEWARD_STATE_ROOT/review.json ]] || review_json '[.items[] | select(.code == "publish-race")] == []'
 
 # --- a remote that keeps moving: three pushes, then publish-race ----------------------------------
 
@@ -83,4 +83,4 @@ clear_log
 upgrade --tracked >/dev/null 2>&1 || true
 assert_eq 3.0.0 "$(git -C "$up_bare" show main:versions.lock.json | jq -r '."agent_tools.codex.linux"')"
 assert_eq "$(remote_oid)" "$(git -C "$up_inst" rev-parse HEAD)"
-review_json '[.items[] | select(.code == "publish-race")] == []'
+[[ ! -e $DOTSTEWARD_STATE_ROOT/review.json ]] || review_json '[.items[] | select(.code == "publish-race")] == []'

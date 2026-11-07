@@ -64,7 +64,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from dotsteward_cli import atomic, config, host, locks, publish, report
+from dotsteward_cli import atomic, config, host, locks, publish, report, writers
 from dotsteward_cli.skills import normal, reconcile, sleeper, state
 
 CAPTURE_LOCK = "capture.lock"
@@ -355,6 +355,25 @@ def _check_paths(worktree: str, tip: str, allowed: Sequence[str]) -> None:
             raise ChecksRed("writer-class", [f"a skill commit does not touch {path}"])
 
 
+def _check_writers(context: Mapping[str, Any], loaded_tree: Mapping[str, str], worktree: str, tip: str) -> None:
+    """Who writes what: a skill commit of a machine that is not the producer moves no pin of a
+    third-party skill the tip has (docs/machines.md)."""
+    tree = publish.git(worktree, "write-tree").stdout.strip()
+    findings = writers.check_tree(
+        Path(worktree),
+        tip,
+        tree,
+        name=reconcile.machine_name(context),
+        producer=writers.producer_of(Path(worktree), tip),
+        scope="skill",
+        lock=loaded_tree["lock"],
+        vendor=loaded_tree["vendor"],
+        own=[str(item) for item in context.get("repo_owned_revisions") or []],
+    )
+    if findings:
+        raise ChecksRed(writers.CODE, [finding.line() for finding in findings])
+
+
 # --- one attempt --------------------------------------------------------------------------
 
 
@@ -613,6 +632,7 @@ def _build_on(
         if added.code != 0 and os.path.lexists(os.path.join(worktree, path)):
             raise OSError(f"git add failed: {added.stderr.strip()}")
     _check_paths(worktree, tip, allowed)
+    _check_writers(context, loaded_tree, worktree, tip)
     _run_checks(worktree, summary)
     message = host.commit_message(_subject(attempt.applied), reconcile.machine_name(context))
     identity = host.commit_identity(Path(worktree), tip)

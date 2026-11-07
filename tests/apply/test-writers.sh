@@ -37,7 +37,8 @@ json_edit() {
 }
 
 # refused PATH SUBJECT: apply refuses the change with writer-class for PATH before any step after
-# the guards of the gate, and the checkout goes back to the published tip.
+# the guards of the gate, names the producer command for a pin, and the checkout goes back to the
+# published tip.
 refused() {
   clear_log
   assert_exit 1 apply -m "$2" --no-activate --publish
@@ -45,7 +46,11 @@ refused() {
   assert_contains "$DS_STDERR" "$1"
   assert_no_step '^static '
   apply_report '[.items[] | select(.code == "writer-class")] | length == 1'
-  apply_report '.items[] | select(.code == "writer-class") | .run == "dotsteward host producer example-host"'
+  if [[ $1 == hosts/* ]]; then
+    apply_report '.items[] | select(.code == "writer-class") | .run == null'
+  else
+    apply_report '.items[] | select(.code == "writer-class") | .run == "dotsteward host producer example-host"'
+  fi
   apply_report ".items[] | select(.code == \"writer-class\") | .paths | index(\"$1\") != null"
   assert_eq "$(remote_oid)" "$(head_oid)" "nothing was committed"
   git -C "$up_inst" reset -q --hard HEAD

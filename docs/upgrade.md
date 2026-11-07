@@ -189,7 +189,13 @@ left to the vendor. Without a terminal it is never applied.
   and no firmware. A red `deb` component gets the `sudo apt-mark hold` command to run if you want it.
   Nothing is written to the TOML; later releases carry holds in the machine layer.
 - **The remote refuses the commit:** `publish-refused` says why, exit 1; the commit goes and the next
-  run makes it again. **Another machine came first:** `publish-race`, exit 3, the same.
+  run makes it again.
+- **Another machine came first** (`txn publish` exits 3: the remote is not at the base, or the push
+  was rejected as no fast-forward): no text is merged. After a random pause the writer runs again in
+  a new clone of the new tip, with the rows this run researched (`pins latest` does not run again),
+  then the gate, the rebuild and E2E against the new base, and the push again; a `replay` step says
+  so. When the remote moved before each of three pushes, `publish-race`, exit 3: the commit goes and
+  the next run makes it again.
 - **No network:** network steps are skipped and the checks run, exit 6. A waiting commit stays and
   the next online run publishes it, or makes it again when the remote moved. A rebuild that fails
   because the network is gone holds nothing.

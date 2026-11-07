@@ -6,6 +6,7 @@
 # proves the new tree with the gate, activates it and runs E2E against the new base, and pushes
 # without force. A change both machines made to the same lines stops it: the commits stay as they
 # were, the checkout stays clean with no cherry-pick in it, and review.json says publish-conflict.
+# Where both changed flake.lock, the tip's lock is taken and nix flake lock adds what is missing.
 # Another machine that keeps publishing ends it after three pushes with publish-race; the same
 # command later finishes. A push the remote rejects as no fast-forward is a race too.
 # shellcheck source=tests/apply/helpers.sh
@@ -101,6 +102,23 @@ assert_eq "$(head_oid)" "$(remote_oid)"
 assert_eq "$moved" "$(git -C "$up_inst" rev-parse HEAD^)"
 derived_current HEAD
 
+# --- both machines changed flake.lock: the tip's lock, then nix flake lock -------------------
+
+base=$(remote_oid)
+edit "a change with a new input"
+printf '// an input of this machine\n' >>"$up_inst/flake.lock"
+other_machine_during_gate once flake.lock "// an input the producer moved"
+: >"$DS_CALL_LOG"
+clear_log
+assert_exit 0 apply -m "feat: add an input" --activate --publish
+assert_eq "$(head_oid)" "$(remote_oid)"
+assert_eq "$(git -C "$up_inst" show HEAD^:flake.lock)" "$(git -C "$up_inst" show HEAD:flake.lock)" \
+  "the lock of the tip, which nix flake lock completes"
+assert_contains "$(git -C "$up_inst" show HEAD:docs/guide.md)" "line a change with a new input"
+assert_call_count 1 nix '*flake lock*'
+derived_current HEAD
+no_replay_left
+
 # --- another machine keeps publishing: three pushes, then publish-race -----------------------
 
 base=$(remote_oid)
@@ -129,4 +147,6 @@ assert_eq "$base" "$(git -C "$up_inst" rev-parse HEAD~4)"
 derived_current HEAD
 no_replay_left
 apply_report '.status == "ok" and ([.steps[] | select(.name == "replay")] | length) == 1'
-review_json '[.items[] | select(.code == "publish-race" or .code == "publish-conflict")] == []'
+# Nothing waits any more: review.json goes with its last item.
+[[ ! -e $DOTSTEWARD_STATE_ROOT/review.json ]] ||
+  review_json '[.items[] | select(.code == "publish-race" or .code == "publish-conflict")] == []'

@@ -619,6 +619,11 @@ contribute_cmd_start() {
   [[ -z $promote || $promote =~ ^[a-z][a-z0-9-]*$ ]] ||
     die "invalid component name for --promote: $promote (lowercase letters, digits and dashes, starting with a letter)"
   contribute_load_config
+  # contribute upgrade moves flake.lock, which only the producer writes (docs/machines.md, "Who
+  # writes what"): on another machine the refusal would come only after the publish.
+  if [[ -n ${DS_MACHINE_NAME:-} && -n ${DS_HOSTS_PRODUCER:-} && $DS_MACHINE_NAME != "$DS_HOSTS_PRODUCER" ]]; then
+    die "$DS_HOSTS_PRODUCER is the producer of this instance and contribute upgrade moves flake.lock, which only it writes: start the run there, or make this machine the producer first: dotsteward host producer $DS_MACHINE_NAME"
+  fi
 
   local open
   open=$(_contribute_open_run "$slug")

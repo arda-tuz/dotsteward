@@ -34,6 +34,14 @@ ENVIRONMENT_MARKERS = (
 )
 
 
+# The local settings of the checkout that are about the checkout itself, not about how git behaves
+# there: the clone has its own. Everything else is copied, so the clone signs, pushes and asks for
+# credentials as the checkout would; the hooks are the checkout's, by an absolute core.hooksPath.
+OWN_SECTIONS = ("remote.", "branch.", "extensions.", "submodule.", "worktree.")
+OWN_KEYS = {"core.bare", "core.worktree", "core.repositoryformatversion", "core.hookspath"}
+KEPT_REMOTE_KEYS = {"remote.origin.pushurl"}
+
+
 class Runner:
     """The common part of a run: the instance, the CLI, git in the checkout and the records."""
 
@@ -118,6 +126,30 @@ class Runner:
 
     def _checkout_clean(self) -> bool:
         return not self._git("status", "--porcelain", "--untracked-files=normal").stdout.strip()
+
+    def _clone_config(self, work: Path) -> None:
+        """The local settings and the hooks of the checkout, in the clone WORK."""
+        git_dir = self._git("rev-parse", "--path-format=absolute", "--git-dir").stdout.strip()
+        listing = self._git("config", "--local", "--null", "--list").stdout
+        values: dict[str, list[str]] = {}
+        for entry in listing.split("\0"):
+            key, _, value = entry.partition("\n")
+            lowered = key.lower()
+            if not key or lowered in OWN_KEYS:
+                continue
+            if lowered.startswith(OWN_SECTIONS) and lowered not in KEPT_REMOTE_KEYS:
+                continue
+            if lowered.startswith(("include.", "includeif.")) and not os.path.isabs(os.path.expanduser(value)):
+                # A path relative to the config file of the checkout.
+                value = os.path.join(git_dir, value)
+            values.setdefault(key, []).append(value)
+        for key, found in values.items():
+            publishing.git(work, "config", "--unset-all", key)
+            for value in found:
+                publishing.git(work, "config", "--add", key, value)
+        hooks = self._git("rev-parse", "--path-format=absolute", "--git-path", "hooks").stdout.strip()
+        if hooks:
+            publishing.git(work, "config", "core.hooksPath", hooks)
 
     def _track(self, commit: str) -> None:
         """The tracking ref of the checkout says what the remote has, so `git status` does not count

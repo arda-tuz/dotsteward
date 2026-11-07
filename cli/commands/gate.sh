@@ -9,7 +9,10 @@
 # origin exactly instance.remote); the lock <state>/update/validate.lock (a
 # running gate is refused at once); untracked files (refused, Nix does not
 # see them); the base OID; in the update scope the allowlist of changed
-# paths; the candidate tree id; `nix --version`; the memo; then five quiet
+# paths; the candidate tree id; the writer classes (on a machine that is not
+# the producer of the base, no pin of the base moves, and no machine writes
+# the host file of another: `writer-class` lines, docs/machines.md); `nix
+# --version`; the memo; then five quiet
 # steps, each with its output in <state>/update/validate.log:
 #   preflight    the binary cache answers (gate.cache_url) and /nix/store
 #                has gate.min_free_gib GiB free; never fall back to mirrors
@@ -92,6 +95,8 @@ source "$lib_dir/lib.sh"
 source "$lib_dir/config.sh"
 # shellcheck source=cli/lib/txn.sh
 source "$lib_dir/txn.sh"
+# shellcheck source=cli/lib/python.sh
+source "$lib_dir/python.sh"
 
 STEPS=(preflight static pins flake-check cli-probes)
 
@@ -160,6 +165,9 @@ if [[ $scope == update ]]; then
   txn_check_allowlist "$base"
 fi
 tree_oid=$(txn_working_tree_oid)
+# Who writes what, in every scope and before the memo, whose key names no machine.
+ds_python dotsteward_cli.writers check --instance "$root" --base "$base" --tree "$tree_oid" --scope "$scope" ||
+  die "this machine does not write what the tree changes (docs/machines.md, \"Who writes what\")"
 nix_version=$(nix_cmd --version)
 nix_version=${nix_version%%$'\n'*}
 [[ -n $nix_version ]] || die "nix --version printed nothing"
