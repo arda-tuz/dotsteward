@@ -27,30 +27,48 @@ assert_eq "\"$(fake_hash "example-bundle.npmDeps:$(<"$bundle/package-lock.json")
 assert_contains "$(<"$FAKE_NIX_STATE/calls")" "nixpkgs#nodejs"
 assert_exit 0 pins check
 
-# An audit with findings waits for a decision: the whole bundle is restored, and the
-# other groups still move.
+# Findings that grow wait for a decision: the whole bundle is restored, and the other
+# groups still move.
 git -C "$inst" add -A
 git -C "$inst" commit -q -m "first bundle move"
 before_package=$(sha256sum "$bundle/package.json" "$bundle/package-lock.json")
-: >"$FAKE_NIX_STATE/fail-audit"
+printf '1 2' >"$FAKE_NIX_STATE/audit-counts"
 digest=$(printf '%064d' 7)
 rows \
   "$(row npm.example-cli npm 2.1.0 2.2.0 update '{"git_head":"'"$head"'"}')" \
   "$(row agent_tools.example-release github-release 4.0.0 4.1.0 update '{"tag":"v4.1.0","size":1,"sha256":"'"$digest"'","url":"https://downloads.example.invalid/example-release/v4.1.0/example-release-linux-x64.tar.gz"}')"
 assert_exit 3 apply --latest "$rows"
 assert_eq "npm-audit npm.example-cli" "$(item_codes)"
-assert_contains "$(jq -c '.items[0].reason' "$state/review.json")" "vulnerability"
+assert_contains "$(jq -c '.items[0].reason' "$state/review.json")" "2 findings, 1 before"
 assert_eq "$before_package" "$(sha256sum "$bundle/package.json" "$bundle/package-lock.json")"
 assert_eq '"2.1.0"' "$(json_get "$versions" '.agent_tools["example-cli"].version')"
 assert_eq '"4.1.0"' "$(json_get "$versions" '.agent_tools["example-release"].minimum_version')"
 assert_eq '[["download:agent_tools.example-release","ok"],["npm:packages/example-bundle","ok"]]' \
   "$(last_report '[.steps[] | select(.name | test(":")) | [.name, .status]] | sort')"
 assert_exit 0 pins check
-rm -f -- "$FAKE_NIX_STATE/fail-audit"
+
+# An audit that gives no answer is no permission either.
+git -C "$inst" add -A
+git -C "$inst" commit -q -m "release move"
+rows "$(row npm.example-cli npm 2.1.0 2.2.0 update '{"git_head":"'"$head"'"}')"
+printf '0 word' >"$FAKE_NIX_STATE/audit-counts"
+assert_exit 3 apply --latest "$rows"
+assert_eq "npm-audit npm.example-cli" "$(item_codes)"
+assert_eq '"2.1.0"' "$(json_get "$versions" '.agent_tools["example-cli"].version')"
+
+# Findings that do not grow move the bundle, even when some stay: they stand in the report, and
+# nothing waits. The audit keeps its own contract: moving cannot make it worse.
+printf '11 10' >"$FAKE_NIX_STATE/audit-counts"
+assert_exit 0 apply --latest "$rows"
+assert_eq '"2.2.0"' "$(json_get "$versions" '.agent_tools["example-cli"].version')"
+assert_eq "npm-audit-remaining" "$(jq -r '.items[0].code' "$state/review.json")"
+assert_eq "10" "$(jq -r '.items[0].findings' "$state/review.json")"
+assert_exit 0 pins check
+rm -f -- "$FAKE_NIX_STATE/audit-counts"
 
 # A new major of a security override is a review item.
 git -C "$inst" add -A
-git -C "$inst" commit -q -m "release move"
+git -C "$inst" commit -q -m "bundle move with findings"
 before=$(tree_state)
 rows "$(row npm_security_overrides.example-dep npm 1.0.2 2.0.0 review '{"git_head":null}')"
 assert_exit 3 apply --latest "$rows"

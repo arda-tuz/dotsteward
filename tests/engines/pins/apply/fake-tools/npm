@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """A fake npm: `npm --prefix DIR install --package-lock-only ...` writes a
 lockfileVersion 3 package-lock.json from package.json, with integrities that
-follow the versions; `npm --prefix DIR audit` fails when FAKE_NIX_STATE/
-fail-audit exists."""
+follow the versions; `npm --prefix DIR audit --json` answers as npm does, with the next
+number of FAKE_NIX_STATE/audit-counts as its findings (none when the file is used up), a word
+instead of a number gives no document."""
 
 import base64
 import hashlib
@@ -28,9 +29,15 @@ def main():
     args = sys.argv[1:]
     directory = pathlib.Path(args[args.index("--prefix") + 1])
     if "audit" in args:
-        if (STATE / "fail-audit").exists():
-            sys.exit("1 critical severity vulnerability")
-        return
+        counts = STATE / "audit-counts"
+        words = counts.read_text().split() if counts.exists() else []
+        answer = words[0] if words else "0"
+        if words:
+            counts.write_text(" ".join(words[1:]))
+        if not answer.isdigit():
+            sys.exit("npm error audit endpoint returned an error")
+        print(json.dumps({"metadata": {"vulnerabilities": {"total": int(answer)}}}))
+        sys.exit(1 if int(answer) else 0)
     package = json.loads((directory / "package.json").read_text())
     dependencies = package["dependencies"]
     packages = {"": {"name": package["name"], "dependencies": dependencies}}
