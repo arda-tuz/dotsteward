@@ -64,9 +64,10 @@ PUSH_SECONDS = 180
 _PRIVATE_TIP = "refs/dotsteward/host/tip"
 MACHINE_TRAILER = "Dotsteward-Machine"
 
-# What git prints when the remote says no: more tries change nothing. Any other
-# failure of a fetch is the network.
-_REFUSED = ("permission denied", "repository not found", "[remote rejected]")
+# What git prints when the remote knows the login and says no: more tries change nothing.
+# Any other failure of a fetch is the network or a login this machine does not have yet
+# ("Permission denied (publickey)", "Repository not found"): the file waits for both.
+_REFUSED = ("permission to", "[remote rejected]")
 _RACE = ("[rejected]", "non-fast-forward", "fetch first")
 
 _INIT_DESCRIPTION = (
@@ -590,7 +591,8 @@ def publish(instance: config.Instance, env: Mapping[str, str] | None = None) -> 
             time.sleep(random.uniform(0, 2**attempt) / 4)
         else:
             pushed = (commit, detail)
-    print(f"[dotsteward] {path} waits: other machines kept pushing", file=sys.stderr)
+    reason = "no network" if pushed is not None else "other machines kept pushing"
+    print(f"[dotsteward] {path} waits: {reason}", file=sys.stderr)
     return EXIT_OFFLINE
 
 
