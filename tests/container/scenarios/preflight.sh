@@ -7,7 +7,12 @@ release=$(. /etc/os-release && printf '%s' "$VERSION_ID")
 arch=$(uname -m)
 inst=$DS_TEST_ROOT/instance
 mkdir -p "$inst/.dotsteward"
-! command -v jq >/dev/null || ds_fail "the container has jq; stage-0 must not need it"
+# Stage 0 runs before jq exists: a jq first on PATH that fails and leaves a mark.
+shim=$DS_TEST_ROOT/no-jq
+mkdir -p "$shim"
+printf '#!/bin/sh\n: >"%s/jq-called"\nexit 127\n' "$DS_TEST_ROOT" >"$shim/jq"
+chmod 0755 "$shim/jq"
+export PATH=$shim:$PATH
 
 # mirror [PLATFORM_LINE...]: the stage-0 mirror of a synthetic instance whose
 # workstation.toml fast path is another release.
@@ -49,3 +54,4 @@ assert_contains "$DS_STDOUT" '"route": "fast"'
 mirror "DS_STAGE0_PLATFORM_IDS=(ubuntu-$release)" "DS_STAGE0_PLATFORM_OS_IDS=(ubuntu)" \
   "DS_STAGE0_PLATFORM_OS_VERSIONS=($release)" "DS_STAGE0_PLATFORM_ARCHITECTURES=(riscv128)"
 assert_exit 3 preflight
+[[ ! -e $DS_TEST_ROOT/jq-called ]] || ds_fail "stage 0 called jq"

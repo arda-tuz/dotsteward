@@ -12,6 +12,8 @@ hook() {
   DOTSTEWARD_PROFILE=fresh "$component/e2e-unattended.sh" </dev/null
 }
 
+# sudo has a password here, as on a machine: a terminal opens the window first.
+printf 'container-test\n' | sudo -S -p '' -v
 sudo -n rm -f "$dropin" "$override"
 assert_exit 0 hook
 assert_contains "$DS_STDOUT" "is not installed yet; run: dotsteward install --profile fresh --component apt-policy"
