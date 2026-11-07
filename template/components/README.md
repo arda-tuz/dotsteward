@@ -43,8 +43,8 @@ archives. Its suffix keeps it out of the instance. To try it:
    "agent_tools": {
      "example-term": {
        "linux": {
-         "version": "1.4.0",
-         "url": "https://github.com/example-org/example-term/releases/download/v1.4.0/example-term-x86_64-linux.tar.gz",
+         "version": "0.9.0",
+         "url": "https://github.com/example-org/example-term/releases/download/v0.9.0/example-term-x86_64-linux.tar.gz",
          "size": 1048576,
          "sha256": "<sha256 of the archive>"
        }
