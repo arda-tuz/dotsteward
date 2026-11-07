@@ -10,7 +10,12 @@
 # `dotsteward generate` writes) is a complete instance: its dotsteward-manifest
 # and instance-contract checks are built and pass, and the same instance with
 # a shell file ShellCheck reports fails instance-contract on that finding
-# alone. Those roots are derivations, so evaluating their instances imports
+# alone. An instance whose bootstrap.sh is the copy of an older release fails
+# instance-contract on that file with the framework flake.lock pins, and
+# passes it under a framework override (the contribute trial, `gate
+# --framework-override`): the check sees the template-owned files as the
+# upgrade to that framework writes them, and the instance root stays as it
+# is. Those roots are derivations, so evaluating their instances imports
 # from a derivation; only this framework check does that.
 {
   self,
@@ -78,6 +83,40 @@ let
     pkgs.testers.testBuildFailure
       (fixtures.instance { root = lintRoot; }).checks.x86_64-linux.instance-contract;
 
+  # The complete instance with the bootstrap.sh of an older release: every
+  # instance holds a byte copy of template/bootstrap.sh, and a release that
+  # changes the template is trialled before the upgrade refreshes the copy.
+  olderBootstrap = ''
+    cp -R ${completeRoot} "$out"
+    chmod -R u+w "$out"
+    printf '%s\n' '# the bootstrap.sh of an older release' >>"$out/bootstrap.sh"
+  '';
+  olderRoot = pkgs.runCommand "dotsteward-example-instance-older" { } olderBootstrap;
+  olderFailure =
+    pkgs.testers.testBuildFailure
+      (fixtures.instance { root = olderRoot; }).checks.x86_64-linux.instance-contract;
+  # The same instance under an override: its flake.lock pins one framework and
+  # another one is evaluated (two narHashes; the checks' own self has none).
+  overriddenRoot =
+    pkgs.runCommand "dotsteward-example-instance-overridden" { nativeBuildInputs = [ pkgs.jq ]; }
+      ''
+        ${olderBootstrap}
+        jq --arg hash "sha256-${lib.fixedWidthString 43 "A" ""}=" '
+          .nodes.root.inputs.dotsteward = "dotsteward"
+          | .nodes.dotsteward = {locked: {type: "git", url: "https://example.invalid/dotsteward.git",
+              rev: "0000000000000000000000000000000000000000", narHash: $hash},
+            original: {type: "git", url: "https://example.invalid/dotsteward.git"}}' \
+          "$out/flake.lock" >flake.lock
+        cp flake.lock "$out/flake.lock"
+      '';
+  overridden =
+    (fixtures.instance {
+      root = overriddenRoot;
+      inputs.dotsteward = self // {
+        narHash = "sha256-${lib.fixedWidthString 43 "B" ""}=";
+      };
+    }).checks.x86_64-linux;
+
   # The complete instance with personal content (instance scans
   # apply the generic secret rules and [privacy], never the home path,
   # e-mail, private address or non-ASCII rules of the framework policy): a
@@ -137,6 +176,16 @@ cli.mkTestCheck {
     # Personal content passes the contract: its privacy scan is the
     # instance scan of static, not the framework policy.
     [[ -e ${personal.instance-contract} ]] || fail "the instance with personal content fails its contract"
+    # An older bootstrap.sh fails the contract with the pinned framework, on
+    # that file; under an override the contract passes and the root keeps it.
+    log=${olderFailure}/testBuildFailure.log
+    grep -q "bootstrap.sh differs from the framework's template/bootstrap.sh" "$log" ||
+      fail "an older bootstrap.sh passed the contract with the pinned framework"
+    [[ -e ${overridden.instance-contract} ]] ||
+      fail "an older bootstrap.sh fails the contract under a framework override"
+    [[ -e ${overridden.instance-static} ]] || fail "instance-static under a framework override"
+    tail -n 1 ${overriddenRoot}/bootstrap.sh | grep -qx '# the bootstrap.sh of an older release' ||
+      fail "the override changed the instance root"
     # A ShellCheck finding fails the contract, and nothing else does.
     log=${lintFailure}/testBuildFailure.log
     grep -q 'SC2086' "$log" || fail "no ShellCheck finding in the lint contract log"
