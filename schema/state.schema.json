@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/arda-tuz/dotsteward/schema/state.schema.json",
+  "title": "dotsteward state.json",
+  "description": "The state one machine observes, schema version 1: the one file of the branch state/<name> of the instance remote, which only that machine writes. The schema is an allowlist: every value has a fixed form and no field takes free text, so no user name, home directory, path, host name, address, serial number, message or environment value can enter it. Unknown keys are errors.",
+  "$comment": "Readers interpret the keyword subset of workstation.schema.json. Beyond the schema the writer holds components to the enabled components of the intent and packages to the packages a component installs or follows.",
+  "type": "object",
+  "required": ["schema_version", "host", "machine_key", "recorded_at", "recorded_by"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "The version of this schema."
+    },
+    "host": {
+      "$ref": "#/$defs/machineName",
+      "description": "The name of the machine (hosts/<name>.toml): the name its owner chose, not its host name."
+    },
+    "machine_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "description": "The machine key of <state>/machine.json: an HMAC of the machine id, so two records of one machine are known as such without the machine id."
+    },
+    "recorded_at": {
+      "$ref": "#/$defs/instant",
+      "description": "When the machine recorded this state."
+    },
+    "recorded_by": {
+      "type": "string",
+      "enum": ["state", "upgrade", "observe", "apply", "bootstrap"],
+      "description": "The command that recorded it: state for dotsteward state record."
+    },
+    "framework_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "The version of the framework that recorded it."
+    },
+    "intent_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "The commit of the instance checkout (HEAD) when it was recorded."
+    },
+    "platform": {
+      "type": "object",
+      "description": "The operating system of the machine.",
+      "required": ["os", "arch"],
+      "properties": {
+        "os": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]{0,31}$",
+          "description": "The ID of os-release (ubuntu), or macos."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+){0,2}$",
+          "description": "The release: 24.04, 15."
+        },
+        "codename": {
+          "type": "string",
+          "pattern": "^[a-z]{1,32}$",
+          "description": "VERSION_CODENAME of os-release: noble."
+        },
+        "arch": {
+          "type": "string",
+          "enum": ["x86_64", "aarch64"],
+          "description": "The architecture of the Nix system."
+        }
+      },
+      "additionalProperties": false
+    },
+    "kernel": {
+      "type": "object",
+      "description": "The kernel that runs and the newest one installed.",
+      "properties": {
+        "running": {
+          "$ref": "#/$defs/kernelRelease"
+        },
+        "newest": {
+          "$ref": "#/$defs/kernelRelease"
+        }
+      },
+      "additionalProperties": false
+    },
+    "generation": {
+      "type": "object",
+      "description": "The active Home Manager generation and the last E2E run of it.",
+      "properties": {
+        "home_manager": {
+          "type": "string",
+          "pattern": "^[0-9a-df-np-sv-z]{32}$",
+          "description": "The hash part of its store path, without its name."
+        },
+        "e2e": {
+          "type": "string",
+          "enum": ["pass", "fail"],
+          "description": "The result of the last E2E run of this generation."
+        },
+        "at": {
+          "$ref": "#/$defs/instant",
+          "description": "When that run ended."
+        }
+      },
+      "additionalProperties": false
+    },
+    "components": {
+      "type": "object",
+      "description": "The enabled components of the intent that apply to this machine, by name; nothing outside the intent.",
+      "propertyNames": {
+        "$ref": "#/$defs/componentName"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["installed", "missing", "verified", "unverified", "red"],
+            "description": "installed or missing: every package the component installs is there, or one is not; verified, unverified, red: what the last check of its version said."
+          },
+          "version": {
+            "$ref": "#/$defs/version",
+            "description": "The version that is installed."
+          },
+          "updater": {
+            "type": "string",
+            "enum": ["apt", "nix", "dotsteward", "self", "none"],
+            "description": "The one updater of the component."
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^([0-9a-f]{64}|sha256-[A-Za-z0-9+/]{43}=)$",
+            "description": "The digest of what is installed: 64 hex digits or an SRI hash."
+          },
+          "packages": {
+            "type": "object",
+            "description": "The installed version of each package the component installs or follows (track).",
+            "propertyNames": {
+              "$ref": "#/$defs/packageName"
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/version"
+            }
+          },
+          "last_verified": {
+            "type": "object",
+            "required": ["version", "at"],
+            "properties": {
+              "version": {
+                "$ref": "#/$defs/version"
+              },
+              "at": {
+                "$ref": "#/$defs/instant"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "apt_pins_owned": {
+      "type": "array",
+      "description": "The packages dotsteward pins or holds on this machine.",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/packageName"
+      }
+    },
+    "host_checks": {
+      "type": "object",
+      "description": "What the machine checked about itself.",
+      "properties": {
+        "kernel_modules": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/componentName"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "series": {
+                "type": "string",
+                "pattern": "^[0-9]+(-open)?$"
+              },
+              "newest_has_module": {
+                "type": "boolean"
+              },
+              "signer_ok": {
+                "type": "boolean"
+              },
+              "fallbacks_with_module": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "reboot": {
+          "type": "object",
+          "properties": {
+            "needed": {
+              "type": "boolean"
+            },
+            "safe": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "pending": {
+      "type": "object",
+      "description": "Counts of what waits on this machine.",
+      "properties": {
+        "firmware": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "autoremovable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "phased": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "machineName": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+    },
+    "componentName": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "packageName": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.+-]{0,99}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9A-Za-z.+:~_-]{1,64}$"
+    },
+    "instant": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "kernelRelease": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]+-[a-z]+$"
+    }
+  }
+}

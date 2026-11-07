@@ -162,6 +162,38 @@ A commit that the framework makes in an instance for a machine ends with the tra
 without a name commits without it. The rule that framework commits carry no trailer is about the
 framework repository, not about an instance.
 
+## The state of a machine
+
+What a machine observes about itself lives on a branch of its own on the instance remote:
+`state.json` on `state/<name>`, an orphan history that only that machine writes. Git builds
+each commit from objects alone, so HEAD, the index and the work tree never change: the checkout
+stays clean, and E2E, the gate and the commands of the checkout never see the branch.
+
+`dotsteward state record` observes this machine: the platform, the running and newest kernel,
+the active Home Manager generation and the result of the last E2E run on it, the enabled
+components of the intent that apply here, and for a deb component the installed version of each
+package it installs or follows (`track`). It holds the document to `schema/state.schema.json`,
+an allowlist in which no field takes free text, so no user name, home directory, path, host
+name, address or message can enter; and to the intent: no component outside it, no package its
+component does not name. Then the privacy scan of the instance (its policy and its denylist)
+reads it. A finding records nothing and exits 4. A record equal to the last one, apart from its
+time, is no commit. `host` is the name the owner chose, `machine_key` the key of
+`<state>/machine.json`.
+
+Every push is a plain fast-forward. When the remote branch moved on and its records carry this
+machine key, another checkout of this machine recorded too, and the record becomes one commit on
+the tip of the remote. Records with another machine key are another machine with the same name:
+the push stops until `dotsteward host rename NEW` gives this machine a name of its own, or, when
+this machine is the reinstall of that one, `dotsteward state push --take-over` continues its
+records. Without a network the record waits on this machine (exit 6): the local branch ahead of
+the remote one is the queue, and the next `state record` or `state push` sends it.
+`[policy] observed_state_push = false` keeps the branch on this machine.
+
+`dotsteward state fetch` brings the branches of every machine to
+`refs/remotes/origin/state/*`, and `dotsteward state show [NAME] [--json]` prints the state of
+this machine (its local branch, and whether it waits) or of another (what the last fetch
+brought, held to the schema).
+
 ## The producer
 
 `[hosts] producer` names the machine that moves the values that come from upstream:

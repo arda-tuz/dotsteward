@@ -37,7 +37,7 @@ _NAME = re.compile(r"[a-z0-9][a-z0-9.-]*", re.ASCII)
 _DARWIN_NAMES = ("darwin", "macos")
 
 
-def _os_release(env: Mapping[str, str]) -> dict[str, str]:
+def os_release(env: Mapping[str, str]) -> dict[str, str]:
     path = env.get("DOTSTEWARD_OS_RELEASE") or "/etc/os-release"
     values: dict[str, str] = {}
     try:
@@ -64,7 +64,7 @@ def platform_id(env: Mapping[str, str] | None = None) -> str:
             version = ""
         text = f"macos-{version.split('.')[0]}" if version else "macos"
     else:
-        release = _os_release(env)
+        release = os_release(env)
         text = "-".join(part for part in (release.get("ID"), release.get("VERSION_ID")) if part) or "linux"
     return re.sub(r"[^a-z0-9.-]+", "-", text.lower()).strip("-.") or "unknown"
 

@@ -17,7 +17,8 @@ Exit status: 0 done, 1 refusal, 2 usage error; ``publish`` 4 for a privacy findi
 Messages go to standard error as ``[dotsteward] ERROR:`` lines.
 
 Python API: ``publish``, ``host_text``, ``commit_identity``, ``commit_message`` and
-``MACHINE_TRAILER``, for the commits other parts of the framework make for a machine.
+``MACHINE_TRAILER``, for the commits other parts of the framework make for a machine;
+``scan_file`` and ``refused`` for what they publish.
 """
 
 from __future__ import annotations
@@ -373,7 +374,7 @@ def _git_output(root: Path, *arguments: str, env: Mapping[str, str] | None = Non
     return result.stdout.strip()
 
 
-def _refused(stderr: str) -> bool:
+def refused(stderr: str) -> bool:
     lowered = stderr.lower()
     return any(needle in lowered for needle in _REFUSED)
 
@@ -425,7 +426,7 @@ def host_text(current: str | None, facts: Mapping[str, Any]) -> str:
     return text
 
 
-def _scan_file(instance: config.Instance, path: str, text: str, env: Mapping[str, str]) -> int:
+def scan_file(instance: config.Instance, path: str, text: str, env: Mapping[str, str]) -> int:
     """The privacy scan of the file a commit brings, as `dotsteward static` scans the
     content of an instance: its policy, its denylist. The public policy of the framework
     does not apply to a private instance, and the identity of the commit is no content."""
@@ -549,7 +550,7 @@ def publish(
         commit = _commit_on_tip(instance, tip, name, text, subject)
         if check is not None:
             check(commit)
-        if _scan_file(instance, path, text, env) != 0:
+        if scan_file(instance, path, text, env) != 0:
             raise _PrivacyFinding(f"the privacy scan found something in {path}; nothing was published")
         return commit
 
@@ -565,10 +566,10 @@ def publish(
             _log(f"published {path}; 'git pull --ff-only' brings it to this checkout")
         return 0
     if published.outcome == publishing.REFUSED and published.tip:
-        if _refused(published.detail):
+        if refused(published.detail):
             raise Refusal(f"the remote refused the push of {path}: {published.detail}")
         raise Refusal(f"the push of {path} failed: {published.detail}")
-    if published.outcome == publishing.REFUSED and _refused(published.detail):
+    if published.outcome == publishing.REFUSED and refused(published.detail):
         raise Refusal(f"the remote refused the fetch: {published.detail}")
     if published.outcome in (publishing.REFUSED, publishing.NETWORK):
         print(f"[dotsteward] {path} waits: no network or no login ({published.detail or 'timeout'})", file=sys.stderr)

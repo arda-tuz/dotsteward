@@ -238,6 +238,13 @@ problems)` words the way out of a tree newer than the CLI. From bash, every comm
 ran `config_load` has `DS_MACHINE_NAME` and the JSON lists `DS_SKIP_COMPONENTS_JSON`,
 `DS_SKIP_SKILLS_JSON` and `DS_SKIP_PLUGINS_JSON`.
 
+`dotsteward_cli.state` holds the state branch of each machine ([machines.md](machines.md)):
+`observe(instance, env, by=...)` is the document of this machine now, `record(instance, env,
+document=None, by=..., push_after=True)` holds a document to `schema/state.schema.json` and
+the intent, scans it and commits it on `refs/heads/state/<name>`, `push` and `read` send and
+read it. A command that records the state calls `record` with its own `by` (`upgrade`,
+`observe`, `apply`, `bootstrap`).
+
 ### Incoming
 
 `dotsteward_cli.incoming` holds what other machines changed ([machines.md](machines.md)).
