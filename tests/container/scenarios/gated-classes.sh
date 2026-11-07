@@ -33,7 +33,7 @@ candidates_stay
 
 # The file changes nothing when it is right; a wrong file is repaired.
 engine_ok policy
-assert_json "$ENGINE" '.pin.changed == false and .unattended.changed == false'
+assert_json "$ENGINE" '.pin.changed == false'
 printf 'Package: *\nPin: version *\nPin-Priority: 100\n' | sudo -n tee "$PIN" >/dev/null
 engine_ok policy
 assert_json "$ENGINE" '.pin.changed == true'

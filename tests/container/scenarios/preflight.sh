@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
+# shellcheck disable=SC2016 # the script of the inner bash is single-quoted on purpose
 # Inside the container: the preflight of the generated stage-0 bootstrap, before Nix and
 # without jq, on the system bash of this release. A platform file that declares this
 # release with a fast path gives it the fast route; without one it takes the adaptive route.
@@ -32,7 +33,8 @@ mirror() {
 # preflight: the route the stage-0 functions of bootstrap.sh take, on standard output.
 preflight() {
   local out status=0
-  out=$(bash --noprofile --norc -c '
+  # The os-release of the container, not the fixture of the harness.
+  out=$(env -u DOTSTEWARD_OS_RELEASE bash --noprofile --norc -c '
     set -Eeuo pipefail
     source <(sed "\$d" /framework/template/bootstrap.sh)
     preflight_load_env "$1" linux

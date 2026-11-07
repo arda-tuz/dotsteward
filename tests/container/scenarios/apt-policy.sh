@@ -9,7 +9,8 @@ dropin=/etc/apt/apt.conf.d/52dotsteward-unattended-upgrades
 override=/etc/apt/apt.conf.d/99example-override
 
 hook() {
-  DOTSTEWARD_PROFILE=fresh "$component/e2e-unattended.sh" </dev/null
+  # The real apt of the container, not the fixture root of the harness.
+  env -u DOTSTEWARD_APT_DIR DOTSTEWARD_PROFILE=fresh "$component/e2e-unattended.sh" </dev/null
 }
 
 # sudo has a password here, as on a machine: a terminal opens the window first.

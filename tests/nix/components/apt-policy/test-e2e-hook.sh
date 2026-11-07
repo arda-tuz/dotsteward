@@ -18,7 +18,7 @@ values=$DS_TEST_ROOT/apt-config-values
 mkdir -p "$apt_dir/apt.conf.d" "$bin"
 # apt-config shell VAR KEY: the value the state file gives KEY, unset when it has none.
 cat >"$bin/apt-config" <<EOF_STUB
-#!/usr/bin/env bash
+#!$BASH
 [[ \$1 == shell ]] || exit 100
 value=\$(awk -v key="\$3" '\$1 == key { print \$2 }' "$values")
 [[ -z \$value ]] || printf "%s='%s'\n" "\$2" "\$value"
