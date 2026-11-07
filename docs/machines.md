@@ -140,7 +140,7 @@ so Never on a component evaluates the machine first and refuses when Nix says no
 
 The change is this machine's own, and no question, when a commit that is not published
 yet touches its path or the last commit that did says `Dotsteward-Machine: <this
-machine>`; every commit the framework makes for an instance says that. `dotsteward update publish` puts that line
+machine>`; every commit the framework makes for an instance says that. `dotsteward txn publish` puts that line
 on every commit it sends from a named machine, also on a plain `git commit`, with the same tree,
 author and dates; a commit with no such line comes from an unknown machine. `<state>/machine/known.json`
 holds the plugins and components the machine knows; a skill is answered by its copy and
