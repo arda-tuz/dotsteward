@@ -34,7 +34,6 @@ import datetime
 import json
 import os
 import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -50,6 +49,7 @@ _HELPER = Path(__file__).resolve().parents[2] / "libexec" / "apt_helper.py"
 _SYSTEM_PYTHON = "/usr/bin/python3"
 _INSTALL_APT_BINDING = "sudo apt-get install python3-apt"
 _MODULE_SIGNER = "Canonical Ltd. Kernel Module Signing"
+_SYSTEM_MODINFO = ("/usr/sbin/modinfo", "/sbin/modinfo")
 _LOG_DIRECTORY = "apt-logs"
 # The newest logs that stay.
 _KEEP_LOGS = 20
@@ -170,8 +170,12 @@ def _read_only(action: str, request: Request) -> dict[str, Any]:
 
 
 def plan(request: Request) -> dict[str, Any]:
-    """The plan of one run; it needs no privileges and changes nothing. Raises AptEngineError."""
-    return _read_only("plan", request)
+    """The plan of one run; it needs no privileges and changes nothing. ``applicable`` is about the
+    plan; ``items`` also hold what the module of the newest kernel looks like now, which a commit
+    may have to leave as it is. Raises AptEngineError."""
+    answer = _read_only("plan", request)
+    answer["items"] = [*answer.get("items", ()), *module_check(answer)]
+    return answer
 
 
 def analysis(request: Request) -> dict[str, Any]:
@@ -293,32 +297,64 @@ def commit(request: Request, *, state_root: str | os.PathLike[str] | None = None
     refused, blocked, fetch-failed, dpkg-failed; the items say the rest. Without STATE_ROOT the one
     the commands agree on (config.required_state_root) holds what dpkg prints."""
     answer = _privileged("commit", request, state_root)
-    if answer.get("committed"):
-        answer["items"] = [*answer.get("items", ()), *module_check(answer.get("after") or {})]
+    answer["items"] = [*answer.get("items", ()), *module_check(answer)]
     return answer
 
 
-def module_check(gated: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """The module of the newest kernel, as ``modinfo`` finds it. A machine with the prebuilt modules
-    has them signed by the distribution; anything else is said (DKMS signs with the machine's key)."""
-    kernel, nvidia = gated.get("kernel"), gated.get("nvidia")
-    if not kernel or not nvidia:
+def _modinfo() -> str | None:
+    """The modinfo of the system: one from PATH may come from another prefix and look elsewhere for
+    /lib/modules. DOTSTEWARD_MODINFO is the way in for tests."""
+    configured = os.environ.get("DOTSTEWARD_MODINFO")
+    if configured is not None:
+        return configured if os.access(configured, os.X_OK) else None
+    return next((path for path in _SYSTEM_MODINFO if os.access(path, os.X_OK)), None)
+
+
+def module_check(answer: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The module of the kernel GRUB boots by default, the newest installed one, as ``modinfo`` finds
+    it: what ``newest_kernel`` of an answer names. Nothing to look at without the NVIDIA class, or when
+    the plan in hand brings the module. A prebuilt module is signed by the distribution and matches
+    the driver; a module the machine builds itself (DKMS) carries the key of the machine."""
+    newest = answer.get("newest_kernel")
+    if not newest or not newest.get("nvidia") or newest.get("planned"):
         return []
-    modinfo = shutil.which("modinfo", path=f"{os.environ.get('PATH', '')}:/usr/sbin:/sbin")
-    release = f"{kernel['abi']}-{kernel['base']}"
+    release = newest["release"]
+    modinfo = _modinfo()
     if modinfo is None:
         return [{"code": "module-unchecked", "pending": False, "kernel": release, "message": "no modinfo"}]
-    done = subprocess.run(
-        [modinfo, "-k", release, "-F", "signer", "nvidia"], capture_output=True, text=True, check=False
-    )
-    if done.returncode != 0:
+
+    def field(name: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [modinfo, "-k", release, "-F", name, "nvidia"], capture_output=True, text=True, check=False
+        )
+
+    signer = field("signer")
+    if signer.returncode != 0:
         message = f"the newest kernel {release} has no nvidia module: do not reboot into it yet"
         return [{"code": "module-missing", "pending": True, "kernel": release, "message": message}]
-    signer = done.stdout.strip()
-    if signer == _MODULE_SIGNER:
-        return []
-    message = f"the nvidia module of {release} is signed by {signer or 'nobody'}"
-    return [{"code": "module-signer", "pending": False, "kernel": release, "signer": signer, "message": message}]
+    items: list[dict[str, Any]] = []
+    name = signer.stdout.strip()
+    prebuilt = bool(newest.get("prebuilt"))
+    if name != _MODULE_SIGNER:
+        message = f"the nvidia module of {release} is signed by {name or 'nobody'}"
+        items.append(
+            {"code": "module-signer", "pending": prebuilt, "kernel": release, "signer": name, "message": message}
+        )
+    module_version = field("version").stdout.strip()
+    driver = (newest.get("driver_version") or "").split(":")[-1].split("-")[0]
+    if module_version and driver and module_version != driver:
+        message = f"the nvidia module of {release} is {module_version}, the driver is {driver}"
+        items.append(
+            {
+                "code": "module-version",
+                "pending": True,
+                "kernel": release,
+                "module": module_version,
+                "driver": driver,
+                "message": message,
+            }
+        )
+    return items
 
 
 _STEP_OUTCOME = {"fetch-failed": report.PARTIAL, "dpkg-failed": report.FAILED}

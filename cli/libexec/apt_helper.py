@@ -300,6 +300,7 @@ def read_classes(cache):
         "other_metas": [pkg.shortname for pkg, _found in tops[1:]],
         "bases": sorted({base for _abi, base in images}),
         "abis": sorted({abi for abi, _base in images}),
+        "newest": max(images, key=functools.cmp_to_key(lambda a, b: vcmp(a[0], b[0]))) if images else None,
     }
     flavour = None
     if tops:
@@ -321,6 +322,24 @@ def read_classes(cache):
         classes["nvidia"] = driver_line(cache, match.group(1), kind, flavour, pkg.installed.version)
         classes["nvidia"]["source"] = pkg.installed.source_name
     return classes
+
+
+def newest_kernel(classes, *, planned=False):
+    """What GRUB boots by default, the newest installed image, for the look at its module. PLANNED: the
+    plan in hand brings that module, or a newer kernel with its own."""
+    if classes["newest"] is None:
+        return None
+    abi, base = classes["newest"]
+    nvidia = classes["nvidia"]
+    return {
+        "abi": abi,
+        "base": base,
+        "release": f"{abi}-{base}",
+        "nvidia": nvidia is not None,
+        "prebuilt": bool(nvidia and nvidia["module_version"]),
+        "driver_version": nvidia["version"] if nvidia else None,
+        "planned": planned,
+    }
 
 
 def driver_line(cache, number, kind, flavour, installed_version):
@@ -1113,10 +1132,21 @@ def make_plan(session):
                 message=loss_message(target["losses"], running),
             )
         )
+    module_names = {row["name"].split(":")[0] for bucket in ("install", "upgrade") for row in rows[bucket]}
+    newest = classes["newest"]
+    module_planned = bool(
+        newest
+        and classes["nvidia"]
+        and (
+            (target and target.get("abi") and vcmp(target["abi"], newest[0]) > 0)
+            or f"{classes['nvidia']['module_prefix']}-{newest[0]}-{newest[1]}" in module_names
+        )
+    )
     plan = {
         "schema_version": SCHEMA_VERSION,
         "apt": apt_pkg.VERSION,
         "mode": session.mode,
+        "newest_kernel": newest_kernel(classes, planned=module_planned),
         "codename": session.codename,
         "gated": gated_info,
         "changes": rows,
@@ -1456,6 +1486,7 @@ def action_commit(session):
             "status": "blocked",
             "committed": False,
             "items": [lock_busy_item(session)],
+            "newest_kernel": newest_kernel(read_classes(session.open_pinless())),
         }
     try:
         recovery = run_recovery(session)
@@ -1464,6 +1495,8 @@ def action_commit(session):
         plan["committed"] = False
         # A refused plan changes nothing but it still repairs the pin file.
         plan["policy"] = apply_policy(session, session.classes)
+        # Nothing of the plan happens in these two: the kernel stays as it is, with or without a module.
+        plan["newest_kernel"] = newest_kernel(session.classes)
         if not plan["applicable"]:
             plan["status"] = "refused"
             return plan
@@ -1484,6 +1517,7 @@ def action_commit(session):
         after = read_classes(session.open_pinless())
         plan["policy"] = apply_policy(session, after)
         plan["after"] = {"kernel": after["kernel"], "nvidia": after["nvidia"], "installed_pairs": after["pairs"]}
+        plan["newest_kernel"] = newest_kernel(after)
         if plan["committed"]:
             audit = dpkg_audit()
             if audit:
