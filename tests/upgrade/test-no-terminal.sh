@@ -45,11 +45,13 @@ fi
 clear_log
 apt_answer commit "$NOTHING_CHANGED"
 tool_stub snap
-tool_stub rustup 'case "$1" in check) printf "stable-x86_64-unknown-linux-gnu - Up to date : 1.90.0\n";; esac'
-tool_stub sampletool
+tool_stub example-lang 'case "$1" in check) printf "stable 1.89.0 -> 1.90.0\n";; esac'
+tool_stub example-pkgs 'case "$1" in outdated) printf "example-tool 1.0 2.0\n";; esac'
+declare_tool example-lang 'example-lang check' 'example-lang update stable'
+declare_tool example-pkgs 'example-pkgs outdated' 'example-pkgs upgrade --all'
 tool_stub flatpak
 assert_exit 3 upgrade --all
-assert_order '^rustup update stable' '^sampletool tool upgrade --all'
+assert_order '^example-lang update stable' '^example-pkgs upgrade --all'
 assert_no_step '^snap refresh$'
 assert_no_step '^sudo'
 assert_order '^flatpak update --user'

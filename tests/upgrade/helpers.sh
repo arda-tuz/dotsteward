@@ -16,7 +16,7 @@
 #                 tools below, "sudo ..." for each sudo call
 #   UP_CONTROL    files in here switch failures and answers on: see the fakes
 #   up-bin        first on PATH: the wrapper around the sudo stub, tool_stub tools; snap, flatpak,
-#                 npm and the like are not on PATH at all, and NODEVERS_DIR is unset
+#                 and the like are not on PATH at all
 #   UP_APT        the answers of the fake apt helper, ACTION.json or ACTION-MODE.json; one package
 #                 waits outside the tracked set, so a terminal gets the offer
 #   bridge        the apt bridge script as `install --component` leaves it, under DS_SYSTEM_ROOT
@@ -160,6 +160,20 @@ fi
 
 upgrade() {
   "$fw/cli/dotsteward" --instance "$up_inst" upgrade "$@" </dev/null
+}
+
+# declare_tool NAME CHECK UPDATE [SKIP_PROVIDERS]: a table of [[upgrade.tools]] in the instance,
+# committed and published.
+declare_tool() {
+  {
+    printf "\n[[upgrade.tools]]\nname = '%s'\ncheck = '''%s'''\nupdate = '''%s'''\n" "$1" "$2" "$3"
+    if (($# == 4)); then
+      printf "skip_providers = '''%s'''\n" "$4"
+    fi
+  } >>"$up_inst/workstation.toml"
+  git -C "$up_inst" add workstation.toml
+  git -C "$up_inst" commit -q -m "chore(upgrade): declare $1"
+  git -C "$up_inst" push -q origin HEAD:main
 }
 
 on_terminal() {

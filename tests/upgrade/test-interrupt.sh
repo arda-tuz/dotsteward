@@ -34,16 +34,18 @@ assert_exit 0 on_terminal 'Update these too=n' -- --tracked
 assert_eq "$waiting" "$(remote_oid)"
 assert_eq "$waiting" "$(git -C "$up_inst" rev-parse HEAD)"
 
-# A channel of the user: sampletool after rustup does not start.
-tool_stub rustup 'case "$1" in check) printf "stable - Up to date\n";; update) printf "RUSTUP-RUNS\n"; sleep 30;; esac'
-tool_stub sampletool
+# A declared tool: the next one does not start.
+tool_stub example-lang 'case "$1" in check) printf "stable 1.89.0 -> 1.90.0\n";; update) printf "LANG-RUNS\n"; sleep 30;; esac'
+tool_stub example-pkgs 'case "$1" in outdated) printf "example-tool 1.0 2.0\n";; esac'
+declare_tool example-lang 'example-lang check' 'example-lang update stable'
+declare_tool example-pkgs 'example-pkgs outdated' 'example-pkgs upgrade --all'
 clear_log
-assert_exit 130 on_terminal 'RUSTUP-RUNS=^C' -- --all
-assert_no_step '^sampletool tool upgrade'
+assert_exit 130 on_terminal 'LANG-RUNS=^C' -- --all
+assert_no_step '^example-pkgs upgrade'
 assert_no_step '^e2e '
 last_report '.interrupted == ["SIGINT"]'
-tool_stub rustup
-tool_stub sampletool
+tool_stub example-lang
+tool_stub example-pkgs
 
 # Firmware: the second device is not written, and the status is not 0.
 cat >"$DS_TEST_ROOT/updates.json" <<'JSON'
