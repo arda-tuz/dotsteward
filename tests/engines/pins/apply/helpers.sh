@@ -104,6 +104,7 @@ _apply_skill_upstream() {
   printf 'new\n' >"$dir/skills/example-vendored/references/added.md"
   git -C "$dir" add -A
   git -C "$dir" commit -q -m "feat: a second version"
+  # shellcheck disable=SC2034 # read by the test files
   skill_new=$(git -C "$dir" rev-parse HEAD)
   _apply_publish example/skills
 }
@@ -120,6 +121,7 @@ _apply_framework() {
 apply_world() {
   mkdir -p "$github" "$sources" "$state" "$FAKE_NIX_STATE"
   git config --global url."$github/".insteadOf https://github.com/
+  # shellcheck disable=SC2031 # the subshell of tree_state does not change PATH
   export PATH=$DS_REPO_ROOT/tests/engines/pins/apply/fake-tools:$PATH
 
   pins_instance
