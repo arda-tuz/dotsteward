@@ -79,7 +79,7 @@ Core rules are always on; component rules come from
 | `nix-package-format` | core | none | every `nix_packages` entry is well formed: `resolved` equals `expected` (unless `expected` is `"locked nixpkgs package"`), tags and revisions have the right shape | `official_tag` |
 | `derive` | components | `to`; `from` or `template`; `for_each`, `only_with` | the value at `to` equals its source | writes `to` |
 | `download-pin` | core (Nix installer), components | `at`, `version_field`, `url_field`, `size_field`, `sha256_field`, `url_contains`; `for_each`, `only_with` | a pinned download has a version, an HTTPS URL that contains the version, a positive size and a hex SHA-256 | none |
-| `text-guard` | components | `file`, `template`; `for_each`, `only_with` | an instance file contains a text built from lock values | none |
+| `text-guard` | components | `file`, `template`; `regenerate`, `for_each`, `only_with` | an instance file contains a text built from lock values | none |
 | `no-literal` | core, components | `files`, `patterns` (`sri`, `fake-hash`), `regexes`, `values` | the files contain no literal pin or placeholder hash | none |
 | `npm-bundle` | components | `dir`, `dependencies_at`, `overrides_at`, `mirrors`, `security_overrides_at`, `nix_hash_at` | an npm package directory, its lockfile and the lock values that mirror them agree | the mirrored values |
 | `skills-lock-mirror` | components | `pairs` of `from` and `to`; `for_each`, `only_with` | values the skills lock repeats equal their source | writes the copies |
@@ -161,9 +161,15 @@ a row nothing explains is a review item (`pins-no-writer`):
 | a flake input | `channel` (all channel inputs together), `flake:<name>` | the reference, `flake.lock` with `nix flake lock`, the lock fields, the pins that derive from it |
 | a `*_nix_sha256` field | `nix-package:<name>` | the version, the tag fields, each hash from a build with the placeholder hash |
 | a `download-pin` rule | `download:<id>` | the fields the rule names, from the row or from one prefetch |
-| a `text-guard` over a `pypi` pin | `pypi:<file>` | the hash-pinned requirements, regenerated with `sampletool pip compile` |
+| a `text-guard` with `regenerate` over a `pypi` pin | `pypi:<file>` | the hash-pinned requirements, from the command the rule declares |
 | an `npm-bundle` rule | `npm:<dir>` | `package.json`, `package-lock.json` with an audit, the mirrors, the bundle hash |
 | a vendored skill | `skill:<name>` | the whole directory, the revision and the digests |
+
+`regenerate` is what the component declares, because the framework names no compiler of
+requirements: `{ "package": "<nixpkgs attribute>", "command": ["<argv>"] }`. The command runs with
+that package of the nixpkgs the instance locks on its PATH, reads the `.in` file next to the
+guarded file (else `<package>==<version>` of the moves) on standard input and prints the new file. A
+guarded file without `regenerate` has no writer: its row waits as `pins-no-writer`.
 
 A group moves as a whole: on a failure every byte it touched is restored, the step
 is `failed` and the other groups go on. A second run with the same rows does nothing,

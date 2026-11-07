@@ -315,13 +315,10 @@ class Writer:
             requirements = source.read_text(encoding="utf-8")
         else:
             requirements = "".join(f"{_package(move)}=={move.latest}\n" for move in group.moves)
-        command = ["sampletool", "pip", "compile", "-", "--generate-hashes", "--no-header"]
-        python = self._python_of(group.moves[0])
-        if python:
-            command += ["--python", python]
-        text = self.tools.nix_tool("sampletool", *command, stdin=requirements)
+        regenerate = self.declared.regenerators[group.key]
+        text = self.tools.nix_tool(regenerate["package"], *regenerate["command"], stdin=requirements)
         if not text.strip():
-            raise GroupFailure(f"sampletool wrote no requirements for {group.key}")
+            raise GroupFailure(f"{regenerate['command'][0]} wrote no requirements for {group.key}")
         atomic.atomic_write(file, text)
 
         def change(locks: Locks) -> None:
@@ -343,18 +340,6 @@ class Writer:
             pin[version_field(move, self.declared, pin) or "version"] = found[1]
         else:
             locks.set(path, found[1])
-
-    def _python_of(self, move: Move) -> str | None:
-        """The interpreter the component installs with: the requirements hold for it."""
-        for system in self.instance.systems:
-            components = self.instance.manifest(system).get("components")
-            for component in components if isinstance(components, list) else []:
-                install = component.get("install") if isinstance(component, dict) else None
-                if not isinstance(install, dict) or not isinstance(install.get("python"), str):
-                    continue
-                if install.get("pin") == _path(move).text() or component.get("name") == move.component:
-                    return str(install["python"])
-        return None
 
 
 def _path(move: Move) -> LockPath:

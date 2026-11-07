@@ -106,6 +106,7 @@ class Declared:
         self.derived: dict[str, str] = {}
         self.bundles: dict[str, Bundle] = {}
         self.guards: dict[str, str] = {}
+        self.regenerators: dict[str, dict[str, Any]] = {}
         ctx = Context(instance, locks)
         for rule in build_rules(instance):
             try:
@@ -131,6 +132,8 @@ class Declared:
         elif rule.kind == "npm-bundle":
             self._read_bundle(rule)
         elif rule.kind == "text-guard":
+            if rule.values["regenerate"] is not None:
+                self.regenerators[rule.values["file"]] = rule.values["regenerate"]
             for scope in rule.scopes(ctx):
                 for part in rule.values["template"].parts:
                     if isinstance(part, Placeholder) and part.path is not None:
@@ -273,7 +276,7 @@ def group_of(move: Move, instance: Instance, declared: Declared, locks: Locks) -
         return "npm", str(declared.bundles[text].rule.values["dir"])
     guarded = declared.guards.get(path.child("version").text()) or declared.guards.get(text)
     if move.row.get("kind") == "pypi" or (move.adapter is not None and move.adapter.name == "pypi"):
-        return ("pypi", guarded) if guarded else None
+        return ("pypi", guarded) if guarded in declared.regenerators else None
     if hash_fields(pin):
         return "nix-package", str(steps[-1].key)
     return None
