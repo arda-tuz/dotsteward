@@ -50,11 +50,14 @@ assert_contains "$DS_STDOUT" "published hosts/laptop.toml"
 assert_eq "$person_email" "$(git -C "$e2e_bare" log -1 --format=%ae "$(remote_tip)")"
 assert_contains "$(remote_file laptop)" 'tags = ["small"]'
 
-# No identity here: the author of the tip, the owner of the repository, publishes alike.
+# No identity here: the author of the first commit, the owner of the instance, publishes alike,
+# not the author of the tip.
+owner_email=$(git -C "$e2e_bare" log --reverse --format=%ae main | head -n 1)
+[[ $owner_email != "$person_email" ]] || ds_fail "the first commit is already the person's"
 assert_exit 0 run_host init --tags second
 assert_exit 0 env GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
   "$agents_fw/cli/dotsteward" --instance "$agents_inst" host publish </dev/null
-assert_eq "$person_email" "$(git -C "$e2e_bare" log -1 --format=%ae "$(remote_tip)")"
+assert_eq "$owner_email" "$(git -C "$e2e_bare" log -1 --format=%ae "$(remote_tip)")"
 assert_contains "$(remote_file laptop)" 'tags = ["second"]'
 
 # The denylist holds the name of the person: not in the file, so no finding.
