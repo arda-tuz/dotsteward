@@ -463,6 +463,7 @@ let
       catalog
       (paths [
         "engines/pins"
+        "privacy"
         "tests/engines/pins/apply"
         "tests/engines/pins/check"
       ])
