@@ -121,6 +121,20 @@ class _Checkout(runner.Runner):
     def _behind(self) -> list[str]:
         return self._git("rev-list", f"HEAD..{self.tip}").stdout.split()
 
+    def _nonconventional(self) -> list[tuple[str, str]]:
+        """The commits after the tip whose subject txn publish refuses: (oid, subject)."""
+        listing = self._git("log", "--reverse", "--format=%H%x00%s", f"{self.tip}..HEAD").stdout
+        found = []
+        for line in listing.splitlines():
+            oid, _, subject = line.partition("\0")
+            if oid and not _SUBJECT.fullmatch(subject):
+                found.append((oid, subject))
+        return found
+
+    def _fold_command(self) -> str:
+        """The way out for such commits: their changes stay, as changes of the transaction."""
+        return f"git -C {self.root} reset --soft {self.tip}"
+
     def _changes(self) -> list[str]:
         return [
             line for line in self._git("status", "--porcelain", "--untracked-files=normal").stdout.splitlines() if line
@@ -161,6 +175,20 @@ class Begin(_Checkout):
                     "message": (
                         "these commits are not on the remote: if they belong to this transaction, "
                         "dotsteward apply finishes them with it; else remove them first"
+                    ),
+                }
+            )
+        bad = self._nonconventional()
+        if bad:
+            self.ask.append(
+                {
+                    "code": "nonconventional-commits",
+                    "commits": [oid for oid, _ in bad],
+                    "subjects": [subject for _, subject in bad],
+                    "run": self._fold_command(),
+                    "message": (
+                        "txn publish refuses these subjects, so apply refuses them: run the command to keep their "
+                        "changes as changes of this transaction, then dotsteward apply -m with a conventional subject"
                     ),
                 }
             )
@@ -373,6 +401,20 @@ class Apply(_Checkout):
                 )
             return self._refuse(
                 f"the checkout and the remote diverged: run git -C {self.root} pull --rebase, then dotsteward apply"
+            )
+        bad = self._nonconventional()
+        if bad:
+            said = ", ".join(f"{oid[:12]} {subject!r}" for oid, subject in bad)
+            self.run.item(
+                "nonconventional-commits",
+                commits=[oid for oid, _ in bad],
+                run=self._fold_command(),
+                message="txn publish refuses these subjects: keep their changes with the command, then apply -m",
+            )
+            return self._refuse(
+                f"unpublished commits without a conventional subject, which txn publish refuses: {said}; keep their "
+                f"changes as changes of this transaction with {self._fold_command()}, then run dotsteward apply "
+                '-m "<type>: <summary>"'
             )
         self.base = self.tip
         self.run.data.update(base=self.base, offline=self.offline)

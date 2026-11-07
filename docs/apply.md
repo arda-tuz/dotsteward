@@ -30,6 +30,7 @@ anything is written:
 | --- | --- |
 | `checkout-dirty` | the checkout has changes (`changes`); `apply` commits them all |
 | `unpublished-commits` | commits that the remote lacks (`commits`); `apply` publishes them with the transaction |
+| `nonconventional-commits` | some of them have a subject that `txn publish` refuses (`commits`, `subjects`); `run` (`git reset --soft` to the tip) keeps their changes as changes of the transaction |
 | `settings-local` | settings that changed here and are not in the repository (`entries`) |
 | `adaptive-route` | the machine is not on the fast path of the instance; nothing is opened |
 
@@ -43,7 +44,8 @@ questions, or the adaptive route, which opens nothing; 6 no network, nothing ope
 
 1. **The base.** The remote tip, fetched; without a network the last known one. It must be an
    ancestor of `HEAD`: a checkout behind the remote runs `maintain begin` first, a diverged one is
-   refused.
+   refused. An unpublished commit without a conventional subject is refused here, before anything
+   is staged or activated, since `txn publish` would refuse it at the end (`nonconventional-commits`).
 2. **Stage.** `git add -A`: Nix and the gate see tracked files only. A change needs `-m`, a
    conventional subject (`commit.conventional_types` of `dotsteward context --json`); without one
    apply refuses with exit 2 before it stages anything. A checkout on the published tip with no
@@ -80,6 +82,7 @@ in `data` the `base`, the `commit`, the `profile`, the `machine`, `activate`, `p
 
 | Code | Meaning |
 | --- | --- |
+| `nonconventional-commits` | unpublished commits whose subject `txn publish` refuses; `run` folds them into the change |
 | `gate-failed` | the gate refused the tree, or could not judge it (`environment`); nothing was committed |
 | `commit-refused` | git or a hook refused the commit |
 | `tree-changed` | the committed tree is not the tree the gate proved |
