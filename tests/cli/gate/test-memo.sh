@@ -2,8 +2,9 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # The memo: a passed record answers the gate when
 # the tree, `nix --version`, the gate version (the framework VERSION), the
-# framework override and the denylist digest are all equal; scope and root
-# are not part of the key. A memo answer runs no step, keeps the log and
+# framework override, the denylist digest and the scope are all equal; the
+# root is not part of the key, the scope is (txn publish takes a record of
+# its own scope only). A memo answer runs no step, keeps the log and
 # prints {result, tree_oid, scope, validated_at, total_seconds, memo: true}.
 # --force reruns; a failed run keeps the previous record; a record of the
 # older schema 1.0 (without the new key fields) never answers.
@@ -49,9 +50,16 @@ assert_eq "$(jq -c '{result, tree_oid, scope, validated_at, total_seconds, memo:
 assert_eq "$record" "$(<"$gate_validation")" "a memo answer rewrote the record"
 assert_eq "$log_bytes" "$(sha256sum <"$gate_log")" "a memo answer truncated the log"
 
-# Scope and root are not part of the key: the recorded scope is printed.
+# The scope is part of the key: another scope runs the steps and records its own scope, which
+# answers it from then on; the other scope runs again.
+memo_miss --scope update
+assert_json "$gate_validation" '.scope == "update"'
 memo_hit --scope update
-assert_json - '.scope == "maintain"' <<<"$memo_json"
+assert_json - '.scope == "update"' <<<"$memo_json"
+memo_miss --scope maintain
+assert_json "$gate_validation" '.scope == "maintain"'
+memo_hit --scope maintain
+# The root is not part of the key.
 jq --arg r "$DS_TEST_ROOT/elsewhere" '.root = $r' "$gate_validation" >"$DS_TEST_ROOT/record"
 cp "$DS_TEST_ROOT/record" "$gate_validation"
 memo_hit --scope maintain
