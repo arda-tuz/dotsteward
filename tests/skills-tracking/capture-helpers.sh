@@ -190,7 +190,13 @@ remote_entry() {
 }
 
 item() {
-  jq -r --arg key "skill:$2" ".items[\$key] // {} | $3" "$(state_of "$1")/skills/pending.json"
+  local pending
+  pending=$(state_of "$1")/skills/pending.json
+  if [[ ! -f $pending ]]; then
+    jq -rn "{} | $3"
+    return 0
+  fi
+  jq -r --arg key "skill:$2" ".items[\$key] // {} | $3" "$pending"
 }
 
 base() {

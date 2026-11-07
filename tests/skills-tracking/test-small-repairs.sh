@@ -70,12 +70,13 @@ mkdir -p "$root/hidden/closed"
 printf 'x\n' >"$root/hidden/closed/file"
 ln -s closed "$root/hidden/open"
 settle a hidden
-assert_exit 0 ds a skills reconcile --full
+ds_code a skills capture --now
 chmod 000 "$root/hidden/closed"
 ds_defer chmod 755 "$root/hidden/closed"
 new_skill a beside
 assert_exit 0 ds a skills reconcile --full
 assert_eq ask "$(item a beside .state)"
+assert_eq capture "$(item a hidden .state)"
 EXPECT_STATUS=1 ds_code a skills capture --now --name hidden
 assert_eq blocked "$(item a hidden .state)"
 assert_eq unsafe-link "$(item a hidden .reason)"

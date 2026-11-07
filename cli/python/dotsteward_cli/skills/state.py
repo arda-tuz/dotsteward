@@ -7,8 +7,9 @@
     last-capture.json  the last capture: redacted findings, dropped files
 
 A file is replaced atomically, so a reader sees a whole one. A change of
-``pending.json`` holds ``pending.lock``, so parallel tool calls lose nothing. The
-state belongs to this machine and never enters the repository.
+``pending.json`` holds ``pending.lock`` and a change of ``base.json`` holds ``base.lock``,
+so parallel tool calls and a rebuild next to a capture lose nothing. The state belongs to
+this machine and never enters the repository.
 
 This module is on the path of a hook without a change, so it imports the primitives
 (which bring ``pathlib`` and ``subprocess``) only for a write.
@@ -28,10 +29,14 @@ REPO_OWNED_REVISION = "same-as-instance-checkout"
 BASE_FILE = "base.json"
 PENDING_FILE = "pending.json"
 PENDING_LOCK = "pending.lock"
+BASE_LOCK = "base.lock"
 LAST_CAPTURE_FILE = "last-capture.json"
 # How long a change of pending.json waits for the lock before it gives up: a hook
 # must not stall, and the next reconcile finds what a lost change would have said.
 _PENDING_WAIT_SECONDS = 2.0
+# A record of base.json is no hook's business and must not get lost: it waits longer, and
+# writes in the end, because a process stuck on this lock is the greater harm.
+_BASE_WAIT_SECONDS = 10.0
 
 
 def directory(state_root: str) -> str:
@@ -66,8 +71,21 @@ def load_base(state_root: str) -> dict[str, Any]:
     return document if isinstance(document, dict) else {}
 
 
-def save_base(state_root: str, base: Mapping[str, Any]) -> None:
-    write_json(os.path.join(directory(state_root), BASE_FILE), dict(base))
+def change_base(state_root: str, change: Callable[[dict[str, Any]], bool]) -> None:
+    """Reads base.json under its lock, runs CHANGE and writes it when CHANGE returns True."""
+    from dotsteward_cli import atomic, locks
+
+    root = directory(state_root)
+    atomic.make_private_dirs(root)
+    lock = locks.FileLock(os.path.join(root, BASE_LOCK))
+    lock.try_acquire(wait=_BASE_WAIT_SECONDS)
+    try:
+        base = load_base(state_root)
+        if change(base):
+            write_json(os.path.join(root, BASE_FILE), base)
+    finally:
+        if lock.held:
+            lock.release()
 
 
 def base_entry(base: Mapping[str, Any], name: str) -> dict[str, Any] | None:
@@ -80,11 +98,21 @@ def base_entry(base: Mapping[str, Any], name: str) -> dict[str, Any] | None:
 
 def record_base(state_root: str, name: str, digest: str, commit: str, local_path: str) -> None:
     """Records that this machine had NAME in sync, unless it is known already."""
-    base = load_base(state_root)
     entry = {"base_sha256": digest, "base_commit": commit, "local_path": local_path}
-    if base.get(skill_key(name)) != entry:
+
+    def change(base: dict[str, Any]) -> bool:
+        if base.get(skill_key(name)) == entry:
+            return False
         base[skill_key(name)] = entry
-        save_base(state_root, base)
+        return True
+
+    change_base(state_root, change)
+
+
+def forget_base(state_root: str, name: str) -> None:
+    """This machine no longer has anything in sync for NAME."""
+    if skill_key(name) in load_base(state_root):
+        change_base(state_root, lambda base: base.pop(skill_key(name), None) is not None)
 
 
 def empty_pending() -> dict[str, Any]:

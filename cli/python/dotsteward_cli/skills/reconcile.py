@@ -6,6 +6,8 @@ the instance. ``reconcile`` looks at every root once:
 - a name of the lock, of ``base.json``, of ``[declined]`` or of a pending item is no
   candidate; what remains with a ``plugin.json`` is a plugin, with a ``SKILL.md`` a skill,
   and ``origin`` says what becomes of it;
+- what an answer keeps out (``declined``, ``forgotten``) stays out whatever happens to the
+  copy, until another answer takes it back;
 - an own skill with a file newer than ``reconciled_at`` gets its digest compared with b
   (the full mode digests all of them, for copies that keep their time);
 - an own skill that is gone is ``deleted`` after two looks at least 60 seconds apart
@@ -32,6 +34,9 @@ BLOCKED = "blocked"
 DELETED = "deleted"
 LOCAL_EDIT = "local-edit"
 NAME_TAKEN = "name-taken"
+DECLINED = "declined"
+FORGOTTEN = "forgotten"
+_KEPT_OUT = frozenset({DECLINED, FORGOTTEN})
 
 SKILL_FILE = "SKILL.md"
 DELETED_AFTER_SECONDS = 60
@@ -142,11 +147,11 @@ def _local_digest(path: str, context: Mapping[str, Any]) -> str:
     return normal.normal_form(os.path.realpath(path), excludes).digest
 
 
-def _declined(context: Mapping[str, Any], machine: str | None) -> set[str]:
-    """``declined.skills`` of ``hosts/<machine>.toml``; read only for a candidate."""
+def declined_in(tree: str, machine: str | None) -> set[str]:
+    """``declined.skills`` of ``hosts/<machine>.toml`` in TREE; read only for a candidate."""
     if not machine:
         return set()
-    path = os.path.join(str(context["instance"]), "hosts", f"{machine}.toml")
+    path = os.path.join(tree, "hosts", f"{machine}.toml")
     from dotsteward_cli import tomlfile
 
     try:
@@ -228,6 +233,10 @@ def _look_at_own(
 ) -> None:
     key = state.skill_key(name)
     item = document["items"].get(key)
+    if isinstance(item, dict) and item.get("state") in _KEPT_OUT:
+        if key in document.get("missing", {}):
+            plan.not_missing.append(key)
+        return
     if path is None:
         if base is None:
             return
@@ -333,7 +342,7 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
         and _is_candidate(path)
     ]
     if fresh:
-        declined = _declined(context, machine or machine_name(context))
+        declined = declined_in(str(context["instance"]), machine or machine_name(context))
         for name, path in fresh:
             if name not in declined:
                 plan.set_items[_item_key(path, name)] = _candidate_item(name, path, None)
@@ -418,8 +427,15 @@ def note_writes(
     plan = Plan()
     own_changed = False
     document = state.load_pending(state_root)
+    declined = declined_in(str(context["instance"]), machine_name(context))
     for path, name, below in hits:
         entry = by_name.get(name)
+        own_key = state.skill_key(str(entry["name"]) if entry is not None else name)
+        known_item = document["items"].get(own_key)
+        if isinstance(known_item, dict) and known_item.get("state") in _KEPT_OUT:
+            continue
+        if name in declined and own_key not in base:
+            continue
         if entry is not None and entry.get("deployment", "copy") != "copy":
             continue
         if entry is not None and not _is_own(entry, context):

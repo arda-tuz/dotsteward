@@ -158,7 +158,8 @@ def track(loaded: config.Instance, name: str, *, here: bool, never: bool, own: b
         item = item if isinstance(item, dict) else None
         path = _local_copy(context, name, item)
         entry = _lock_entry(loaded, name)
-        if path is None and entry is None:
+        known = item is not None or state.base_entry(state.load_base(state_root), name) is not None
+        if path is None and entry is None and not known:
             raise AnswerRefused(f"no skill {name} on this machine")
         machine = reconcile.machine_name(context)
         if (here or never) and not machine:

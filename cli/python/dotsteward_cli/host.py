@@ -499,15 +499,21 @@ def _commit_on_tip(instance: config.Instance, tip: str, name: str, text: str) ->
     )
 
 
-def declined_text(current: str | None, facts: Mapping[str, Any], skill: str | None) -> str:
-    """The text of the host file over CURRENT, with SKILL added to declined.skills; for
-    the commit of a skill, which brings the host file along. Other keys and comments stay."""
+def declined_text(
+    current: str | None, facts: Mapping[str, Any], skill: str | None, *, accepted: str | None = None
+) -> str:
+    """The text of the host file over CURRENT, with SKILL added to declined.skills and
+    ACCEPTED taken out of it; for the commit of a skill, which brings the host file along.
+    Other keys and comments stay."""
     tomlkit = _tomlkit()
     document = tomlkit.parse(host_text(current, facts))
     if skill is not None:
         if "declined" not in document:
             document["declined"] = tomlkit.table()
         names = sorted({*(str(name) for name in document["declined"].get("skills", [])), skill})
+        document["declined"]["skills"] = names
+    if accepted is not None and "declined" in document:
+        names = [str(name) for name in document["declined"].get("skills", []) if str(name) != accepted]
         document["declined"]["skills"] = names
     text: str = tomlkit.dumps(document)
     return text

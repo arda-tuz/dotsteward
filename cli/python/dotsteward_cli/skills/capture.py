@@ -275,7 +275,9 @@ def _say(message: str) -> None:
 # --- the host file ------------------------------------------------------------------------
 
 
-def _write_host_file(context: Mapping[str, Any], worktree: str, machine: str, decline: str | None) -> str:
+def _write_host_file(
+    context: Mapping[str, Any], worktree: str, machine: str, decline: str | None, accepted: str | None = None
+) -> str:
     """Writes the host file of MACHINE in the worktree; its path below the tree."""
     relative = os.path.join("hosts", f"{machine}.toml")
     path = os.path.join(worktree, relative)
@@ -286,7 +288,7 @@ def _write_host_file(context: Mapping[str, Any], worktree: str, machine: str, de
         current = None
     record = state.read_json(os.path.join(str(context["state_root"]), "machine.json"), {})
     facts = record.get("host") if isinstance(record, dict) else None
-    text = host.declined_text(current, facts if isinstance(facts, dict) else {}, decline)
+    text = host.declined_text(current, facts if isinstance(facts, dict) else {}, decline, accepted=accepted)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(text)
@@ -364,6 +366,7 @@ class _Attempt:
         self.conflicts: list[Work] = []
         self.in_sync: list[tuple[Work, str, str]] = []
         self.taken: list[Work] = []
+        self.declined: list[Work] = []
         self.rejected: list[tuple[Work, str, str | None]] = []
         self.repeated: list[Work] = []
         self.dropped: dict[str, list[str]] = {}
@@ -381,6 +384,12 @@ def _apply_copy(
     limit_mib: int,
 ) -> list[str]:
     """Replays one skill onto the tree; the paths the commit may touch."""
+    machine = reconcile.machine_name(context)
+    declined_here = reconcile.declined_in(worktree, machine)
+    if work.name in declined_here and not work.answer:
+        # The tip knows the answer, whatever this machine forgot.
+        attempt.declined.append(work)
+        return []
     path = work.path if work.path and os.path.isdir(work.path) else None
     form = normal.normal_form(os.path.realpath(path), os.path.join(worktree, ".gitignore")) if path else None
     declared = _frontmatter_name(path) if path else None
@@ -412,7 +421,6 @@ def _apply_copy(
     known = record["base_sha256"] if record else None
     own = entry is not None and entry.get("revision") in (context.get("repo_owned_revisions") or [])
     answer = work.answer
-    machine = reconcile.machine_name(context)
     if entry is not None and isinstance(entry.get("machines"), list) and machine not in entry["machines"]:
         attempt.taken.append(work)
         return []
@@ -456,8 +464,9 @@ def _apply_copy(
             entry["revision"] = _sentinel(context)
     attempt.applied.append(Applied(work, entry_name, local))
     allowed = [os.path.join(tree["vendor"], directory)]
-    if answer.get("here") and machine:
-        allowed.append(_write_host_file(context, worktree, machine, None))
+    if machine and (answer.get("here") or work.name in declined_here):
+        accepted = work.name if work.name in declined_here else None
+        allowed.append(_write_host_file(context, worktree, machine, None, accepted=accepted))
     return allowed
 
 
@@ -581,6 +590,11 @@ def _settle(state_root: str, attempt: _Attempt, published: publish.Published, su
         state.set_item(state_root, work.key, {**_identity_fields(work), **fields})
         summary.conflicts.append(work.name)
         summary.codes.append(report.PENDING)
+    for work in attempt.declined:
+        fields = {"state": reconcile.DECLINED, "reason": None, "last_asked": None}
+        state.set_item(state_root, work.key, {**_identity_fields(work), **fields})
+        state.forget_base(state_root, work.name)
+        summary.done.append(work.name)
     for work, reason, digest in attempt.rejected:
         _set_blocked(state_root, work, reason, digest)
         _say(f"skill {work.name} was not published: {reason}")
@@ -604,18 +618,18 @@ def _record_applied(state_root: str, attempt: _Attempt, commit: str, summary: Su
     for applied in attempt.applied:
         work = applied.work
         if applied.forgotten:
-            base = state.load_base(state_root)
-            if base.pop(state.skill_key(applied.entry_name), None) is not None:
-                state.save_base(state_root, base)
+            state.forget_base(state_root, applied.entry_name)
             if work.path and os.path.isdir(work.path):
-                fields = {"state": "forgotten", "answer": None, "reason": None, "last_asked": None}
+                fields = {"state": reconcile.FORGOTTEN, "answer": None, "reason": None, "last_asked": None}
                 state.set_item(state_root, work.key, fields)
             else:
                 state.drop_item(state_root, work.key)
             summary.done.append(work.name)
         elif work.answer.get("never"):
-            fields = {"state": "declined", "answer": None, "reason": None, "last_asked": None}
+            fields = {"state": reconcile.DECLINED, "answer": None, "reason": None, "last_asked": None}
             state.set_item(state_root, work.key, fields)
+            # Nothing here is in sync any more, so nothing asks about the copy that is gone.
+            state.forget_base(state_root, work.name)
             summary.done.append(work.name)
         else:
             state.record_base(state_root, applied.entry_name, applied.digest or "", commit, work.path or "")
