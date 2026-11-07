@@ -174,7 +174,9 @@ These stay for a person or an agent, as items of `review.json`: a pin with a
 configuration or a new major of a security override (`pins-constrained`); a newer
 series of a channel (`series-available`); a framework major (`framework-major`); a
 changed watched path (`pins-review`), since moving it is an inspection; a release
-without the asset (`asset-missing`); a bundle whose audit has findings (`npm-audit`);
+without the asset (`asset-missing`); a bundle whose audit findings grow, or whose audit
+gives no answer (`npm-audit`; findings that do not grow move the bundle and stand in the
+report as `npm-audit-remaining`, which waits for nothing);
 and for a skill a recorded `source_transform`
 (`skill-transform`), a vendored copy that is not upstream at the pinned revision
 (`skill-local-delta`), a finding of `dotsteward scan` in the new version

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,8 @@ class Writer:
     instance: Instance
     tools: Tools
     declared: Declared
+    # Review items that wait for nothing: what the report should say about a move that happened.
+    notes: list[dict[str, Any]] = field(default_factory=list)
 
     # -- locks --
 
@@ -228,8 +230,18 @@ class Writer:
 
     # -- npm bundles --
 
+    def _audit_findings(self, prefix: tuple[str, ...]) -> int | None:
+        """How many findings the audit of a lock has; None when it does not say. It exits non-zero
+        for a finding, so only its document counts."""
+        answer = self.tools.nix_tool_result("nodejs", *prefix, "audit", "--json")
+        try:
+            return int(json.loads(answer.stdout)["metadata"]["vulnerabilities"]["total"])
+        except (ValueError, KeyError, TypeError):
+            return None
+
     def npm(self, group: Group) -> None:
         directory = self.instance.path(group.key)
+        before = self._audit_findings(("npm", "--prefix", str(directory)))
         package_path = directory / "package.json"
         package = json.loads(package_path.read_text(encoding="utf-8"))
         locks = self.instance.load_locks()
@@ -246,12 +258,14 @@ class Writer:
         self.tools.nix_tool(
             "nodejs", *prefix, "install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"
         )
-        try:
-            self.tools.nix_tool("nodejs", *prefix, "audit")
-        except GroupFailure as failure:
-            # The contract of the bundles is an audit without findings; what to do about
-            # one (an override, a holdback) is a decision.
-            raise Waits("npm-audit", reason=str(failure)) from failure
+        after = self._audit_findings(prefix)
+        # A bundle moves when its findings do not grow: holding a move back would keep them forever,
+        # even when the move removes some. More of them, or an audit that says nothing, is a decision.
+        if after is None or (after > 0 and (before is None or after > before)):
+            raise Waits("npm-audit", reason=f"{after} findings, {before} before" if after is not None else "no answer")
+        if after > 0:
+            ids = [move.id for move in group.moves]
+            self.notes.append({"code": "npm-audit-remaining", "pending": False, "ids": ids, "findings": after})
         self.sync()
         for move in group.moves:
             self._mirror_revision(move)

@@ -129,6 +129,11 @@ class Tools:
         arguments = ["shell", "--inputs-from", str(self.root), f"nixpkgs#{tool}", "-c", *command]
         return self.checked([*_NIX, *arguments], timeout=BUILD_TIMEOUT, stdin=stdin)
 
+    def nix_tool_result(self, tool: str, *command: str) -> subprocess.CompletedProcess[str]:
+        """Like nix_tool, for a command whose exit status is an answer."""
+        arguments = ["shell", "--inputs-from", str(self.root), f"nixpkgs#{tool}", "-c", *command]
+        return self.run([*_NIX, *arguments], timeout=BUILD_TIMEOUT)
+
     def prefetch(self, url: str) -> tuple[str, int]:
         """The hex SHA-256 and the size of the file at URL, downloaded by Nix."""
         text = self.nix("store", "prefetch-file", "--json", url, timeout=BUILD_TIMEOUT)

@@ -106,6 +106,7 @@ class Run:
         self.quiet = quiet
         self.outcome = Outcome()
         self.upstreams = Upstreams(tools)
+        self.writer_notes: list[dict[str, Any]] = []
 
     def say(self, text: str) -> None:
         if not self.quiet:
@@ -134,6 +135,7 @@ class Run:
         snapshot = Snapshot()
         try:
             self.write(group, snapshot)
+            self.plan.items.extend(self.writer_notes)
         except (GroupFailure, Refusal, EngineError, OSError, KeyError, TypeError, ValueError) as failure:
             snapshot.restore()
             message = _message(failure)
@@ -172,6 +174,7 @@ class Run:
         )
         declared = Declared(instance, instance.load_locks())
         writer = Writer(instance, self.tools, declared)
+        self.writer_notes = writer.notes
         if group.kind == "framework":
             snapshot.keep(*(instance.path(name) for name in TEMPLATE_FILES))
             snapshot.keep(*sorted(instance.path(".dotsteward").glob("*")))
