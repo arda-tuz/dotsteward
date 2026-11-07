@@ -45,6 +45,12 @@ clear_log
 assert_exit 0 apply -m "docs: second" --no-publish
 assert_order '^static ' '^rebuild ' '^e2e '
 assert_eq "$before" "$(remote_oid)" "--no-publish keeps the commit local"
+# Later, only the push: the E2E of the activated tree is what txn publish asks for.
+clear_log
+assert_exit 0 apply --no-activate --publish
+assert_no_step '^rebuild '
+assert_no_step '^e2e '
+assert_eq "$(head_oid)" "$(remote_oid)" "the activated commit is published later"
 clear_log
 edit "third"
 assert_exit 0 apply -m "docs: third" --no-activate --no-publish
