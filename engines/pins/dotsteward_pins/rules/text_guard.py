@@ -28,8 +28,8 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from ..checker import Checker
-from ..lockfile import Scope, parse_template
-from . import Context, DeclarationError, FieldSpec, Rule, relative_file
+from ..lockfile import DeclarationError, Scope, parse_template
+from . import Context, FieldSpec, Rule, relative_file
 
 
 def _regenerate(value: Any) -> dict[str, Any]:
