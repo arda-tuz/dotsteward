@@ -476,6 +476,11 @@ if ((AGENTS_LAST_STATUS == 0)); then
   for entry in "${instance_entries[@]}"; do
     _agents_unit skills skills_process_instance "$entry"
   done
+  plugin_text=$(skills_own_plugin_entries)
+  mapfile -t plugin_entries < <(grep -v '^$' <<<"$plugin_text" || true)
+  for entry in "${plugin_entries[@]}"; do
+    _agents_unit skills skills_process_own_plugin "$entry"
+  done
   _agents_unit sweep skills_sweep
 fi
 

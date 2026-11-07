@@ -44,6 +44,12 @@ network the skill stays in the list with ``reason = offline``, and every hook th
 afterwards tries again; whatever keeps a skill waiting for more than a day is said. Redacted
 findings land in ``last-capture.json``; the matched text never does.
 
+A plugin goes the same way (``plugins``): an own plugin is copied to
+``agent/plugins/<directory>`` with its ``own_plugins`` entry, and the answer to a plugin of a
+marketplace adds its table to ``[[components.claude-code.options.plugins]]`` of
+``workstation.toml``. The claude-code component runs its plugins hook with every list, so
+the table changes no generated file, and the same two checks prove the commit.
+
 One capture at a time: a busy ``capture.lock`` ends the run with status 0, and the holder
 reads pending.json again before it ends.
 """
@@ -65,7 +71,7 @@ from pathlib import Path
 from typing import Any
 
 from dotsteward_cli import atomic, config, host, locks, publish, report, writers
-from dotsteward_cli.skills import normal, reconcile, sleeper, state
+from dotsteward_cli.skills import normal, plugins, reconcile, sleeper, state
 
 CAPTURE_LOCK = "capture.lock"
 WORKTREE = "worktree"
@@ -131,6 +137,16 @@ class Work:
     item: dict[str, Any]
     path: str | None
     answer: dict[str, Any]
+
+    @property
+    def kind(self) -> str:
+        return str(self.item.get("kind") or state.SKILL)
+
+    @property
+    def marketplace(self) -> bool:
+        """A plugin of a marketplace, which lands in workstation.toml."""
+        source = self.item.get("source")
+        return self.kind == state.PLUGIN and isinstance(source, dict) and bool(source.get("marketplace"))
 
 
 @dataclass
@@ -276,7 +292,12 @@ def _say(message: str) -> None:
 
 
 def _write_host_file(
-    context: Mapping[str, Any], worktree: str, machine: str, decline: str | None, accepted: Collection[str] = ()
+    context: Mapping[str, Any],
+    worktree: str,
+    machine: str,
+    decline: str | None,
+    accepted: Collection[str] = (),
+    section: str = "skills",
 ) -> str:
     """Writes the host file of MACHINE in the worktree; its path below the tree."""
     relative = os.path.join("hosts", f"{machine}.toml")
@@ -288,7 +309,9 @@ def _write_host_file(
         current = None
     record = state.read_json(os.path.join(str(context["state_root"]), "machine.json"), {})
     facts = record.get("host") if isinstance(record, dict) else None
-    text = host.declined_text(current, facts if isinstance(facts, dict) else {}, decline, accepted=accepted)
+    text = host.declined_text(
+        current, facts if isinstance(facts, dict) else {}, decline, accepted=accepted, section=section
+    )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(text)
@@ -543,12 +566,151 @@ def _apply_copy(
     return allowed
 
 
+def _section(work: Work) -> str:
+    """The list of the host file that holds what this machine declined."""
+    return "plugins" if work.kind == state.PLUGIN else "skills"
+
+
+def _apply_plugin_copy(
+    context: Mapping[str, Any],
+    work: Work,
+    worktree: str,
+    tip: str,
+    tree: Mapping[str, str],
+    document: dict[str, Any],
+    base: Mapping[str, Any],
+    attempt: _Attempt,
+) -> list[str]:
+    """Replays one own plugin onto the tree, the way ``_apply_copy`` does a skill; the name is
+    the one of its manifest."""
+    machine = reconcile.machine_name(context)
+    path = work.path if work.path and os.path.isdir(work.path) else None
+    declined_names = plugins.declined_in(worktree, machine) & {work.name}
+    if declined_names and not work.answer:
+        attempt.declined.append(work)
+        return []
+    excludes = os.path.join(worktree, ".gitignore")
+    try:
+        form = normal.normal_form(os.path.realpath(path), excludes, reconcile.limit_bytes(context)) if path else None
+    except normal.TooLarge as large:
+        digest = reconcile.TOO_LARGE_PREFIX + large.marker
+        if work.item.get("blocked_digest") == digest:
+            attempt.repeated.append(work)
+        else:
+            attempt.rejected.append((work, "too-large", digest))
+        return []
+    declared = plugins.manifest_name(path) if path else None
+    if form is not None and _kept_back_as_before(work.item, form.digest, tip):
+        attempt.repeated.append(work)
+        return []
+    reason = _rejection(path, form, declared)
+    if reason is not None or form is None or declared is None or path is None:
+        why = "plugin-invalid" if reason is None or reason == "skill-invalid" else reason
+        attempt.rejected.append((work, why, None))
+        return []
+    listed = document.get("own_plugins")
+    entries: list[Any] = listed if isinstance(listed, list) else []
+    basename = os.path.basename(os.path.normpath(path))
+    entry = _entry_of_copy(entries, basename)
+    holder = _entry_named(entries, declared)
+    if holder is not None and holder is not entry:
+        work.item["digest"] = form.digest
+        attempt.taken.append(work)
+        return []
+    directory = str(entry.get("directory") or entry["name"]) if entry else basename
+    entry_name = str(entry["name"]) if entry else declared
+    record = state.base_entry(base, entry_name, state.PLUGIN)
+    local = form.digest
+    work.item["digest"] = local
+    destination = os.path.join(worktree, tree["plugins"], directory)
+    remote = str(entry.get("directory_sha256") or normal.plain_digest(destination)) if entry is not None else ""
+    known = record["base_sha256"] if record else None
+    answer = work.answer
+    if entry is not None and isinstance(entry.get("machines"), list) and machine not in entry["machines"]:
+        attempt.taken.append(work)
+        return []
+    attempt.dropped[entry_name] = form.dropped
+    if entry is not None and remote == local:
+        attempt.in_sync.append((work, entry_name, local))
+        return []
+    if entry is None:
+        if known is not None and known == local:
+            attempt.finished.append(work)
+            return []
+        if known is not None and not (answer.get("ours") or answer.get("own")):
+            attempt.conflicts.append(work)
+            return []
+    elif not (answer.get("ours") or known == remote):
+        attempt.conflicts.append(work)
+        return []
+    ignored = _ignored_on_the_remote(destination, form)
+    if ignored:
+        attempt.rejected.append((work, "ignored-file", local))
+        work.item["detail"] = "\n".join(ignored)
+        return []
+    _copy_form(form, destination)
+    if normal.plain_digest(destination) != local:
+        attempt.repeated.append(work)
+        return []
+    if entry is None:
+        entry = {"name": declared, "directory": directory, "agents": [plugins.AGENT], "directory_sha256": local}
+        if answer.get("here"):
+            entry["machines"] = [machine]
+        _insert_sorted(entries, entry)
+        document["own_plugins"] = entries
+    else:
+        entry["directory_sha256"] = local
+    attempt.applied.append(Applied(work, entry_name, local))
+    allowed = [os.path.join(tree["plugins"], directory)]
+    if machine and (answer.get("here") or declined_names):
+        allowed.append(_write_host_file(context, worktree, machine, None, accepted=declined_names, section="plugins"))
+    return allowed
+
+
+def _apply_marketplace(
+    context: Mapping[str, Any], work: Work, worktree: str, tree: Mapping[str, str], attempt: _Attempt
+) -> list[str]:
+    """The answer about a plugin of a marketplace: its table in options.plugins."""
+    from dotsteward_cli import tomlfile
+
+    machine = reconcile.machine_name(context)
+    here = bool(work.answer.get("here"))
+    if here and not machine:
+        attempt.rejected.append((work, "machine-name-required", None))
+        return []
+    relative = tree["config"]
+    path = os.path.join(worktree, relative)
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    document = tomlfile.loads(text)
+    if work.name in plugins.tracked_specs(document):
+        attempt.in_sync.append((work, work.name, ""))
+        return []
+    if not plugins.manages_claude(document):
+        attempt.rejected.append((work, "claude-code-not-managed", None))
+        return []
+    source = work.item.get("source") or {}
+    try:
+        entry = plugins.options_entry(document, work.name, str(source.get("repo")), machine if here else None)
+    except ValueError:
+        attempt.rejected.append((work, "plugin-invalid", None))
+        return []
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(plugins.with_options_entry(text, entry))
+    attempt.applied.append(Applied(work, work.name, None))
+    allowed = [relative]
+    accepted = plugins.declined_in(worktree, machine) & {work.name}
+    if machine and (here or accepted):
+        allowed.append(_write_host_file(context, worktree, machine, None, accepted=accepted, section="plugins"))
+    return allowed
+
+
 def _apply_decline(context: Mapping[str, Any], work: Work, worktree: str, attempt: _Attempt) -> list[str]:
     machine = reconcile.machine_name(context)
     if not machine:
         attempt.rejected.append((work, "machine-name-required", None))
         return []
-    relative = _write_host_file(context, worktree, machine, work.name)
+    relative = _write_host_file(context, worktree, machine, work.name, section=_section(work))
     attempt.applied.append(Applied(work, work.name, None))
     return [relative]
 
@@ -561,42 +723,50 @@ def _apply_forget(
     document: dict[str, Any],
     attempt: _Attempt,
 ) -> list[str]:
-    entries: list[Any] = document["skills"]
+    plugin = work.kind == state.PLUGIN
+    listed = document.get("own_plugins") if plugin else document["skills"]
+    entries: list[Any] = listed if isinstance(listed, list) else []
     entry = _entry_named(entries, work.name) or _entry_of_copy(entries, work.name)
     if entry is None:
         attempt.finished.append(work)
         return []
     directory = str(entry.get("directory") or entry.get("name"))
-    shutil.rmtree(os.path.join(worktree, tree["vendor"], directory), ignore_errors=True)
+    vendor = tree["plugins"] if plugin else tree["vendor"]
+    shutil.rmtree(os.path.join(worktree, vendor, directory), ignore_errors=True)
     entries.remove(entry)
     attempt.applied.append(Applied(work, str(entry["name"]), None, forgotten=True))
-    allowed = [os.path.join(tree["vendor"], directory)]
+    allowed = [os.path.join(vendor, directory)]
     machine = reconcile.machine_name(context)
     if machine:
         # This machine stays out of it, also when its state is gone.
-        allowed.append(_write_host_file(context, worktree, machine, str(entry["name"])))
+        allowed.append(_write_host_file(context, worktree, machine, str(entry["name"]), section=_section(work)))
     return allowed
 
 
 def _apply_clear(context: Mapping[str, Any], work: Work, worktree: str, attempt: _Attempt) -> list[str]:
     """The name leaves the host file of this machine; without one there, only the item goes."""
     machine = reconcile.machine_name(context)
-    if machine and work.name in reconcile.declined_in(worktree, machine):
+    plugin = work.kind == state.PLUGIN
+    declined = plugins.declined_in(worktree, machine) if plugin else reconcile.declined_in(worktree, machine)
+    if machine and work.name in declined:
         attempt.applied.append(Applied(work, work.name, None, cleared=True))
-        return [_write_host_file(context, worktree, machine, None, accepted={work.name})]
+        return [_write_host_file(context, worktree, machine, None, accepted={work.name}, section=_section(work))]
     attempt.finished.append(work)
     return []
 
 
 def _subject(applied: Sequence[Applied]) -> str:
     names = ", ".join(item.entry_name for item in applied)
+    scope = "plugins" if all(item.work.kind == state.PLUGIN for item in applied) else "skills"
     if any(item.cleared for item in applied):
-        return f"chore(skills): clear {names}"
+        return f"chore({scope}): clear {names}"
     if any(item.forgotten for item in applied):
-        return f"chore(skills): forget {names}"
+        return f"chore({scope}): forget {names}"
     if any(item.work.answer.get("never") for item in applied):
-        return f"chore(skills): decline {names}"
-    return f"chore(skills): capture {names}"
+        return f"chore({scope}): decline {names}"
+    if all(item.work.marketplace for item in applied):
+        return f"chore({scope}): track {names}"
+    return f"chore({scope}): capture {names}"
 
 
 def _build_on(
@@ -620,6 +790,10 @@ def _build_on(
             allowed += _apply_forget(context, item, worktree, loaded_tree, document, attempt)
         elif item.answer.get("clear"):
             allowed += _apply_clear(context, item, worktree, attempt)
+        elif item.marketplace:
+            allowed += _apply_marketplace(context, item, worktree, loaded_tree, attempt)
+        elif item.kind == state.PLUGIN:
+            allowed += _apply_plugin_copy(context, item, worktree, tip, loaded_tree, document, base, attempt)
         else:
             allowed += _apply_copy(context, item, worktree, tip, loaded_tree, document, base, attempt)
     if not attempt.applied:
@@ -671,7 +845,15 @@ def _set_blocked(
 
 
 def _identity_fields(work: Work) -> dict[str, Any]:
-    return {"kind": "skill", "name": work.name, "path": work.path, "origin": work.item.get("origin", "own")}
+    return {"kind": work.kind, "name": work.name, "path": work.path, "origin": work.item.get("origin", "own")}
+
+
+def _record_in_sync(state_root: str, work: Work, name: str, digest: str, commit: str) -> None:
+    """This machine has NAME as the remote has it since COMMIT."""
+    if work.marketplace:
+        state.record_marketplace(state_root, name, commit)
+    else:
+        state.record_base(state_root, name, digest, commit, work.path or "", work.kind)
 
 
 def _drop_unless_changed(state_root: str, work: Work) -> None:
@@ -717,7 +899,7 @@ def _settle(state_root: str, attempt: _Attempt, published: publish.Published, su
     for work in attempt.declined:
         fields = {"state": reconcile.DECLINED, "reason": None, "last_asked": None}
         state.set_item(state_root, work.key, {**_identity_fields(work), **fields})
-        state.forget_base(state_root, work.name)
+        state.forget_base(state_root, work.name, work.kind)
         summary.done.append(work.name)
     for work, reason, digest in attempt.rejected:
         _set_blocked(state_root, work, reason, digest, detail=str(work.item.get("detail") or ""))
@@ -725,7 +907,7 @@ def _settle(state_root: str, attempt: _Attempt, published: publish.Published, su
         summary.blocked.append(work.name)
         summary.codes.append(report.FAILED)
     for work, name, digest in attempt.in_sync:
-        state.record_base(state_root, name, digest, published.tip or "", work.path or "")
+        _record_in_sync(state_root, work, name, digest, published.tip or "")
         _drop_unless_changed(state_root, work)
         summary.done.append(work.name)
     for work in attempt.repeated:
@@ -745,7 +927,7 @@ def _record_applied(state_root: str, attempt: _Attempt, commit: str, summary: Su
             state.drop_item(state_root, work.key)
             summary.done.append(work.name)
         elif applied.forgotten:
-            state.forget_base(state_root, applied.entry_name)
+            state.forget_base(state_root, applied.entry_name, work.kind)
             if work.path and os.path.isdir(work.path):
                 fields = {"state": reconcile.FORGOTTEN, "answer": None, "reason": None, "last_asked": None}
                 state.set_item(state_root, work.key, fields)
@@ -756,12 +938,12 @@ def _record_applied(state_root: str, attempt: _Attempt, commit: str, summary: Su
             fields = {"state": reconcile.DECLINED, "answer": None, "reason": None, "last_asked": None}
             state.set_item(state_root, work.key, fields)
             # Nothing here is in sync any more, so nothing asks about the copy that is gone.
-            state.forget_base(state_root, work.name)
+            state.forget_base(state_root, work.name, work.kind)
             summary.done.append(work.name)
         else:
-            state.record_base(state_root, applied.entry_name, applied.digest or "", commit, work.path or "")
-            if work.key != state.skill_key(applied.entry_name):
-                state.drop_item(state_root, state.skill_key(applied.entry_name))
+            _record_in_sync(state_root, work, applied.entry_name, applied.digest or "", commit)
+            if work.key != state.item_key(work.kind, applied.entry_name):
+                state.drop_item(state_root, state.item_key(work.kind, applied.entry_name))
             _drop_unless_changed(state_root, work)
             summary.captured.append(applied.entry_name)
 
@@ -871,7 +1053,7 @@ def _ready(
         if (
             not isinstance(item, dict)
             or item.get("state") != reconcile.CAPTURE
-            or item.get("kind", "skill") != "skill"
+            or item.get("kind", state.SKILL) not in (state.SKILL, state.PLUGIN)
             or key in handled
         ):
             continue
@@ -884,6 +1066,10 @@ def _ready(
             continue
         path = item.get("path")
         answer = item.get("answer")
+        source = item.get("source")
+        if not answer and isinstance(source, dict) and source.get("marketplace"):
+            # A plugin of a marketplace moves only with an answer.
+            continue
         if not answer and isinstance(path, str) and not os.path.isdir(path):
             state.drop_item(str(context["state_root"]), key)
             continue
@@ -929,6 +1115,8 @@ def tree_paths(loaded: config.Instance) -> dict[str, str]:
     return {
         "lock": str(loaded.config["skills"]["lock"]),
         "vendor": str(loaded.config["skills"]["vendor_dir"]).rstrip("/"),
+        "plugins": plugins.OWN_PLUGINS_DIR,
+        "config": config.CONFIG_FILE,
         "branch": str(loaded.config["instance"]["branch"]),
     }
 

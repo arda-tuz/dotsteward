@@ -3,19 +3,22 @@
 ``load_context`` reads what ``skills hooks install`` wrote, so a hook need not look for
 the instance. ``reconcile`` looks at every root once:
 
-- a name of the lock, of ``base.json``, of ``[declined]`` or of a pending item is no
-  candidate; what remains with a ``plugin.json`` is a plugin, with a ``SKILL.md`` a skill,
-  and ``origin`` says what becomes of it;
+- a name of the lock (its skills and its own plugins), of ``base.json``, of ``[declined]``
+  or of a pending item is no candidate; what remains directly in ``~/.claude/skills`` with a
+  ``.claude-plugin/plugin.json`` is a plugin, with a ``SKILL.md`` a skill, and ``origin``
+  says what becomes of it;
 - what an answer keeps out (``declined``, ``forgotten``) stays out whatever happens to the
   copy, until another answer takes it back;
-- an own skill with a file newer than ``reconciled_at`` gets its digest compared with b
-  (the full mode digests all of them, for copies that keep their time);
+- an own skill or own plugin with a file newer than ``reconciled_at`` gets its digest
+  compared with b (the full mode digests all of them, for copies that keep their time);
 - an own skill that is gone is ``deleted`` after two looks at least 60 seconds apart
   (``missing`` in pending.json), so the window of a refresh is no deletion.
 
+- a plugin of a marketplace that Claude Code installed is a question (``plugins``); its
+  files are read again only after a change.
+
 Without a change nothing is written and no process starts: this runs inside every Stop
 and SessionStart. ``note_writes`` is the same decision for the paths a file tool wrote.
-A plugin is only reported for now: nothing asks about it and nothing captures it.
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ import time
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from dotsteward_cli.skills import origin, state
+from dotsteward_cli.skills import origin, plugins, state
 
 CAPTURE = "capture"
 ASK = "ask"
@@ -183,10 +186,9 @@ def declined_in(tree: str, machine: str | None) -> set[str]:
 
 
 def _candidate_item(name: str, path: str, evidence: Mapping[str, Any] | None) -> dict[str, Any]:
-    kind_plugin = os.path.isfile(os.path.join(path, origin.PLUGIN_MANIFEST))
     where, source = origin.classify(name, path, evidence)
     return {
-        "kind": "plugin" if kind_plugin else "skill",
+        "kind": _kind_of(path) or state.SKILL,
         "name": name,
         "path": path,
         "state": CAPTURE if where == origin.OWN else ASK,
@@ -200,12 +202,19 @@ def _candidate_item(name: str, path: str, evidence: Mapping[str, Any] | None) ->
     }
 
 
+def _kind_of(path: str) -> str | None:
+    """A plugin of Claude Code's skills directory, a skill, or nothing tracking knows."""
+    if plugins.is_own_plugin_dir(path):
+        return state.PLUGIN
+    return state.SKILL if os.path.isfile(os.path.join(path, SKILL_FILE)) else None
+
+
 def _is_candidate(path: str) -> bool:
-    return os.path.isfile(os.path.join(path, origin.PLUGIN_MANIFEST)) or os.path.isfile(os.path.join(path, SKILL_FILE))
+    return _kind_of(path) is not None
 
 
 def _item_key(path: str, name: str) -> str:
-    return f"plugin:{name}" if os.path.isfile(os.path.join(path, origin.PLUGIN_MANIFEST)) else state.skill_key(name)
+    return state.item_key(_kind_of(path) or state.SKILL, name)
 
 
 class Plan:
@@ -218,9 +227,17 @@ class Plan:
         self.missing: dict[str, float] = {}
         self.not_missing: list[str] = []
         self.looked_at: float | None = None
+        self.plugin_files: list[float | None] | None = None
 
     def __bool__(self) -> bool:
-        return bool(self.set_items or self.drop_items or self.missing or self.not_missing or self.looked_at)
+        return bool(
+            self.set_items
+            or self.drop_items
+            or self.missing
+            or self.not_missing
+            or self.looked_at
+            or self.plugin_files is not None
+        )
 
     def apply(self, document: dict[str, Any]) -> bool:
         items = document["items"]
@@ -241,6 +258,8 @@ class Plan:
             document.pop("missing", None)
         if self.looked_at is not None:
             document["reconciled_at"] = self.looked_at
+        if self.plugin_files is not None:
+            document["plugin_files"] = self.plugin_files
         return True
 
 
@@ -254,8 +273,9 @@ def _look_at_own(
     *,
     full: bool,
     now: float,
+    kind: str = state.SKILL,
 ) -> None:
-    key = state.skill_key(name)
+    key = state.item_key(kind, name)
     item = document["items"].get(key)
     if isinstance(item, dict) and item.get("state") in KEPT_OUT:
         if key in document.get("missing", {}):
@@ -272,7 +292,7 @@ def _look_at_own(
         elif now - since >= DELETED_AFTER_SECONDS:
             plan.not_missing.append(key)
             plan.set_items[key] = {
-                "kind": "skill",
+                "kind": kind,
                 "name": name,
                 "path": None,
                 "state": DELETED,
@@ -300,7 +320,7 @@ def _look_at_own(
     if digest.startswith(TOO_LARGE_PREFIX):
         if not (isinstance(item, dict) and item.get("state") == BLOCKED and item.get("blocked_digest") == digest):
             plan.set_items[key] = {
-                "kind": "skill",
+                "kind": kind,
                 "name": name,
                 "path": path,
                 "state": BLOCKED,
@@ -339,7 +359,7 @@ def _look_at_own(
         plan.set_items[key] = {"digest": digest}
         return
     plan.set_items[key] = {
-        "kind": "skill",
+        "kind": kind,
         "name": name,
         "path": path,
         "state": CAPTURE,
@@ -360,7 +380,9 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
     base = state.load_base(str(context["state_root"]))
     found = _scan(context)
     items = document["items"]
-    machine = machine_name(context) if any("machines" in entry for entry in entries) else None
+    plugin_entries = state.lock_entries(str(context["lock_path"]), "own_plugins") or []
+    with_machines = any("machines" in entry for entry in [*entries, *plugin_entries])
+    machine = machine_name(context) if with_machines else None
     named: set[str] = set()
     own: set[str] = set()
     for entry in entries:
@@ -388,29 +410,63 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
             own.add(name)
             path = _own_path(found, base, name, directory, legacy)
             _look_at_own(name, path, state.base_entry(base, name), document, context, plan, full=full, now=now)
+    plugin_names: set[str] = set()
+    own_plugins: set[str] = set()
+    for entry in plugin_entries:
+        name, directory = str(entry.get("name")), str(entry.get("directory") or entry.get("name"))
+        plugin_names |= {name, directory}
+        machines = entry.get("machines")
+        if isinstance(machines, list) and machine not in machines:
+            continue
+        own_plugins.add(name)
+        path = _own_plugin_path(found, base, name, directory)
+        record = state.base_entry(base, name, state.PLUGIN)
+        _look_at_own(name, path, record, document, context, plan, full=full, now=now, kind=state.PLUGIN)
     for key in base:
-        name = key.removeprefix("skill:")
-        if key.startswith("skill:") and name not in own and name not in named:
+        kind, _, name = key.partition(":")
+        if kind == state.SKILL and name not in own and name not in named:
             path = _own_path(found, base, name, name, None)
             _look_at_own(name, path, state.base_entry(base, name), document, context, plan, full=full, now=now)
+        elif kind == state.PLUGIN and name not in own_plugins and name not in plugin_names:
+            record = state.base_entry(base, name, state.PLUGIN)
+            if record is not None:
+                path = _own_plugin_path(found, base, name, name)
+                _look_at_own(name, path, record, document, context, plan, full=full, now=now, kind=state.PLUGIN)
     # A skill whose lock name is not its directory: captured, the checkout not there yet.
-    named |= {os.path.basename(str(record.get("local_path"))) for record in base.values() if isinstance(record, dict)}
+    named |= {
+        os.path.basename(str(record["local_path"]))
+        for record in base.values()
+        if isinstance(record, dict) and isinstance(record.get("local_path"), str)
+    }
     fresh = [
         (name, path)
         for name, path in found.items()
         if name not in named
-        and state.skill_key(name) not in base
+        and name not in plugin_names
+        and _item_key(path, name) not in base
         and _item_key(path, name) not in items
         and _is_candidate(path)
     ]
     if fresh:
-        declined = declined_in(str(context["instance"]), machine or machine_name(context))
+        here = machine or machine_name(context)
+        declined = {
+            state.SKILL: declined_in(str(context["instance"]), here),
+            state.PLUGIN: plugins.declined_in(str(context["instance"]), here),
+        }
         for name, path in fresh:
-            if name not in declined:
+            if name not in declined[_kind_of(path) or state.SKILL]:
                 plan.set_items[_item_key(path, name)] = _candidate_item(name, path, None)
+    marketplace_items, gone, stamp = plugins.look(
+        context, document, base, lambda: machine or machine_name(context), full=full, now=now
+    )
+    plan.set_items.update(marketplace_items)
+    plan.drop_items += gone
+    if stamp is not None and stamp != document.get("plugin_files"):
+        plan.plugin_files = stamp
     since = document.get("reconciled_at")
     for key, item in items.items():
-        if (_vanished(item) and key not in base) or (_answered_by_the_lock(item, named) and key not in plan.set_items):
+        answered = _answered_by_the_lock(item, plugin_names if key.startswith("plugin:") else named)
+        if (_vanished(item) and key not in base) or (answered and key not in plan.set_items):
             plan.drop_items.append(key)
         elif key not in base and key not in plan.set_items and _blocked_changed(item, since, full, context):
             plan.looked_at = now
@@ -464,6 +520,18 @@ def _vanished(item: Any) -> bool:
     )
 
 
+def _own_plugin_path(found: Mapping[str, str], base: Mapping[str, Any], name: str, directory: str) -> str | None:
+    """The local copy of an own plugin: in ~/.claude/skills, then where it was last seen."""
+    for candidate in (directory, name):
+        if candidate in found and plugins.is_own_plugin_dir(found[candidate]):
+            return found[candidate]
+    record = state.base_entry(base, name, state.PLUGIN)
+    known = record.get("local_path") if record else None
+    if isinstance(known, str) and os.path.isfile(os.path.join(known, plugins.PLUGIN_MANIFEST)):
+        return known
+    return None
+
+
 def _own_path(found: Mapping[str, str], base: Mapping[str, Any], name: str, directory: str, legacy: Any) -> str | None:
     """The local copy of an own skill: a root first, then where it was last seen."""
     for candidate in (directory, legacy, name):
@@ -507,6 +575,11 @@ def note_writes(
         # Nothing says what these names are; the next look at the roots does.
         return False, state.load_pending(state_root)
     base = state.load_base(state_root)
+    plugin_by_name: dict[str, dict[str, Any]] = {}
+    for listed in state.lock_entries(str(context["lock_path"]), "own_plugins") or []:
+        for known_name in (listed.get("name"), listed.get("directory")):
+            if isinstance(known_name, str):
+                plugin_by_name[known_name] = listed
     by_name: dict[str, dict[str, Any]] = {}
     for lock_entry in entries:
         for known_name in (lock_entry.get("name"), lock_entry.get("directory"), lock_entry.get("legacy_directory")):
@@ -517,8 +590,41 @@ def note_writes(
     plan = Plan()
     own_changed = False
     document = state.load_pending(state_root)
-    declined = declined_in(str(context["instance"]), machine_name(context))
+    machine = machine_name(context)
+    declined = declined_in(str(context["instance"]), machine)
+    declined_plugins: set[str] | None = None
     for path, name, below in hits:
+        plugin_entry = plugin_by_name.get(name)
+        if plugin_entry is not None or state.plugin_key(name) in base or plugins.is_own_plugin_dir(path):
+            plugin_name = str(plugin_entry["name"]) if plugin_entry is not None else name
+            key = state.plugin_key(plugin_name)
+            known_item = document["items"].get(key)
+            if isinstance(known_item, dict) and known_item.get("state") in KEPT_OUT:
+                continue
+            machines = plugin_entry.get("machines") if plugin_entry is not None else None
+            if isinstance(machines, list) and machine not in machines:
+                continue
+            if plugin_entry is not None or state.base_entry(base, plugin_name, state.PLUGIN) is not None:
+                plan.set_items[key] = {
+                    "kind": state.PLUGIN,
+                    "name": plugin_name,
+                    "path": path,
+                    "state": CAPTURE,
+                    "origin": origin.OWN,
+                    "digest": None,
+                    "evidence": evidence,
+                    "detected_at": now,
+                    "reason": None,
+                    "due": False,
+                }
+                if session:
+                    plan.writers[key] = session
+                own_changed = True
+                continue
+            if declined_plugins is None:
+                declined_plugins = plugins.declined_in(str(context["instance"]), machine)
+            if name in declined_plugins:
+                continue
         entry = by_name.get(name)
         own_key = state.skill_key(str(entry["name"]) if entry is not None else name)
         known_item = document["items"].get(own_key)
@@ -578,7 +684,7 @@ def note_writes(
         plan.set_items[key] = item
         if session and item["state"] == CAPTURE:
             plan.writers[key] = session
-        own_changed = own_changed or (item["state"] == CAPTURE and item["kind"] == "skill")
+        own_changed = own_changed or item["state"] == CAPTURE
     if plan:
         state.change_pending(state_root, plan.apply)
     return own_changed, state.load_pending(state_root)

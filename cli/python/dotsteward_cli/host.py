@@ -512,23 +512,24 @@ def declined_text(
     *,
     accepted: Collection[str] = (),
     more: Mapping[str, Collection[str]] | None = None,
+    section: str = "skills",
 ) -> str:
-    """The text of the host file over CURRENT, with SKILL added to declined.skills and
-    ACCEPTED taken out of it; for the commit of a skill, which brings the host file along.
-    MORE adds names by key of declined (the answers of `incoming`). Other keys and comments
-    stay."""
+    """The text of the host file over CURRENT, with SKILL added to declined.<SECTION> (skills
+    or plugins) and ACCEPTED taken out of it; for the commit of a skill or a plugin, which
+    brings the host file along. MORE adds names by key of declined (the answers of `incoming`).
+    Other keys and comments stay."""
     tomlkit = _tomlkit()
     document = tomlkit.parse(host_text(current, facts))
     additions = {key: set(names) for key, names in (more or {}).items() if names}
     if skill is not None:
-        additions.setdefault("skills", set()).add(skill)
+        additions.setdefault(section, set()).add(skill)
     if additions and "declined" not in document:
         document["declined"] = tomlkit.table()
     for key, added in additions.items():
         document["declined"][key] = sorted({*(str(name) for name in document["declined"].get(key, [])), *added})
-    if accepted and "declined" in document:
-        names = [str(name) for name in document["declined"].get("skills", []) if str(name) not in accepted]
-        document["declined"]["skills"] = names
+    if accepted and "declined" in document and (section == "skills" or section in document["declined"]):
+        names = [str(name) for name in document["declined"].get(section, []) if str(name) not in accepted]
+        document["declined"][section] = names
     text: str = tomlkit.dumps(document)
     return text
 

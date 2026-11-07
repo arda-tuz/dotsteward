@@ -30,6 +30,8 @@ Command line, for ``cli/lib/skills.sh``::
     python3 -m dotsteward_cli.skills.threeway refreshed --instance DIR --state-root DIR \\
       --name NAME --found PATH --digest SHA --kept DIR
 
+Every action takes ``--kind plugin`` for an own plugin, whose records are ``plugin:<name>``.
+
 ``decide`` prints the decision; with ``--mode install`` it records it. ``record``
 says that the copy at PATH now equals the lock. ``keep`` saves what the normal form of an
 incoming copy leaves out, so that a refresh does not take it away. ``refreshed`` puts that
@@ -117,15 +119,18 @@ def local_digest(found: str | None, instance: str) -> tuple[str | None, normal.N
     return form.digest, form
 
 
-def assess(name: str, found: str | None, repository: str, instance: str, state_root: str) -> dict[str, Any]:
-    """The whole answer for one own skill: decision and digests, for bash and for
-    ``skills status``."""
+def assess(
+    name: str, found: str | None, repository: str, instance: str, state_root: str, kind: str = state.SKILL
+) -> dict[str, Any]:
+    """The whole answer for one own skill (or own plugin): decision and digests, for bash
+    and for ``skills status``."""
     digest, form = local_digest(found, instance)
-    entry = state.base_entry(state.load_base(state_root), name)
+    entry = state.base_entry(state.load_base(state_root), name, kind)
     base = entry["base_sha256"] if entry else None
     commit = str(entry.get("base_commit") or "") if entry else ""
     behind = digest != repository and is_behind(instance, commit)
     return {
+        "kind": kind,
         "name": name,
         "state": decide(digest, repository, base, behind),
         "path": found or None,
@@ -137,9 +142,9 @@ def assess(name: str, found: str | None, repository: str, instance: str, state_r
     }
 
 
-def _item(name: str, found: str | None, decision: str, digest: str | None) -> dict[str, Any]:
+def _item(name: str, found: str | None, decision: str, digest: str | None, kind: str) -> dict[str, Any]:
     return {
-        "kind": "skill",
+        "kind": kind,
         "name": name,
         "path": found or None,
         "state": decision,
@@ -151,10 +156,11 @@ def _item(name: str, found: str | None, decision: str, digest: str | None) -> di
 
 def _record_install(answer: Mapping[str, Any], instance: str, state_root: str) -> None:
     name = str(answer["name"])
-    key = state.skill_key(name)
+    kind = str(answer.get("kind") or state.SKILL)
+    key = state.item_key(kind, name)
     decision = answer["state"]
     if decision == IN_SYNC:
-        known = state.base_entry(state.load_base(state_root), name)
+        known = state.base_entry(state.load_base(state_root), name, kind)
         if (
             known
             and known["base_sha256"] != answer["lock_sha256"]
@@ -162,7 +168,9 @@ def _record_install(answer: Mapping[str, Any], instance: str, state_root: str) -
         ):
             # The copy went back to the old lock of a checkout that is behind: b is not older.
             return
-        state.record_base(state_root, name, str(answer["lock_sha256"]), head_commit(instance), str(answer["path"]))
+        state.record_base(
+            state_root, name, str(answer["lock_sha256"]), head_commit(instance), str(answer["path"]), kind
+        )
         items = state.load_pending(state_root)["items"]
         if isinstance(items.get(key), dict) and items[key].get("state") in {CONFLICT, DELETED}:
             state.drop_item(state_root, key)
@@ -170,10 +178,12 @@ def _record_install(answer: Mapping[str, Any], instance: str, state_root: str) -
         known = state.load_pending(state_root)["items"].get(key)
         if isinstance(known, dict) and known.get("state") == decision and known.get("digest") == answer["local_sha256"]:
             return
-        state.set_item(state_root, key, _item(name, answer["path"], decision, answer["local_sha256"]))
+        state.set_item(state_root, key, _item(name, answer["path"], decision, answer["local_sha256"], kind))
 
 
-def _refreshed(name: str, found: str, digest: str, kept: str, instance: str, state_root: str) -> str:
+def _refreshed(
+    name: str, found: str, digest: str, kept: str, instance: str, state_root: str, kind: str = state.SKILL
+) -> str:
     """After a refresh of the copy at FOUND: the decision, and what it means for b."""
     real = os.path.realpath(found)
     if kept:
@@ -183,14 +193,14 @@ def _refreshed(name: str, found: str, digest: str, kept: str, instance: str, sta
                 file=sys.stderr,
             )
     local, _ = local_digest(found, instance)
-    key = state.skill_key(name)
+    key = state.item_key(kind, name)
     if local == digest:
-        state.record_base(state_root, name, digest, head_commit(instance), found)
+        state.record_base(state_root, name, digest, head_commit(instance), found, kind)
         state.drop_item(state_root, key)
         return IN_SYNC
     known = state.load_pending(state_root)["items"].get(key)
     if not (isinstance(known, dict) and known.get("state") == CONFLICT and known.get("digest") == local):
-        state.set_item(state_root, key, {**_item(name, found, CONFLICT, local), "reason": NOT_REFRESHED})
+        state.set_item(state_root, key, {**_item(name, found, CONFLICT, local, kind), "reason": NOT_REFRESHED})
     return CONFLICT
 
 
@@ -204,6 +214,7 @@ def _arguments(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--digest", required=True)
     parser.add_argument("--mode", choices=["install", "check"], default="check")
     parser.add_argument("--kept", default="")
+    parser.add_argument("--kind", choices=[state.SKILL, state.PLUGIN], default=state.SKILL)
     return parser.parse_args(argv)
 
 
@@ -211,20 +222,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _arguments(sys.argv[1:] if argv is None else argv)
     try:
         if args.action == "record":
-            state.record_base(args.state_root, args.name, args.digest, head_commit(args.instance), args.found)
-            state.drop_item(args.state_root, state.skill_key(args.name))
+            state.record_base(
+                args.state_root, args.name, args.digest, head_commit(args.instance), args.found, args.kind
+            )
+            state.drop_item(args.state_root, state.item_key(args.kind, args.name))
             return 0
         if args.action == "keep":
             normal.keep_left_out(os.path.realpath(args.found), excludes_file(args.instance), args.kept)
             return 0
         if args.action == "refreshed":
-            print(_refreshed(args.name, args.found, args.digest, args.kept, args.instance, args.state_root))
+            print(_refreshed(args.name, args.found, args.digest, args.kept, args.instance, args.state_root, args.kind))
             return 0
-        answer = assess(args.name, args.found or None, args.digest, args.instance, args.state_root)
+        answer = assess(args.name, args.found or None, args.digest, args.instance, args.state_root, args.kind)
         if args.mode == "install":
             _record_install(answer, args.instance, args.state_root)
     except (normal.NormalFormError, OSError) as error:
-        print(f"[dotsteward] ERROR: skill {args.name}: {error}", file=sys.stderr)
+        print(f"[dotsteward] ERROR: {args.kind} {args.name}: {error}", file=sys.stderr)
         return 1
     print(answer["state"])
     return 0

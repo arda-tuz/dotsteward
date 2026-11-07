@@ -41,7 +41,8 @@
 #       plain agent names, copy deployment only); no dotsteward-* name
 #       (framework skills are never instance lock entries); optional
 #       own_plugins, a list of entries with name, directory (a plain name)
-#       and directory_sha256
+#       and directory_sha256, optional agents (a non-empty list of plain
+#       agent names) and machines
 #   skills_ensure_layout
 #       install: creates ~/.agents and every legacy root; a canonical root
 #       that is a link to a legacy root is migrated to a directory. Both
@@ -79,6 +80,17 @@
 #       refreshed at all, a difference is a note and never a finding, a real
 #       directory in a link root moves to the canonical root (install) or is
 #       a note (check), and a missing entry or link is a note for check.
+#   skills_own_plugin_entries, skills_process_own_plugin ENTRY_JSON
+#       the own plugins of the lock this machine does not leave out
+#       (DS_SKIP_PLUGINS_JSON), one compact JSON object per line; and one of
+#       them: a plugin of Claude Code (agents names claude) lives as a real
+#       directory <claude-code link root>/<directory> (~/.claude/skills,
+#       where Claude Code loads it as <name>@skills-dir), copied from
+#       agent/plugins/<directory>, whose digest is verified against the lock
+#       first. dotsteward_cli.skills.threeway decides about the copy as for an
+#       own skill (records plugin:<name>): a missing one is installed, a
+#       local change is never overwritten, a deleted one is not installed
+#       again. Without the claude-code link root it is a note.
 #   skills_sweep
 #       removes (install) or reports (check) every dangling link directly
 #       in the canonical root, the link roots and the agent roots whose
@@ -143,6 +155,11 @@ SKILLS_AGENT_ROOTS=()
 SKILLS_SCOPED_STORE=''
 # Set while an own skill is laid out: what is missing is a note for check.
 SKILLS_SOFT_LAYOUT=0
+# What an own copy is (skill or plugin), and the file that says a copy is there.
+SKILLS_OWN_KIND=skill
+SKILLS_OWN_MARKER=SKILL.md
+# The skill root of Claude Code, where own plugins live; empty without it.
+SKILLS_PLUGIN_ROOT=''
 
 # --- Findings -------------------------------------------------------------
 
@@ -219,6 +236,12 @@ skills_init() {
     SKILLS_LINK_PREFIXES+=("$prefix")
   done < <(jq -j '(.skill_layout.link_roots // {}) | to_entries[] | .key, "\u0000", (.value.target_prefix // ""), "\u0000"' \
     <<<"$DS_MANIFEST_JSON")
+
+  SKILLS_PLUGIN_ROOT=$(jq -r 'first((.skill_layout.link_roots // {}) | to_entries[]
+    | select(.value.component == "claude-code") | .key) // empty' <<<"$DS_MANIFEST_JSON")
+  if [[ -n $SKILLS_PLUGIN_ROOT ]]; then
+    SKILLS_PLUGIN_ROOT=$(_skills_expand "$SKILLS_PLUGIN_ROOT") || exit 1
+  fi
 
   SKILLS_AGENT_NAMES=()
   SKILLS_AGENT_ROOTS=()
@@ -317,6 +340,9 @@ else
       | if ($p | type) != "object" or ([$p.name, $p.directory, $p.directory_sha256] | all(nonempty) | not) then
           "own plugin \($i + 1): name, directory and directory_sha256 must be non-empty strings"
         elif ($p.directory | plain) | not then "own plugin \($p.name): directory must be a plain directory name"
+        elif $p.agents != null and (($p.agents | type) != "array" or ($p.agents | length) == 0
+          or ($p.agents | all(plain) | not)) then
+          "own plugin \($p.name): agents must be a non-empty list of plain agent names"
         else empty end)
    end)
 end'
@@ -637,6 +663,47 @@ skills_framework_entries() {
     <<<"$DS_MANIFEST_JSON"
 }
 
+skills_own_plugin_entries() {
+  jq -c --argjson skip "${DS_SKIP_PLUGINS_JSON:-[]}" \
+    '(.own_plugins // [])[] | select(.name as $name | $skip | index($name) | not)' "$SKILLS_LOCK"
+}
+
+skills_process_own_plugin() {
+  (($# == 1)) || die "usage: skills_process_own_plugin ENTRY_JSON"
+  local entry=$1 name directory digest agents source found decision
+  local -a fields=()
+  mapfile -d '' fields < <(jq -j '[.name, (.directory // .name), (.directory_sha256 // ""),
+    ((.agents // ["claude"]) | join(" "))] | map(. + "\u0000") | add' <<<"$entry")
+  name=${fields[0]}
+  directory=${fields[1]}
+  digest=${fields[2]}
+  agents=${fields[3]}
+  if [[ " $agents " != *" claude "* ]]; then
+    log "own plugin $name is for ${agents// /, }: only plugins of Claude Code are installed"
+    return 0
+  fi
+  if [[ -z $SKILLS_PLUGIN_ROOT ]]; then
+    log "own plugin $name: this profile has no skill root of claude-code; not installed"
+    return 0
+  fi
+  source=$DS_INSTANCE_ROOT/agent/plugins/$directory
+  [[ -f $source/.claude-plugin/plugin.json && ! -L $source/.claude-plugin/plugin.json ]] ||
+    skills_fail source-missing "$source" "plugin source missing: $name ($source)"
+  [[ $(directory_sha256 "$source") == "$digest" ]] ||
+    skills_fail source-digest-mismatch "$source" "plugin source digest differs from the lock: $name ($source)"
+  SKILLS_SOFT_LAYOUT=1
+  SKILLS_OWN_KIND=plugin
+  SKILLS_OWN_MARKER=.claude-plugin/plugin.json
+  found=$SKILLS_PLUGIN_ROOT/$directory
+  if [[ -L $found ]]; then
+    skills_fail plugin-not-directory "$found" \
+      "own plugin $name: $found is a link; Claude Code loads a plugin of its skill root from a real directory"
+  fi
+  [[ -f $found/$SKILLS_OWN_MARKER ]] || found=''
+  decision=$(_skills_own_decision "$name" "$found" "$digest")
+  _skills_own_apply "$name" "$directory" "$found" "$decision" "$digest" "$source" "$SKILLS_PLUGIN_ROOT"
+}
+
 skills_instance_entries() {
   # An own skill deleted here stays: its decision says so, and removes its links.
   jq -c --argjson skip "${DS_SKIP_SKILLS_JSON:-[]}" --argjson deleted "${DS_DELETED_SKILLS_JSON:-[]}" \
@@ -763,7 +830,8 @@ _skills_placement_note() {
 _skills_threeway() {
   local action=$1
   shift
-  ds_python dotsteward_cli.skills.threeway "$action" --instance "$DS_INSTANCE_ROOT" --state-root "$(state_root)" "$@"
+  ds_python dotsteward_cli.skills.threeway "$action" --instance "$DS_INSTANCE_ROOT" --state-root "$(state_root)" \
+    --kind "$SKILLS_OWN_KIND" "$@"
 }
 
 # _skills_incoming_waits NAME: another machine changed the own skill NAME and this
@@ -776,17 +844,17 @@ _skills_incoming_waits() {
 _skills_own_note() {
   local name=$1
   case $2 in
-    behind) log "skill $name: behind: the copy is ahead of the lock of this checkout; left as it is" ;;
-    pending-capture) log "skill $name: pending-capture: a local change waits for a capture; left as it is" ;;
+    behind) log "$SKILLS_OWN_KIND $name: behind: the copy is ahead of the lock of this checkout; left as it is" ;;
+    pending-capture) log "$SKILLS_OWN_KIND $name: pending-capture: a local change waits for a capture; left as it is" ;;
     incoming)
-      if _skills_incoming_waits "$name"; then
-        log "skill $name: incoming: another machine changed it; the copy stays until 'dotsteward incoming' has an answer"
+      if [[ $SKILLS_OWN_KIND == skill ]] && _skills_incoming_waits "$name"; then
+        log "$SKILLS_OWN_KIND $name: incoming: another machine changed it; the copy stays until 'dotsteward incoming' has an answer"
       elif ((SKILLS_CHECK_ONLY)); then
-        log "skill $name: incoming: the lock has a newer copy; $(_skills_rebuild_hint) to take it"
+        log "$SKILLS_OWN_KIND $name: incoming: the lock has a newer copy; $(_skills_rebuild_hint) to take it"
       fi
       ;;
-    conflict) log "skill $name: conflict: the copy and the lock both changed; left as it is; see 'dotsteward skills status'" ;;
-    deleted) log "skill $name: deleted: not installed again; see 'dotsteward skills status'" ;;
+    conflict) log "$SKILLS_OWN_KIND $name: conflict: the copy and the lock both changed; left as it is; see 'dotsteward skills status'" ;;
+    deleted) log "$SKILLS_OWN_KIND $name: deleted: not installed again; see 'dotsteward skills status'" ;;
   esac
 }
 
@@ -811,13 +879,13 @@ _skills_own_apply() {
     missing)
       if ((SKILLS_CHECK_ONLY)); then
         skills_fail skill-missing "${root:-$SKILLS_CANONICAL}/$directory" \
-          "skill missing: $name; $(_skills_rebuild_hint) to install it"
+          "$SKILLS_OWN_KIND missing: $name; $(_skills_rebuild_hint) to install it"
       fi
       _skills_install "$name" "$directory" "$source" "$root"
       installed=${root:-$SKILLS_CANONICAL}/$directory
-      [[ -f $installed/SKILL.md ]] ||
-        skills_fail install-unverified "$installed" "skill install could not be verified: $name"
-      log "installed skill $name into $installed"
+      [[ -f $installed/$SKILLS_OWN_MARKER ]] ||
+        skills_fail install-unverified "$installed" "$SKILLS_OWN_KIND install could not be verified: $name"
+      log "installed $SKILLS_OWN_KIND $name into $installed"
       if [[ $(directory_sha256 "$(realpath -e -- "$installed")") != "$digest" ]]; then
         skills_fail install-digest-mismatch "$installed" \
           "installed skill digest differs from the lock: $name ($installed); the native copy leaves out metadata.json, .git, __pycache__ and __pypackages__ and follows symlinks"
@@ -837,7 +905,7 @@ _skills_own_apply() {
           skills_fail skill-unresolvable "$found" "cannot read the own skill $name ($found)"
         rm -rf -- "$kept"
         [[ $refreshed == in-sync ]] ||
-          log "skill $name: conflict: this copy did not take what the repository holds; left as it is; see 'dotsteward skills status'"
+          log "$SKILLS_OWN_KIND $name: conflict: this copy did not take what the repository holds; left as it is; see 'dotsteward skills status'"
       fi
       ;;
   esac

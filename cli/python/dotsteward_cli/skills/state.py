@@ -1,9 +1,12 @@
 """The machine state of skill tracking: ``<state root>/skills/`` (mode 0700).
 
-    base.json          {"skill:<name>": {base_sha256, base_commit, local_path}}: what
-                       this machine last had in sync with the repository
-    pending.json       {schema_version, reconciled_at, items: {"skill:<name>": item}}:
-                       what waits for a capture, a question or an answer
+    base.json          {"skill:<name>" | "plugin:<name>": {base_sha256, base_commit,
+                       local_path}}: what this machine last had in sync with the
+                       repository; a plugin of a marketplace has a record without a
+                       digest, {tracked: "marketplace", base_commit}
+    pending.json       {schema_version, reconciled_at, items: {"skill:<name>" |
+                       "plugin:<name>": item}}: what waits for a capture, a question or
+                       an answer
     last-capture.json  the last capture: redacted findings, dropped files
 
 A file is replaced atomically, so a reader sees a whole one. A change of
@@ -34,6 +37,11 @@ BASE_LOCK = "base.lock"
 LAST_CAPTURE_FILE = "last-capture.json"
 # A name that may reach an agent, a desktop notification or a file name.
 PLAIN_NAME = re.compile(r"[A-Za-z0-9._-]+")
+# A plugin of a marketplace goes by its spec, NAME@MARKETPLACE.
+PLUGIN_SPEC = re.compile(r"[A-Za-z0-9._-]+@[A-Za-z0-9._-]+")
+SKILL = "skill"
+PLUGIN = "plugin"
+MARKETPLACE_RECORD = "marketplace"
 # How long a change of pending.json waits for the lock before it gives up: a hook
 # must not stall, and the next reconcile finds what a lost change would have said.
 _PENDING_WAIT_SECONDS = 2.0
@@ -47,8 +55,22 @@ def directory(state_root: str) -> str:
     return os.path.join(state_root, "skills")
 
 
+def item_key(kind: str, name: str) -> str:
+    """The key of an item and of a record: ``skill:<name>`` or ``plugin:<name>``."""
+    return f"{kind}:{name}"
+
+
 def skill_key(name: str) -> str:
-    return f"skill:{name}"
+    return item_key(SKILL, name)
+
+
+def plugin_key(name: str) -> str:
+    return item_key(PLUGIN, name)
+
+
+def shown_name(name: str) -> bool:
+    """Whether NAME may reach an agent or the desktop: a plain name or a plugin spec."""
+    return bool(PLAIN_NAME.fullmatch(name) or PLUGIN_SPEC.fullmatch(name))
 
 
 def read_json(path: str, default: Any) -> Any:
@@ -69,11 +91,14 @@ def write_json(path: str, value: Any) -> None:
     atomic.atomic_write_json(path, value, mode=0o600)
 
 
-def lock_entries(path: str | os.PathLike[str]) -> list[dict[str, Any]] | None:
+def lock_entries(path: str | os.PathLike[str], key: str = "skills") -> list[dict[str, Any]] | None:
     """The entries of the skills lock at PATH, None when it cannot be read: a merge in
-    progress or a clone being replaced says nothing about any skill."""
+    progress or a clone being replaced says nothing about any skill. KEY ``own_plugins``:
+    the own plugins, an empty list when the lock has none."""
     document = read_json(os.fspath(path), None)
-    entries = document.get("skills") if isinstance(document, dict) else None
+    if not isinstance(document, dict) or not isinstance(document.get("skills"), list):
+        return None
+    entries = document.get(key, [])
     return [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else None
 
 
@@ -99,31 +124,40 @@ def change_base(state_root: str, change: Callable[[dict[str, Any]], bool]) -> No
             lock.release()
 
 
-def base_entry(base: Mapping[str, Any], name: str) -> dict[str, Any] | None:
-    """The record of the skill NAME in BASE, None without a digest."""
-    entry = base.get(skill_key(name))
+def base_entry(base: Mapping[str, Any], name: str, kind: str = SKILL) -> dict[str, Any] | None:
+    """The record of the skill (or plugin) NAME in BASE, None without a digest."""
+    entry = base.get(item_key(kind, name))
     if isinstance(entry, dict) and isinstance(entry.get("base_sha256"), str) and entry["base_sha256"]:
         return entry
     return None
 
 
-def record_base(state_root: str, name: str, digest: str, commit: str, local_path: str) -> None:
+def record_base(state_root: str, name: str, digest: str, commit: str, local_path: str, kind: str = SKILL) -> None:
     """Records that this machine had NAME in sync, unless it is known already."""
-    entry = {"base_sha256": digest, "base_commit": commit, "local_path": local_path}
+    _record(state_root, item_key(kind, name), {"base_sha256": digest, "base_commit": commit, "local_path": local_path})
 
+
+def record_marketplace(state_root: str, spec: str, commit: str) -> None:
+    """Records that the remote tracks the plugin SPEC of a marketplace since COMMIT, which
+    the checkout may not have yet: it is no question meanwhile."""
+    _record(state_root, plugin_key(spec), {"tracked": MARKETPLACE_RECORD, "base_commit": commit})
+
+
+def _record(state_root: str, key: str, entry: Mapping[str, Any]) -> None:
     def change(base: dict[str, Any]) -> bool:
-        if base.get(skill_key(name)) == entry:
+        if base.get(key) == entry:
             return False
-        base[skill_key(name)] = entry
+        base[key] = dict(entry)
         return True
 
     change_base(state_root, change)
 
 
-def forget_base(state_root: str, name: str) -> None:
+def forget_base(state_root: str, name: str, kind: str = SKILL) -> None:
     """This machine no longer has anything in sync for NAME."""
-    if skill_key(name) in load_base(state_root):
-        change_base(state_root, lambda base: base.pop(skill_key(name), None) is not None)
+    key = item_key(kind, name)
+    if key in load_base(state_root):
+        change_base(state_root, lambda base: base.pop(key, None) is not None)
 
 
 def empty_pending() -> dict[str, Any]:

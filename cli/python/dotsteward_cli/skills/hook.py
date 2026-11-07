@@ -190,7 +190,7 @@ def _waiting(document: Mapping[str, Any], now: float) -> list[Mapping[str, Any]]
     """The items to say now: they wait for a person and were not said in 24 hours."""
     waiting = []
     for item in document["items"].values():
-        if not isinstance(item, dict) or item.get("kind") == "plugin":
+        if not isinstance(item, dict):
             continue
         asked = item.get("last_asked")
         if isinstance(asked, (int, float)) and now - asked < ASK_AGAIN_SECONDS:
@@ -214,7 +214,7 @@ def _question(items: Sequence[Mapping[str, Any]]) -> str:
     said = 0
     for item in items:
         name = str(item.get("name"))
-        if not state.PLAIN_NAME.fullmatch(name):
+        if not state.shown_name(name):
             continue
         if room == 0:
             continue
@@ -315,11 +315,7 @@ def _prune_sessions(state_root: str, now: float) -> None:
 
 
 def _capture_items(document: Mapping[str, Any]) -> list[Mapping[str, Any]]:
-    return [
-        item
-        for item in document["items"].values()
-        if isinstance(item, dict) and item.get("state") == "capture" and item.get("kind") != "plugin"
-    ]
+    return [item for item in document["items"].values() if isinstance(item, dict) and item.get("state") == "capture"]
 
 
 def _session_start(context: Mapping[str, Any], agent: str, payload: Mapping[str, Any]) -> None:

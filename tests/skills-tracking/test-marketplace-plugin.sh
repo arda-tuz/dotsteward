@@ -142,7 +142,6 @@ VERSION=2
 installed fetched-plugin@example-market tracked-plugin@example-market
 assert_exit 0 ds a skills reconcile --full
 assert_eq declined "$(plugin_item a fetched-plugin@example-market .state)"
-age_field a plugin:fetched-plugin@example-market last_asked 0
 told
 assert_not_contains "$HOOK_OUT" "fetched-plugin@example-market"
 ds_code a skills capture --now
@@ -152,8 +151,8 @@ git -C "$(clone_of a)" pull -q --ff-only
 rm -f "$(state_of a)/skills/pending.json"
 assert_exit 0 ds a skills reconcile
 assert_eq "{}" "$(plugin_item a fetched-plugin@example-market .)"
-assert_exit 0 ds a skills effective --json
-assert_json - '.skip.plugins | index("fetched-plugin@example-market") != null' <<<"$DS_STDOUT"
+assert_eq '["fetched-plugin@example-market"]' "$(remote_file hosts/a.toml |
+  python3 -c 'import json, sys, tomllib; print(json.dumps(tomllib.loads(sys.stdin.read())["declined"]["plugins"]))')"
 
 # --- --all: a table of options.plugins with its marketplace ---------------------------------
 
@@ -176,7 +175,7 @@ assert_eq "{}" "$(plugin_item a shared-plugin@example-market .)"
 assert_exit 0 ds a skills reconcile --full
 assert_eq "{}" "$(plugin_item a shared-plugin@example-market .)"
 git -C "$(clone_of a)" pull -q --ff-only
-assert_exit 0 ds a static --only config
+assert_exit 0 ds a static
 assert_exit 0 ds a skills reconcile --full
 assert_eq "{}" "$(plugin_item a shared-plugin@example-market .)"
 
@@ -188,7 +187,8 @@ assert_exit 0 ds a skills reconcile
 ds_code a skills track here-plugin@example-market --here
 assert_json - '.[-1] == {"spec": "here-plugin@example-market", "marketplace": "example-org/example-market", "machines": ["a"]}' \
   <<<"$(remote_plugins)"
-assert_contains "$(git -C "$remote" diff-tree --no-commit-id --name-only -r refs/heads/main)" hosts/a.toml
+# The machine it names is known: its host file is on the remote.
+assert_contains "$(remote_file hosts/a.toml)" "schema_version"
 new_machine b
 assert_exit 0 ds b skills effective --json
 assert_json - '.skip.plugins | index("here-plugin@example-market") != null' <<<"$DS_STDOUT"

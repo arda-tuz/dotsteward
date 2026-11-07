@@ -31,7 +31,18 @@ from collections.abc import Sequence
 from typing import Any
 
 from dotsteward_cli import config, machine, tomlfile
-from dotsteward_cli.skills import capture, hooks_install, layout, normal, reconcile, sleeper, state, threeway, track
+from dotsteward_cli.skills import (
+    capture,
+    hooks_install,
+    layout,
+    normal,
+    plugins,
+    reconcile,
+    sleeper,
+    state,
+    threeway,
+    track,
+)
 
 
 def own_revisions(loaded: config.Instance) -> set[str]:
@@ -91,6 +102,18 @@ def _status_document(loaded: config.Instance) -> dict[str, Any]:
         )
         for entry in _own_entries(loaded)
     ]
+    machine = reconcile.machine_name({"state_root": state_root})
+    for entry in state.lock_entries(loaded.root / loaded.config["skills"]["lock"], "own_plugins") or []:
+        machines = entry.get("machines")
+        if isinstance(machines, list) and machine not in machines:
+            continue
+        directory = str(entry.get("directory") or entry.get("name"))
+        copy = os.path.join(plugins.claude_skills_dir(), directory)
+        digest = entry.get("directory_sha256")
+        if not isinstance(digest, str) or not digest:
+            digest = normal.normal_form(str(loaded.root / plugins.OWN_PLUGINS_DIR / directory), None).digest
+        found = copy if plugins.is_own_plugin_dir(copy) else None
+        own.append(threeway.assess(str(entry.get("name")), found, digest, instance, state_root, state.PLUGIN))
     return {
         "schema_version": state.SCHEMA_VERSION,
         "tracking": tracking_on(loaded),
@@ -124,7 +147,7 @@ def _status(args: argparse.Namespace, loaded: config.Instance) -> int:
                 print(f"[dotsteward] {key}: no copy is left: dotsteward skills forget --clear {item.get('name')}")
             for line in str(item.get("detail") or "").splitlines():
                 print(f"[dotsteward] {key}: {line}")
-    print(f"[dotsteward] {in_sync} of {len(document['own'])} own skills in sync")
+    print(f"[dotsteward] {in_sync} of {len(document['own'])} own skills and plugins in sync")
     return 0
 
 
