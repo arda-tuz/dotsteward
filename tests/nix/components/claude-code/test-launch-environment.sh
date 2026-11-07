@@ -184,6 +184,14 @@ run_hook 1
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: Claude Code does not connect to plugin:example-plugin:example in a login zsh (status: Failed to connect)"
 ds_stub_set claude mcp-servers '{}'
 run_hook 1
+# A plugin this machine declined is not installed here, so nothing asks for its
+# servers; the machine it stays on still does.
+mkdir -p "$inst/hosts"
+printf 'schema_version = 1\ndeclined = { plugins = ["example-plugin@example-market"] }\n' >"$inst/hosts/desktop.toml"
+printf 'schema_version = 1\n' >"$inst/hosts/laptop.toml"
+run_hook 0 DOTSTEWARD_MACHINE=desktop
+run_hook 1 DOTSTEWARD_MACHINE=laptop
+rm -r -- "$inst/hosts"
 assert_contains "$DS_STDERR" "[dotsteward] ERROR: Claude Code does not connect to plugin:example-plugin:example in a login zsh (status: unknown)"
 ds_stub_set claude mcp-servers '{"plugin:example-plugin:example": "EXAMPLE_TOKEN"}'
 
