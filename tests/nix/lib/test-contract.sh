@@ -4,8 +4,8 @@
 # shellcheck source=tests/nix/lib/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/lib/helpers.sh"
 
-assert_nix_eq '["nix","official-binary","pypi","deb","app-archive","external"]' 'dsLib.contract.methods'
-assert_nix_eq '["deb","app-archive"]' 'dsLib.contract.systemMethods'
+assert_nix_eq '["nix","official-binary","pypi","deb","app-archive","external","system"]' 'dsLib.contract.methods'
+assert_nix_eq '["deb","app-archive","system"]' 'dsLib.contract.systemMethods'
 assert_nix_eq '["linux","darwin"]' 'dsLib.contract.platforms'
 assert_nix_eq '["early","main","late"]' 'dsLib.contract.hookPhases'
 assert_nix_eq '["flake-inputs","nix-package-format","derive","download-pin","text-guard","no-literal","npm-bundle","skills-lock-mirror","minimum-version","asset-digest","nix-resolved","skill-digests"]' \
@@ -22,6 +22,7 @@ assert_nix_eq '{
   "deb": {"pin": null, "architecture": null, "verifyAfterInstall": true, "apt": []},
   "appArchiveDest": "~/Applications",
   "external": {"command": null, "versionArgv": null, "minimum": null},
+  "system": {"files": []},
   "pins": {"rules": [], "latest": [], "resolvedVersions": {}, "flakeInputs": []},
   "settingsTargets": {}, "reloadHooks": {}, "probes": [],
   "checks": {"commands": [], "e2e": [], "agents": [], "floors": []},
@@ -38,6 +39,7 @@ assert_nix_eq '{
   deb = { inherit (c.install.deb) pin architecture verifyAfterInstall apt; };
   appArchiveDest = c.install.app-archive.dest;
   external = c.install.external;
+  system = c.install.system;
 }"
 
 # Every field set: values come through, nested defaults apply.
