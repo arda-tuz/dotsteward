@@ -16,30 +16,76 @@ enable = true
 
 | Platform | Default method | What lands on the machine |
 | --- | --- | --- |
-| Linux (x86_64) | `official-binary` | `codex-x86_64-unknown-linux-musl` from the release archive `codex-x86_64-unknown-linux-musl.tar.gz`, installed as `~/.local/bin/codex` (mode 0755) |
-| darwin (aarch64) | `official-binary` | `codex-aarch64-apple-darwin` from the release archive `codex-aarch64-apple-darwin.tar.gz`, installed as `~/.local/bin/codex` (mode 0755) |
+| Linux (x86_64) | `official-binary` | `codex-x86_64-unknown-linux-musl` from the release archive `codex-x86_64-unknown-linux-musl.tar.gz`, installed as `~/.local/bin/codex` (mode 0755); `codex-code-mode-host-x86_64-unknown-linux-musl` from `codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz`, installed as `~/.local/bin/codex-code-mode-host` (mode 0755) |
+| darwin (aarch64) | `official-binary` | `codex-aarch64-apple-darwin` from the release archive `codex-aarch64-apple-darwin.tar.gz`, installed as `~/.local/bin/codex` (mode 0755); `codex-code-mode-host-aarch64-apple-darwin` from `codex-code-mode-host-aarch64-apple-darwin.tar.gz`, installed as `~/.local/bin/codex-code-mode-host` (mode 0755) |
 
-Both archives come from the official GitHub releases of `openai/codex`
+All archives come from the official GitHub releases of `openai/codex`
 (tags `rust-v<version>`). The pins live in `versions.lock.json` under
-`agent_tools.codex.linux` and `agent_tools.codex.darwin`, each with
-`version`, `url`, `size` and `sha256`; `dotsteward init` writes them from
-`seed.json`. Only the platforms of `nix.systems` whose method is
-`official-binary` declare pins.
+`agent_tools.codex.<platform>` and
+`agent_tools.codex-code-mode-host.<platform>`, each with `version`, `url`,
+`size` and `sha256`; `dotsteward init` writes them from `seed.json`. Only
+the platforms of `nix.systems` whose method is `official-binary` declare
+pins.
 
 The installer runs at user level (no root) during `dotsteward rebuild
 --switch` and `dotsteward agents install`:
 
-1. download the pinned archive over HTTPS (TLS 1.2 or newer);
-2. compare its size, then its SHA-256, with the pin, and refuse it on any
+1. download the pinned archives over HTTPS (TLS 1.2 or newer);
+2. compare the size, then the SHA-256 of each with its pin, and refuse on any
    difference before anything is replaced;
-3. extract the single member and install it at `~/.local/bin/codex`;
-4. read the version from `codex --version` (`codex-cli <version>`).
+3. extract the single member of each and install it at its destination;
+4. read the version from `codex --version` (`codex-cli <version>`) and see
+   the helper in place.
 
 The policy is `at-least`: a binary that reports the pinned version or a
 newer one is kept (Codex may update itself), an older one is replaced, and
-the pin is never downgraded. A symlink at `~/.local/bin/codex` is refused.
+the pin is never downgraded. A symlink at `~/.local/bin/codex` or
+`~/.local/bin/codex-code-mode-host` is refused.
 `dotsteward install --check-only` and `dotsteward agents check` report a
-missing or older binary with the rebuild hint and change nothing.
+missing or older binary, or a missing helper, with the rebuild hint and
+change nothing.
+
+## The helper
+
+From 0.144.0 on, Codex runs Code Mode, and with it `apply_patch`, through a
+second executable, `codex-code-mode-host`. It starts the file from the
+directory of its own resolved executable. A session without the file says
+`failed to spawn code-mode host <dir>/codex-code-mode-host` and the model
+cannot edit files.
+
+- **A binary that meets the pin stays and gets what it lacks.** A missing
+  helper is fetched alone, from `agent_tools.codex-code-mode-host.<platform>`.
+- **A file already in place is kept**, without a download and with or without
+  a pin. The helper has no `--version`, so the method cannot tell its release;
+  it is replaced with the next pin bump.
+- **A pin bump moves both files**, staged and verified before either is
+  replaced. The two pins hold one version: `dotsteward pins check` compares
+  them and the install refuses a pair that differs.
+- **Older pins keep working.** A codex older than 0.144.0 is asked for nothing
+  (0.143.0 ships the helper with the feature off, earlier releases do not ship
+  it), so a lock without the helper pin stays valid for those versions. At
+  0.144.0 or newer such a lock is red only when the file is missing too:
+  add the pin, or move to a release with `dotsteward pins latest`.
+- **A link from the standalone installer is left alone.** Its helper is next
+  to the link's target, where Codex looks, and the method never writes there.
+- **A codex at another path** (found first on `PATH`, not at the destination)
+  is not this method's and is asked for nothing.
+
+The E2E hook `codex-code-mode-host` (with `official-binary`, parallel: it only
+reads) repeats that check and starts the helper with `--help`; it needs neither
+a network nor an account. It also warns, without failing, about two things
+the bare binary looks for on the system because it is not in a package:
+`bwrap` on Linux (without it, sandboxed commands fail with `bubblewrap is
+unavailable`) and `rg`.
+
+The standalone package (`codex-package-<target>.tar.gz`) holds all of these and
+more (`bin/codex`, `bin/codex-code-mode-host`, `bin/codex-exec-server`,
+`codex-path/rg`, `codex-resources/bwrap`, `codex-resources/voice/`). This
+component stays with the bare archives: the destination stays a regular file,
+so the symlink rule of the method holds, and Codex reports its install method
+as `other`, so nothing but the pin moves it. Inside
+`~/.codex/packages/standalone` Codex reports `standalone` and offers its own
+installer as the update action. The price is the system `bwrap` and `rg` above.
 
 ## Methods
 
@@ -171,6 +217,27 @@ listed. The plugins hook works with both methods.
 
 ## Verification
 
+The helper facts were verified on 2026-11-07 from the release `rust-v0.167.0`:
+the official `install.sh` (package layout, `$BIN_DIR/codex-code-mode-host` as a
+link on darwin only), the assets list, and the real Linux binaries in an
+isolated home against a local stand-in for the model API, with
+`features.code_mode` on and no account:
+
+- a bare `codex` alone: `failed to spawn code-mode host <dir>/codex-code-mode-host`;
+- a bare `codex` with the helper in its directory: the helper starts from there
+  and the patch applies;
+- a link to `codex` inside the package: the helper starts from the package's
+  `bin/`, the directory of the resolved executable;
+- `codex sandbox linux` with no `bwrap` on `PATH` and no package: the
+  `bubblewrap is unavailable` panic;
+- `codex features list`: `code_mode_host` is `stable`, `true` in 0.144.0 and
+  every later release tried (0.145.0 to 0.167.0), `under development`, `false`
+  in 0.143.0, and absent in 0.142.0. The helper assets first appear in 0.143.0.
+
+darwin was read, not run: both archives hold the one member named after the
+asset, and the installer places the helper next to the visible `codex`, which
+is this layout.
+
 The facts this component relies on were verified on 2026-10-06 from the
 release `rust-v0.160.1`
 (<https://github.com/openai/codex/releases/tag/rust-v0.160.1>) and its
@@ -204,5 +271,7 @@ assets list (`https://api.github.com/repos/openai/codex/releases/latest`):
 | --- | --- |
 | `default.nix` | the component module (contract values, options validation) |
 | `plugins.sh` | the agentsPost hook of the plugins option |
+| `e2e-login-path.sh` | the E2E hook `codex-login-path` |
+| `e2e-code-mode-host.sh` | the E2E hook `codex-code-mode-host` |
 | `seed.json` | the release pins `dotsteward init` writes into a new instance |
 | `maintenance.md` | update notes |

@@ -19,6 +19,7 @@ official_binary() {
     dest: "~/.local/bin/claude",
     versionArgv: ["--version"],
     versionRegex: "^([0-9]+[.][0-9]+[.][0-9]+) [(]Claude Code[)]",
+    companions: [],
     policy: "at-least",
     verify: "sha256"
   }'

@@ -3,13 +3,15 @@
 # root; optionally Codex plugins (options.plugins).
 #
 # Methods, on Linux and darwin alike:
-#   official-binary (default)  the official release archive of the platform
+#   official-binary (default)  the official release archives of the platform
 #                               (GitHub releases of openai/codex, tags
 #                               rust-v<version>), verified by size and
-#                               SHA-256 from agent_tools.codex.<platform> of
-#                               versions.lock.json, its single member
-#                               installed as ~/.local/bin/codex; at-least
-#                               keeps a newer binary
+#                               SHA-256 from versions.lock.json: the member
+#                               of agent_tools.codex.<platform> installed as
+#                               ~/.local/bin/codex (at-least keeps a newer
+#                               binary), and from 0.144.0 on the member of
+#                               agent_tools.codex-code-mode-host.<platform>
+#                               next to it (README.md, "The helper")
 #   external                    installed by the user; codex is expected on
 #                               PATH
 # Sigstore: the Linux release ships a sigstore bundle for the binary inside
@@ -36,8 +38,10 @@
 # for the profiles of the shell component) checks that the first codex on
 # the PATH of an interactive login zsh is the expected one: expectedPath,
 # else the official-binary destination ~/.local/bin/codex; without either
-# it reports more than one codex on PATH. Invalid options fail the
-# evaluation with every problem listed.
+# it reports more than one codex on PATH. With official-binary the E2E hook
+# codex-code-mode-host (e2e-code-mode-host.sh) checks that the codex found
+# can start its helper. Invalid options fail the evaluation with every problem
+# listed.
 {
   config,
   lib,
@@ -75,22 +79,32 @@ let
 
   platform = dsLib.platform.platformOf system;
 
-  # The official releases: one archive per platform holding one member, the
-  # binary.
+  # The official releases: per platform one archive holding one member, the
+  # binary, and one holding its Code Mode helper, which it starts from the
+  # directory of its resolved executable.
   repo = "openai/codex";
   tagPrefix = "rust-v";
   releases = {
     linux = {
       asset = "codex-x86_64-unknown-linux-musl.tar.gz";
       member = "codex-x86_64-unknown-linux-musl";
+      helperAsset = "codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz";
+      helperMember = "codex-code-mode-host-x86_64-unknown-linux-musl";
     };
     darwin = {
       asset = "codex-aarch64-apple-darwin.tar.gz";
       member = "codex-aarch64-apple-darwin";
+      helperAsset = "codex-code-mode-host-aarch64-apple-darwin.tar.gz";
+      helperMember = "codex-code-mode-host-aarch64-apple-darwin";
     };
   };
   defaultMethod = "official-binary";
   pinOf = platformName: "agent_tools.codex.${platformName}";
+  helperPinOf = platformName: "agent_tools.codex-code-mode-host.${platformName}";
+  helperFile = "codex-code-mode-host";
+  # The first release whose default features start the helper: it ships from
+  # 0.143.0, where the feature code_mode_host is still off.
+  helperSince = "0.144.0";
 
   # The platforms of nix.systems whose method is official-binary: each one
   # reads its own release pin, and every system's manifest declares the pin
@@ -108,6 +122,10 @@ let
   pinnedPlatforms = filter (platformName: methodOn platformName == "official-binary") (
     lib.unique (map dsLib.platform.platformOf cfg.nix.systems)
   );
+  # A lock from before the helper pin stays valid: an older version does not
+  # need it, and a machine may already have the file (the method and the E2E
+  # hook decide by what is installed).
+  helperPinnedPlatforms = filter (platformName: lockAt (helperPinOf platformName) != null) pinnedPlatforms;
 
   # --- options ------------------------------------------------------------------
 
@@ -274,6 +292,14 @@ in
         versionRegex = "^codex-cli ([0-9]+([.][0-9]+)+(-[0-9A-Za-z.]+)?)";
         policy = "at-least";
         verify = "sha256";
+        companions = [
+          {
+            pin = helperPinOf platform;
+            member = releases.${platform}.helperMember;
+            file = helperFile;
+            since = helperSince;
+          }
+        ];
       };
       external = {
         command = "codex";
@@ -282,12 +308,28 @@ in
     };
 
     pins = {
-      rules = map (platformName: {
-        kind = "download-pin";
-        name = "release-${platformName}";
-        at = pinOf platformName;
-        url_contains = "https://github.com/${repo}/releases/download/${tagPrefix}{.version}/${releases.${platformName}.asset}";
-      }) pinnedPlatforms;
+      rules =
+        map (platformName: {
+          kind = "download-pin";
+          name = "release-${platformName}";
+          at = pinOf platformName;
+          url_contains = "https://github.com/${repo}/releases/download/${tagPrefix}{.version}/${releases.${platformName}.asset}";
+        }) pinnedPlatforms
+        ++ lib.concatMap (platformName: [
+          {
+            kind = "download-pin";
+            name = "helper-${platformName}";
+            at = helperPinOf platformName;
+            url_contains = "https://github.com/${repo}/releases/download/${tagPrefix}{.version}/${releases.${platformName}.helperAsset}";
+          }
+          # One release: the binary and its helper move together.
+          {
+            kind = "derive";
+            name = "helper-version-${platformName}";
+            to = "${helperPinOf platformName}.version";
+            from = "${pinOf platformName}.version";
+          }
+        ]) helperPinnedPlatforms;
       latest =
         map (platformName: {
           id = pinOf platformName;
@@ -297,6 +339,14 @@ in
           at = pinOf platformName;
           inherit (releases.${platformName}) asset;
         }) pinnedPlatforms
+        ++ map (platformName: {
+          id = helperPinOf platformName;
+          adapter = "github-release";
+          inherit repo;
+          tag_prefix = tagPrefix;
+          at = helperPinOf platformName;
+          asset = releases.${platformName}.helperAsset;
+        }) helperPinnedPlatforms
         ++ tracking.latest pluginList;
     };
 
@@ -342,13 +392,20 @@ in
     };
 
     # It only reads, so it runs in parallel with the hooks next to it.
-    checks.e2e = lib.optional shell.enable {
-      name = "codex-login-path";
-      script = ./e2e-login-path.sh;
-      phase = "main";
-      parallel = true;
-      inherit (shell) profiles;
-    };
+    checks.e2e =
+      lib.optional shell.enable {
+        name = "codex-login-path";
+        script = ./e2e-login-path.sh;
+        phase = "main";
+        parallel = true;
+        inherit (shell) profiles;
+      }
+      ++ lib.optional (component.method == "official-binary") {
+        name = "codex-code-mode-host";
+        script = ./e2e-code-mode-host.sh;
+        phase = "main";
+        parallel = true;
+      };
 
     docs = ./README.md;
   };

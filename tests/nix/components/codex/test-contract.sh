@@ -60,12 +60,22 @@ json_check "$(codex_entry "$linux")" '.install' "$(jq -cS . <<'EOF'
   "versionArgv": ["--version"],
   "versionRegex": "^codex-cli ([0-9]+([.][0-9]+)+(-[0-9A-Za-z.]+)?)",
   "policy": "at-least",
-  "verify": "sha256"
+  "verify": "sha256",
+  "companions": [
+    {
+      "pin": "agent_tools.codex-code-mode-host.linux",
+      "member": "codex-code-mode-host-x86_64-unknown-linux-musl",
+      "file": "codex-code-mode-host",
+      "since": "0.144.0"
+    }
+  ]
 }
 EOF
 )"
 json_check "$(codex_entry "$darwin")" '[.install.pin, .install.member, .install.dest, .install.asset.darwin]' \
   '["agent_tools.codex.darwin","codex-aarch64-apple-darwin","~/.local/bin/codex","codex-aarch64-apple-darwin.tar.gz"]'
+json_check "$(codex_entry "$darwin")" '.install.companions | map([.pin, .member, .file, .since])' \
+  '[["agent_tools.codex-code-mode-host.darwin","codex-code-mode-host-aarch64-apple-darwin","codex-code-mode-host","0.144.0"]]'
 
 for platform in linux darwin; do
   manifest=$(jq -c ".$platform" <<<"$result")
@@ -87,16 +97,18 @@ for platform in linux darwin; do
   # Codex and is never touched.
   json_check "$manifest" '.skill_layout' \
     '{"agent_roots":{},"excluded_subtrees":[".system"],"legacy_roots":["~/.codex/skills"],"link_roots":{}}'
-  # Nothing else: no hooks without plugins, no probes, checks, snapshots,
+  # The helper hook of the official-binary method (test-code-mode-host.sh).
+  # Nothing else: no hooks without plugins, no probes, other checks, snapshots,
   # adoption paths, detectors or resolved versions.
   json_check "$manifest" '[.hooks[][] | select(.component == "codex")]' '[]'
-  json_check "$manifest" '[.probes[], .checks[][], .snapshots[] | select(.component == "codex")]' '[]'
+  json_check "$manifest" '[.probes[], .checks[][], .snapshots[] | select(.component == "codex") | .name]' '["codex-code-mode-host"]'
   json_check "$manifest" '[.adopt_paths, .preflight_detectors, .pins.resolved_versions, .pins.flake_inputs]' \
     '[[],{},{},[]]'
 done
 
-# Pins: one download pin and one latest row per platform of nix.systems,
-# read from agent_tools.codex.<platform> (the seed provides both).
+# Pins: per platform of nix.systems a download pin and a latest row for
+# agent_tools.codex.<platform>, and the same for its helper, with a rule that
+# ties the helper's version to it (the seed provides them all).
 expected_rules=$(jq -cS . <<'EOF'
 [
   {
@@ -112,6 +124,34 @@ expected_rules=$(jq -cS . <<'EOF'
     "name": "release-darwin",
     "at": "agent_tools.codex.darwin",
     "url_contains": "https://github.com/openai/codex/releases/download/rust-v{.version}/codex-aarch64-apple-darwin.tar.gz"
+  },
+  {
+    "component": "codex",
+    "kind": "download-pin",
+    "name": "helper-linux",
+    "at": "agent_tools.codex-code-mode-host.linux",
+    "url_contains": "https://github.com/openai/codex/releases/download/rust-v{.version}/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz"
+  },
+  {
+    "component": "codex",
+    "kind": "derive",
+    "name": "helper-version-linux",
+    "to": "agent_tools.codex-code-mode-host.linux.version",
+    "from": "agent_tools.codex.linux.version"
+  },
+  {
+    "component": "codex",
+    "kind": "download-pin",
+    "name": "helper-darwin",
+    "at": "agent_tools.codex-code-mode-host.darwin",
+    "url_contains": "https://github.com/openai/codex/releases/download/rust-v{.version}/codex-code-mode-host-aarch64-apple-darwin.tar.gz"
+  },
+  {
+    "component": "codex",
+    "kind": "derive",
+    "name": "helper-version-darwin",
+    "to": "agent_tools.codex-code-mode-host.darwin.version",
+    "from": "agent_tools.codex.darwin.version"
   }
 ]
 EOF
@@ -135,6 +175,24 @@ expected_latest=$(jq -cS . <<'EOF'
     "tag_prefix": "rust-v",
     "at": "agent_tools.codex.darwin",
     "asset": "codex-aarch64-apple-darwin.tar.gz"
+  },
+  {
+    "component": "codex",
+    "id": "agent_tools.codex-code-mode-host.linux",
+    "adapter": "github-release",
+    "repo": "openai/codex",
+    "tag_prefix": "rust-v",
+    "at": "agent_tools.codex-code-mode-host.linux",
+    "asset": "codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz"
+  },
+  {
+    "component": "codex",
+    "id": "agent_tools.codex-code-mode-host.darwin",
+    "adapter": "github-release",
+    "repo": "openai/codex",
+    "tag_prefix": "rust-v",
+    "at": "agent_tools.codex-code-mode-host.darwin",
+    "asset": "codex-code-mode-host-aarch64-apple-darwin.tar.gz"
   }
 ]
 EOF
@@ -155,11 +213,21 @@ values=$(inst_json "let c = homeOf ($(codex_expr "$both")) \"x86_64-linux\" \"wo
 json_check "$values" '[.force, .source]' '[true,true]'
 assert_eq "$component/README.md" "$(jq -r .docs <<<"$values")" "docs"
 
-# --- One system: one pin -----------------------------------------------------------
+# --- One system: its pins ----------------------------------------------------------
 
 single=$(codex_instance single)
 manifest=$(manifests "$single" | jq -c .linux)
-json_check "$manifest" '[.pins.rules[] | select(.component == "codex") | .at]' '["agent_tools.codex.linux"]'
+json_check "$manifest" '[.pins.rules[] | select(.component == "codex") | .at // .to]' \
+  '["agent_tools.codex.linux","agent_tools.codex-code-mode-host.linux","agent_tools.codex-code-mode-host.linux.version"]'
+json_check "$manifest" '[.pins.latest[] | select(.component == "codex") | .id]' \
+  '["agent_tools.codex.linux","agent_tools.codex-code-mode-host.linux"]'
+
+# A lock from before the helper pin: its rules and rows are not declared.
+without=$(codex_instance without-helper-pin)
+jq --indent 2 'del(.agent_tools["codex-code-mode-host"])' "$without/versions.lock.json" >"$without/versions.lock.json.new"
+mv -- "$without/versions.lock.json.new" "$without/versions.lock.json"
+manifest=$(manifests "$without" | jq -c .linux)
+json_check "$manifest" '[.pins.rules[] | select(.component == "codex") | .at // .to]' '["agent_tools.codex.linux"]'
 json_check "$manifest" '[.pins.latest[] | select(.component == "codex") | .id]' '["agent_tools.codex.linux"]'
 
 # --- external: nothing installed, codex expected on PATH, no pins -------------------
@@ -181,8 +249,8 @@ json_check "$result" '[.linux, .darwin | .components[] | select(.name == "codex"
 # Pins are declared for the platforms whose method is official-binary, in
 # the manifest of every system (one lock serves them all).
 for platform in linux darwin; do
-  json_check "$result" "[.$platform.pins.rules[], .$platform.pins.latest[] | select(.component == \"codex\") | .at]" \
-    '["agent_tools.codex.linux","agent_tools.codex.linux"]'
+  json_check "$result" "[.$platform.pins.rules[], .$platform.pins.latest[] | select(.component == \"codex\") | .at // .to]" \
+    '["agent_tools.codex.linux","agent_tools.codex-code-mode-host.linux","agent_tools.codex-code-mode-host.linux.version","agent_tools.codex.linux","agent_tools.codex-code-mode-host.linux"]'
 done
 
 # --- The plugins option ---------------------------------------------------------------

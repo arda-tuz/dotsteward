@@ -32,6 +32,7 @@
         "dest": "~/.local/bin/example-term",
         "versionArgv": ["--version"],
         "versionRegex": "example-term ([0-9.]+)",
+        "companions": [],
         "policy": "at-least",
         "verify": "sha256"
       },

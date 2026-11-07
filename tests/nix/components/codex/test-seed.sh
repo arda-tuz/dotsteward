@@ -11,7 +11,8 @@ source "$DS_REPO_ROOT/tests/nix/components/codex/helpers.sh"
 [[ -f $codex_seed ]] || ds_fail "missing $codex_seed"
 assert_json "$codex_seed" '.schema_version == 1 and .component == "codex" and .flake_inputs == {}'
 assert_json "$codex_seed" '.versions_lock | keys == ["agent_tools"]'
-assert_json "$codex_seed" '.versions_lock.agent_tools | keys == ["codex"]'
+assert_json "$codex_seed" '.versions_lock.agent_tools | keys == ["codex", "codex-code-mode-host"]'
+assert_json "$codex_seed" '.versions_lock.agent_tools["codex-code-mode-host"] | keys == ["darwin", "linux"]'
 assert_json "$codex_seed" '.versions_lock.agent_tools.codex | keys == ["darwin", "linux"]'
 
 # The seed validates against schema/seed.schema.json (the framework seed
@@ -34,6 +35,13 @@ for platform in linux darwin; do
   json_check "$pin" 'keys' '["sha256","size","url","version"]'
   json_check "$pin" '.version' "\"$version\""
   json_check "$pin" '.url' "\"https://github.com/openai/codex/releases/download/rust-v$version/$asset\""
+  json_check "$pin" '(.size | type == "number" and . > 0 and . == floor)' 'true'
+  json_check "$pin" '.sha256 | test("^[0-9a-f]{64}$")' 'true'
+  # The helper of the same release.
+  pin=$(jq -c --arg p "$platform" '.versions_lock.agent_tools["codex-code-mode-host"][$p]' "$codex_seed")
+  json_check "$pin" 'keys' '["sha256","size","url","version"]'
+  json_check "$pin" '.version' "\"$version\""
+  json_check "$pin" '.url' "\"https://github.com/openai/codex/releases/download/rust-v$version/${asset/#codex-/codex-code-mode-host-}\""
   json_check "$pin" '(.size | type == "number" and . > 0 and . == floor)' 'true'
   json_check "$pin" '.sha256 | test("^[0-9a-f]{64}$")' 'true'
 done

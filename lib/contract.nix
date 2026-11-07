@@ -241,6 +241,16 @@ let
   };
 
   # DEBs published as GitHub release assets, served by the local APT bridge.
+  # A release asset an official-binary binary starts at run time.
+  companionSpec = types.submodule {
+    options = {
+      pin = option lockPath "Lock path of the asset (version, digests), at the version of the binary's pin.";
+      member = option types.str "Archive member to install.";
+      file = option consoleScript "File name next to dest, where the binary looks for it.";
+      since = nullable types.str "First version of the binary that needs the file; null: every version.";
+    };
+  };
+
   githubReleaseSpec = types.submodule {
     options = {
       repository = option githubRepository "GitHub repository whose newest release carries the DEBs.";
@@ -298,6 +308,7 @@ let
         "sha256"
         "sha256+sigstore"
       ]) "Download verification.";
+      companions = list companionSpec "Further release assets the binary starts, installed next to dest.";
     };
     pypi = {
       pin = option lockPath "Lock path of the pin; its version is the exact distribution version.";

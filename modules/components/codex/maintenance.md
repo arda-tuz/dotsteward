@@ -4,13 +4,15 @@ Notes for `dotsteward-update` and for framework maintainers.
 
 ## Release pins
 
-Each platform of `nix.systems` whose method is `official-binary` has one pin
+Each platform of `nix.systems` whose method is `official-binary` has two pins
 in `versions.lock.json`:
 
 | Lock path | Asset |
 | --- | --- |
 | `agent_tools.codex.linux` | `codex-x86_64-unknown-linux-musl.tar.gz` |
 | `agent_tools.codex.darwin` | `codex-aarch64-apple-darwin.tar.gz` |
+| `agent_tools.codex-code-mode-host.linux` | `codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz` |
+| `agent_tools.codex-code-mode-host.darwin` | `codex-code-mode-host-aarch64-apple-darwin.tar.gz` |
 
 Each pin holds `version`, `url`, `size` and `sha256`. The component declares,
 per pinned platform:
@@ -23,6 +25,10 @@ per pinned platform:
   `tag_prefix = "rust-v"`, the platform's asset) for the `github-release`
   latest adapter of the pins engine.
 
+The helper pins declare the same two, plus a `derive` rule that ties their
+version to the codex pin, once the lock has them; a lock without them stays
+valid (README.md, "The helper").
+
 ## Updating
 
 1. Take the newest stable release: a `rust-v<version>` tag that is neither a
@@ -32,7 +38,10 @@ per pinned platform:
    the asset digest (`sha256:<hex>`) in the release's assets list; download
    the archive once and compare its size and `sha256sum` with it before
    writing the pin.
-3. All platforms move together: the pins of one lock carry one version.
+3. All platforms and both assets move together: the pins of one lock carry
+   one version. Write the helper's `version`, `url`, `size` and `sha256` in the
+   same change; `pins sync` writes only its `version`, and the `download-pin`
+   rule then asks for the URL.
 4. Run `dotsteward pins check`, then a rebuild of a profile that enables
    codex: the installer downloads the new archive, verifies it and reads
    `codex-cli <version>` from the installed binary.
@@ -42,10 +51,17 @@ so a pin bump never downgrades a machine; it only raises the floor.
 
 ## When upstream changes
 
-- Asset or member renamed: update `releases` in `default.nix` (asset and
-  member per platform), the `download-pin` URL follows from it. Re-run the
+- New run-time files: compare `bin/` and the top of the standalone package
+  (`codex-package-<target>.tar.gz`) and the checks of `release_dir_is_complete`
+  in the official `install.sh` with what this component installs. A new
+  executable that a session cannot do without is one more entry of
+  `install.official-binary.companions` in `default.nix`, with its pins.
+- Asset or member renamed: update `releases` in `default.nix` (assets and
+  members per platform), the `download-pin` URLs follow from it. Re-run the
   component tests (`tests/nix/components/codex`).
 - `codex --version` output changed: update `versionRegex` in `default.nix`.
+- The helper gained a `--version` or lost `--help`: update
+  `e2e-code-mode-host.sh`, which starts it with `--help`.
 - Sigstore: the Linux release ships `codex-x86_64-unknown-linux-musl.sigstore`
   for the extracted binary; darwin ships none (README.md, "Verification").
   Re-check this when the official-binary method gains `sha256+sigstore`

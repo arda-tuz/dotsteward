@@ -59,11 +59,16 @@ needs code specific to one component.
 | `install.official-binary.asset.linux` | string | Asset on Linux. |
 | `install.official-binary.asset.darwin` | string | Asset on macOS. |
 | `install.official-binary.member` | string | The archive member to install. |
-| `install.official-binary.dest` | home path | The destination, usually `~/.local/bin/<command>`. A symlink there is an error. |
+| `install.official-binary.dest` | home path | The destination, usually `~/.local/bin/<command>`. A symlink there is an error when the binary must be replaced; a link that meets the pin is kept. |
 | `install.official-binary.versionArgv` | list of strings | Arguments that print the version. |
 | `install.official-binary.versionRegex` | string | Regular expression whose first group is the version. |
 | `install.official-binary.policy` | `at-least` or `exact` | `at-least` keeps a newer binary the application installed itself. |
 | `install.official-binary.verify` | `sha256` or `sha256+sigstore` | Download verification. |
+| `install.official-binary.companions` | list of records | Further release assets the binary starts, each installed next to `dest` from its own verified pin. A binary that meets the pin stays and gets the files it lacks; a file in place is kept until the binary is replaced, when all move together. Checked next to the binary's resolved executable. |
+| `install.official-binary.companions.*.pin` | lock path | The asset: version, URL, size and SHA-256. The version must equal the binary's pin. Read only when a file is to be installed, so a lock without it stays valid for a file already in place. |
+| `install.official-binary.companions.*.member` | string | The archive member to install. |
+| `install.official-binary.companions.*.file` | file name | The file name next to `dest`, where the binary looks for it. |
+| `install.official-binary.companions.*.since` | version or null | The first version of the binary that needs the file; null: every version. |
 | `install.pypi` | block | Method `pypi`: a Python application in its own virtual environment in the home directory. |
 | `install.pypi.pin` | lock path | The pin; its `version` is the exact version of the distribution. |
 | `install.pypi.distribution` | string | The distribution whose installed version is checked. |

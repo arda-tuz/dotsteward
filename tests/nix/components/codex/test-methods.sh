@@ -3,10 +3,12 @@
 # The codex install methods end to end: an instance that
 # enables codex is evaluated by lib.mkInstance, its manifest mirror is
 # written, and the framework CLI installs and checks the component.
-# official-binary: `agents install` downloads the pinned release archive of
-# the platform, verifies size and SHA-256, installs its member as
-# ~/.local/bin/codex and reads the version it prints; at-least keeps a newer
-# binary. external: nothing is installed, the check wants codex on PATH.
+# official-binary: `agents install` downloads the pinned release archives of
+# the platform, verifies size and SHA-256, installs the member of the codex
+# archive as ~/.local/bin/codex, the member of the helper archive next to it
+# and reads the version codex prints; at-least keeps a newer binary
+# (test-code-mode-host.sh covers the helper). external: nothing is installed,
+# the check wants codex on PATH.
 # shellcheck source=tests/nix/components/codex/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/components/codex/helpers.sh"
 
@@ -41,6 +43,22 @@ serve_release() {
     --argjson s "$size" --arg h "$sha" '{ version: $v, url: $u, size: $s, sha256: $h }')"
 }
 
+# serve_helper DIR: the helper archive of the seed's version, served and pinned.
+serve_helper() {
+  local dir member=codex-code-mode-host-x86_64-unknown-linux-musl helper_url
+  helper_url=$(jq -r '.versions_lock.agent_tools["codex-code-mode-host"].linux.url' "$codex_seed")
+  dir=$(mktemp -d "$DS_TEST_ROOT/helper.XXXXXX")
+  printf '#!%s\nexit 0\n' "$BASH" >"$dir/$member"
+  chmod 0755 "$dir/$member"
+  tar -czf "$DS_TEST_ROOT/helper.tar.gz" -C "$dir" "$member"
+  rm -rf -- "$dir"
+  ds_curl_serve "$helper_url" "$DS_TEST_ROOT/helper.tar.gz"
+  codex_lock_set "$1" agent_tools.codex-code-mode-host.linux "$(jq -n --arg v "$version" --arg u "$helper_url" \
+    --argjson s "$(stat -c %s -- "$DS_TEST_ROOT/helper.tar.gz")" \
+    --arg h "$(sha256sum -- "$DS_TEST_ROOT/helper.tar.gz" | awk '{print $1}')" \
+    '{ version: $v, url: $u, size: $s, sha256: $h }')"
+}
+
 agents() {
   codex_cli "$inst" agents "$1" --profile workstation
 }
@@ -50,6 +68,7 @@ agents() {
 inst=$(codex_instance release)
 make_release "$version" "$DS_TEST_ROOT/codex.tar.gz"
 serve_release "$inst" "$DS_TEST_ROOT/codex.tar.gz"
+serve_helper "$inst"
 codex_mirror "$inst"
 
 # Before the install: both checks fail with the rebuild hint, nothing changes.
@@ -68,24 +87,24 @@ assert_contains "$DS_STDOUT" "codex (official-binary): downloading $url"
 assert_file_mode "$dest" 0755
 assert_eq "codex-cli $version" "$("$dest" --version)"
 [[ -d $HOME/.codex/skills && ! -L $HOME/.codex/skills ]] || ds_fail "$HOME/.codex/skills is not a directory"
-assert_call_count 1 curl
+assert_call_count 2 curl
 assert_exit 0 agents check
 assert_exit 0 codex_cli "$inst" install --check-only --profile workstation
 assert_contains "$DS_STDOUT" "codex (official-binary): satisfied"
 assert_exit 0 agents install
-assert_call_count 1 curl
+assert_call_count 2 curl
 
 # at-least: a newer binary (updated by hand) is kept, an older one replaced.
 printf '#!%s\necho "codex-cli 999.0.0"\n' "$BASH" >"$dest"
 assert_exit 0 agents install
 assert_eq "codex-cli 999.0.0" "$("$dest" --version)"
-assert_call_count 1 curl
+assert_call_count 2 curl
 printf '#!%s\necho "codex-cli 0.0.1"\n' "$BASH" >"$dest"
 assert_exit 1 agents check
 assert_contains "$DS_STDERR" "codex $version or newer not found (found 0.0.1)"
 assert_exit 0 agents install
 assert_eq "codex-cli $version" "$("$dest" --version)"
-assert_call_count 2 curl
+assert_call_count 4 curl
 
 # A release whose bytes differ from the pin is refused before anything is
 # installed: a different size, then the same size with other bytes.

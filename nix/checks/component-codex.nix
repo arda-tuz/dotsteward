@@ -34,6 +34,6 @@ cli.mkTestCheck {
     testEnv
   ];
   postCheck = ''
-    shellcheck -x modules/components/codex/plugins.sh modules/components/codex/e2e-login-path.sh tests/nix/components/codex/*.sh
+    shellcheck -x modules/components/codex/plugins.sh modules/components/codex/e2e-login-path.sh modules/components/codex/e2e-code-mode-host.sh tests/nix/components/codex/*.sh
   '';
 }

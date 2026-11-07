@@ -17,6 +17,20 @@
           "size": 95904314,
           "sha256": "670af2b049d9c95afb74d7da385f30c5033d13a07175001dd8958c51944984d0"
         }
+      },
+      "codex-code-mode-host": {
+        "linux": {
+          "version": "0.160.1",
+          "url": "https://github.com/openai/codex/releases/download/rust-v0.160.1/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
+          "size": 27507250,
+          "sha256": "8a69207d97545ac753b6585974e1e67a4c51ae5deacf06517db512bb25e0e3c2"
+        },
+        "darwin": {
+          "version": "0.160.1",
+          "url": "https://github.com/openai/codex/releases/download/rust-v0.160.1/codex-code-mode-host-aarch64-apple-darwin.tar.gz",
+          "size": 23821132,
+          "sha256": "6e502df69d9220fa305b0c3c7c17ba8f31ab1d4591fc140084dbb823e800c7db"
+        }
       }
     }
   }

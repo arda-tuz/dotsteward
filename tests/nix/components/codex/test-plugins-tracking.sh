@@ -48,7 +48,7 @@ default=$(codex_instance default '["x86_64-linux"]' 'options = { plugins = [
 codex_lock_set "$default" agent_tools.example-plugin \
   "{\"source\": \"https://github.com/example-org/example-marketplace\", \"observed_marketplace_revision\": \"$revision\"}"
 json_check "$(manifest "$default")" '[.pins.latest[] | select(.component == "codex") | [.id, .adapter]]' \
-  '[["agent_tools.codex.linux","github-release"],["agent_tools.example-plugin","git-compare"]]'
+  '[["agent_tools.codex.linux","github-release"],["agent_tools.codex-code-mode-host.linux","github-release"],["agent_tools.example-plugin","git-compare"]]'
 cp -- "$nix_instance_fixtures/example/flake.nix" "$nix_instance_fixtures/example/flake.lock" "$default/"
 codex_mirror "$default"
 assert_exit 0 codex_cli "$default" pins check

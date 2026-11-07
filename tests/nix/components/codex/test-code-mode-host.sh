@@ -44,6 +44,7 @@ host_url() { printf '%s%s/codex-code-mode-host-%s.tar.gz' "$base" "$1" "$target"
 write_codex() {
   {
     printf '#!%s\n' "$BASH"
+    # shellcheck disable=SC2016 # lines of the fixture
     printf 'if [[ ${1:-} == --version ]]; then printf "codex-cli %%s\\n" %q; exit 0; fi\n' "$1"
     # shellcheck disable=SC2016 # lines of the fixture
     printf '%s\n' \
@@ -126,6 +127,13 @@ place_host() {
 
 agents() {
   codex_cli "$inst" agents "$1" --profile workstation
+}
+
+# pins_check: `dotsteward pins check`, with the flake.nix and flake.lock of the
+# inputs the minimal lock records.
+pins_check() {
+  cp -- "$nix_instance_fixtures/example/flake.nix" "$nix_instance_fixtures/example/flake.lock" "$inst/"
+  codex_cli "$inst" pins check
 }
 
 downloads() { ds_call_count curl; }
@@ -228,14 +236,14 @@ assert_exit 0 codex_cli "$inst" install --check-only --profile workstation
 run_hook 0 "$inst"
 assert_eq "$before" "$(sha256sum -- "$helper")" "the placed helper is kept"
 assert_eq "$start" "$(downloads)" "no download"
-assert_exit 0 codex_cli "$inst" pins check
+assert_exit 0 pins_check
 
 # The same machine after its lock gained the pin.
 publish_host "$inst" "$current"
 codex_mirror "$inst"
 assert_exit 0 agents check
 assert_exit 0 agents install
-assert_exit 0 codex_cli "$inst" pins check
+assert_exit 0 pins_check
 run_hook 0 "$inst"
 assert_eq "$before" "$(sha256sum -- "$helper")" "the placed helper is kept with a pin"
 assert_eq "$start" "$(downloads)" "no download with a pin"
@@ -270,7 +278,7 @@ assert_eq "$((start + 2))" "$(downloads)" "both archives of the new release"
 assert_session "$newer"
 assert_eq "codex-cli $newer" "$("$dest" --version)"
 assert_exit 0 agents check
-backups=$(find "$DS_TEST_ROOT" "$HOME/.local/state" -path '*/files/*' -name codex-code-mode-host 2>/dev/null | wc -l)
+backups=$(find "$DOTSTEWARD_STATE_ROOT/backups" -path '*/files/*' -name codex-code-mode-host | wc -l)
 ((backups >= 1)) || ds_fail "the replaced helper was not backed up"
 
 # The helper pin of another release is refused: one file of each release
@@ -285,7 +293,7 @@ assert_exit 1 agents install
 assert_contains "$DS_STDERR" "$host_pin is at $current but $codex_pin at $newer"
 assert_eq "$start" "$(downloads)" "nothing downloaded for a pair that does not match"
 [[ ! -e $dest && ! -e $helper ]] || ds_fail "files of two releases were installed"
-assert_exit 1 codex_cli "$inst" pins check
+assert_exit 1 pins_check
 assert_contains "$DS_STDOUT$DS_STDERR" "$host_pin.version"
 
 # --- A helper archive that differs from its pin ---------------------------------------
@@ -330,7 +338,7 @@ assert_exit 0 agents install
 assert_eq "$((start + 1))" "$(downloads)" "the codex archive only"
 [[ ! -e $helper ]] || ds_fail "a helper was installed for an older pin"
 assert_exit 0 agents check
-assert_exit 0 codex_cli "$inst" pins check
+assert_exit 0 pins_check
 run_hook 0 "$inst"
 assert_contains "$DS_STDOUT" "[dotsteward] codex $older does not need codex-code-mode-host"
 
@@ -405,13 +413,15 @@ place_codex "$current"
 place_host "$current"
 empty=$DS_TEST_ROOT/empty-path
 mkdir -p "$empty"
-run_hook 0 "$inst" DOTSTEWARD_USER_PATH="$empty"
+# The hook looks at the PATH of the user: this one without the toolchain.
+as_user=("PATH=$empty:$PATH" "DOTSTEWARD_TOOLCHAIN_PATH=$PATH")
+run_hook 0 "$inst" "${as_user[@]}"
 assert_contains "$DS_STDERR" "no bwrap on PATH"
 assert_contains "$DS_STDERR" "no rg on PATH"
 printf '#!%s\nexit 0\n' "$BASH" >"$empty/bwrap"
 cp -- "$empty/bwrap" "$empty/rg"
 chmod 0755 "$empty/bwrap" "$empty/rg"
-run_hook 0 "$inst" DOTSTEWARD_USER_PATH="$empty"
+run_hook 0 "$inst" "${as_user[@]}"
 assert_not_contains "$DS_STDERR" "no bwrap on PATH"
 assert_not_contains "$DS_STDERR" "no rg on PATH"
 rm -f -- "$dest" "$helper"

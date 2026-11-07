@@ -104,7 +104,7 @@ the evaluation with the supported list. The catalog on darwin:
 | `shell` (zsh, starship) | `nix` | |
 | `herdr` | `nix` | |
 | `claude-code` | `official-binary` (`darwin-arm64` build) | `external` |
-| `codex` | `official-binary` (`codex-aarch64-apple-darwin`) | `external` |
+| `codex` | `official-binary` (`codex-aarch64-apple-darwin`, with `codex-code-mode-host-aarch64-apple-darwin`) | `external` |
 | `opencode-pi` | `official-binary` for OpenCode (`opencode-darwin-arm64.zip`); Pi from Nix | `external` |
 | `vscode` | `app-archive` (the official `darwin-arm64` archive) | `external` |
 

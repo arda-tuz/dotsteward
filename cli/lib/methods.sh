@@ -449,6 +449,7 @@ _methods_official_binary_state() {
   _ob_regex=$(jq -r '.install.versionRegex // empty' <<<"$component")
   _ob_policy=$(jq -r '.install.policy // "at-least"' <<<"$component")
   _ob_verify=$(jq -r '.install.verify // "sha256"' <<<"$component")
+  _ob_companions=$(jq -c '.install.companions // []' <<<"$component")
   mapfile -t _ob_argv < <(jq -r '(.install.versionArgv // ["--version"])[]' <<<"$component")
   [[ -n $_ob_pin && -n $_ob_dest ]] || die "$name (official-binary): the install block needs pin and dest"
   case $_ob_policy in
@@ -465,10 +466,80 @@ _methods_official_binary_state() {
   _ob_version=$(_methods_pin_version "$name" official-binary "$_ob_pin" "$_ob_entry") || exit 1
   # The command as the user runs it, with dest's directory first on PATH.
   _ob_found=''
+  _ob_found_path=''
   local command_path
   if command_path=$(PATH="${_ob_dest%/*}:$PATH" command -v -- "$_ob_command" 2>/dev/null); then
+    _ob_found_path=$command_path
     _ob_found=$(_methods_command_version "$command_path" "$_ob_regex" "${_ob_argv[@]}")
   fi
+}
+
+# _methods_official_binary_foreign: the command found on PATH is another file
+# than dest, which this method does not manage (a link at dest is dest).
+_methods_official_binary_foreign() {
+  [[ -n $_ob_found_path && ! $_ob_found_path -ef $_ob_dest ]]
+}
+
+# _methods_official_binary_companion_path FILE: where the binary at dest looks
+# for FILE, next to its resolved executable (with a link at dest, that is the
+# link's target). When the file is at neither place, the resolved one. darwin
+# reports an executable's path without resolving links, so the directory of
+# dest counts there too.
+_methods_official_binary_companion_path() {
+  local resolved
+  resolved=$(readlink -f -- "$_ob_dest" 2>/dev/null) || resolved=$_ob_dest
+  resolved=${resolved%/*}/$1
+  if [[ ! -x $resolved && ${DS_RUNTIME_PLATFORM:-$(current_platform)} == darwin && -x ${_ob_dest%/*}/$1 ]]; then
+    resolved=${_ob_dest%/*}/$1
+  fi
+  printf '%s\n' "$resolved"
+}
+
+# _methods_official_binary_needed VERSION SINCE: a binary at VERSION needs a
+# companion of its first version SINCE.
+_methods_official_binary_needed() {
+  [[ -n $2 ]] || return 0
+  methods_version_at_least "$1" "$2"
+}
+
+# _methods_official_binary_missing VERSION: sets _ob_missing to the indexes of
+# the companions a binary at VERSION needs that are no executable file, and
+# _ob_missing_path to the path of the first. Empty for a foreign command.
+_methods_official_binary_missing() {
+  local index since target
+  _ob_missing=()
+  _ob_missing_path=''
+  _methods_official_binary_foreign && return 0
+  for ((index = 0; index < $(jq 'length' <<<"$_ob_companions"); index++)); do
+    since=$(jq -r --argjson i "$index" '.[$i].since // empty' <<<"$_ob_companions")
+    _methods_official_binary_needed "$1" "$since" || continue
+    target=$(_methods_official_binary_companion_path "$(jq -r --argjson i "$index" '.[$i].file' <<<"$_ob_companions")")
+    [[ -f $target && -x $target ]] && continue
+    _ob_missing+=("$index")
+    [[ -n $_ob_missing_path ]] || _ob_missing_path=$target
+  done
+}
+
+# methods_official_binary_companions NAME: what the found binary needs, one
+# line of tab-separated fields per companion:
+#   needed VERSION PATH        the file it starts, at the path it looks at
+#   not-needed VERSION FILE    its version is older than the companion
+#   foreign COMMAND_PATH FILE  another file than dest: not this method's
+# Nothing when the binary is not found.
+methods_official_binary_companions() {
+  (($# == 1)) || die "usage: methods_official_binary_companions NAME"
+  local file since
+  _methods_official_binary_state "$1"
+  [[ -n $_ob_found ]] || return 0
+  while IFS=$'\t' read -r file since; do
+    if _methods_official_binary_foreign; then
+      printf 'foreign\t%s\t%s\n' "$_ob_found_path" "$file"
+    elif _methods_official_binary_needed "$_ob_found" "$since"; then
+      printf 'needed\t%s\t%s\n' "$_ob_found" "$(_methods_official_binary_companion_path "$file")"
+    else
+      printf 'not-needed\t%s\t%s\n' "$_ob_found" "$file"
+    fi
+  done < <(jq -r '.[] | [.file, (.since // "")] | @tsv' <<<"$_ob_companions")
 }
 
 # _methods_official_binary_ok VERSION: VERSION meets the pin by policy.
@@ -493,6 +564,11 @@ _methods_official_binary_check() {
   local name=$1 profile=$2
   _methods_official_binary_state "$name"
   if _methods_official_binary_ok "$_ob_found"; then
+    _methods_official_binary_missing "$_ob_found"
+    if ((${#_ob_missing[@]})); then
+      _methods_set failed "$_ob_command $_ob_found needs $_ob_missing_path, which is missing; run 'dotsteward rebuild --profile $profile --switch'"
+      return 1
+    fi
     _methods_set satisfied "$_ob_command $_ob_found"
     return 0
   fi
@@ -502,7 +578,7 @@ _methods_official_binary_check() {
 
 methods_official_binary_install() {
   (($# == 1)) || die "usage: methods_official_binary_install NAME"
-  local name=$1 member download url size sha256 tmp_dir status=0 installed
+  local name=$1 member download url size sha256 tmp_dir status=0 installed index replace=0
   [[ $(methods_component_method "$name") == official-binary ]] ||
     die "$name: not an official-binary component"
   _methods_official_binary_state "$name"
@@ -515,74 +591,155 @@ methods_official_binary_install() {
     *) die "$name (official-binary): unknown verify: $_ob_verify" ;;
   esac
   member=${_ob_member//\{version\}/$_ob_version}
-  [[ -n $member && $member != /* && /$member/ != */../* && /$member/ != */./* ]] ||
-    die "$name (official-binary): invalid archive member: $member"
+  _methods_official_binary_member "$name" "$member"
+  # What to fetch: a binary that meets the pin stays and gets the companions
+  # it lacks; otherwise the binary and every companion its pin needs move
+  # together, so files of two releases never run together.
+  local -a selected=()
   if _methods_official_binary_ok "$_ob_found"; then
-    _methods_set satisfied "$_ob_command $_ob_found"
-    return 0
+    _methods_official_binary_missing "$_ob_found"
+    if ((${#_ob_missing[@]} == 0)); then
+      _methods_set satisfied "$_ob_command $_ob_found"
+      return 0
+    fi
+    selected=("${_ob_missing[@]}")
+  else
+    replace=1
+    for ((index = 0; index < $(jq 'length' <<<"$_ob_companions"); index++)); do
+      if _methods_official_binary_needed "$_ob_version" "$(jq -r --argjson i "$index" '.[$i].since // empty' <<<"$_ob_companions")"; then
+        selected+=("$index")
+      fi
+    done
   fi
-  if [[ -e $_ob_dest || -L $_ob_dest ]]; then
-    [[ -f $_ob_dest && ! -L $_ob_dest ]] ||
-      die "$name (official-binary): refusing to replace a symlink or non-regular file: $_ob_dest"
+  _methods_official_binary_replaceable "$name" "$_ob_dest"
+
+  # Every companion is resolved before the first download.
+  local -a sources=()
+  local companion pin entry version companion_member target
+  for index in "${selected[@]}"; do
+    companion=$(jq -c --argjson i "$index" '.[$i]' <<<"$_ob_companions")
+    pin=$(jq -r '.pin' <<<"$companion")
+    entry=$(_methods_pin_entry "$name" official-binary "$pin") || exit 1
+    version=$(_methods_pin_version "$name" official-binary "$pin" "$entry") || exit 1
+    [[ $version == "$_ob_version" ]] ||
+      die "$name (official-binary): ${DS_PINS_VERSIONS_LOCK##*/} $pin is at $version but $_ob_pin at $_ob_version"
+    companion_member=$(jq -r '.member' <<<"$companion")
+    companion_member=${companion_member//\{version\}/$version}
+    _methods_official_binary_member "$name" "$companion_member"
+    target=${_ob_dest%/*}/$(jq -r '.file' <<<"$companion")
+    _methods_official_binary_replaceable "$name" "$target"
+    download=$(_methods_pin_download "$name" official-binary "$pin" "$entry") || exit 1
+    read -r url size sha256 <<<"$download"
+    [[ $url == https://* ]] || die "$name (official-binary): refusing a non-HTTPS download URL: $url"
+    sources+=("$url"$'\t'"$size"$'\t'"$sha256"$'\t'"$companion_member"$'\t'"$target")
+  done
+  if ((replace)); then
+    download=$(_methods_pin_download "$name" official-binary "$_ob_pin" "$_ob_entry") || exit 1
+    read -r url size sha256 <<<"$download"
+    [[ $url == https://* ]] || die "$name (official-binary): refusing a non-HTTPS download URL: $url"
+    sources+=("$url"$'\t'"$size"$'\t'"$sha256"$'\t'"$member"$'\t'"$_ob_dest")
   fi
-  download=$(_methods_pin_download "$name" official-binary "$_ob_pin" "$_ob_entry") || exit 1
-  read -r url size sha256 <<<"$download"
-  [[ $url == https://* ]] || die "$name (official-binary): refusing a non-HTTPS download URL: $url"
 
   tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotsteward-official-binary.XXXXXX") ||
     die "$name (official-binary): cannot create a temporary directory"
   (
     trap 'cleanup_temp_dir "$tmp_dir"' EXIT
-    _methods_official_binary_fetch "$name" "$url" "$size" "$sha256" "$member" "$tmp_dir"
+    _methods_official_binary_fetch "$name" "$tmp_dir" "${sources[@]}"
   ) || status=$?
   ((status == 0)) || exit "$status"
 
   installed=$(_methods_command_version "$_ob_dest" "$_ob_regex" "${_ob_argv[@]}")
   _methods_official_binary_ok "$installed" ||
     die "$name (official-binary): $(_methods_official_binary_wanted) not found after the install (found ${installed:-none})"
+  _ob_found_path=$_ob_dest
+  _methods_official_binary_missing "$installed"
+  ((${#_ob_missing[@]} == 0)) ||
+    die "$name (official-binary): $_ob_missing_path not found after the install"
   _methods_set installed "$_ob_command $installed"
 }
 
-# _methods_official_binary_fetch NAME URL SIZE SHA256 MEMBER TMP_DIR: runs
-# in a subshell that removes TMP_DIR; downloads, extracts, backs up the old
-# file and installs the member at _ob_dest. The subshell is the left operand
-# of `||`, where bash ignores errexit, so every step checks its own status.
+# _methods_official_binary_member NAME MEMBER: MEMBER is a path inside an
+# archive.
+_methods_official_binary_member() {
+  [[ -n $2 && $2 != /* && /$2/ != */../* && /$2/ != */./* ]] ||
+    die "$1 (official-binary): invalid archive member: $2"
+}
+
+# _methods_official_binary_replaceable NAME PATH: only a regular file is ever
+# replaced; a link or another kind of file belongs to someone else.
+_methods_official_binary_replaceable() {
+  if [[ -e $2 || -L $2 ]]; then
+    [[ -f $2 && ! -L $2 ]] ||
+      die "$1 (official-binary): refusing to replace a symlink or non-regular file: $2"
+  fi
+}
+
+# _methods_official_binary_fetch NAME TMP_DIR SOURCE...: runs in a subshell
+# that removes TMP_DIR; each SOURCE is URL SIZE SHA256 MEMBER DEST, separated
+# by tabs. Downloads and extracts all of them, then installs all of them, so a
+# refused download replaces nothing. The subshell is the left operand of `||`,
+# where bash ignores errexit, so every step checks its own status.
 _methods_official_binary_fetch() {
-  local name=$1 url=$2 size=$3 sha256=$4 member=$5 tmp_dir=$6 asset source status=0 backup_root
+  local name=$1 tmp_dir=$2 source url size sha256 member dest index=0
+  shift 2
+  local -a staged=() targets=()
+  for source in "$@"; do
+    IFS=$'\t' read -r url size sha256 member dest <<<"$source"
+    index=$((index + 1))
+    _methods_official_binary_stage "$name" "$url" "$size" "$sha256" "$member" "$tmp_dir/$index"
+    staged+=("$_ob_staged")
+    targets+=("$dest")
+  done
+  for index in "${!staged[@]}"; do
+    _methods_official_binary_place "$name" "${staged[index]}" "${targets[index]}"
+  done
+}
+
+# _methods_official_binary_stage NAME URL SIZE SHA256 MEMBER DIR: downloads and
+# verifies the asset in the new directory DIR and extracts it; sets _ob_staged
+# to the file to install.
+_methods_official_binary_stage() {
+  local name=$1 url=$2 size=$3 sha256=$4 member=$5 dir=$6 asset status=0
   asset=${url%%[?#]*}
   asset=${asset##*/}
   [[ -n $asset ]] || asset=download
+  mkdir -p -- "$dir/extracted" || die "$name (official-binary): cannot create $dir/extracted"
   log "$name (official-binary): downloading $url"
-  download_verified "$url" "$tmp_dir/$asset" "$size" "$sha256" || status=$?
+  download_verified "$url" "$dir/$asset" "$size" "$sha256" || status=$?
   ((status == 0)) || die "$name (official-binary): download failed (curl exit $status): $url"
-  mkdir -p -- "$tmp_dir/extracted" || die "$name (official-binary): cannot create $tmp_dir/extracted"
   case $asset in
-    *.tar.gz | *.tgz) tar -xzf "$tmp_dir/$asset" -C "$tmp_dir/extracted" || status=$? ;;
-    *.tar.xz | *.txz) tar -xJf "$tmp_dir/$asset" -C "$tmp_dir/extracted" || status=$? ;;
-    *.tar.bz2 | *.tbz2) tar -xjf "$tmp_dir/$asset" -C "$tmp_dir/extracted" || status=$? ;;
-    *.tar) tar -xf "$tmp_dir/$asset" -C "$tmp_dir/extracted" || status=$? ;;
+    *.tar.gz | *.tgz) tar -xzf "$dir/$asset" -C "$dir/extracted" || status=$? ;;
+    *.tar.xz | *.txz) tar -xJf "$dir/$asset" -C "$dir/extracted" || status=$? ;;
+    *.tar.bz2 | *.tbz2) tar -xjf "$dir/$asset" -C "$dir/extracted" || status=$? ;;
+    *.tar) tar -xf "$dir/$asset" -C "$dir/extracted" || status=$? ;;
     *.zip)
       require_command unzip
-      unzip -q "$tmp_dir/$asset" -d "$tmp_dir/extracted" || status=$?
+      unzip -q "$dir/$asset" -d "$dir/extracted" || status=$?
       ;;
     *) member='' ;;
   esac
   ((status == 0)) || die "$name (official-binary): cannot extract $asset (exit $status)"
   if [[ -n $member ]]; then
-    source=$tmp_dir/extracted/$member
-    [[ -f $source && ! -L $source && -x $source ]] ||
+    _ob_staged=$dir/extracted/$member
+    [[ -f $_ob_staged && ! -L $_ob_staged && -x $_ob_staged ]] ||
       die "$name (official-binary): archive member $member is not an executable regular file in $url"
   else
-    source=$tmp_dir/$asset
+    _ob_staged=$dir/$asset
   fi
-  if [[ -f $_ob_dest ]]; then
+}
+
+# _methods_official_binary_place NAME SOURCE DEST: backs up the file at DEST
+# and installs SOURCE there.
+_methods_official_binary_place() {
+  local name=$1 source=$2 dest=$3 backup_root
+  if [[ -f $dest ]]; then
     backup_root="$(state_root)/backups/$(timestamp_utc)"
     ensure_private_dir "$backup_root" || die "$name (official-binary): cannot create $backup_root"
-    backup_file_private "$_ob_dest" "$backup_root" ||
-      die "$name (official-binary): backup of $_ob_dest failed; nothing was replaced"
-    log "$name (official-binary): previous $_ob_dest backed up in $backup_root"
+    backup_file_private "$dest" "$backup_root" ||
+      die "$name (official-binary): backup of $dest failed; nothing was replaced"
+    log "$name (official-binary): previous $dest backed up in $backup_root"
   fi
-  install -D -m 0755 -- "$source" "$_ob_dest" || die "$name (official-binary): cannot install $_ob_dest"
+  install -D -m 0755 -- "$source" "$dest" || die "$name (official-binary): cannot install $dest"
 }
 
 # --- pypi -----------------------------------------------------------------

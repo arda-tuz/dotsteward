@@ -30,6 +30,7 @@ official='{
   "dest": "~/.local/bin/opencode",
   "versionArgv": ["--version"],
   "versionRegex": "([0-9]+([.][0-9]+){2})",
+  "companions": [],
   "policy": "at-least",
   "verify": "sha256"
 }'

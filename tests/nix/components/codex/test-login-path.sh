@@ -41,11 +41,12 @@ hooks() {
 # --- The declaration ---------------------------------------------------------------------
 
 plain=$(codex_instance plain)
-assert_eq '[]' "$(hooks "$(codex_expr "$plain")")" "no hook without the shell component"
+login_hook='map(select(.name == "codex-login-path"))'
+assert_eq '[]' "$(hooks "$(codex_expr "$plain")" | jq -c "$login_hook")" "no hook without the shell component"
 assert_eq '[{"name":"codex-login-path","parallel":true,"phase":"main","profiles":null,"script":"e2e-login-path.sh"}]' \
-  "$(hooks "$(with_shell "$plain")")"
+  "$(hooks "$(with_shell "$plain")" | jq -c "$login_hook")"
 assert_eq '[{"name":"codex-login-path","parallel":true,"phase":"main","profiles":["workstation"],"script":"e2e-login-path.sh"}]' \
-  "$(hooks "$(with_shell "$plain" '[ "workstation" ]')")"
+  "$(hooks "$(with_shell "$plain" '[ "workstation" ]')" | jq -c "$login_hook")"
 [[ -x $component/e2e-login-path.sh ]] || ds_fail "e2e-login-path.sh is not executable"
 
 # expectedPath is a home path or an absolute path.
