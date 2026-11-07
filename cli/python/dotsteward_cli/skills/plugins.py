@@ -21,8 +21,9 @@ Two kinds, both under ``plugin:<name>`` keys of pending.json and base.json:
 What is no question: a plugin at project or local scope, one of a marketplace that is not a
 GitHub one (nothing on another machine could add it), the plugins Claude Code brings itself,
 one the instance tracks already, one this machine declined, and anything at all while the
-instance does not manage Claude Code. The look reads files only and starts no process; it
-reads them again only when one of them changed.
+instance does not manage Claude Code. A question also goes when the checkout says it was
+answered, here or on another machine. The look reads files only and starts no process; it
+reads them again only when one of them, or workstation.toml of the checkout, changed.
 """
 
 from __future__ import annotations
@@ -88,10 +89,11 @@ def _files() -> tuple[str, str]:
     return os.path.join(root, INSTALLED_FILE), os.path.join(root, MARKETPLACES_FILE)
 
 
-def files_stamp() -> list[float | None]:
-    """The times of the two files, so a look reads them only after a change."""
+def files_stamp(instance: str) -> list[float | None]:
+    """The times of the two files and of workstation.toml of the checkout INSTANCE, so a look
+    reads them only after a change: an install, or an answer that a pull brought."""
     stamp: list[float | None] = []
-    for path in _files():
+    for path in (*_files(), os.path.join(instance, "workstation.toml")):
         try:
             stamp.append(os.stat(path).st_mtime_ns / 1e9)
         except OSError:
@@ -212,33 +214,34 @@ def look(
 ) -> tuple[dict[str, dict[str, Any]], list[str], list[float | None] | None]:
     """What the plugins of marketplaces want changed in pending.json: items to set, keys to
     drop, and the new stamp of the files (None: unchanged, nothing was read)."""
-    stamp = files_stamp()
+    instance = str(context["instance"])
+    stamp = files_stamp(instance)
     if not full and document.get("plugin_files") == stamp:
         return {}, [], None
     items = document["items"]
     found = candidates() if stamp[0] is not None and stamp[1] is not None else {}
     set_items: dict[str, dict[str, Any]] = {}
-    drop: list[str] = []
-    for key, item in items.items():
-        # Uninstalled meanwhile: the question goes. An answer that waits stays.
-        if (
-            isinstance(item, dict)
-            and item.get("kind") == "plugin"
-            and isinstance(item.get("source"), dict)
-            and item["source"].get("marketplace")
-            and item.get("state") == "ask"
-            and str(item.get("name")) not in found
-        ):
-            drop.append(key)
+    # A question that waits; an answer that waits for its capture stays.
+    asking = {
+        key: str(item.get("name"))
+        for key, item in items.items()
+        if isinstance(item, dict)
+        and item.get("kind") == "plugin"
+        and isinstance(item.get("source"), dict)
+        and item["source"].get("marketplace")
+        and item.get("state") == "ask"
+    }
+    # Uninstalled meanwhile: the question goes.
+    drop = [key for key, spec in asking.items() if spec not in found]
     fresh = [spec for spec in found if f"plugin:{spec}" not in items and f"plugin:{spec}" not in base]
-    if fresh:
-        instance = str(context["instance"])
+    if fresh or len(drop) < len(asking):
         config = read_config(instance)
-        if manages_claude(config):
-            known = tracked_specs(config) | declined_in(instance, machine())
-            for spec in fresh:
-                if spec in known:
-                    continue
+        managed = manages_claude(config)
+        known = tracked_specs(config) | declined_in(instance, machine()) if managed else set()
+        # Answered meanwhile, on another machine or by hand: the question goes too.
+        drop += [key for key, spec in asking.items() if key not in drop and (not managed or spec in known)]
+        for spec in fresh if managed else []:
+            if spec not in known:
                 set_items[f"plugin:{spec}"] = {
                     "kind": "plugin",
                     "name": spec,
