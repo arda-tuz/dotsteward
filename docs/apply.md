@@ -1,0 +1,95 @@
+# Maintain transactions: maintain begin and apply
+
+A maintain transaction changes the instance on purpose: a new component, a removed one, a setting
+written to the repository, a pin moved by hand. The `dotsteward-maintain` skill plans and edits; two
+commands do every mechanical step in their fixed order.
+
+```sh
+dotsteward maintain begin --json                       # open: guards, preflight, base, settings
+# ... edit the instance checkout ...
+dotsteward apply -m "feat: add example-app" --activate --publish
+```
+
+## maintain begin
+
+`dotsteward maintain begin [--profile PROFILE] [--json]` checks that the instance checkout is the top
+of a git work tree, on `instance.branch`, with `origin` exactly `instance.remote`. It fetches the
+branch and fast-forwards a checkout that is only behind (uncommitted changes stay, git refuses when
+they overlap), and refuses a checkout that diverged. Then it runs `preflight --read-only` for the
+profile, `txn prepare --official-sources-only --scope maintain`, which records the base, and
+`settings status`. With commits that the remote lacks begin records no base: the remote tip is their
+base, and `apply` finishes them with the rest.
+
+`--json` prints one document: `open`, `offline`, `base_oid`, `head_oid`, `instance` (`path`,
+`branch`, `remote`), `machine`, `profile`, `activate` and `publish` (the defaults of `apply`),
+`dirty`, `unpublished_commits`, `preflight` (the document of the preflight), `settings_pending`,
+`warnings` (of `txn prepare`), `ask` and `next`. Each entry of `ask` is a question for the user before
+anything is written:
+
+| Code | Meaning |
+| --- | --- |
+| `checkout-dirty` | the checkout has changes (`changes`); `apply` commits them all |
+| `unpublished-commits` | commits that the remote lacks (`commits`); `apply` publishes them with the transaction |
+| `settings-local` | settings that changed here and are not in the repository (`entries`) |
+| `adaptive-route` | the machine is not on the fast path of the instance; nothing is opened |
+
+Exit status: 0 open and nothing to ask; 1 refused (and nothing moved); 2 usage error; 3 open with
+questions, or the adaptive route, which opens nothing; 6 no network, nothing opened.
+
+## apply
+
+`dotsteward apply [-m SUBJECT] [--activate | --no-activate] [--publish | --no-publish]
+[--profile PROFILE] [--json]` runs, under the instance lock:
+
+1. **The base.** The remote tip, fetched; without a network the last known one. It must be an
+   ancestor of `HEAD`: a checkout behind the remote runs `maintain begin` first, a diverged one is
+   refused.
+2. **Stage.** `git add -A`: Nix and the gate see tracked files only. A change needs `-m`, a
+   conventional subject (`commit.conventional_types` of `dotsteward context --json`); without one
+   apply refuses with exit 2 before it stages anything. A checkout on the published tip with no
+   change has nothing to apply.
+3. **The gate.** `gate --scope maintain` proves the tree, or answers from its memo. Red, nothing is
+   committed (`gate-failed`, with the log).
+4. **The commit.** With `SUBJECT` and the trace line of this machine (`Dotsteward-Machine: <name>`,
+   [machines.md](machines.md#the-trace-line)), in UTC, never amended. Its tree must be the tree the
+   gate proved.
+5. **Activated** (`--activate`): an adopt-mode profile never installs a system-level component
+   (`deb` on Linux, `app-archive` on macOS) in its rebuild, so for every such component that the
+   transaction adds or changes and that `install --check-only` does not find in place, apply runs
+   `install --profile PROFILE --component NAME` first. It needs sudo: on a terminal it runs there;
+   without one `install-required` names the command and the run waits (exit 3) until the person ran
+   it. Then `rebuild --switch` of the committed tree, unless it is active already, and E2E against
+   the base (`--expected-remote-base`), unless E2E with the repository checks already passed for the
+   active tree, generation and profile.
+6. **Published** (`--publish`): `txn publish --scope maintain`, which after an activation needs that
+   passed E2E. It pushes without force and verifies the remote.
+
+`[maintain] activate` and `[maintain] publish` of `workstation.toml` are the defaults; both are
+false, so without an option apply gates and commits and the commit waits here. An option wins.
+
+There is no resume command and no journal: every run works out again what is left, as `upgrade`
+does. After a red step fix the cause; a fix is a new commit, and the same command proves the new tree
+with the gate, activates it and runs E2E again before it pushes. When the cause is in the framework,
+`dotsteward-contribute` fixes it, and its `contribute upgrade --carry` keeps the unpublished commits
+across the upgrade; then `dotsteward apply` again. Without a network the push waits (exit 6) and the
+next run with the network runs E2E with the repository checks before it publishes.
+
+The report is in `<state>/runs/apply/` (and `--json` prints it): every step with its `seconds`, and
+in `data` the `base`, the `commit`, the `profile`, the `machine`, `activate`, `publish` and
+`published`. What waits or failed is in `review.json`:
+
+| Code | Meaning |
+| --- | --- |
+| `gate-failed` | the gate refused the tree, or could not judge it (`environment`); nothing was committed |
+| `commit-refused` | git or a hook refused the commit |
+| `tree-changed` | the committed tree is not the tree the gate proved |
+| `install-required` | system-level components wait for `run` in a terminal (pending) |
+| `install-failed` | their install failed |
+| `rebuild-failed` | the rebuild failed; the commit stays here |
+| `e2e-red` | E2E is red (`findings`); nothing was published |
+| `e2e-no-result` | E2E ended without a result |
+| `publish-race` | the remote moved; take it in (`run`) and apply again (pending) |
+| `publish-refused` | `txn publish` or the remote refused |
+
+Exit status: 0 done; 1 a refusal or a red step; 2 usage error; 3 a sudo step waits; 6 no network, the
+push waits; 130 interrupted, the same command goes on.

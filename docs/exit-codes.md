@@ -17,6 +17,7 @@ status as a failure.
 | Command | Exit codes | Additions to the convention |
 | --- | --- | --- |
 | `agents` | 0, 1, child | |
+| `apply` | 0, 1, 2, 3, 6, 130 | a run report, see [apply.md](apply.md); 1 also when another command holds the instance lock; 2: usage error, nothing ran; 3: a sudo step waits for a terminal; 6: no network, the push waits; 130: interrupted, the same command goes on |
 | `bootstrap` | 0, 1, 3, child | 1 also when another command holds the instance lock; 3: the preflight took the adaptive route; nothing was written |
 | `component` | the hook's status, 1 | 1 also when the component or hook is unknown or inactive |
 | `context` | 0, 1 | |
@@ -30,6 +31,7 @@ status as a failure.
 | `init` | 0, 1, 2 | 2: usage error; on 1 and 2 the directory is left as it was |
 | `install` | 0, 1, 3 | 3: the preflight took the adaptive route and stopped the phase |
 | `login-shell` | 0, 1, child | |
+| `maintain` | 0, 1, 2, 3, 6 | `maintain begin`: 3 the transaction is open with questions for the user, or the adaptive route opened nothing; 6 no network, nothing opened ([apply.md](apply.md)) |
 | `pins` | 0, 1, 2, 3, 6 | 1: inconsistencies or a refusal; 2: usage error or broken input (no instance, invalid configuration, invalid manifest mirror or rule, unreadable lock file, failed Nix evaluation); 3 and 6 from `pins apply` as a run report: review items wait, an upstream could not be read |
 | `preflight` | 0, 1, 3 | 0: fast route; 3: adaptive route (after a warning) |
 | `probes` | 0, 1 | |

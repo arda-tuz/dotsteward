@@ -179,6 +179,17 @@ The settings buffer (see [concepts.md](concepts.md#settings-buffer)).
 | `skills.capture_delay_seconds` | `600` | How long a changed skill of this machine stays quiet before it is captured. |
 | `skills.capture_max_mib` | `100` | The size above which a skill is refused for capture, in MiB. |
 
+## `[maintain]`
+
+What `dotsteward apply` does after the gate and the commit when no option says otherwise:
+[apply.md](apply.md). Both are opt-in; an instance that wants "activate and publish" on its machines
+sets both.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `maintain.activate` | `false` | Activate the committed tree here: the system-level components of an adopt-mode profile, `rebuild --switch`, E2E. `--activate` and `--no-activate` win. |
+| `maintain.publish` | `false` | Publish the commits with `txn publish`, after an activation only with a passed E2E. `--publish` and `--no-publish` win. |
+
 ## `[[upgrade.tools]]`
 
 The updaters of `dotsteward upgrade` beyond the channels of the system (apt, snap, flatpak), in the

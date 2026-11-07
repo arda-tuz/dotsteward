@@ -390,6 +390,23 @@
       },
       "additionalProperties": false
     },
+    "maintain": {
+      "type": "object",
+      "description": "What dotsteward apply does after the gate and the commit when no option says otherwise. Both are opt-in.",
+      "properties": {
+        "activate": {
+          "type": "boolean",
+          "default": false,
+          "description": "Activate the committed tree on this machine: the system-level components an adopt-mode profile needs, rebuild --switch and E2E (--activate, --no-activate)."
+        },
+        "publish": {
+          "type": "boolean",
+          "default": false,
+          "description": "Publish the commits with txn publish, after an activation only with a passed E2E of the activated tree (--publish, --no-publish)."
+        }
+      },
+      "additionalProperties": false
+    },
     "upgrade": {
       "type": "object",
       "description": "What dotsteward upgrade does beyond the channels of the system (apt, snap, flatpak).",

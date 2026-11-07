@@ -152,8 +152,8 @@ lock is the user's own under that name: it stays and is a question.
 ## The trace line
 
 A commit that the framework makes in an instance for a machine ends with the trace line
-`Dotsteward-Machine: <name>`: the commits of `host`, of a skill capture and of the writer of
-`upgrade`. It says which machine made a change, for example where a skill came from. A machine
+`Dotsteward-Machine: <name>`: the commits of `host`, of a skill capture, of the writer of
+`upgrade` and of `apply`. It says which machine made a change, for example where a skill came from. A machine
 without a name commits without it. The rule that framework commits carry no trailer is about the
 framework repository, not about an instance.
 

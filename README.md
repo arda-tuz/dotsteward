@@ -127,6 +127,7 @@ See [docs/platforms.md](docs/platforms.md).
 | [Settings buffer](docs/settings-buffer.md) | how locally changed application settings reach the repository |
 | [Pins engine](docs/pins-engine.md) and [update policy](docs/update-policy.md) | lock files, rule kinds, latest adapters; how an instance moves to newer releases |
 | [Skills](docs/skills.md) and [overlays](docs/overlays.md) | the agent skills and how an instance adds its own guidance |
+| [Maintain transactions](docs/apply.md) | `dotsteward maintain begin` and `dotsteward apply`: a change of the instance gated, committed, activated, checked and published in one command |
 | [Upgrade](docs/upgrade.md) | `dotsteward upgrade`: one command for this machine and the shared lock, what it does, what it never does |
 | [Skill tracking](docs/skill-tracking.md) | the skills you make reach your other machines, a downloaded one gets a question |
 | [Privacy](docs/privacy.md) | the layers and the scanner that keep personal data out of public repositories |

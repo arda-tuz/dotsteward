@@ -220,6 +220,10 @@
     "host_input": "instance",
     "check_aliases": {}
   },
+  "maintain": {
+    "activate": false,
+    "publish": false
+  },
   "upgrade": {
     "tools": []
   },

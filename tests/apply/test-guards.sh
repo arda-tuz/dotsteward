@@ -15,8 +15,9 @@ assert_exit 0 apply --activate --publish
 assert_contains "$DS_STDOUT" "nothing to apply"
 assert_eq "" "$(<"$UP_LOG")" "no command ran"
 
-# Usage errors: exit 2, nothing staged, nothing run.
-edit "a change"
+# Usage errors: exit 2, nothing staged, nothing run. The change is a file of its own, so the
+# commit of another machine below does not touch it.
+printf 'a change\n' >"$up_inst/docs/other.md"
 clear_log
 assert_exit 2 apply --activate
 assert_contains "$DS_STDERR" "-m"
@@ -25,7 +26,7 @@ assert_contains "$DS_STDERR" "conventional"
 assert_exit 2 apply -m "docs: a change" --no-such-option
 assert_exit 2 apply -m "docs: a change" --activate --no-activate
 assert_eq "" "$(<"$UP_LOG")" "no command ran"
-assert_eq " M docs/guide.md" "$(git -C "$up_inst" status --porcelain)" "nothing was staged"
+assert_eq "?? docs/other.md" "$(git -C "$up_inst" status --porcelain)" "nothing was staged"
 
 # Another branch.
 git -C "$up_inst" switch -q -c elsewhere
@@ -47,8 +48,8 @@ assert_contains "$DS_STDERR" "dotsteward maintain begin"
 assert_eq "$base" "$(head_oid)"
 assert_no_step '^static '
 
-# Another command holds the instance lock.
-assert_exit 0 begin
+# Another command holds the instance lock. begin asks about the change (exit 3).
+assert_exit 3 begin
 moved=$(remote_oid)
 assert_eq "$moved" "$(head_oid)" "begin fast-forwarded the checkout"
 cat >"$DS_TEST_ROOT/hold.py" <<'PY'

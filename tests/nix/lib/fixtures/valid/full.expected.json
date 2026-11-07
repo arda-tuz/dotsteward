@@ -314,6 +314,10 @@
       "fresh-home": "fresh"
     }
   },
+  "maintain": {
+    "activate": false,
+    "publish": false
+  },
   "upgrade": {
     "tools": []
   },
