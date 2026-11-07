@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import platform
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -105,8 +104,9 @@ def _blocked(entry: Mapping[str, Any]) -> bool:
 
 
 def list_updates() -> Listing:
-    """The devices with a release, read only: ``fwupdmgr get-updates --json``."""
-    if platform.system() != "Linux":
+    """The devices with a release, read only: ``fwupdmgr get-updates --json``. Linux only, as the
+    CLI sees the platform (DOTSTEWARD_PLATFORM first)."""
+    if config.runtime_platform() != "linux":
         return Listing(False)
     try:
         done = subprocess.run(
