@@ -77,7 +77,7 @@ preflight_parse() {
 # it is schema 1 and describes PLATFORM.
 preflight_load_env() {
   local file=$1/.dotsteward/stage0.$2.env
-  [[ -f $file ]] || die ".dotsteward/stage0.$2.env not found in $1 (run 'dotsteward generate' and commit it)"
+  [[ -f $file ]] || die ".dotsteward/stage0.$2.env not found in $1 (run 'dotsteward sync' and commit it)"
   # shellcheck source=/dev/null
   source "$file" || die "cannot read $file"
   [[ ${DS_STAGE0_SCHEMA_VERSION:-} == 1 ]] ||

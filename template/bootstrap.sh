@@ -57,7 +57,7 @@ preflight_parse() {
 # it is schema 1 and describes PLATFORM.
 preflight_load_env() {
   local file=$1/.dotsteward/stage0.$2.env
-  [[ -f $file ]] || die ".dotsteward/stage0.$2.env not found in $1 (run 'dotsteward generate' and commit it)"
+  [[ -f $file ]] || die ".dotsteward/stage0.$2.env not found in $1 (run 'dotsteward sync' and commit it)"
   # shellcheck source=/dev/null
   source "$file" || die "cannot read $file"
   [[ ${DS_STAGE0_SCHEMA_VERSION:-} == 1 ]] ||
@@ -332,7 +332,7 @@ preflight_run() {
 # macOS /bin/bash (3.2) and BSD tools as well as on Ubuntu, without jq,
 # python or GNU-only options. Its inputs are the instance's stage-0 mirror
 # .dotsteward/stage0.<platform>.env (DS_STAGE0_* variables, rendered from
-# workstation.toml, the components and the lock by `dotsteward generate`) and,
+# workstation.toml, the components and the lock by `dotsteward sync`) and,
 # for --install-nix-only without a mirror, the versions.lock.json beside
 # the script.
 #
