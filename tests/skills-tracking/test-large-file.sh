@@ -23,8 +23,9 @@ truncate -s 40G "$copy/model.bin"
 assert_exit 0 stop_in_time
 assert_eq blocked "$(pending_state big)"
 assert_json "$ss/pending.json" '.items["skill:big"].reason == "too-large"'
+sleep 2.2
+assert_exit 0 stop_in_time
 looked=$(jq -r .reconciled_at "$ss/pending.json")
-sleep 0.1
 assert_exit 0 stop_in_time
 assert_eq "$looked" "$(jq -r .reconciled_at "$ss/pending.json")" "the next look has nothing to do"
 # A capture does not read it either.

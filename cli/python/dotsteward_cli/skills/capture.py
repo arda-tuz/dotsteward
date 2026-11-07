@@ -56,11 +56,9 @@ CAPTURE_LOCK = "capture.lock"
 WORKTREE = "worktree"
 SETTLE_SECONDS = 2.0
 CHECK_SECONDS = 1800
-LARGEST_FILE_BYTES = 50 * 1024 * 1024
-DEFAULT_MAX_MIB = 100
+COMMIT_SECONDS = 300
 _FRONTMATTER_NAME = re.compile(r"^name:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
 _KEPT_FINDINGS = 50
-_SAFE_NAME = re.compile(r"[A-Za-z0-9._-]+")
 _DETAIL_LINES = 6
 _DETAIL_CHARACTERS = 800
 
@@ -169,25 +167,13 @@ def _frontmatter_name(path: str) -> str | None:
     return match.group(1).strip("\"'") if match else None
 
 
-def _too_large(form: normal.NormalForm, limit_mib: int) -> bool:
-    total = 0
-    for source in form.files.values():
-        size = os.path.getsize(source)
-        if size > LARGEST_FILE_BYTES:
-            return True
-        total += size
-    return total > limit_mib * 1024 * 1024
-
-
-def _rejection(path: str | None, form: normal.NormalForm | None, name: str | None, limit_mib: int) -> str | None:
+def _rejection(path: str | None, form: normal.NormalForm | None, name: str | None) -> str | None:
     """Why this copy cannot be captured at all."""
     if path is None or form is None:
         return "skill-invalid"
     if form.unsafe:
         return "unsafe-link"
-    if _too_large(form, limit_mib):
-        return "too-large"
-    if not name or not _SAFE_NAME.fullmatch(name) or name.startswith(reconcile.FRAMEWORK_PREFIX):
+    if not name or not state.PLAIN_NAME.fullmatch(name) or name.startswith(reconcile.FRAMEWORK_PREFIX):
         return "skill-invalid"
     return None
 
@@ -250,18 +236,11 @@ def _sentinel(context: Mapping[str, Any]) -> str:
     return other[0] if other else state.REPO_OWNED_REVISION
 
 
-def _file_sha256(path: str) -> str:
-    import hashlib
-
-    with open(path, "rb") as handle:
-        return hashlib.file_digest(handle, "sha256").hexdigest()
-
-
 def _notify(name: str, reason: str) -> None:
     """Tells the desktop, where there is one: a name and a word, never any content."""
     if shutil.which("notify-send") is None:
         return
-    shown = name if _SAFE_NAME.fullmatch(name) else "a skill"
+    shown = name if state.PLAIN_NAME.fullmatch(name) else "a skill"
     with contextlib.suppress(OSError, subprocess.SubprocessError):
         subprocess.run(
             ["notify-send", "dotsteward", f"{shown} was not published ({reason}): dotsteward skills status"],
@@ -394,7 +373,6 @@ def _apply_copy(
     document: dict[str, Any],
     base: Mapping[str, Any],
     attempt: _Attempt,
-    limit_mib: int,
 ) -> list[str]:
     """Replays one skill onto the tree; the paths the commit may touch."""
     machine = reconcile.machine_name(context)
@@ -404,12 +382,21 @@ def _apply_copy(
         attempt.declined.append(work)
         return []
     path = work.path if work.path and os.path.isdir(work.path) else None
-    form = normal.normal_form(os.path.realpath(path), os.path.join(worktree, ".gitignore")) if path else None
+    excludes = os.path.join(worktree, ".gitignore")
+    try:
+        form = normal.normal_form(os.path.realpath(path), excludes, reconcile.limit_bytes(context)) if path else None
+    except normal.TooLarge as large:
+        digest = reconcile.TOO_LARGE_PREFIX + large.marker
+        if work.item.get("blocked_digest") == digest:
+            attempt.repeated.append(work)
+        else:
+            attempt.rejected.append((work, "too-large", digest))
+        return []
     declared = _frontmatter_name(path) if path else None
     if form is not None and _kept_back_as_before(work.item, form.digest, tip):
         attempt.repeated.append(work)
         return []
-    reason = _rejection(path, form, declared, limit_mib)
+    reason = _rejection(path, form, declared)
     if reason is not None or form is None or declared is None or path is None:
         attempt.rejected.append((work, reason or "skill-invalid", form.digest if form else None))
         return []
@@ -458,7 +445,7 @@ def _apply_copy(
         # The copy changed under our feet: next time.
         attempt.repeated.append(work)
         return []
-    skill_digest = _file_sha256(os.path.join(destination, reconcile.SKILL_FILE))
+    skill_digest = normal.file_sha256(os.path.join(destination, reconcile.SKILL_FILE))
     if entry is None:
         entry = {"name": declared, "directory": directory, "revision": _sentinel(context)}
         source = answer.get("source")
@@ -530,7 +517,6 @@ def _build_on(
     before = json.dumps(document, sort_keys=True)
     base = state.load_base(state_root)
     attempt = _Attempt()
-    limit = int(context.get("capture_max_mib") or DEFAULT_MAX_MIB)
     allowed = [loaded_tree["lock"]]
     for item in work:
         if item.answer.get("never"):
@@ -538,7 +524,7 @@ def _build_on(
         elif item.answer.get("forget"):
             allowed += _apply_forget(item, worktree, loaded_tree, document, attempt)
         else:
-            allowed += _apply_copy(context, item, worktree, tip, loaded_tree, document, base, attempt, limit)
+            allowed += _apply_copy(context, item, worktree, tip, loaded_tree, document, base, attempt)
     if not attempt.applied:
         return None, attempt
     allowed += _announce_machine(context, worktree)
@@ -552,7 +538,10 @@ def _build_on(
     _run_checks(worktree, summary)
     message = host.commit_message(_subject(attempt.applied), reconcile.machine_name(context))
     identity = host.commit_identity(Path(worktree), tip)
-    committed = publish.git(worktree, *identity, "commit", "--quiet", "-F", "-", env={"TZ": "UTC"}, stdin=message)
+    # A signing program or a hook that hangs must not hold the capture lock for ever.
+    committed = publish.git(
+        worktree, *identity, "commit", "--quiet", "-F", "-", env={"TZ": "UTC"}, stdin=message, seconds=COMMIT_SECONDS
+    )
     if committed.code != 0:
         raise ChecksRed("commit-refused", [committed.stderr.strip()[-400:]])
     return publish.git(worktree, "rev-parse", "HEAD").stdout.strip(), attempt
@@ -788,11 +777,15 @@ def _ready(
 
 
 def _newest_change(path: str) -> float:
+    """When something below PATH last changed; a time in the future says nothing about that."""
     newest = 0.0
+    now = time.time()
     for directory, _, files in os.walk(path):
         for name in (".", *files):
             with contextlib.suppress(OSError):
-                newest = max(newest, os.lstat(os.path.join(directory, name)).st_mtime)
+                changed = os.lstat(os.path.join(directory, name)).st_mtime
+                if changed <= now:
+                    newest = max(newest, changed)
     return newest
 
 

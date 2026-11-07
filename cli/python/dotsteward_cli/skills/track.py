@@ -65,19 +65,9 @@ def _local_copy(context: Mapping[str, Any], name: str, item: Mapping[str, Any] |
     return None
 
 
-def _lock_entries(loaded: config.Instance) -> list[dict[str, Any]]:
-    path = loaded.root / loaded.config["skills"]["lock"]
-    try:
-        with open(path, encoding="utf-8") as handle:
-            document = json.load(handle)
-    except (OSError, ValueError):
-        return []
-    entries = document.get("skills") if isinstance(document, dict) else None
-    return [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
-
-
 def _lock_entry(loaded: config.Instance, name: str) -> dict[str, Any] | None:
-    return next((e for e in _lock_entries(loaded) if name in (e.get("name"), e.get("directory"))), None)
+    entries = state.lock_entries(loaded.root / loaded.config["skills"]["lock"]) or []
+    return next((e for e in entries if name in (e.get("name"), e.get("directory"))), None)
 
 
 def _normalized_url(url: str) -> str:

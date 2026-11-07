@@ -49,6 +49,8 @@ _MTIME_MARGIN_SECONDS = 2.0
 _SKIPPED_WHEN_WALKING = frozenset({".git", "__pycache__", "__pypackages__"})
 _NOT_OURS_PREFIXES = ("/nix/store/",)
 FRAMEWORK_PREFIX = "dotsteward-"
+DEFAULT_MAX_MIB = 100
+TOO_LARGE_PREFIX = "too-large:"
 
 
 def context_path(env: Mapping[str, str] | None = None) -> str:
@@ -78,12 +80,6 @@ def machine_name(context: Mapping[str, Any]) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _read_lock(context: Mapping[str, Any]) -> list[dict[str, Any]]:
-    document = state.read_json(str(context["lock_path"]), None)
-    entries = document.get("skills") if isinstance(document, dict) else None
-    return [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
-
-
 def _is_own(entry: Mapping[str, Any], context: Mapping[str, Any]) -> bool:
     return entry.get("revision") in (context.get("repo_owned_revisions") or []) and (
         entry.get("deployment", "copy") != "home-manager"
@@ -95,10 +91,15 @@ def _excluded_name(name: str, context: Mapping[str, Any]) -> bool:
 
 
 def _not_ours(path: str, context: Mapping[str, Any]) -> bool:
-    """A link into a generation or the store of scoped skills belongs to dotsteward."""
+    """A link into a generation, the store of scoped skills or the checkout belongs to
+    dotsteward."""
     target = os.path.realpath(path)
-    store = context.get("scoped_store")
-    return target.startswith(_NOT_OURS_PREFIXES) or (isinstance(store, str) and target.startswith(store + os.sep))
+    if target.startswith(_NOT_OURS_PREFIXES):
+        return True
+    for place in (context.get("scoped_store"), context.get("instance")):
+        if isinstance(place, str) and target.startswith(os.path.realpath(place) + os.sep):
+            return True
+    return False
 
 
 def _scan(context: Mapping[str, Any]) -> dict[str, str]:
@@ -144,11 +145,21 @@ def _changed_since(path: str, since: float) -> bool:
     return False
 
 
+def limit_bytes(context: Mapping[str, Any]) -> int:
+    """``[skills] capture_max_mib``: above it a skill is not read at all."""
+    return int(context.get("capture_max_mib") or DEFAULT_MAX_MIB) * 1024 * 1024
+
+
 def _local_digest(path: str, context: Mapping[str, Any]) -> str:
+    """The digest of the copy. A skill above the limit answers with what stands for its
+    content, so a hook does not spend its time limit on reading it."""
     from dotsteward_cli.skills import normal
 
     excludes = os.path.join(str(context["instance"]), ".gitignore")
-    return normal.normal_form(os.path.realpath(path), excludes).digest
+    try:
+        return normal.normal_form(os.path.realpath(path), excludes, limit_bytes(context)).digest
+    except normal.TooLarge as large:
+        return TOO_LARGE_PREFIX + large.marker
 
 
 def declined_in(tree: str, machine: str | None) -> set[str]:
@@ -277,7 +288,26 @@ def _look_at_own(
     if not full and isinstance(since, (int, float)) and not _changed_since(path, float(since)):
         return
     plan.looked_at = now
-    digest = _local_digest(path, context)
+    try:
+        digest = _local_digest(path, context)
+    except (OSError, RuntimeError):
+        # This skill cannot be read now, and takes no other one down with it.
+        return
+    if digest.startswith(TOO_LARGE_PREFIX):
+        if not (isinstance(item, dict) and item.get("state") == BLOCKED and item.get("blocked_digest") == digest):
+            plan.set_items[key] = {
+                "kind": "skill",
+                "name": name,
+                "path": path,
+                "state": BLOCKED,
+                "origin": origin.OWN,
+                "reason": "too-large",
+                "blocked_digest": digest,
+                "digest": digest,
+                "detected_at": now,
+                "last_asked": None,
+            }
+        return
     if digest == base.get("base_sha256"):
         # A copy that could not take what the repository holds is no local change gone away.
         waits = isinstance(item, dict) and item.get("reason") == NOT_REFRESHED
@@ -310,7 +340,9 @@ def _look_at_own(
 def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool) -> Plan:
     plan = Plan()
     now = time.time()
-    entries = _read_lock(context)
+    entries = state.lock_entries(str(context["lock_path"]))
+    if entries is None:
+        return plan
     base = state.load_base(str(context["state_root"]))
     found = _scan(context)
     items = document["items"]
@@ -364,7 +396,7 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
                 plan.set_items[_item_key(path, name)] = _candidate_item(name, path, None)
     since = document.get("reconciled_at")
     for key, item in items.items():
-        if _vanished(item) and key not in base:
+        if (_vanished(item) and key not in base) or (_answered_by_the_lock(item, named) and key not in plan.set_items):
             plan.drop_items.append(key)
         elif key not in base and key not in plan.set_items and _blocked_changed(item, since, full, context):
             plan.looked_at = now
@@ -387,7 +419,15 @@ def _blocked_changed(item: Any, since: Any, full: bool, context: Mapping[str, An
         return False
     if not full and isinstance(since, (int, float)) and not _changed_since(path, float(since)):
         return False
-    return _local_digest(path, context) != item.get("blocked_digest")
+    try:
+        return _local_digest(path, context) != item.get("blocked_digest")
+    except (OSError, RuntimeError):
+        return False
+
+
+def _answered_by_the_lock(item: Any, named: set[str]) -> bool:
+    """A question about a skill that is in the lock by now has an answer."""
+    return isinstance(item, dict) and item.get("state") == ASK and item.get("name") in named
 
 
 def _tree_may_have_moved(item: Any, now: float, full: bool) -> bool:
@@ -448,7 +488,10 @@ def note_writes(
     it), SESSION the session that wrote, whose end publishes it. Returns whether an own
     skill changed, and pending.json afterwards."""
     state_root = str(context["state_root"])
-    entries = _read_lock(context)
+    entries = state.lock_entries(str(context["lock_path"]))
+    if entries is None:
+        # Nothing says what these names are; the next look at the roots does.
+        return False, state.load_pending(state_root)
     base = state.load_base(state_root)
     by_name: dict[str, dict[str, Any]] = {}
     for lock_entry in entries:

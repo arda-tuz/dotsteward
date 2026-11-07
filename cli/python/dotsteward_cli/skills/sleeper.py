@@ -17,6 +17,7 @@ No systemd and no flock binary, so this works on macOS as well.
 from __future__ import annotations
 
 import contextlib
+import math
 import os
 import sys
 import time
@@ -52,9 +53,10 @@ def _deadline_path(state_root: str) -> str:
 def read_deadline(state_root: str) -> float | None:
     try:
         with open(_deadline_path(state_root), encoding="ascii") as handle:
-            return float(handle.read().strip())
+            deadline = float(handle.read().strip())
     except (OSError, ValueError):
         return None
+    return deadline if math.isfinite(deadline) else None
 
 
 def _deadline_lock(state_root: str) -> Any:

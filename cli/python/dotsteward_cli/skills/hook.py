@@ -42,7 +42,6 @@ MAX_NAMES = 10
 ASK_AGAIN_SECONDS = 24 * 3600
 OFFLINE_NOTICE_SECONDS = 24 * 3600
 _SESSION_MARK_AGE_SECONDS = 7 * 24 * 3600
-_PLAIN_NAME = re.compile(r"[A-Za-z0-9._-]+")
 _CLAUDE_FILE_TOOLS = frozenset({"Write", "Edit", "MultiEdit"})
 _CODEX_FILE_TOOLS = frozenset({"apply_patch", "Edit", "Write"})
 _PATCH_PATH = re.compile(r"^\*\*\* (Add File|Update File|Move to): (.+)$", re.MULTILINE)
@@ -172,12 +171,14 @@ def _waiting(document: Mapping[str, Any], now: float) -> list[Mapping[str, Any]]
 
 def _question(items: Sequence[Mapping[str, Any]]) -> str:
     """What the agent is told: names and commands, at most MAX_NAMES names."""
+    from dotsteward_cli.skills import state
+
     groups: dict[str, list[str]] = {}
     room = MAX_NAMES
     said = 0
     for item in items:
         name = str(item.get("name"))
-        if not _PLAIN_NAME.fullmatch(name):
+        if not state.PLAIN_NAME.fullmatch(name):
             continue
         if room == 0:
             continue
@@ -251,7 +252,7 @@ def _mark_session(state_root: str, payload: Mapping[str, Any]) -> bool:
     from dotsteward_cli.skills import state
 
     session = payload.get("session_id")
-    if not isinstance(session, str) or not _PLAIN_NAME.fullmatch(session) or session in {".", ".."}:
+    if not isinstance(session, str) or not state.PLAIN_NAME.fullmatch(session) or session in {".", ".."}:
         return False
     directory = os.path.join(state.directory(state_root), "sessions")
     atomic.make_private_dirs(directory)

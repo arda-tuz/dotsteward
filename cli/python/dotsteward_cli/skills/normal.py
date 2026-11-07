@@ -36,10 +36,20 @@ from dataclasses import dataclass
 EXCLUDED_DIRECTORIES = frozenset({b".git", b"__pycache__", b"__pypackages__"})
 EXCLUDED_NAME = b"metadata.json"
 _CHUNK = 1 << 20
+LARGEST_FILE_BYTES = 50 * 1024 * 1024
 
 
 class NormalFormError(RuntimeError):
     """The list of a skill cannot be read (no git, an unreadable directory)."""
+
+
+class TooLarge(Exception):
+    """The files of a skill are above the limit; nothing was read. MARKER stands for its
+    content: it changes with the names, sizes and times of the files."""
+
+    def __init__(self, marker: str) -> None:
+        super().__init__(marker)
+        self.marker = marker
 
 
 @dataclass(frozen=True)
@@ -102,12 +112,17 @@ def _walk(root: bytes, real_root: bytes, relative: bytes, seen: set[bytes]) -> I
     if real in seen:
         return
     seen = seen | {real}
-    with os.scandir(current) as entries:
-        for entry in sorted(entries, key=lambda item: item.name):
-            child = os.path.join(relative, entry.name) if relative else entry.name
-            if _excluded(child):
-                continue
-            yield from _resolve(root, real_root, child, seen)
+    try:
+        children = sorted(os.scandir(current), key=lambda item: item.name)
+    except OSError:
+        # What nobody may read cannot be copied, and takes no other skill down with it.
+        yield relative, None
+        return
+    for entry in children:
+        child = os.path.join(relative, entry.name) if relative else entry.name
+        if _excluded(child):
+            continue
+        yield from _resolve(root, real_root, child, seen)
 
 
 def _resolve(root: bytes, real_root: bytes, relative: bytes, seen: set[bytes]) -> Iterator[tuple[bytes, bytes | None]]:
@@ -138,7 +153,7 @@ def _sum_line(hexdigest: str, name: bytes) -> bytes:
     return hexdigest.encode() + b"  " + name + b"\n"
 
 
-def _file_sha256(path: str | bytes) -> str:
+def file_sha256(path: str | bytes) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
         while chunk := handle.read(_CHUNK):
@@ -158,11 +173,7 @@ def keep_left_out(directory: str, excludes_file: str | None, keep: str) -> None:
     """Copies to the directory KEEP what the normal form of DIRECTORY leaves out and what a
     copy of the repository cannot bring back: what ignore rules drop, and the ``.git`` of a
     clone. Caches can go."""
-    names = [
-        name.rstrip(b"/")
-        for name in _git_list(directory, excludes_file, "--ignored")
-        if not _excluded(name.rstrip(b"/"))
-    ]
+    names = [name.rstrip(b"/") for name in _lists(directory, excludes_file)[1] if not _excluded(name.rstrip(b"/"))]
     if os.path.lexists(os.path.join(directory, ".git")):
         names.append(b".git")
     for name in names:
@@ -212,22 +223,61 @@ def plain_digest(directory: str) -> str:
                     names.append(child)
     outer = hashlib.sha256()
     for relative in sorted(names, key=lambda name: b"./" + name):
-        outer.update(_sum_line(_file_sha256(os.path.join(root, relative)), b"./" + relative))
+        outer.update(_sum_line(file_sha256(os.path.join(root, relative)), b"./" + relative))
     return outer.hexdigest()
 
 
-def normal_form(directory: str, excludes_file: str | None = None) -> NormalForm:
+def _lists(directory: str, excludes_file: str | None) -> tuple[list[bytes], list[bytes]]:
+    """The names of the normal form below DIRECTORY and the names ignore rules drop. A
+    nested clone comes as one entry from git and has ignore rules of its own."""
+    listed: list[bytes] = []
+    ignored = _git_list(directory, excludes_file, "--ignored")
+    for entry in _git_list(directory, excludes_file):
+        nested = entry.rstrip(b"/")
+        if entry.endswith(b"/") and not _excluded(nested):
+            inner_listed, inner_ignored = _lists(os.path.join(directory, os.fsdecode(nested)), excludes_file)
+            listed += [os.path.join(nested, name) for name in inner_listed]
+            ignored += [os.path.join(nested, name) for name in inner_ignored]
+        else:
+            listed.append(entry)
+    return listed, ignored
+
+
+def _above_limit(found: Mapping[bytes, bytes | None], limit_bytes: int) -> str | None:
+    """The marker of TooLarge when the files of FOUND are above the limit."""
+    total = 0
+    largest = 0
+    marker = hashlib.sha256()
+    for relative in sorted(found):
+        target = found[relative]
+        if target is None:
+            continue
+        try:
+            status = os.stat(target)
+        except OSError:
+            continue
+        total += status.st_size
+        largest = max(largest, status.st_size)
+        marker.update(b"%s %d %d\n" % (relative, status.st_size, status.st_mtime_ns))
+    return marker.hexdigest() if total > limit_bytes or largest > LARGEST_FILE_BYTES else None
+
+
+def normal_form(directory: str, excludes_file: str | None = None, limit_bytes: int | None = None) -> NormalForm:
     """The normal form of the skill in DIRECTORY (a real path); EXCLUDES_FILE is the
-    ``.gitignore`` of the instance. NormalFormError when the list cannot be read."""
+    ``.gitignore`` of the instance. NormalFormError when the list cannot be read; TooLarge,
+    with LIMIT_BYTES, before any file is read."""
     root = os.fsencode(directory)
     real_root = os.path.realpath(root)
-    listed = _git_list(directory, excludes_file)
+    listed, ignored = _lists(directory, excludes_file)
     found: dict[bytes, bytes | None] = {}
     for entry in listed:
         relative = entry.rstrip(b"/")
         if not _excluded(relative):
             found.update(_resolve(root, real_root, relative, {real_root}))
-    ignored = _git_list(directory, excludes_file, "--ignored")
+    if limit_bytes is not None:
+        marker = _above_limit(found, limit_bytes)
+        if marker is not None:
+            raise TooLarge(marker)
     dropped = sorted(os.fsdecode(name) for name in ignored if not _excluded(name.rstrip(b"/")))
 
     files: dict[bytes, str] = {}
@@ -238,11 +288,14 @@ def normal_form(directory: str, excludes_file: str | None = None) -> NormalForm:
         name = b"./" + relative
         if target is None:
             unsafe.append(os.fsdecode(relative))
-            text = os.readlink(os.path.join(root, relative))
+            try:
+                text = os.readlink(os.path.join(root, relative))
+            except OSError:
+                text = b"unreadable"
             outer.update(_sum_line(hashlib.sha256(b"unsafe-link:" + text).hexdigest(), name))
             continue
         try:
-            sum_hex = _file_sha256(target)
+            sum_hex = file_sha256(target)
         except OSError:
             unsafe.append(os.fsdecode(relative))
             outer.update(_sum_line(hashlib.sha256(b"unreadable").hexdigest(), name))

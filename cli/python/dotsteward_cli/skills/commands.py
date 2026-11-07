@@ -43,17 +43,15 @@ def own_revisions(loaded: config.Instance) -> set[str]:
     return revisions
 
 
-def read_lock(loaded: config.Instance) -> dict[str, Any]:
-    """The skills lock of the checkout, an empty one when it does not exist."""
+def _lock_of(loaded: config.Instance) -> list[dict[str, Any]]:
+    """The entries of the skills lock of the checkout, none when it does not exist."""
     path = loaded.root / loaded.config["skills"]["lock"]
-    try:
-        with open(path, encoding="utf-8") as handle:
-            document = json.load(handle)
-    except FileNotFoundError:
-        return {"schema_version": "1.0", "skills": []}
-    if not isinstance(document, dict) or not isinstance(document.get("skills"), list):
+    entries = state.lock_entries(path)
+    if entries is None:
+        if not path.exists():
+            return []
         raise ValueError(f"{path} is not a skills lock")
-    return document
+    return entries
 
 
 def setting(loaded: config.Instance, key: str, default: Any) -> Any:
@@ -78,10 +76,8 @@ def _own_entries(loaded: config.Instance) -> list[dict[str, Any]]:
     revisions = own_revisions(loaded)
     return [
         entry
-        for entry in read_lock(loaded)["skills"]
-        if isinstance(entry, dict)
-        and entry.get("revision") in revisions
-        and entry.get("deployment", "copy") != "home-manager"
+        for entry in _lock_of(loaded)
+        if entry.get("revision") in revisions and entry.get("deployment", "copy") != "home-manager"
     ]
 
 

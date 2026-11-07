@@ -92,7 +92,7 @@ ds_code a skills capture --now
 assert_eq blocked "$(item a r2 .state)"
 
 # The tree is repaired on the remote: the next look takes the skill out.
-git -C "$elsewhere" rm -q .dotsteward/cli.sh
+git -C "$elsewhere" checkout -q HEAD~1 -- .dotsteward/cli.sh
 git -C "$elsewhere" commit -q -m "fix: the tree"
 git -C "$elsewhere" push -q origin main
 assert_exit 0 ds a skills reconcile --full

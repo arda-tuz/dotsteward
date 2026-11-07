@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -31,6 +32,8 @@ PENDING_FILE = "pending.json"
 PENDING_LOCK = "pending.lock"
 BASE_LOCK = "base.lock"
 LAST_CAPTURE_FILE = "last-capture.json"
+# A name that may reach an agent, a desktop notification or a file name.
+PLAIN_NAME = re.compile(r"[A-Za-z0-9._-]+")
 # How long a change of pending.json waits for the lock before it gives up: a hook
 # must not stall, and the next reconcile finds what a lost change would have said.
 _PENDING_WAIT_SECONDS = 2.0
@@ -64,6 +67,14 @@ def write_json(path: str, value: Any) -> None:
 
     atomic.make_private_dirs(os.path.dirname(path))
     atomic.atomic_write_json(path, value, mode=0o600)
+
+
+def lock_entries(path: str | os.PathLike[str]) -> list[dict[str, Any]] | None:
+    """The entries of the skills lock at PATH, None when it cannot be read: a merge in
+    progress or a clone being replaced says nothing about any skill."""
+    document = read_json(os.fspath(path), None)
+    entries = document.get("skills") if isinstance(document, dict) else None
+    return [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else None
 
 
 def load_base(state_root: str) -> dict[str, Any]:

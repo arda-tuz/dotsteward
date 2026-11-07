@@ -48,6 +48,8 @@ _REFUSED_WORDS = re.compile(
     r"|\[remote rejected\]|hook declined|pre-push hook",
     re.IGNORECASE,
 )
+# What a transport says when the connection, not the remote, failed; git exits 1 with some.
+_NETWORK_WORDS = re.compile(r"the remote end hung up|rpc failed|early eof", re.IGNORECASE)
 # A remote that lost a race on its own ref says it in its rejection.
 _RACE_WORDS = re.compile(
     r"\[rejected\]|non-fast-forward|fetch first|cannot lock ref|failed to update ref|stale info|incorrect old value",
@@ -156,6 +158,8 @@ def classify(result: GitResult) -> str:
         return RACE
     if _REFUSED_WORDS.search(text):
         return REFUSED
+    if _NETWORK_WORDS.search(text):
+        return NETWORK
     return NETWORK if result.code == 128 else REFUSED
 
 
@@ -167,6 +171,7 @@ def fetch_tip(repository: str | os.PathLike[str], branch: str, scope: str) -> tu
         "fetch",
         "--quiet",
         "--no-tags",
+        "--no-write-fetch-head",
         "--refmap=",
         "origin",
         f"+refs/heads/{branch}:{ref}",
