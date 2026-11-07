@@ -699,10 +699,19 @@ class Apply(_Checkout):
             self._step("publish", report.PARTIAL, started, detail="offline: the same command publishes later")
         elif outcome == publishing.OK and tip != self.base:
             self._step("publish", report.PENDING, started, detail="the remote moved")
+            message = (
+                "the remote moved (another machine, or a skill capture of this one): the commits stay here; the "
+                "command takes the remote in, then the same apply proves the combined tree and publishes"
+            )
+            if self._changes():
+                message = (
+                    "the checkout has uncommitted changes, which a pull --rebase refuses: make them part of this "
+                    "transaction with apply -m, or remove them, first; " + message
+                )
             self.run.item(
                 "publish-race",
-                run=f"git -C {self.root} pull --rebase && {self._again()}",
-                message="another machine published first: the commits stay here; take the remote in, then apply again",
+                run=f"git -C {self.root} pull --rebase origin {self.branch} && {self._again()}",
+                message=message,
             )
         else:
             self._step("publish", status, started)

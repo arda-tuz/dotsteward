@@ -91,7 +91,7 @@ in `data` the `base`, the `commit`, the `profile`, the `machine`, `activate`, `p
 | `rebuild-failed` | the rebuild failed; the commit stays here |
 | `e2e-red` | E2E is red (`findings`); nothing was published |
 | `e2e-no-result` | E2E ended without a result |
-| `publish-race` | the remote moved; take it in (`run`) and apply again (pending) |
+| `publish-race` | the remote moved (another machine, or a skill capture of this one); `run` takes it in with `git pull --rebase origin <branch>`, also without an upstream branch, and runs the same apply (pending) |
 | `publish-refused` | `txn publish` or the remote refused |
 
 Exit status: 0 done; 1 a refusal or a red step; 2 usage error; 3 a sudo step waits; 6 no network, the
