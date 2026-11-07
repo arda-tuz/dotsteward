@@ -818,21 +818,21 @@ def ask(
                 print(show_text(instance, item, env), file=sys.stderr, flush=True)
             elif answer in accepted:
                 break
-        if answer == accepted[0]:
-            print(
-                f"[dotsteward] {_install(instance, this, item, now=install_now, env=env)}", file=sys.stderr, flush=True
-            )
-            _drop_review(state_root, str(item["id"]))
-        elif answer == "n":
-            try:
-                print(f"[dotsteward] {_never(instance, this, item, env)}", file=sys.stderr, flush=True)
-            except Refusal as refused:
-                _say(f"ERROR: {refused}")
+        try:
+            if answer == accepted[0]:
+                said = _install(instance, this, item, now=install_now, env=env)
+            elif answer == "n":
+                said = _never(instance, this, item, env)
+            else:
                 left.append(item)
                 continue
-            _drop_review(state_root, str(item["id"]))
-        else:
+        except Refusal as refused:
+            # One answer that does not stand keeps the others.
+            _say(f"ERROR: {refused}")
             left.append(item)
+            continue
+        print(f"[dotsteward] {said}", file=sys.stderr, flush=True)
+        _drop_review(state_root, str(item["id"]))
     return left
 
 
