@@ -438,6 +438,6 @@ assert_eq '[]' "$(inst_json "map (hook: hook.name) (homeOf ($(codex_expr "$inst"
 # --- The declaration ----------------------------------------------------------------
 
 inst=$(codex_instance declared)
-assert_eq '[{"name":"codex-code-mode-host","parallel":true,"phase":"main","profiles":null,"script":"e2e-code-mode-host.sh"}]' \
+assert_eq '[{"name":"codex-code-mode-host","parallel":false,"phase":"main","profiles":null,"script":"e2e-code-mode-host.sh"}]' \
   "$(inst_json "map (hook: hook // { script = baseNameOf (toString hook.script); }) (homeOf ($(codex_expr "$inst")) \"x86_64-linux\" \"workstation\").dotsteward.components.codex.checks.e2e" | jq -cS .)"
 [[ -x $component/e2e-code-mode-host.sh ]] || ds_fail "e2e-code-mode-host.sh is not executable"

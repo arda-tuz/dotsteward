@@ -71,9 +71,10 @@ cannot edit files.
 - **A codex at another path** (found first on `PATH`, not at the destination)
   is not this method's and is asked for nothing.
 
-The E2E hook `codex-code-mode-host` (with `official-binary`, parallel: it only
-reads) repeats that check and starts the helper with `--help`; it needs neither
-a network nor an account. It also warns, without failing, about two things
+The E2E hook `codex-code-mode-host` (with `official-binary`; not parallel, since
+every `codex` start replaces its links under `$CODEX_HOME/tmp/arg0-linux`)
+repeats that check and starts the helper with `--help`; it needs neither a
+network nor an account. It also warns, without failing, about two things
 the bare binary looks for on the system because it is not in a package:
 `bwrap` on Linux (without it, sandboxed commands fail with `bubblewrap is
 unavailable`) and `rg`.

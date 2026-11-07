@@ -400,11 +400,12 @@ in
         parallel = true;
         inherit (shell) profiles;
       }
+      # Not parallel: every codex start, --version too, replaces its links under
+      # $CODEX_HOME/tmp/arg0-linux.
       ++ lib.optional (component.method == "official-binary") {
         name = "codex-code-mode-host";
         script = ./e2e-code-mode-host.sh;
         phase = "main";
-        parallel = true;
       };
 
     docs = ./README.md;
