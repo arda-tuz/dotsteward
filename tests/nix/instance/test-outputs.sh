@@ -5,7 +5,7 @@
 # shellcheck source=tests/nix/instance/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/instance/helpers.sh"
 
-assert_inst_eq '["apps","checks","dotstewardManifest","dotstewardMirrors","homeConfigurations","lib","packages"]' \
+assert_inst_eq '["apps","checks","dotstewardManifest","dotstewardMirrors","homeConfigurations","hostConfigurations","lib","packages"]' \
   'builtins.attrNames example' "output names"
 assert_inst_eq '["mkHome","pinnedVersions","pinnedVersionsFor"]' 'builtins.attrNames example.lib' "lib names"
 

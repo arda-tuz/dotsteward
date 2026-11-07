@@ -168,7 +168,7 @@ cli.mkTestCheck {
     # Every check of the darwin instance, no more and no less, is an
     # aarch64-darwin derivation that was instantiated.
     expect '.checks | keys == ["dotsteward-manifest", "example-app", "home", "home-fresh",
-      "home-workstation", "instance-contract", "instance-static", "manifest-consistent", "pi"]' \
+      "home-workstation", "hosts-eval", "instance-contract", "instance-static", "manifest-consistent", "pi"]' \
       "darwin checks" '.checks | keys'
     expect '[.checks[], .home_configuration] | all(.system == "aarch64-darwin")' \
       "derivation systems" '[.checks[] | .system]'

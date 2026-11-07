@@ -3,7 +3,7 @@
 # The update flow of skills/dotsteward-update, beyond the generic
 # contract C1-C8 of test-dotsteward-update.sh:
 #   U1  references/ holds exactly classification.md, framework-upgrade.md,
-#       sources-and-hashes.md and update-contract.md
+#       incoming.md, sources-and-hashes.md and update-contract.md
 #   U2  the fenced commands of SKILL.md run, in this order: a temporary
 #       dotsteward-update.* directory, a clone of instance.remote with
 #       --reference-if-able <instance.path> --dissociate, update prepare
@@ -70,7 +70,7 @@ upgrade=$skill_dir/references/framework-upgrade.md
 
 # U1: the reference set.
 references=$(find "$skill_dir/references" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')
-assert_eq "classification.md framework-upgrade.md sources-and-hashes.md update-contract.md " "$references" \
+assert_eq "classification.md framework-upgrade.md incoming.md sources-and-hashes.md update-contract.md " "$references" \
   "U1 skills/dotsteward-update/references"
 
 # U2: the fenced flow of SKILL.md.

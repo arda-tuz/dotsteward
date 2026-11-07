@@ -26,7 +26,7 @@ flake_instance() {
 
 # The output names, the check identity and the mirrors, equal to those of
 # the same instance with an explicit root.
-assert_inst_eq '["apps","checks","dotstewardManifest","dotstewardMirrors","homeConfigurations","lib","packages"]' \
+assert_inst_eq '["apps","checks","dotstewardManifest","dotstewardMirrors","homeConfigurations","hostConfigurations","lib","packages"]' \
   "$(flake_instance 'builtins.attrNames (flakeInstance exampleRoot { }).outputs')" "output names through inputs.self"
 assert_inst_eq '["alice"]' \
   "$(flake_instance 'builtins.attrNames (flakeInstance exampleRoot { }).homeConfigurations')" \

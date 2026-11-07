@@ -1,5 +1,5 @@
-# expect: components.example-app.machines: expected null, got ["laptop"]
-# expect: components.shell.tags: expected null, got ["small"]
+# expect: components.example-app.machines: expected at least 1 item, got 0
+# expect: components.shell.tags[0]: "machine:laptop" does not match "^[a-z0-9][a-z0-9-]*$"
 # jsonschema: invalid
 schema_version = 1
 
@@ -16,8 +16,8 @@ state_version = "26.05"
 names = ["main"]
 
 [components.shell]
-tags = ["small"]
+tags = ["machine:laptop"]
 
 [components.example-app]
 enable = true
-machines = ["laptop"]
+machines = []

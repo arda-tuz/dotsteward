@@ -83,6 +83,7 @@ let
     "home"
     "home-fresh"
     "home-workstation"
+    "hosts-eval"
     "instance-contract"
     "instance-static"
     "manifest-consistent"
