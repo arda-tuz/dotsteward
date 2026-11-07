@@ -37,7 +37,10 @@ A plugin is tracked the same way, under its own name in `dotsteward skills statu
 For a plugin of a marketplace, `--all` adds a `[[components.claude-code.options.plugins]]`
 table with `spec` and `marketplace` to `workstation.toml`, `--here` with `machines` too, and
 the plugins hook of the claude-code component installs it on the other machines; `--never`
-puts the spec into `declined.plugins` of the host file. `--own` does not apply. The
+puts the spec into `declined.plugins` of the host file. `--own` does not apply. Take the
+table out of `workstation.toml` again (by hand, or on another machine) and the plugin is not
+tracked any more: once the checkout has that change, a machine where it is installed asks
+about it again, once, with the reason `untracked`; nothing tracks it by itself. The
 marketplace keeps its plugins up to date by itself: an update is no change to publish, and an
 update of a plugin you did not track never tracks it. No question comes for a plugin at
 project scope, of a marketplace that is not a GitHub one, of Claude Code itself (`synced`,

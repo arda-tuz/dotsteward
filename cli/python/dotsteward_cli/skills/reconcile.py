@@ -228,6 +228,7 @@ class Plan:
         self.not_missing: list[str] = []
         self.looked_at: float | None = None
         self.plugin_files: list[float | None] | None = None
+        self.forget_base: list[str] = []
 
     def __bool__(self) -> bool:
         return bool(
@@ -237,6 +238,7 @@ class Plan:
             or self.not_missing
             or self.looked_at
             or self.plugin_files is not None
+            or self.forget_base
         )
 
     def apply(self, document: dict[str, Any]) -> bool:
@@ -445,7 +447,7 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
         for name, path in fresh:
             if name not in declined[_kind_of(path) or state.SKILL]:
                 plan.set_items[_item_key(path, name)] = _candidate_item(name, path, None)
-    marketplace_items, gone, stamp = plugins.look(
+    marketplace_items, gone, stamp, plan.forget_base = plugins.look(
         context, document, base, lambda: machine or machine_name(context), full=full, now=now
     )
     plan.set_items.update(marketplace_items)
@@ -575,6 +577,9 @@ def reconcile(context: Mapping[str, Any], *, full: bool = False) -> dict[str, An
     if not plan:
         return document
     state.change_pending(state_root, plan.apply)
+    for key in plan.forget_base:
+        kind, _, name = key.partition(":")
+        state.forget_base(state_root, name, kind)
     return state.load_pending(state_root)
 
 

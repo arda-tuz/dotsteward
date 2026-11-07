@@ -211,13 +211,18 @@ def look(
     *,
     full: bool,
     now: float,
-) -> tuple[dict[str, dict[str, Any]], list[str], list[float | None] | None]:
-    """What the plugins of marketplaces want changed in pending.json: items to set, keys to
-    drop, and the new stamp of the files (None: unchanged, nothing was read)."""
+) -> tuple[dict[str, dict[str, Any]], list[str], list[float | None] | None, list[str]]:
+    """What the plugins of marketplaces want changed: items of pending.json to set, keys to
+    drop, the new stamp of the files (None: unchanged, nothing was read), and the records of
+    base.json that no longer hold.
+
+    A record says the remote tracks a spec since its commit. Once the checkout has that commit
+    and its options.plugins no longer names the spec, somebody took the table out: the plugin
+    is not tracked any more, and an installed one is a question again (reason untracked)."""
     instance = str(context["instance"])
     stamp = files_stamp(instance)
     if not full and document.get("plugin_files") == stamp:
-        return {}, [], None
+        return {}, [], None, []
     items = document["items"]
     found = candidates() if stamp[0] is not None and stamp[1] is not None else {}
     set_items: dict[str, dict[str, Any]] = {}
@@ -234,12 +239,26 @@ def look(
     # Uninstalled meanwhile: the question goes.
     drop = [key for key, spec in asking.items() if spec not in found]
     fresh = [spec for spec in found if f"plugin:{spec}" not in items and f"plugin:{spec}" not in base]
-    if fresh or len(drop) < len(asking):
+    recorded = {
+        key.partition(":")[2]: str(record.get("base_commit") or "")
+        for key, record in base.items()
+        if key.startswith("plugin:")
+        and isinstance(record, dict)
+        and record.get("tracked") == "marketplace"
+        and key.partition(":")[2] in found
+        and key not in items
+    }
+    forget: list[str] = []
+    if fresh or recorded or len(drop) < len(asking):
         config = read_config(instance)
         managed = manages_claude(config)
         known = tracked_specs(config) | declined_in(instance, machine()) if managed else set()
         # Answered meanwhile, on another machine or by hand: the question goes too.
         drop += [key for key, spec in asking.items() if key not in drop and (not managed or spec in known)]
+        for spec, commit in recorded.items() if managed else ():
+            if spec not in known and _checkout_has(instance, commit):
+                forget.append(f"plugin:{spec}")
+                fresh.append(spec)
         for spec in fresh if managed else []:
             if spec not in known:
                 set_items[f"plugin:{spec}"] = {
@@ -252,10 +271,17 @@ def look(
                     "evidence": None,
                     "detected_at": now,
                     "last_asked": None,
-                    "reason": None,
+                    "reason": "untracked" if f"plugin:{spec}" in forget else None,
                     "attempts": 0,
                 }
-    return set_items, drop, stamp
+    return set_items, drop, stamp, forget
+
+
+def _checkout_has(instance: str, commit: str) -> bool:
+    """Whether the checkout INSTANCE has COMMIT: what it says about the spec is then newer."""
+    from dotsteward_cli.skills import threeway
+
+    return bool(commit) and not threeway.is_behind(instance, commit)
 
 
 # --- the answer --------------------------------------------------------------------------
