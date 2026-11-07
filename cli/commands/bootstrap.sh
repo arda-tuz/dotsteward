@@ -10,7 +10,8 @@
 #                                   only: nothing is committed. A terminal
 #                                   asks. Without one the name comes from
 #                                   DOTSTEWARD_MACHINE or the host name
-#                                   (DOTSTEWARD_ASSUME_YES=1), else stage 1
+#                                   (DOTSTEWARD_ASSUME_YES=1), a registered name
+#                                   with DOTSTEWARD_MACHINE_REUSE=1, else stage 1
 #                                   stops when hosts/ names machines, and goes
 #                                   on without a name when it does not
 #   2. install --profile P          the system-install phase (fresh mode:

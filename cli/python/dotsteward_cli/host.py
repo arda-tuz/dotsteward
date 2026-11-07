@@ -47,6 +47,9 @@ EXIT_PRIVACY = report.PRIVACY_STOP
 EXIT_OFFLINE = report.PARTIAL
 
 ASSUME_YES = "DOTSTEWARD_ASSUME_YES"
+# 1: this machine is the reinstall of the machine whose name it takes, like --reuse, for
+# ./bootstrap.sh, which takes no such option.
+MACHINE_REUSE = "DOTSTEWARD_MACHINE_REUSE"
 # A file with the machine id instead of /etc/machine-id, for the tests.
 MACHINE_ID_FILE = "DOTSTEWARD_MACHINE_ID_FILE"
 
@@ -74,7 +77,8 @@ _INIT_DESCRIPTION = (
     "Names this machine. Without a name on the command line it asks on a terminal; without a terminal the name "
     "comes from DOTSTEWARD_MACHINE, or with DOTSTEWARD_ASSUME_YES=1 from the cleaned host name, else it is a usage "
     "error. A name in hosts/ is the name of another machine, or of this one before a reinstall: a terminal asks, "
-    "without a terminal it takes --reuse. Only <state>/machine.json is written; the checkout stays as it is."
+    "without a terminal it takes --reuse or DOTSTEWARD_MACHINE_REUSE=1. Only <state>/machine.json is written; the "
+    "checkout stays as it is."
 )
 
 
@@ -236,13 +240,15 @@ def _chosen_name(args: argparse.Namespace, registered: Sequence[str], env: Mappi
             "this machine has no name yet: pass --name NAME or set DOTSTEWARD_MACHINE "
             "(DOTSTEWARD_ASSUME_YES=1 takes the host name)"
         )
-    if name in registered and not args.reuse:
+    if name in registered and not args.reuse and env.get(MACHINE_REUSE) != "1":
         taken = f"{machine.HOSTS_DIR}/{name}.toml exists: it is another machine, or this one before a reinstall"
         if asked is not None and _on_terminal():
             if _ask(f"{taken}. Is this machine a reinstall of {name}? [y/N] ").lower() not in ("y", "yes"):
                 raise Refusal(f"{name} stays with the machine it belongs to; pass another name")
         else:
-            raise Refusal(f"{taken}; pass --reuse if this machine is its reinstall")
+            raise Refusal(
+                f"{taken}; pass --reuse if this machine is its reinstall ({MACHINE_REUSE}=1 through ./bootstrap.sh)"
+            )
     return name
 
 

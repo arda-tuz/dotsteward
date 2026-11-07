@@ -159,6 +159,7 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | `DOTSTEWARD_ASSUME_YES` | `1` answers installer and package manager confirmations; meant for CI runners only. |
 | `DOTSTEWARD_CLI` | A CLI that `.dotsteward/cli.sh` runs instead of building the pinned one. |
 | `DOTSTEWARD_MACHINE` | The name of this machine, instead of `machine.json` of the state root ([machines.md](machines.md)). |
+| `DOTSTEWARD_MACHINE_REUSE` | `1`: this machine is the reinstall of the machine whose name it takes, like `host init --reuse`. |
 
 ## Commands
 

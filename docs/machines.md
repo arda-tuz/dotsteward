@@ -34,8 +34,9 @@ declined = { components = [], skills = ["example-skill"], plugins = ["example@ma
 ```
 
 A reinstall under the same name reads it again (`dotsteward host init --name NAME
---reuse`, or the answer on a terminal), so what the machine declined stays declined
-and what is scoped to it comes back.
+--reuse`, the answer on a terminal, or `DOTSTEWARD_MACHINE_REUSE=1` for
+`./bootstrap.sh`), so what the machine declined stays declined and what is scoped to it
+comes back.
 
 ## What applies to a machine
 
