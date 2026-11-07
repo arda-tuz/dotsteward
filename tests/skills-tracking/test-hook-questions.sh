@@ -5,8 +5,9 @@
 # per item in 24 hours and at most one Stop block per session, naming at most 10
 # skills and never any of their content. Claude Code sets the signal; without it
 # nothing is printed and the item waits. Codex gets no block; for its SessionStart
-# the signal is the command line of the codex process above the hook: `codex exec`
-# is nobody's session, and where the command line cannot be read nothing is said.
+# the signal is the command line of the codex process above the hook, on Linux and on
+# macOS alike: `codex exec` is nobody's session, and where the command line cannot be
+# read nothing is said.
 # shellcheck source=tests/skills-tracking/helpers.sh
 source "$DS_REPO_ROOT/tests/skills-tracking/helpers.sh"
 
@@ -123,13 +124,11 @@ fake_codex() {
 }
 fake_codex exec session-start
 no_output "codex exec is nobody's session"
-if [[ -r /proc/self/cmdline ]]; then
-  fake_codex tui session-start-internal
-  no_output "an internal session of Codex without a transcript"
-  fake_codex tui session-start
-  assert_json - '.hookSpecificOutput.hookEventName == "SessionStart"' <<<"$EVENT_OUT"
-  assert_contains "$EVENT_OUT" foreign
-fi
+fake_codex tui session-start-internal
+no_output "an internal session of Codex without a transcript"
+fake_codex tui session-start
+assert_json - '.hookSpecificOutput.hookEventName == "SessionStart"' <<<"$EVENT_OUT"
+assert_contains "$EVENT_OUT" foreign
 
 # --- at most 10 names, odd names only in skills status -------------------------------
 
