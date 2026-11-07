@@ -5,8 +5,10 @@
 # capture-helpers.sh:
 #
 #   fake agent CLIs     claude and codex on PATH write each call to agent-calls and fail;
-#                       FAKE_CODEX_LIST=FILE: `codex plugin list --json` prints FILE, and
-#                       `codex plugin add SPEC` marks SPEC installed and enabled there
+#                       FAKE_CODEX_LIST=FILE: `codex plugin list --json` and `codex plugin
+#                       marketplace list --json` print from FILE, `codex plugin add SPEC` marks
+#                       SPEC installed and enabled there, `codex plugin marketplace add DIR`
+#                       adds the marketplace of DIR
 #   new_plugin MACHINE NAME [AGENT]
 #                       a plugin as its agent lays it out, with a skill: claude in
 #                       ~/.claude/skills (`claude plugin init`), codex in ~/.codex/plugins
@@ -34,7 +36,18 @@ cat >"$DS_TEST_ROOT/bin/codex" <<FAKE
 #!$BASH
 printf 'codex %s\n' "\$*" >>"$DS_TEST_ROOT/agent-calls"
 if [[ -n \${FAKE_CODEX_LIST:-} && "\$*" == "plugin list --json" ]]; then
-  cat "\$FAKE_CODEX_LIST"
+  jq '{installed: (.installed // []), available: (.available // [])}' "\$FAKE_CODEX_LIST"
+  exit 0
+fi
+if [[ -n \${FAKE_CODEX_LIST:-} && "\$*" == "plugin marketplace list --json" ]]; then
+  jq '{marketplaces: (.marketplaces // [])}' "\$FAKE_CODEX_LIST"
+  exit 0
+fi
+if [[ -n \${FAKE_CODEX_LIST:-} && \$1 == plugin && \$2 == marketplace && \$3 == add ]]; then
+  name=\$(jq -r .name "\$4/.agents/plugins/marketplace.json") || exit 1
+  jq --arg name "\$name" --arg root "\$4" '.marketplaces = ([(.marketplaces // [])[] | select(.name != \$name)]
+    + [{name: \$name, root: \$root}])' "\$FAKE_CODEX_LIST" >"\$FAKE_CODEX_LIST.tmp"
+  mv -- "\$FAKE_CODEX_LIST.tmp" "\$FAKE_CODEX_LIST"
   exit 0
 fi
 if [[ -n \${FAKE_CODEX_LIST:-} && \$1 == plugin && \$2 == add ]]; then

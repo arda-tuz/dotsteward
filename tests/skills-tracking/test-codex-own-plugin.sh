@@ -6,9 +6,10 @@
 # documentation gives a personal plugin. It follows the rules of an own plugin of Claude
 # Code: tracked without a question, captured into agent/plugins with agents = ["codex"];
 # another machine gets the directory from `agents install`, an entry in the personal
-# marketplace ~/.agents/plugins/marketplace.json (source local, a path from the home) and
-# `codex plugin add NAME@MARKETPLACE`, again after an incoming change, because Codex runs
-# the copy in its cache. A local change there is never overwritten, a clone is a question,
+# marketplace of dotsteward (${XDG_DATA_HOME:-~/.local/share}/dotsteward/codex-marketplace, named
+# dotsteward-own, a link to the copy; the personal marketplace of the user is never touched)
+# and `codex plugin add NAME@dotsteward-own`, again after an incoming change, because Codex
+# runs the copy in its cache. A local change there is never overwritten, a clone is a question,
 # and the plugin cache of Codex is never a candidate. Without the codex component nothing of
 # this happens.
 # shellcheck source=tests/skills-tracking/plugin-helpers.sh
@@ -76,37 +77,53 @@ settle_plugin a codex-tool codex
 ds_code a skills capture --now --name codex-tool
 assert_contains "$(remote_file agent/plugins/codex-tool/$helper)" "More."
 
-# --- another machine: directory, personal marketplace, codex plugin add ---------------------
+# --- another machine: directory, the marketplace of dotsteward, codex plugin add -------------
 
 new_machine b
 export FAKE_CODEX_LIST=$DS_TEST_ROOT/codex-list.json
-printf '{"installed": [], "available": []}\n' >"$FAKE_CODEX_LIST"
+printf '{"installed": [], "available": [], "marketplaces": []}\n' >"$FAKE_CODEX_LIST"
+# The personal marketplace of the user is a link into their dotfiles: never touched.
+mkdir -p "$(home_of b)/dotfiles" "$(home_of b)/.agents/plugins"
+printf '{"name": "mine", "plugins": [{"name": "other", "source": {"source": "local", "path": "./elsewhere/other"}}]}\n' \
+  >"$(home_of b)/dotfiles/marketplace.json"
+ln -s "$(home_of b)/dotfiles/marketplace.json" "$(home_of b)/.agents/plugins/marketplace.json"
+personal_before=$(cat "$(home_of b)/dotfiles/marketplace.json")
 b_plugin=$(plugin_dir b codex-tool codex)
 assert_exit 0 ds b agents install --profile workstation --skip-validation
 [[ -d $b_plugin && ! -L $b_plugin ]] || ds_fail "the other machine gets a real directory"
 assert_eq "$(remote_plugin codex-tool | jq -r .directory_sha256)" "$(local_digest "$b_plugin")"
 assert_eq "$(local_digest "$b_plugin")" "$(plugin_base b codex-tool)"
-market=$(home_of b)/.agents/plugins/marketplace.json
-assert_json "$market" '.name == "personal"
-  and ([.plugins[] | select(.name == "codex-tool")] == [{name: "codex-tool",
-    source: {source: "local", path: "./.codex/plugins/codex-tool"}, policy: {installation: "AVAILABLE"}}])'
-assert_contains "$(cat "$DS_TEST_ROOT/agent-calls")" "codex plugin add codex-tool@personal"
-assert_json "$FAKE_CODEX_LIST" '[.installed[].pluginId] == ["codex-tool@personal"]'
+[[ -L $(home_of b)/.agents/plugins/marketplace.json ]] || ds_fail "the link of the user stays"
+assert_eq "$personal_before" "$(cat "$(home_of b)/dotfiles/marketplace.json")"
+# The marketplace of dotsteward: its own file, a link to the copy, added to Codex once.
+own_root=$(home_of b)/.local/share/dotsteward/codex-marketplace
+assert_json "$own_root/.agents/plugins/marketplace.json" '.name == "dotsteward-own"
+  and .plugins == [{name: "codex-tool", source: {source: "local", path: "./plugins/codex-tool"},
+    policy: {installation: "AVAILABLE"}}]'
+assert_eq "$b_plugin" "$(readlink "$own_root/plugins/codex-tool")"
+assert_contains "$(cat "$DS_TEST_ROOT/agent-calls")" "codex plugin marketplace add $own_root"
+assert_contains "$(cat "$DS_TEST_ROOT/agent-calls")" "codex plugin add codex-tool@dotsteward-own"
+assert_json "$FAKE_CODEX_LIST" '[.installed[].pluginId] == ["codex-tool@dotsteward-own"]'
 # In sync and enabled: nothing to do; check only reads.
 : >"$DS_TEST_ROOT/agent-calls"
 assert_exit 0 ds b agents install --profile workstation --skip-validation
 assert_not_contains "$(cat "$DS_TEST_ROOT/agent-calls")" "plugin add"
+assert_not_contains "$(cat "$DS_TEST_ROOT/agent-calls")" "marketplace add"
 assert_exit 0 ds b agents check --profile workstation
 assert_not_contains "$(cat "$DS_TEST_ROOT/agent-calls")" "plugin add"
 assert_exit 0 ds b skills reconcile --full
 assert_eq "{}" "$(plugin_item b codex-tool .)"
-# A marketplace file of the user keeps its name and its other plugins.
-jq '.name = "mine" | .plugins += [{name: "other", source: {source: "local", path: "./elsewhere/other"}}]
-  | .plugins |= map(select(.name != "codex-tool"))' "$market" >"$market.tmp"
-mv -- "$market.tmp" "$market"
+# Installed already from a marketplace of the user (on the machine that made it, say): left
+# to it, no second copy.
+jq '.installed = [{pluginId: "codex-tool@mine", installed: true, enabled: true,
+  source: {source: "local", path: $copy}}]' --arg copy "$b_plugin" "$FAKE_CODEX_LIST" >"$FAKE_CODEX_LIST.tmp"
+mv -- "$FAKE_CODEX_LIST.tmp" "$FAKE_CODEX_LIST"
+: >"$DS_TEST_ROOT/agent-calls"
 assert_exit 0 ds b agents install --profile workstation --skip-validation
-assert_json "$market" '.name == "mine" and ([.plugins[].name] == ["other", "codex-tool"])'
-assert_contains "$(cat "$DS_TEST_ROOT/agent-calls")" "codex plugin add codex-tool@mine"
+assert_not_contains "$(cat "$DS_TEST_ROOT/agent-calls")" "plugin add"
+jq '.installed = [{pluginId: "codex-tool@dotsteward-own", installed: true, enabled: true}]' "$FAKE_CODEX_LIST" \
+  >"$FAKE_CODEX_LIST.tmp"
+mv -- "$FAKE_CODEX_LIST.tmp" "$FAKE_CODEX_LIST"
 
 # --- incoming: the copy is refreshed and added again, so the cache of Codex takes it --------
 
@@ -118,7 +135,7 @@ git -C "$(clone_of b)" pull -q --ff-only
 : >"$DS_TEST_ROOT/agent-calls"
 assert_exit 0 ds b agents install --profile workstation --skip-validation
 assert_contains "$(cat "$b_plugin/$helper")" "Second from a."
-assert_contains "$(cat "$DS_TEST_ROOT/agent-calls")" "codex plugin add codex-tool@mine"
+assert_contains "$(cat "$DS_TEST_ROOT/agent-calls")" "codex plugin add codex-tool@dotsteward-own"
 # A local change there stays.
 printf '\nOnly on b.\n' >>"$b_plugin/$helper"
 assert_exit 0 ds b agents install --profile workstation --skip-validation
