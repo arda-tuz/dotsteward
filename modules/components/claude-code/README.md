@@ -183,8 +183,11 @@ equivalent, but TOML 1.0 requires each inline table on a single line.
 | `trackAt` | no | a `versions.lock.json` path of an entry with `source` (`https://github.com/OWNER/REPO` of the marketplace) and `observed_marketplace_revision` (the 40-digit commit the plugin was last reviewed at); needs `watched` |
 | `watched` | with `trackAt` | regular expressions (full match) of the marketplace paths that belong to the plugin |
 
-A non-empty list adds the `plugins` hook (`plugins.sh`, an agentsPost hook:
-agents phase, before validation). `dotsteward agents install`:
+The `plugins` hook (`plugins.sh`, an agentsPost hook: agents phase, before
+validation) is part of the component with every list; with an empty one it
+ends at once. So when skill tracking adds the table of a plugin you answered
+with `dotsteward skills track NAME@MARKETPLACE --all`, no generated file
+changes (see `docs/skill-tracking.md`). `dotsteward agents install`:
 
 - runs `claude plugin marketplace add OWNER/REPO` when a `marketplace` is
   not listed by `claude plugin marketplace list --json`;
@@ -232,7 +235,10 @@ asks a person for that): such a plugin is installed once by hand with
 - every required file exists.
 
 `agents check` never installs anything. Plugins at project or local scope,
-and plugins the list does not name, are left alone.
+and plugins the list does not name, are left alone. An own plugin in
+`~/.claude/skills` (`claude plugin init`, loaded as `NAME@skills-dir`) is no
+entry of this list: skill tracking keeps it in `agent/plugins/` and the
+`own_plugins` of the skills lock, and `agents install` copies it.
 
 Each plugin with `trackAt` adds a `git-compare` row to `dotsteward pins
 latest`, with every method: the row is a review when the marketplace changed

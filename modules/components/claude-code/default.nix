@@ -36,11 +36,12 @@
 #   [[components.claude-code.options.launchEnvironment]]   # one per variable
 #   name = "<VARIABLE>"
 #   command = ["<program>", "<argument>", ...]
-# A non-empty plugin list adds the agentsPost hook plugins.sh, which adds
-# missing marketplaces, turns on their background auto-update (the default;
-# autoUpdate = false opts a marketplace out), and installs or enables missing
-# plugins at user scope (agents install), and verifies every listed one (both
-# modes). Each trackAt
+# The agentsPost hook plugins.sh runs with every plugin list, also an empty
+# one (it then ends at once), so a plugin that skill tracking adds to the
+# list changes no generated file. It adds missing marketplaces, turns on
+# their background auto-update (the default; autoUpdate = false opts a
+# marketplace out), and installs or enables missing plugins at user scope
+# (agents install), and verifies every listed one (both modes). Each trackAt
 # entry (source and observed_marketplace_revision) adds a git-compare review
 # row of the marketplace for its watched paths, with every method
 # (lib/plugin-tracking.nix). With the shell component, a non-empty
@@ -501,11 +502,11 @@ in
     # The hooks are read in place from the framework source, so the manifest
     # mirror names them <dotsteward>/modules/components/claude-code/<hook>.sh.
     hooks.agentsPost =
-      lib.optional (pluginList != [ ]) {
-        name = "plugins";
-        script = toString ./plugins.sh;
-      }
-      ++ [
+      [
+        {
+          name = "plugins";
+          script = toString ./plugins.sh;
+        }
         {
           name = "skill-hooks";
           script = toString ./skill-hooks.sh;
