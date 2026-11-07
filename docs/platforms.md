@@ -97,8 +97,13 @@ enable = true
 method_by_platform = { linux = "deb", darwin = "app-archive" }
 ```
 
-A method the component does not support on a platform of `nix.systems` fails
-the evaluation with the supported list. The catalog on darwin:
+A component that one system of `nix.systems` cannot have, because it does not
+support that platform or the method there, is left out of that system: the
+platform filter. Nothing of it is installed or expected there, and the manifest
+of that system says why (`unavailable`: `platform` or `method`). It stays an
+error, with the supported list, when `method_by_platform` asks for that
+platform explicitly, or when no system of `nix.systems` can have the
+component. The catalog on darwin:
 
 | Component | darwin default | Also supported on darwin |
 | --- | --- | --- |
@@ -110,9 +115,10 @@ the evaluation with the supported list. The catalog on darwin:
 | `vscode` | `app-archive` (the official `darwin-arm64` archive) | `external` |
 
 `pdfcraft`, `gridcraft`, `wordcraft`, `deckcraft` and `craft-anything` are
-Linux only (the vendor DEB through the local APT bridge): an instance whose
-`nix.systems` holds a darwin system cannot enable them, and `dotsteward-init`
-preselects them only for Linux-only instances.
+Linux only (the vendor DEB through the local APT bridge), and so is `apt-policy`
+(method `system`): an instance whose `nix.systems` holds a darwin system leaves
+them out on darwin, and `dotsteward-init` preselects them only for Linux-only
+instances.
 
 Each component's `README.md` (`modules/components/<name>/README.md`) records
 its darwin pins, settings paths and what was verified for darwin.

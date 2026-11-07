@@ -39,7 +39,7 @@ def active_components(
     for component in mirror(instance, env).get("components") or ():
         profiles = component.get("profiles")
         platforms = component.get("platforms")
-        if component.get("name") in skipped:
+        if component.get("name") in skipped or component.get("unavailable"):
             continue
         if profiles is not None and profile not in profiles:
             continue

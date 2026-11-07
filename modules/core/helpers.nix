@@ -5,7 +5,9 @@
 #                              [ { name; component; } ]
 #   isActive PROFILE PLATFORM TAGS NAME COMPONENT
 #                              enabled, scoped to PROFILE (profiles null or
-#                              containing it), supporting PLATFORM, for this
+#                              containing it), supporting PLATFORM and its
+#                              method there when it declares methods for it
+#                              (the platform filter), for this
 #                              machine (machines null, or a machine:<name>
 #                              tag in TAGS), for its tags (tags null, or one
 #                              of them in TAGS), and no no:NAME tag in TAGS
@@ -90,7 +92,13 @@ in
     component.enable
     && (component.profiles == null || elem profile component.profiles)
     && elem platform component.platforms
-    && (component.machines == null || lib.any (machine: elem "machine:${machine}" tags) component.machines)
+    && (
+      (component.supportedMethods.${platform} or [ ]) == [ ]
+      || elem component.method component.supportedMethods.${platform}
+    )
+    && (
+      component.machines == null || lib.any (machine: elem "machine:${machine}" tags) component.machines
+    )
     && (component.tags == null || lib.any (tag: elem tag tags) component.tags)
     && !elem "no:${name}" tags;
 

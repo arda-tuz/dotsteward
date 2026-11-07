@@ -150,6 +150,7 @@ methods_components() {
     .components[]
     | select((.modes // {}) | has($profile))
     | select(.platforms == null or (.platforms | index($platform)))
+    | select(.unavailable == null)
     | select(.name as $name | $skip | index($name) | not)
     | .name'
 }

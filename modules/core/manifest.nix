@@ -94,6 +94,20 @@ let
       )
     );
 
+  # The platform filter (lib/mk-instance.nix): why this system leaves a component out.
+  platformName = dotsteward.lib.platform.platformOf system;
+  unavailable =
+    component:
+    if !(lib.elem platformName component.platforms) then
+      "platform"
+    else if
+      (component.supportedMethods.${platformName} or [ ]) != [ ]
+      && !(lib.elem component.method component.supportedMethods.${platformName})
+    then
+      "method"
+    else
+      null;
+
   install =
     component:
     if component.method == "nix" then
@@ -132,6 +146,8 @@ let
       // lib.optionalAttrs (component.machines != null) { inherit (component) machines; }
       // lib.optionalAttrs (component.tags != null) { inherit (component) tags; }
       // lib.optionalAttrs (component.requires != [ ]) { inherit (component) requires; }
+      # The platform filter: why this system leaves the component out, only then.
+      // lib.optionalAttrs (unavailable component != null) { unavailable = unavailable component; }
     ) enabled;
 
     settings_targets = helpers.settingsTargets system dotsteward.lib.platform enabled;

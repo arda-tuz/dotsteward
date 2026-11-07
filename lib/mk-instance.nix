@@ -215,12 +215,18 @@ let
   # hosts/<name>.toml, read for what Nix may know: the intent of a machine.
   hostFiles =
     if pathExists hostsDir then
-      lib.mapAttrs' (
-        file: _:
-        lib.nameValuePair (lib.removeSuffix ".toml" file) (
-          builtins.fromTOML (builtins.readFile (hostsDir + "/${file}"))
+      lib.mapAttrs'
+        (
+          file: _:
+          lib.nameValuePair (lib.removeSuffix ".toml" file) (
+            builtins.fromTOML (builtins.readFile (hostsDir + "/${file}"))
+          )
         )
-      ) (lib.filterAttrs (file: type: type == "regular" && lib.hasSuffix ".toml" file) (builtins.readDir hostsDir))
+        (
+          lib.filterAttrs (file: type: type == "regular" && lib.hasSuffix ".toml" file) (
+            builtins.readDir hostsDir
+          )
+        )
     else
       { };
 
@@ -228,12 +234,11 @@ let
     inherit name;
     system = host.system or primary;
     profile = host.profile or checkProfile;
-    tags =
-      lib.unique (
-        host.tags or [ ]
-        ++ [ "machine:${name}" ]
-        ++ map (component: "no:${component}") (host.declined.components or [ ])
-      );
+    tags = lib.unique (
+      host.tags or [ ]
+      ++ [ "machine:${name}" ]
+      ++ map (component: "no:${component}") (host.declined.components or [ ])
+    );
   }) hostFiles;
 
   # machine:<name> makes an evaluation differ only where a component names that machine.
@@ -249,7 +254,9 @@ let
   hostTagSet =
     host:
     lib.sort lib.lessThan (
-      filter (tag: !(lib.hasPrefix "machine:" tag) || elem (lib.removePrefix "machine:" tag) scopedMachines) host.tags
+      filter (
+        tag: !(lib.hasPrefix "machine:" tag) || elem (lib.removePrefix "machine:" tag) scopedMachines
+      ) host.tags
     );
 
   # One machine for each (profile, tag set) of a system.
@@ -262,15 +269,21 @@ let
         inherit host;
       }) own;
     in
-    lib.attrValues (lib.mapAttrs (_: entry: entry.host) (lib.listToAttrs (map (entry: lib.nameValuePair entry.key entry) keyed)));
+    lib.attrValues (
+      lib.mapAttrs (_: entry: entry.host) (
+        lib.listToAttrs (map (entry: lib.nameValuePair entry.key entry) keyed)
+      )
+    );
 
   componentProblems = lib.concatMap (
     name:
     lib.optional
       (cfg.components.${name}.source == "instance" && !pathExists (at "components/${name}/default.nix"))
       "dotsteward: unknown component ${name} in workstation.toml: neither a catalog component nor an instance component (components/${name}/default.nix)"
-    ++ map (machine: "dotsteward: component ${name}: machines names ${machine}, which has no hosts/${machine}.toml")
-      (filter (machine: !(hostFiles ? ${machine})) (machinesOf name))
+    ++ map (
+      machine:
+      "dotsteward: component ${name}: machines names ${machine}, which has no hosts/${machine}.toml"
+    ) (filter (machine: !(hostFiles ? ${machine})) (machinesOf name))
   ) tableNames;
 
   # Each output refuses on its own, so the output names never depend on the
@@ -346,20 +359,36 @@ let
     let
       platformName = platform.platformOf system;
       components = config.dotsteward.components;
+      # The platform filter: a component of the common intent that this system cannot have is
+      # left out of it (helpers.isActive, `unavailable` in the manifest). It stays an error
+      # when the platform asks for it explicitly (method_by_platform) or no configured
+      # system can have it.
       assertionsOf =
         { name, ... }:
         let
           component = components.${name};
           supported = component.supportedMethods.${platformName};
           supportsPlatform = elem platformName component.platforms;
+          availableOn =
+            other:
+            let
+              wanted = dsLib.config.methodFor cfg name other;
+            in
+            elem other component.platforms
+            && (wanted == null || elem wanted component.supportedMethods.${other});
+          explicit = ((cfg.components.${name}.method_by_platform or { }).${platformName} or null) != null;
+          elsewhere = lib.any (other: other != platformName && availableOn other) (
+            map platform.platformOf cfg.nix.systems
+          );
+          filtered = !explicit && elsewhere;
         in
         [
           {
-            assertion = supportsPlatform;
+            assertion = supportsPlatform || filtered;
             message = "dotsteward: component ${name} does not support ${platformName} (nix.systems contains ${system}; supported: ${concatStringsSep ", " component.platforms})";
           }
           {
-            assertion = !supportsPlatform || elem component.method supported;
+            assertion = !supportsPlatform || elem component.method supported || filtered;
             message = "dotsteward: component ${name} does not support method ${component.method} on ${platformName} (supported: ${
               if supported == [ ] then "none" else concatStringsSep ", " supported
             })";

@@ -62,7 +62,8 @@
           },
           "machines": { "type": "array", "items": { "type": "string" }, "description": "The machines the component is for, only when set." },
           "tags": { "type": "array", "items": { "type": "string" }, "description": "The machine tags the component is for, only when set." },
-          "requires": { "type": "array", "items": { "$ref": "#/$defs/name" }, "description": "What the component needs, only when set; the CLI of each machine reads it." }
+          "requires": { "type": "array", "items": { "$ref": "#/$defs/name" }, "description": "What the component needs, only when set; the CLI of each machine reads it." },
+          "unavailable": { "enum": ["platform", "method"], "description": "Only when this system leaves the component out (the platform filter): it does not support the platform, or its method there." }
         },
         "required": ["name", "source", "method", "profiles", "platforms", "options", "modes", "supported_methods", "install"],
         "additionalProperties": false
