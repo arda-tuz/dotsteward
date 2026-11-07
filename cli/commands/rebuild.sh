@@ -33,7 +33,7 @@
 #      exists), adoption of the manifest's adopt paths, activate, the
 #      activation record <state>/current/activation.json (generation,
 #      profile, revision and tree of HEAD, root, framework override,
-#      activated_at; update publish then requires a passing E2E of that
+#      the digest of the tags, activated_at; update publish then requires a passing E2E of that
 #      tree, generation and profile), the generation's
 #      local-maintained-files apply, agents install --skip-validation (the
 #      agent tools are checked by `dotsteward e2e`, which follows the
@@ -442,10 +442,10 @@ log "activating the Home Manager generation"
 # The machine runs this generation from here on, whatever a later step does.
 jq -n --arg generation "$activation_path" --arg profile "$profile" --arg revision "$canonical_revision" \
   --arg tree "$(git -C "$repo_path" rev-parse "$canonical_revision^{tree}")" --arg root "$repo_path" \
-  --arg override "$framework_override" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{
+  --arg override "$framework_override" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg tags "$DS_NIX_TAGS_SHA256" '{
     schema_version: "1.0", generation: $generation, profile: $profile, revision: $revision,
     tree_oid: $tree, root: $root, framework_override: (if $override == "" then null else $override end),
-    activated_at: $at}' | txn_write_private "$(txn_activation_file)"
+    tags_sha256: $tags, activated_at: $at}' | txn_write_private "$(txn_activation_file)"
 
 # Tracked settings: only entries changed remotely and entries met for the
 # first time are written to the live files; local changes and conflicts are
