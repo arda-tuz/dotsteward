@@ -43,11 +43,13 @@ comes back.
 
 ## What applies to a machine
 
-An entry with `machines = ["<name>", ...]` is for those machines only. In this
-release that goes for the entries of the skills lock, for `own_plugins` there and for
-`[[components.<agent>.options.plugins]]`.
-Other machines never get such an entry and are never asked; a machine without a name
-is another machine. `hosts/<name>.toml` declines entries for one machine.
+An entry with `machines = ["<name>", ...]` is for those machines only. That goes for
+the entries of the skills lock, for `own_plugins` there, for
+`[[components.<agent>.options.plugins]]` and for `[components.<name>]`, which also takes
+`tags = ["<tag>", ...]`: a machine with one of them gets the component. Other machines
+never get such an entry and are never asked; a machine without a name is another machine.
+A reinstall under the same name brings it back, without a question. `hosts/<name>.toml`
+declines entries for one machine.
 
 ```sh
 dotsteward skills effective --json
@@ -61,6 +63,72 @@ has one of that name.
 
 `dotsteward host check`, which `dotsteward static` runs, reports the problems of the tree: a host file that is not
 valid, and `machines` lists that are empty or name a machine without a host file.
+
+## What Nix knows about a machine
+
+The machine layer hands Nix tags and nothing else, so the same system, profile and tag set
+always give the same evaluation. The tags of a machine are the `tags` of its file,
+`machine:<name>`, and `no:<component>` for each entry of `declined.components`.
+`dotsteward rebuild` adds `no:<component>` for a new component this machine has not
+answered about, and writes `tags` into `profile.nix` only when there are any. The
+generated host flake passes `mkHome` only the arguments it takes, so a framework pin older
+than the tags keeps working. Nix reads `system`, `profile`, `tags` and
+`declined.components` of a host file, as intent; it reads no answer and no state of a
+machine.
+
+A component that is left out on a machine is not active there: `helpers.isActive` decides,
+in every module. The manifest does not change with it: `machines` and `tags` are data in its
+component entries, there is one manifest per system, and the commands of the CLI leave the
+component out by `skills effective`. `checks.<system>.manifest-consistent` holds every
+machine to that.
+
+`hostConfigurations.<name>` is the configuration of a machine, under the check identity.
+`checks.<system>.hosts-eval` evaluates each distinct tag set of the machines of that system
+without building it, so an assertion of any machine stops the gate of every machine. A
+component says what it needs with `requires`; leaving that out is such an assertion, and the
+message names both. `gate` builds and probes the configuration of the machine it runs on
+when the tree has its file on the primary system (`checks.<system>.home` otherwise, and under
+a framework pin older than this output), and records `host` and `tags_sha256` in
+`generation.json`. `rebuild` reuses that generation only for the tags it would use itself,
+so what differs only by an answer of this machine is proved by its own build and E2E.
+
+## What other machines changed
+
+The repository always moves forward; what lands on a machine depends on the answer.
+`dotsteward incoming` brings a clean checkout forward and asks, one item at a time and with
+the machine that made the change:
+
+| Change | Install | Ask later | Never on this machine |
+| --- | --- | --- | --- |
+| New skill, own or third party | copied here | not copied | `declined.skills` |
+| Own skill changed, local copy unchanged | backup, new copy | the old copy stays | `declined.skills`, the copy stays, tracking ends |
+| Own skill removed, or this machine left its `machines` | backup, removed here | the copy stays | `declined.skills`, the copy stays, not asked again |
+| New plugin | installed | not installed | `declined.plugins` |
+| New component | active from the next `upgrade` or rebuild | a `no:` tag on this machine | `declined.components` |
+
+Everything else needs no question: pins and the rest of the intent arrive as a whole tree
+with the next rebuild. A change here and there is a conflict, which `dotsteward skills
+resolve` answers. What is scoped to other machines is never asked about.
+
+Without a terminal every item is ask later: `review.json` holds it under the code
+`incoming`, the exit status is 3, and everything else goes on. `dotsteward incoming list`,
+`show ID` and `answer ID --install|--never` are the same conversation for an agent
+(`skills/dotsteward-update/references/incoming.md`); to ask later, do nothing.
+
+Nothing keeps a cursor or a queue: every run compares the tree with what the machine
+holds. Ask later therefore stores nothing. Never goes to `hosts/<name>.toml`, because it is
+the intent of the machine and a reinstall under the same name finds it; without a network
+it holds on the machine and a later `incoming` or `upgrade` publishes it. A `no:` tag in a host
+file must leave that machine evaluating, or it would stop the gates of the others, so Never
+on a component evaluates the machine first and refuses when Nix says no.
+
+The change is this machine's own, and no question, when a commit that is not published
+yet touches its path or the last commit that did says `Dotsteward-Machine: <this
+machine>`; every commit the framework makes for an instance says that. A commit with no such
+line comes from an unknown machine. `<state>/machine/known.json` holds the third party skills,
+plugins and components the machine knows; a machine without the file (a fresh install, or
+one set up before this release) takes what the instance holds now as known, on its first `agents
+install`, and nothing is asked.
 
 ## The producer
 

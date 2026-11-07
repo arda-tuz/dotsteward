@@ -25,7 +25,7 @@ expect_record() {
   [[ -n $generation ]] || ds_fail "no probes call"
   assert_file_mode "$record" 600
   assert_json "$record" '(keys_unsorted) == ["schema_version", "tree_oid", "profile", "system", "username", "home",
-    "generation", "framework_override", "root", "recorded_at"]'
+    "generation", "framework_override", "root", "host", "tags_sha256", "recorded_at"]'
   jq -e --arg tree "$(add_tree_oid)" --arg generation "$generation" --arg root "$gate_inst" \
     --argjson override "$1" '
     .schema_version == "1.0" and .tree_oid == $tree and .profile == "workstation"

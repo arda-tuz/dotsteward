@@ -1,6 +1,6 @@
 ---
 name: dotsteward-update
-description: Refresh every pinned version, revision, hash, lockfile, vendored skill and installer baseline of the user's dotsteward instance repository, the dotsteward framework release included, to the newest mutually compatible stable releases, validate once and publish to the instance branch. Use only when the user explicitly asks to update or refresh the instance or its dotfiles, move managed tools to the latest stable releases, upgrade the dotsteward framework, audit stale pins, or run periodic maintenance. Do not use it to add, remove or reconfigure components or to write locally changed application settings to the repository (use dotsteward-maintain for both), to change the framework itself (use dotsteward-contribute), or for changes meant only for this machine.
+description: Refresh every pinned version, revision, hash, lockfile, vendored skill and installer baseline of the user's dotsteward instance repository, the dotsteward framework release included, to the newest mutually compatible stable releases, validate once and publish to the instance branch. Use only when the user explicitly asks to update or refresh the instance or its dotfiles, move managed tools to the latest stable releases, upgrade the dotsteward framework, audit stale pins, run periodic maintenance, or answer what another machine changed (dotsteward incoming). Do not use it to add, remove or reconfigure components or to write locally changed application settings to the repository (use dotsteward-maintain for both), to change the framework itself (use dotsteward-contribute), or for changes meant only for this machine.
 ---
 
 # dotsteward txn
@@ -35,6 +35,10 @@ On the gate, publish preconditions, decision ownership, secrets, force push and 
 - **Durable lessons live in versioned text, never in agent memory.** A lesson worth keeping for later runs goes where every agent on every machine reads it: a generic one into the framework skill through `dotsteward-contribute`, an instance-specific one into the overlay of this skill through `dotsteward-maintain`. Never record it in an agent's own memory store, which is per machine, unreviewed and invisible to the other agents.
 - **Generated files are generated.** Never hand-edit `flake.lock`, the `.dotsteward/` mirrors or npm lockfiles; the commands in `references/sources-and-hashes.md` write them. Byte-protected files (`protected` in the context) keep their bytes.
 - **Shell pitfalls.** The user's shell may be zsh: quote globs, avoid `echo ====`, do not name a variable `path`. Repository scripts are bash; run them directly.
+
+## What another machine changed
+
+When the user asks what other machines changed, or `review.json` holds items with the code `incoming`, follow `references/incoming.md`: a skill, plugin or component another machine brought lands here only when the user says so, one item at a time. This is a conversation, not a refresh: none of the steps below apply to it.
 
 ## 1. Prepare
 
@@ -120,3 +124,4 @@ A table of row id, old, new, kind and evidence (release URL or digest); held and
 - `references/sources-and-hashes.md`: what each research adapter queries, hash and lockfile commands for the current system, outage, disk and memory rules, and what the gate covers.
 - `references/framework-upgrade.md`: the framework upgrade step (release notes, tag move, template refresh, red gate).
 - `references/classification.md`: personal, framework or mixed, and which skill takes the request.
+- `references/incoming.md`: the conversation about what another machine changed: install, ask later, never on this machine.

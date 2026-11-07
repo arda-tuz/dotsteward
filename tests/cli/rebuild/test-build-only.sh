@@ -4,7 +4,7 @@
 # flake keeps the host-override contract (input [compat] host_input of type
 # git+file:, the committed tree the gate builds, without the .git directory;
 # shallow=1 for a shallow clone; homeConfigurations.current =
-# <input>.lib.mkHome (import ./profile.nix)), the files are private,
+# <input>.lib.mkHome with what it takes of ./profile.nix), the files are private,
 # inventory.json records the build,
 # the build never updates a lock file, the state records name the built
 # activation package and the profile, and nothing beyond the state root
@@ -38,11 +38,9 @@ assert_eq "{
   inputs.dotfiles.url = \"git+file://$rb_inst\";
 
   outputs = { self, dotfiles }:
-    let
-      profile = import ./profile.nix;
-    in
     {
-      homeConfigurations.current = dotfiles.lib.mkHome profile;
+      homeConfigurations.current =
+        dotfiles.lib.mkHome (builtins.intersectAttrs (builtins.functionArgs dotfiles.lib.mkHome) (import ./profile.nix));
     };
 }" "$(<"$rb_hosts/flake.nix")"
 for path in "$rb_state" "$rb_hosts" "$rb_current"; do
@@ -90,7 +88,7 @@ instance_commit "default host input"
 assert_exit 0 run_rebuild --profile workstation --build-only
 assert_contains "$(<"$rb_hosts/flake.nix")" "inputs.instance.url = \"git+file://$rb_inst\";"
 assert_contains "$(<"$rb_hosts/flake.nix")" "outputs = { self, instance }:"
-assert_contains "$(<"$rb_hosts/flake.nix")" "homeConfigurations.current = instance.lib.mkHome profile;"
+assert_contains "$(<"$rb_hosts/flake.nix")" "instance.lib.mkHome (builtins.intersectAttrs (builtins.functionArgs instance.lib.mkHome) (import ./profile.nix));"
 
 # A shallow clone: Nix reads it only with shallow=1.
 shallow=$DS_TEST_ROOT/shallow

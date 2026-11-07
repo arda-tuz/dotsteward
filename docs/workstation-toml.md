@@ -150,8 +150,8 @@ catalog component (see [catalog.md](catalog.md)) or a private component in
 | `components.<name>.method_by_platform.darwin` | none | The method on macOS; wins over `method`. |
 | `components.<name>.profiles` | every profile | The profiles where the component is active. |
 | `components.<name>.options` | `{}` | Options owned by the component, passed to its module unchanged; its README documents them. |
-| `components.<name>.machines` | none | Reserved for a later release, which scopes a component to named machines. A value is refused until then, because the component would stay active on every other machine. |
-| `components.<name>.tags` | none | Reserved in the same way: the machine tags the component is for. |
+| `components.<name>.machines` | none | The machines the component is for, by the names of `hosts/<name>.toml`. Any other machine never gets it and is never asked: [machines.md](machines.md). |
+| `components.<name>.tags` | none | The machine tags the component is for: a machine with one of them gets it. |
 | `components.<name>.updater` | none | The one thing that updates the component: `apt`, `nix`, `dotsteward`, `self`, `none`, `snap` or `flatpak`. `dotsteward upgrade` starts the updater a component declares for `self`, and for no `updater` on a method other than `deb`; the other values follow in a later release. |
 | `components.<name>.track` | none | More package names `dotsteward upgrade` follows for the `deb` method. |
 | `components.<name>.version` | none | A constraint on the version: `dotsteward upgrade` keeps a `deb` server on its major version. |

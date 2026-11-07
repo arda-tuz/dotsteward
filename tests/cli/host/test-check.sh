@@ -65,6 +65,12 @@ assert_contains "$(problems)" "plugin scoped@market: the components list it for 
 sed -i '/^\[components.other\]$/,$d' "$agents_inst/workstation.toml"
 assert_exit 0 run_host check
 
+# The machines of a component are held to the same rules.
+printf '\n[components.other]\nenable = true\nmachines = ["nowhere"]\n' >>"$agents_inst/workstation.toml"
+assert_contains "$(problems)" "component other: machines names nowhere, which has no hosts/nowhere.toml"
+sed -i '/^\[components.other\]$/,$d' "$agents_inst/workstation.toml"
+assert_exit 0 run_host check
+
 # A skill Home Manager links on every machine cannot be declined on one.
 lock_edit '(.skills[] | select(.name == "beta")).deployment = "home-manager"'
 write_host desktop 'declined = { skills = ["beta"] }'

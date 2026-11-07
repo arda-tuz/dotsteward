@@ -180,6 +180,7 @@ text = open(path, encoding="utf-8").read().replace('producer = "desktop"', 'prod
 text += '\n[components.example]\nenable = true\n'
 text += '[[components.example.options.plugins]]\nspec = "scoped@market"\nmachines = ["solo"]\n'
 text += '[[components.example.options.plugins]]\nspec = "other@market"\nmachines = ["desktop"]\n'
+text += '[components.scoped]\nenable = true\nmachines = ["solo"]\n'
 open(path, "w", encoding="utf-8").write(text)
 PY
 mkdir -p "$agents_inst/components/example"
@@ -214,7 +215,7 @@ assert_eq "" "$(git -C "$agents_inst" status --porcelain --untracked-files=norma
 assert_contains "$(<"$agents_inst/hosts/big.toml")" 'skills = ["gamma"]'
 assert_json "$agents_lock" '(.skills[] | select(.name == "alpha") | .machines) == ["big", "desktop"]
   and (.skills[] | select(.name == "beta") | .machines) == ["desktop"]'
-assert_json - '.hosts.producer == "big"
+assert_json - '.hosts.producer == "big" and .components.scoped.machines == ["big"]
   and ([.components.example.options.plugins[].machines] == [["big"], ["desktop"]])' <<<"$(toml)"
 # What applies to this machine stays what it was.
 assert_eq '["beta","other@market"]' "$(effective '[.skip.skills[], .skip.plugins[]]')"

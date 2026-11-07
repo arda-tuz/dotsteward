@@ -45,7 +45,7 @@ The framework never contains user data. Identity (username, home directory, repo
 - `lib.mkInstance { inputs; }` turns an instance flake into complete outputs: Home Manager configurations per profile, packages, checks and the manifest.
 - The instance owns `nixpkgs` and `home-manager`; the framework input follows them, so there is exactly one nixpkgs in the lock.
 - Every enabled component contributes to one evaluated contract. It is rendered into `manifest.json`, embedded in every generation (`share/dotsteward/manifest.json`), and mirrored into the instance as `.dotsteward/manifest.<system>.json` and `.dotsteward/stage0.<platform>.env` for steps that run before a build (for example the very first bootstrap). A Nix check fails when a mirror is stale.
-- Contract options never depend on the active profile; profile scoping uses the component's `profiles` field. This keeps one manifest per system.
+- Contract options never depend on the active profile or on the tags of a machine; scoping uses the component's `profiles`, `machines` and `tags` fields. This keeps one manifest per system.
 
 ### CLI layer
 

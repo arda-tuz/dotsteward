@@ -198,7 +198,8 @@ hook runs before any Python is available.
 
 `dotsteward_cli.machine` holds the name of this machine and what applies to it
 ([machines.md](machines.md)). `effective(instance, env=None)` is the one answer: `{name,
-profile, tags, skip: {components, skills, plugins}, reasons}`. Nothing stores it, and a new
+profile, tags, skip: {components, skills, plugins}, reasons, incoming, nix_tags,
+nix_tags_sha256, host_build}`. Nothing stores it, and a new
 reason to leave something out goes there, so every command follows. `name_taken` lists the
 skills of the lock that are for other machines while this one has a skill of that name.
 `read_machine`, `write_machine` and `current_name` read and write `<state>/machine.json`,
@@ -208,6 +209,18 @@ document against any schema of the keyword subset, and `config.newer_tree_hint(r
 problems)` words the way out of a tree newer than the CLI. From bash, every command that
 ran `config_load` has `DS_MACHINE_NAME` and the JSON lists `DS_SKIP_COMPONENTS_JSON`,
 `DS_SKIP_SKILLS_JSON` and `DS_SKIP_PLUGINS_JSON`.
+
+### Incoming
+
+`dotsteward_cli.incoming` holds what other machines changed ([machines.md](machines.md)).
+`waiting(instance, name, reasons, env=None)` computes the questions from the tree and the state
+of this machine and writes nothing; `machine.effective` calls it, so every command leaves out
+what has no answer yet. `ask(instance, run, terminal=, install_now=True, env=None)` is the
+question, for `dotsteward incoming` and for what brings the repository forward by itself: on a terminal one item at a time,
+without one an entry of `run` for each, which makes the run end in 3. It returns what still
+waits. `move_forward(instance)` is the fast-forward of a clean checkout. `answer(instance, id,
+never=, env=None)` does what one answer says, and `settle(instance)` is the last step of `agents
+install`.
 
 ### Versions
 

@@ -223,6 +223,23 @@ let
         "tests/agents/helpers.sh"
       ])
     ];
+    cli-incoming = fs.unions [
+      runner
+      cli
+      catalog
+      (paths [
+        "engines"
+        "privacy"
+        "template/.dotsteward"
+        "template/bootstrap.sh"
+        "tools"
+        "tests/agents/helpers.sh"
+        "tests/static/helpers.sh"
+        "tests/skills-tracking/capture-helpers.sh"
+        "tests/skills-tracking/fixtures"
+        "tests/incoming"
+      ])
+    ];
     cli-launcher = fs.unions [
       runner
       (paths [
