@@ -408,12 +408,14 @@ def _refused(stderr: str) -> bool:
 
 
 def commit_identity(root: Path, tip: str) -> list[str]:
-    """`-c` options for a commit: nothing with a configured identity, else the author
-    of the tip, the owner of the repository. Nothing is written to any configuration."""
+    """`-c` options for a commit: nothing with a configured identity, else the author of
+    the first commit of the history of TIP, the owner of the instance; never the author of
+    the last commit, who may be another person. Nothing is written to any configuration."""
     configured = [_git(root, "config", key).stdout.strip() for key in ("user.name", "user.email")]
     if all(configured):
         return []
-    author, _, email = _git_output(root, "log", "-1", "--format=%an%x00%ae", tip).partition("\0")
+    first = _git_output(root, "rev-list", "--max-parents=0", tip).split()[-1]
+    author, _, email = _git_output(root, "log", "-1", "--format=%an%x00%ae", first).partition("\0")
     return ["-c", f"user.name={author}", "-c", f"user.email={email}"]
 
 
