@@ -69,7 +69,7 @@ git -C "$clone" push -q origin main
 up_to_date laptop2
 assert_exit 0 ds laptop2 incoming list --json
 assert_json - '.items[0].id == "skill:scoped" and .items[0].change == "removed" and .items[0].by == "laptop1"' <<<"$DS_STDOUT"
-assert_exit 0 agents laptop2 check --skip-validation
+assert_exit 0 agents laptop2 check
 assert_exit 0 ds laptop2 incoming answer skill:scoped --install
 [[ ! -e $root/scoped ]] || ds_fail "scoped is still here"
 assert_eq '' "$(waiting laptop2)"

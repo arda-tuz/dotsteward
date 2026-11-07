@@ -50,7 +50,7 @@ assert_kept() {
 # incoming
 publish_from_b "first edit of machine b"
 git -C "$(clone_of a)" pull -q --ff-only
-assert_exit 0 ds a "${install[@]}"
+assert_exit 0 ds a incoming answer skill:keeper --install
 assert_contains "$(cat "$a_copy/SKILL.md")" "first edit of machine b"
 assert_kept
 assert_exit 0 ds a skills status --json

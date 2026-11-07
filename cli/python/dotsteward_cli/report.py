@@ -262,6 +262,36 @@ def load_review(state_root: str | os.PathLike[str]) -> dict[str, Any] | None:
     return _read_document(Path(state_root) / REVIEW_FILE)
 
 
+def drop_items(state_root: str | os.PathLike[str], code: str, item_id: str) -> None:
+    """Takes the entry CODE with the id ITEM_ID out of review.json, whichever command put it
+    there: its question has an answer. A command left with no entry leaves the review."""
+    path = Path(state_root) / REVIEW_FILE
+    if not path.exists():
+        return
+    lock = locks.FileLock(Path(state_root) / _REVIEW_LOCK)
+    lock.acquire()
+    try:
+        current = load_review(state_root)
+        items = current.get("items") if current else None
+        if not current or not isinstance(items, list):
+            return
+        kept = [item for item in items if not (item.get("code") == code and item.get("id") == item_id)]
+        if len(kept) == len(items):
+            return
+        if not kept:
+            path.unlink(missing_ok=True)
+            return
+        commands = {item.get("command") for item in kept}
+        runs = current.get("runs")
+        runs = {name: run for name, run in runs.items() if name in commands} if isinstance(runs, dict) else {}
+        worst = combine(run["exit_code"] for run in runs.values())
+        _write_document(
+            path, {**current, "status": status_name(worst), "exit_code": worst, "runs": runs, "items": kept}
+        )
+    finally:
+        lock.release()
+
+
 def load_last(state_root: str | os.PathLike[str], command: str) -> dict[str, Any] | None:
     """The last readable report of COMMAND, None without one."""
     directory = Path(state_root) / _RUNS_DIRECTORY / command

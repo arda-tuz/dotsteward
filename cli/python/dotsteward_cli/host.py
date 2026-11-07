@@ -37,7 +37,7 @@ from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from dotsteward_cli import atomic, config, locks, machine, report, tomlfile
+from dotsteward_cli import atomic, config, incoming, locks, machine, report, tomlfile
 from dotsteward_cli import publish as publishing
 
 EXIT_REFUSAL = 1
@@ -300,6 +300,10 @@ def cmd_init(args: argparse.Namespace, instance: config.Instance, env: Mapping[s
             },
         },
     )
+    if record is None:
+        # A new start under this name: what the instance holds now is the base of it, without
+        # a question. A second `host init` on a machine that has its name changes nothing.
+        Path(state, incoming.KNOWN_FILE).unlink(missing_ok=True)
     if name in registered:
         _log(f"this machine is {name}; {machine.HOSTS_DIR}/{name}.toml says what it declined")
     else:
@@ -475,7 +479,7 @@ def _scan_file(instance: config.Instance, path: str, text: str, env: Mapping[str
     return result.returncode
 
 
-def _commit_on_tip(instance: config.Instance, tip: str, name: str, text: str) -> str:
+def _commit_on_tip(instance: config.Instance, tip: str, name: str, text: str, subject: str | None = None) -> str:
     """One commit on TIP that writes hosts/NAME.toml. Git builds it from objects alone,
     so the checkout and its index never change, and a killed run leaves nothing."""
     root = instance.root
@@ -495,23 +499,31 @@ def _commit_on_tip(instance: config.Instance, tip: str, name: str, text: str) ->
         tip,
         "-F",
         "-",
-        text=commit_message(f"chore(hosts): publish {name}", name),
+        text=commit_message(subject or f"chore(hosts): publish {name}", name),
     )
 
 
 def declined_text(
-    current: str | None, facts: Mapping[str, Any], skill: str | None, *, accepted: Collection[str] = ()
+    current: str | None,
+    facts: Mapping[str, Any],
+    skill: str | None,
+    *,
+    accepted: Collection[str] = (),
+    more: Mapping[str, Collection[str]] | None = None,
 ) -> str:
     """The text of the host file over CURRENT, with SKILL added to declined.skills and
     ACCEPTED taken out of it; for the commit of a skill, which brings the host file along.
-    Other keys and comments stay."""
+    MORE adds names by key of declined (the answers of `incoming`). Other keys and comments
+    stay."""
     tomlkit = _tomlkit()
     document = tomlkit.parse(host_text(current, facts))
+    additions = {key: set(names) for key, names in (more or {}).items() if names}
     if skill is not None:
-        if "declined" not in document:
-            document["declined"] = tomlkit.table()
-        names = sorted({*(str(name) for name in document["declined"].get("skills", [])), skill})
-        document["declined"]["skills"] = names
+        additions.setdefault("skills", set()).add(skill)
+    if additions and "declined" not in document:
+        document["declined"] = tomlkit.table()
+    for key, added in additions.items():
+        document["declined"][key] = sorted({*(str(name) for name in document["declined"].get(key, [])), *added})
     if accepted and "declined" in document:
         names = [str(name) for name in document["declined"].get("skills", []) if str(name) not in accepted]
         document["declined"]["skills"] = names
@@ -527,10 +539,15 @@ class _PrivacyFinding(Exception):
     """The scan of a new commit found something; nothing was published."""
 
 
-def publish(instance: config.Instance, env: Mapping[str, str] | None = None) -> int:
+def publish(
+    instance: config.Instance,
+    env: Mapping[str, str] | None = None,
+    *,
+    declined: Mapping[str, Collection[str]] | None = None,
+) -> int:
     """Brings hosts/<name>.toml of this machine to the remote: the exit status of
     ``host publish`` (OK, PARTIAL without a network, PRIVACY_STOP); Refusal when the
-    remote says no."""
+    remote says no. DECLINED adds names to declined in the same commit (`incoming`)."""
     env = os.environ if env is None else env
     root = instance.root
     state = config.state_root(instance, env)
@@ -546,11 +563,12 @@ def publish(instance: config.Instance, env: Mapping[str, str] | None = None) -> 
     def build(tip: str) -> str | None:
         shown = _git(root, "show", f"{tip}:{path}")
         current = shown.stdout if shown.returncode == 0 else None
-        text = host_text(current, facts)
+        text = declined_text(current, facts, None, more=declined) if declined else host_text(current, facts)
         if current is not None and tomlfile.loads(current) == tomlfile.loads(text):
             return None
         machine.parse_host(text, path, root)
-        commit = _commit_on_tip(instance, tip, name, text)
+        subject = f"chore(hosts): decline on {name}" if declined else f"chore(hosts): publish {name}"
+        commit = _commit_on_tip(instance, tip, name, text, subject)
         if _scan_file(instance, path, text, env) != 0:
             raise _PrivacyFinding(f"the privacy scan found something in {path}; nothing was published")
         return commit

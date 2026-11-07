@@ -38,7 +38,7 @@ tip=$(remote_tip)
 
 # Machine a pulls: it cannot refresh, and b does not move.
 git -C "$(clone_of a)" pull -q --ff-only
-assert_exit 0 ds a "${install[@]}"
+assert_exit 0 ds a incoming answer skill:s2 --install
 assert_contains "$DS_STDOUT$DS_STDERR" "skill outside the managed skill roots not refreshed"
 assert_contains "$DS_STDOUT$DS_STDERR" "skill s2: conflict"
 assert_not_contains "$(cat "$a_dev/SKILL.md")" "the edit of machine b"

@@ -746,6 +746,12 @@ _skills_threeway() {
   ds_python dotsteward_cli.skills.threeway "$action" --instance "$DS_INSTANCE_ROOT" --state-root "$(state_root)" "$@"
 }
 
+# _skills_incoming_waits NAME: another machine changed the own skill NAME and this
+# machine has not answered (dotsteward incoming).
+_skills_incoming_waits() {
+  jq -e --arg name "$1" 'index($name) != null' <<<"${DS_INCOMING_SKILLS_JSON:-[]}" >/dev/null
+}
+
 # _skills_own_note NAME DECISION: says why an own skill stays as it is.
 _skills_own_note() {
   local name=$1
@@ -753,7 +759,9 @@ _skills_own_note() {
     behind) log "skill $name: behind: the copy is ahead of the lock of this checkout; left as it is" ;;
     pending-capture) log "skill $name: pending-capture: a local change waits for a capture; left as it is" ;;
     incoming)
-      if ((SKILLS_CHECK_ONLY)); then
+      if _skills_incoming_waits "$name"; then
+        log "skill $name: incoming: another machine changed it; the copy stays until 'dotsteward incoming' has an answer"
+      elif ((SKILLS_CHECK_ONLY)); then
         log "skill $name: incoming: the lock has a newer copy; $(_skills_rebuild_hint) to take it"
       fi
       ;;
@@ -798,7 +806,7 @@ _skills_own_apply() {
       SKILLS_OWN_COPY=$installed
       ;;
     incoming)
-      if ((!SKILLS_CHECK_ONLY)); then
+      if ((!SKILLS_CHECK_ONLY)) && ! _skills_incoming_waits "$name"; then
         # What the repository cannot bring back stays in the live skill. b moves only
         # for a copy that took the new one: a link out of the skill roots does not.
         kept=$(_skills_staging_dir)

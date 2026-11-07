@@ -506,5 +506,7 @@ fi
 if ((check_only)); then
   log "agent tools and skills verified (profile $profile)"
 else
+  # What this machine holds now is what it knows: known.json of `dotsteward incoming`.
+  ds_python dotsteward_cli.incoming settle
   log "agent tools and skills installed (profile $profile)"
 fi

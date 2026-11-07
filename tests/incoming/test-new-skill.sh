@@ -27,7 +27,7 @@ assert_eq 'skill:foo' "$(waiting laptop2)"
 assert_eq '["foo"]' "$(skipped laptop2 skills)"
 assert_exit 0 ds laptop2 skills effective --json
 assert_eq incoming "$(jq -r '.reasons["skill:foo"]' <<<"$DS_STDOUT")"
-assert_exit 0 agents laptop2 check --skip-validation
+assert_exit 0 agents laptop2 check
 assert_exit 0 agents laptop2 install --skip-validation
 assert_eq 0 "$(find "$(home_of laptop2)/.agents/skills" -name foo | wc -l)" "agents install does not install it"
 
@@ -37,8 +37,8 @@ assert_contains "$out" 'skill foo (new) - machine laptop1'
 assert_contains "$out" '[I]nstall, ask [L]ater, [N]ever on this machine, show the [D]ifference'
 assert_eq 'skill:foo' "$(waiting laptop2)"
 assert_eq 0 "$(find "$(home_of laptop2)/.agents/skills" -name foo | wc -l)"
-assert_json "$(state_of laptop2)/review.json" '[.items[]? | select(.code == "incoming")] | length == 0' ||
-  true
+[[ ! -f $(state_of laptop2)/review.json ]] || assert_json "$(state_of laptop2)/review.json" \
+  '[.items[] | select(.code == "incoming")] | length == 0'
 
 # The difference first, then install: the copy is there, in sync, and nobody asks again.
 out=$(ask_on_tty laptop2 $'d\ni' incoming)
@@ -64,6 +64,11 @@ assert_eq '' "$(waiting laptop2)"
 [[ ! -f $(state_of laptop2)/review.json ]] || assert_json "$(state_of laptop2)/review.json" \
   '[.items[] | select(.code == "incoming")] | length == 0'
 
-# The machine that captured it is not asked about its own work.
+# The machine that captured it is not asked about its own work, also while its checkout
+# is behind, where the lock does not hold it yet: an install leaves the new skill alone.
+assert_eq '' "$(waiting laptop1)"
+assert_exit 0 agents laptop1 install --skip-validation
+[[ -f $(copy_of laptop1 bar)/SKILL.md ]] || ds_fail "an install took a captured skill away"
+assert_eq "$(remote_entry bar | jq -r .directory_sha256)" "$(base laptop1 bar)"
 git -C "$(clone_of laptop1)" pull -q --ff-only origin main
 assert_eq '' "$(waiting laptop1)"

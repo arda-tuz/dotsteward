@@ -18,6 +18,9 @@ assert_json - '.items[0].id == "skill:manual" and .items[0].by == null' <<<"$DS_
 assert_exit 0 ds laptop2 incoming list
 assert_contains "$DS_STDOUT" 'skill manual (new) - an unknown machine'
 assert_exit 0 ds laptop2 incoming answer skill:manual --install
+# The machine that committed it by hand and pushed: no trail, so it asks there too.
+assert_eq 'skill:manual' "$(waiting laptop1)"
+assert_exit 0 ds laptop1 incoming answer skill:manual --install
 
 # A skill this machine committed and has not published: its own, `rebuild` installs it.
 up_to_date laptop1

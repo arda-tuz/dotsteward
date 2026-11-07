@@ -1218,6 +1218,11 @@ def _deleted_skills(scope: Mapping[str, Any]) -> list[str]:
     return [name for name in scope["skip"]["skills"] if scope["reasons"].get(f"skill:{name}") == "deleted"]
 
 
+def _changed_skills(scope: Mapping[str, Any]) -> list[str]:
+    """The own skills another machine changed and this machine did not answer about."""
+    return [item["name"] for item in scope["incoming"] if item["kind"] == "skill" and item["change"] == "changed"]
+
+
 def export_variables(instance: Instance, env: Mapping[str, str] | None = None) -> list[str]:
     """The DS_* declarations of an instance for bash (``cli/lib/config.sh``
     documents every name), one per line: exported scalars
@@ -1255,6 +1260,7 @@ def export_variables(instance: Instance, env: Mapping[str, str] | None = None) -
         ("DS_SKIP_SKILLS_JSON", to_json(scope["skip"]["skills"])),
         ("DS_DELETED_SKILLS_JSON", to_json(_deleted_skills(scope))),
         ("DS_SKIP_PLUGINS_JSON", to_json(scope["skip"]["plugins"])),
+        ("DS_INCOMING_SKILLS_JSON", to_json(_changed_skills(scope))),
         ("DS_NIX_PRIMARY_SYSTEM", c["nix"]["systems"][0]),
         ("DS_NIX_ALLOW_UNFREE", c["nix"]["allow_unfree"]),
         ("DS_NIX_STATE_VERSION", c["nix"]["state_version"]),

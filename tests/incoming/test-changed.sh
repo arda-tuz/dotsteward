@@ -26,7 +26,7 @@ assert_json - '.items[0].id == "skill:foo" and .items[0].change == "changed" and
 assert_exit 0 agents laptop2 install --skip-validation
 assert_eq "$old" "$(<"$copy/SKILL.md")" "agents install leaves it"
 assert_eq "$old_digest" "$(base laptop2 foo)"
-assert_exit 0 agents laptop2 check --skip-validation
+assert_exit 0 agents laptop2 check
 assert_eq '[]' "$(skipped laptop2 skills)" "it stays linked and checked"
 assert_contains "$(ask_on_tty laptop2 l incoming)" 'skill foo (changed) - machine laptop1'
 assert_eq "$old" "$(<"$copy/SKILL.md")"
@@ -61,4 +61,4 @@ assert_eq none "$(base laptop2 foo)"
 assert_eq '' "$(waiting laptop2)"
 assert_exit 0 ds laptop2 skills reconcile --full
 assert_eq none "$(item laptop2 foo '.state // "none"')"
-assert_exit 0 agents laptop2 check --skip-validation
+assert_exit 0 agents laptop2 check

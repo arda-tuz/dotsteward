@@ -20,7 +20,7 @@ up_to_date laptop2
 # Nothing asked before the file exists, and a check does not write it.
 assert_eq '' "$(waiting laptop2)"
 assert_exit 0 ds laptop2 incoming list
-assert_exit 0 agents laptop2 check --skip-validation --keep-going || true
+agents laptop2 check --keep-going >/dev/null 2>&1 || true
 [[ ! -e $known ]] || ds_fail "a check wrote known.json"
 assert_exit 0 ds laptop2 skills effective --json
 assert_json - '.skip.skills == []' <<<"$DS_STDOUT"
@@ -43,7 +43,7 @@ assert_exit 0 agents laptop2 install --skip-validation
 assert_exit 0 ds laptop2 incoming answer skill:vendored2 --install
 [[ -f $(home_of laptop2)/.agents/skills/vendored2/SKILL.md ]] || ds_fail "vendored2 was not installed"
 assert_eq '' "$(waiting laptop2)"
-assert_exit 0 agents laptop2 check --skip-validation
+assert_exit 0 agents laptop2 check
 
 # A copy that is already here is no question, whatever the state says.
 rm -f -- "$known"
@@ -61,6 +61,7 @@ mkdir -p "$unnamed/home/.agents/skills" "$unnamed/home/.claude/skills" "$unnamed
 git clone -q "$remote" "$unnamed/clone"
 anonymous() {
   (
+    # shellcheck disable=SC2031 # each call has its own environment
     export HOME=$unnamed/home DOTSTEWARD_STATE_ROOT=$unnamed/state DOTSTEWARD_INSTANCE=$unnamed/clone
     unset DOTSTEWARD_MACHINE
     cd "$unnamed/clone" || exit

@@ -50,6 +50,7 @@ _ARCHITECTURES = {"amd64": "x86_64", "arm64": "aarch64"}
 REASON_MACHINES = "machines"
 REASON_DECLINED = "declined"
 REASON_DELETED = "deleted"
+REASON_INCOMING = "incoming"
 
 
 def valid_name(name: str) -> bool:
@@ -148,7 +149,7 @@ def read_host(root: str | os.PathLike[str], name: str) -> dict[str, Any] | None:
 # --- What the instance scopes -----------------------------------------------------------
 
 
-def _read_lock(instance: config.Instance) -> dict[str, Any]:
+def read_lock(instance: config.Instance) -> dict[str, Any]:
     """The skills lock, or nothing when it is missing or not an object: the commands
     that need it report that themselves, as they always did."""
     try:
@@ -158,12 +159,12 @@ def _read_lock(instance: config.Instance) -> dict[str, Any]:
     return document if isinstance(document, dict) else {}
 
 
-def _entries(document: Mapping[str, Any], key: str) -> list[dict[str, Any]]:
+def entries_of(document: Mapping[str, Any], key: str) -> list[dict[str, Any]]:
     entries = document.get(key)
     return [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
 
 
-def _plugin_entries(instance: config.Instance) -> Iterator[dict[str, Any]]:
+def plugin_entries(instance: config.Instance) -> Iterator[dict[str, Any]]:
     """Every [[components.<component>.options.plugins]] table."""
     for table in instance.config["components"].values():
         options = table.get("options") if isinstance(table, dict) else None
@@ -175,10 +176,10 @@ def _plugin_entries(instance: config.Instance) -> Iterator[dict[str, Any]]:
 def scoped_entries(instance: config.Instance) -> Iterator[dict[str, Any]]:
     """Every entry that can name machines: the skills and own plugins of the lock and
     the plugin tables of the components."""
-    lock = _read_lock(instance)
-    yield from _entries(lock, "skills")
-    yield from _entries(lock, "own_plugins")
-    yield from _plugin_entries(instance)
+    lock = read_lock(instance)
+    yield from entries_of(lock, "skills")
+    yield from entries_of(lock, "own_plugins")
+    yield from plugin_entries(instance)
 
 
 def _for_this_machine(entry: Mapping[str, Any], name: str | None) -> bool:
@@ -211,7 +212,7 @@ def _deleted_here(instance: config.Instance, state: str, lock: Mapping[str, Any]
     revisions = {skill_state.REPO_OWNED_REVISION, instance.config["compat"].get("repo_owned_revision")}
     roots: list[Path] | None = None
     deleted = []
-    for entry in _entries(lock, "skills"):
+    for entry in entries_of(lock, "skills"):
         skill = entry.get("name")
         record = skill_state.base_entry(base, skill) if isinstance(skill, str) else None
         if record is None or entry.get("revision") not in revisions or entry.get("deployment", "copy") != "copy":
@@ -240,11 +241,16 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
     recorded: dict[str, Any] = {}
     if record is not None and record.get("name") == name and isinstance(record.get("host"), dict):
         recorded = record["host"]
-    declined = host.get("declined", {})
+    declined = {key: list(values) for key, values in host.get("declined", {}).items()}
+    if name is not None:
+        from dotsteward_cli import incoming
+
+        for key, values in incoming.never_answers(state, name).items():
+            declined[key] = [*declined.get(key, []), *values]
 
     reasons: dict[str, str] = {}
-    lock = _read_lock(instance)
-    for entry in _entries(lock, "skills"):
+    lock = read_lock(instance)
+    for entry in entries_of(lock, "skills"):
         skill = entry.get("name")
         if isinstance(skill, str):
             if not _for_this_machine(entry, name):
@@ -253,13 +259,22 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
                 reasons[f"skill:{skill}"] = REASON_DECLINED
     for skill in _deleted_here(instance, state, lock, os.environ if env is None else env):
         reasons.setdefault(f"skill:{skill}", REASON_DELETED)
-    plugins = {str(p["name"]): p for p in _entries(lock, "own_plugins") if isinstance(p.get("name"), str)}
-    plugins.update({str(p["spec"]): p for p in _plugin_entries(instance) if isinstance(p.get("spec"), str)})
+    plugins = {str(p["name"]): p for p in entries_of(lock, "own_plugins") if isinstance(p.get("name"), str)}
+    plugins.update({str(p["spec"]): p for p in plugin_entries(instance) if isinstance(p.get("spec"), str)})
     for plugin, entry in plugins.items():
         if not _for_this_machine(entry, name):
             reasons[f"plugin:{plugin}"] = REASON_MACHINES
         elif plugin in declined.get("plugins", []):
             reasons[f"plugin:{plugin}"] = REASON_DECLINED
+
+    from dotsteward_cli import incoming
+
+    # What another machine brought and this machine did not answer yet. A new item stays out
+    # of every command; the copy of a changed one stays and is checked, only not replaced.
+    questions = incoming.waiting(instance, name, reasons, env)
+    for question in questions:
+        if question["change"] == incoming.NEW:
+            reasons[f"{question['kind']}:{question['name']}"] = REASON_INCOMING
 
     profile = host.get("profile") or recorded.get("profile") or recorded_profile(state, instance)
     return {
@@ -272,6 +287,7 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
             "plugins": sorted(key.removeprefix("plugin:") for key in reasons if key.startswith("plugin:")),
         },
         "reasons": dict(sorted(reasons.items())),
+        "incoming": questions,
     }
 
 
@@ -312,7 +328,7 @@ def name_taken(instance: config.Instance, scope: Mapping[str, Any], env: Mapping
     uses for a skill of its own: they would otherwise stay untracked without a word."""
     roots = _skill_roots(instance, os.environ if env is None else env)
     taken: list[str] = []
-    for entry in _entries(_read_lock(instance), "skills"):
+    for entry in entries_of(read_lock(instance), "skills"):
         skill, directory = entry.get("name"), entry.get("directory")
         if scope["reasons"].get(f"skill:{skill}") != REASON_MACHINES or not isinstance(directory, str):
             continue
@@ -365,7 +381,7 @@ def check_problems(instance: config.Instance) -> list[str]:
             problems.append(f"{label}: system {host['system']} is not in nix.systems")
         if "profile" in host and host["profile"] not in instance.config["profiles"]["names"]:
             problems.append(f"{label}: profile {host['profile']} is not in profiles.names")
-        for entry in _entries(_read_lock(instance), "skills"):
+        for entry in entries_of(read_lock(instance), "skills"):
             if (
                 entry.get("name") in host.get("declined", {}).get("skills", [])
                 and entry.get("deployment") == "home-manager"
@@ -373,17 +389,17 @@ def check_problems(instance: config.Instance) -> list[str]:
                 problems.append(
                     f"{label}: declined skill {entry['name']} has the home-manager deployment, on every machine"
                 )
-    lock = _read_lock(instance)
+    lock = read_lock(instance)
     lock_name = instance.config["skills"]["lock"]
-    for entry in _entries(lock, "skills"):
+    for entry in entries_of(lock, "skills"):
         label = f"{lock_name}: skill {entry.get('name')}"
         problems += _machines_problems(label, entry.get("machines"), names)
         if entry.get("machines") is not None and entry.get("deployment", "copy") != "copy":
             problems.append(f"{label}: machines needs the copy deployment")
-    for entry in _entries(lock, "own_plugins"):
+    for entry in entries_of(lock, "own_plugins"):
         problems += _machines_problems(f"{lock_name}: plugin {entry.get('name')}", entry.get("machines"), names)
     answers: dict[Any, Any] = {}
-    for plugin in _plugin_entries(instance):
+    for plugin in plugin_entries(instance):
         label = f"{config.CONFIG_FILE}: plugin {plugin.get('spec')}"
         problems += _machines_problems(label, plugin.get("machines"), names)
         # What a machine leaves out goes by the spec, so a spec has one answer.
@@ -421,7 +437,9 @@ def _parser() -> argparse.ArgumentParser:
         description=(
             "Prints the machine name, its profile and tags, and what it leaves out: skip.components, "
             "skip.skills and skip.plugins, with one word for each in reasons (machines: the entry is for "
-            "other machines; declined: hosts/<name>.toml says never; deleted: an own skill deleted here). "
+            "other machines; declined: hosts/<name>.toml says never; deleted: an own skill deleted here; "
+            "incoming: another machine brought it and this machine did not answer yet). incoming lists those "
+            "questions (dotsteward incoming). "
             "name_taken lists the skills of the lock that are for other machines while this machine has a "
             "skill of that name."
         ),

@@ -86,7 +86,7 @@ git -C "$elsewhere" add -A
 git -C "$elsewhere" commit -q -m "chore: a skill whose directory has another name"
 git -C "$elsewhere" push -q origin main
 git -C "$(clone_of a)" pull -q --ff-only
-assert_exit 0 ds a agents install --profile workstation --skip-validation
+assert_exit 0 ds a incoming answer skill:xn --install
 tip=$(remote_tip)
 under_name=$(home_of a)/.agents/skills/xn
 cp -a "$(home_of a)/.agents/skills/xdir" "$under_name"

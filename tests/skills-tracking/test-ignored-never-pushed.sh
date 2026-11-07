@@ -17,6 +17,8 @@ edit_on_b() {
   copy=$(home_of b)/.agents/skills/$1
   git -C "$(clone_of b)" pull -q --ff-only
   assert_exit 0 ds b "${install[@]}"
+  # A skill of another machine lands on b when b says so.
+  ds b incoming answer "skill:$1" --install >/dev/null 2>&1 || true
   (cd "$copy" && bash)
   assert_exit 0 ds b skills reconcile --full
   find "$copy" -exec touch -h -d '2001-01-01' {} +
@@ -47,7 +49,7 @@ printf 'an edit of b\n' >>SKILL.md
 EDIT
 tip=$(remote_tip)
 git -C "$(clone_of a)" pull -q --ff-only
-assert_exit 0 ds a "${install[@]}"
+assert_exit 0 ds a incoming answer skill:ig --install
 assert_contains "$DS_STDOUT$DS_STDERR" "secrets/token"
 assert_contains "$(cat "$a_copy/SKILL.md")" "an edit of b"
 [[ ! -e $a_copy/secrets/token ]] || ds_fail "no rule covers the file any more"
