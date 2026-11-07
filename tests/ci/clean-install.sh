@@ -85,6 +85,7 @@ USER=${USER:-$(id -un)}
 export USER
 fresh_profile=fresh
 adopt_profile=workstation
+machine_name=ci-runner
 instance=$HOME/workstation
 remote=$RUNNER_TEMP/workstation.git
 home2=$RUNNER_TEMP/home2
@@ -194,6 +195,7 @@ init_instance() {
     --components shell,herdr,claude-code,codex,opencode-pi,vscode \
     --profiles "$adopt_profile,$fresh_profile" \
     --framework-url "path:$framework_root" \
+    --machine "$machine_name" \
     --non-interactive
 }
 
@@ -210,7 +212,7 @@ bootstrap_instance() {
   # directory, the activation in the second home would move this home's
   # profile there (Home Manager's profile migration).
   mkdir -p "$(dirname -- "$(hm_profile "$HOME")")"
-  (cd "$instance" && DOTSTEWARD_ASSUME_YES=1 ./bootstrap.sh --profile "$fresh_profile")
+  (cd "$instance" && DOTSTEWARD_ASSUME_YES=1 DOTSTEWARD_MACHINE=$machine_name ./bootstrap.sh --profile "$fresh_profile")
 }
 
 # set_live_setting VALUE: the tracked key in the live settings file, the
@@ -268,13 +270,13 @@ settings_round_second_home() {
   log "the second home got $setting_key = $value; the first home's profile stayed $before"
 }
 
-# host_file_landed: stage 1 named this machine from its host name and published
-# hosts/<name>.toml without a commit in the checkout, which the e2e before this step
-# passed behind the remote.
+# host_file_landed: stage 1 named this machine, the producer of the instance, and
+# published hosts/<name>.toml without a commit in the checkout, which the e2e before
+# this step passed behind the remote.
 host_file_landed() {
   local name
   name=$(cli host show --json | jq -r .name)
-  [[ -n $name && $name != null ]] || die "the bootstrap did not name this machine"
+  [[ $name == "$machine_name" ]] || die "the bootstrap did not name this machine"
   [[ -z $(git -C "$instance" status --porcelain --untracked-files=normal) ]] ||
     die "the bootstrap left the checkout dirty"
   git -C "$remote" cat-file -e "refs/heads/main:hosts/$name.toml" ||

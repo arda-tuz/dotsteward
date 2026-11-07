@@ -13,8 +13,11 @@ machine goes on without a name then. Only `<state>/machine.json` is written, so 
 checkout stays clean and the bootstrap needs no git identity.
 
 `dotsteward host publish` brings `hosts/<name>.toml` to the remote without touching
-the checkout. The bootstrap tries it at its end. Without a network or a login it
-says so and the next `host publish` picks it up. A checkout that is behind the
+the checkout. The bootstrap tries it at its end when the instance names machines
+already, in `hosts/` or as `[hosts] producer`; the first machine of an older instance
+is registered with the command, once checks of the instance that list the files of
+its tree allow it. Without a network or a login it says so and the next `host publish`
+picks it up. A checkout that is behind the
 remote after that passes `dotsteward e2e` with a note; `git pull --ff-only` moves it.
 The file is scanned first with the policy of the instance, as `dotsteward static`
 scans everything there: a finding stops the publish.

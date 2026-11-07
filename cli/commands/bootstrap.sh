@@ -24,9 +24,13 @@
 #      mode; adopt mode skips them with one line)
 #   6. e2e --profile P
 #   7. host publish                 hosts/<name>.toml to the remote, when the
-#                                   machine has a name; no failure stops stage
-#                                   1 here: it says so and the next `host
-#                                   publish` works it out again
+#                                   machine has a name and the instance names
+#                                   machines (hosts/ or [hosts] producer): the
+#                                   first file of an older instance is a step
+#                                   of its own, because its checks may list the
+#                                   files of its tree. No failure stops stage 1
+#                                   here: it says so and the next `host publish`
+#                                   works it out again
 #   8. the final message
 # The first failing step stops stage 1 with its exit status (3 from the
 # system-install phase is the adaptive route). P must be profiles.bootstrap.
@@ -177,6 +181,10 @@ name_machine() {
 publish_machine() {
   local status=0
   [[ -n ${DOTSTEWARD_MACHINE:-} || -f $(state_root)/machine.json ]] || return 0
+  if [[ -z $DS_HOSTS_PRODUCER ]] && ! compgen -G "$DS_INSTANCE_ROOT/hosts/*.toml" >/dev/null; then
+    log "this instance names no machine yet, so this name stays here; 'dotsteward host publish' registers it"
+    return 0
+  fi
   "${dotsteward[@]}" host publish || status=$?
   ((status == 0)) ||
     warn "the host file of this machine is not on the remote yet (exit $status); 'dotsteward host publish' tries again"
