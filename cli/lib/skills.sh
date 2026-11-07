@@ -624,7 +624,11 @@ _skills_refresh() {
     fi
   done
   if ((!managed)); then
-    warn "skill outside the managed skill roots not refreshed: $name ($real)"
+    if [[ $SKILLS_OWN_KIND == plugin ]]; then
+      warn "plugin outside the managed roots not refreshed: $name ($real)"
+    else
+      warn "skill outside the managed skill roots not refreshed: $name ($real)"
+    fi
     return 0
   fi
   [[ -d $real && ! -L $real ]] || skills_fail skill-not-directory "$real" "skill is not a directory: $real"
@@ -935,7 +939,7 @@ _skills_is_own() {
 # which `agents install` puts right. It goes to standard error: the callers
 # print their answer on standard output.
 _skills_placement_note() {
-  printf '[dotsteward] placement of an own skill: %s\n' "$*" >&2
+  printf '[dotsteward] placement of an own %s: %s\n' "$SKILLS_OWN_KIND" "$*" >&2
 }
 
 # _skills_threeway ACTION ARG...: dotsteward_cli.skills.threeway for this
