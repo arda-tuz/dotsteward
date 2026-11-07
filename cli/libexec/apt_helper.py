@@ -42,6 +42,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 try:
     import apt
@@ -53,6 +54,8 @@ except ImportError:
     apt_pkg = None
 
 SCHEMA_VERSION = 1
+SCRATCH_PREFIX = "dotsteward-apt-pins-"
+SCRATCH_MAX_AGE_SECONDS = 24 * 60 * 60
 PIN_FILE = "60dotsteward"
 PIN_PRIORITY = 990
 # After every run of dpkg the pin file follows what dpkg has, also after `dpkg -i` by hand. A hook
@@ -61,7 +64,8 @@ PIN_HOOK_FILE = "60dotsteward-pin"
 PIN_SYNC_FILE = "usr/local/lib/dotsteward/pin-sync.py"
 PIN_HEADER = "# Managed by dotsteward: gated classes stay as dpkg has them. Only `dotsteward upgrade` moves them."
 # The Sources of the gated classes: what the pin holds. The other kernel packages
-# (linux-signed-*, linux-hwe-*) carry the ABI in their names: only these pull them in.
+# (linux-signed-*, linux-hwe-*) carry the ABI in their names: only these pull them in. A rebuild
+# of the same ABI (~24.04.1 to .2) moves under the pin: the module of that ABI still loads.
 GATED_SOURCE = re.compile(
     r"^(?:linux-meta|linux-restricted-modules|linux-restricted-signatures|nvidia-graphics-drivers-)"
 )
@@ -250,7 +254,7 @@ class Session:
         apt_pkg.init_system()
         self.real_parts = apt_pkg.config.find_dir("Dir::Etc::PreferencesParts")
         self.preferences = apt_pkg.config.find("Dir::Etc::Preferences")
-        self.scratch = tempfile.mkdtemp(prefix="dotsteward-apt-")
+        self.scratch = tempfile.mkdtemp(prefix=SCRATCH_PREFIX)
         self.pin_dirs = 0
         self.lock_error = ""
         self.journal_recovery = None
@@ -1239,11 +1243,14 @@ def make_plan(session):
                 message=loss_message(target["losses"], running),
             )
         )
+    old_kernels = sorted(row["name"] for row in rows["remove"] if row.get("reason") == "old-abi")
+    if old_kernels:
+        items.append(report_item("kernel-removed", packages=old_kernels, message="an old kernel makes way"))
     if target and target.get("old_series"):
         items.append(
             report_item(
                 "driver-needs-reboot",
-                message="the loaded module stays the one of the old series: driver and user space do not match until a reboot",
+                message="the loaded module stays of the old series: driver and user space differ until a reboot",
             )
         )
     module_names = {row["name"].split(":")[0] for bucket in ("install", "upgrade") for row in rows[bucket]}
@@ -1658,6 +1665,21 @@ def action_recover(session):
     return {"schema_version": SCHEMA_VERSION, "status": "done", "items": items, "recovery": recovery}
 
 
+def remove_old_scratch():
+    """What a killed helper of root left in the temporary directory: nothing reads it again."""
+    base = tempfile.gettempdir()
+    for name in os.listdir(base):
+        path = os.path.join(base, name)
+        if not name.startswith(SCRATCH_PREFIX):
+            continue
+        try:
+            stat = os.lstat(path)
+            if stat.st_uid == os.geteuid() == 0 and time.time() - stat.st_mtime > SCRATCH_MAX_AGE_SECONDS:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            pass
+
+
 def require_root():
     if os.geteuid() != 0:
         raise HelperError("not-root", "this action changes the system and needs root")
@@ -1666,7 +1688,7 @@ def require_root():
 def dpkg_dist_files():
     found = set()
     for directory, _subdirectories, names in os.walk("/etc"):
-        found.update(os.path.join(directory, name) for name in names if name.endswith(".dpkg-dist"))
+        found.update(os.path.join(directory, name) for name in names if name.endswith((".dpkg-dist", ".ucf-dist")))
     return found
 
 
@@ -1696,7 +1718,9 @@ def fill_rollback(session, cache, rows):
         cached = os.path.join(archives, name)
         try:
             if os.path.exists(cached):
-                shutil.copyfile(cached, target)
+                partial = target + ".partial"
+                shutil.copyfile(cached, partial)
+                os.replace(partial, target)
             else:
                 fetched = version.fetch_binary(directory, apt.progress.base.AcquireProgress())
                 target = fetched or target
@@ -1707,9 +1731,11 @@ def fill_rollback(session, cache, rows):
             answer["kept"].append(os.path.basename(target))
         else:
             answer["missing"].append(f"{pkg.name}={version.version}")
-    for name in os.listdir(directory):
-        if name.endswith(".deb") and name not in keep:
-            os.unlink(os.path.join(directory, name))
+    # What the way back needs comes first: with a part of this set missing the last set stays.
+    if not answer["missing"]:
+        for name in os.listdir(directory):
+            if name.endswith(".deb") and name not in keep:
+                os.unlink(os.path.join(directory, name))
     return answer
 
 
@@ -1730,6 +1756,7 @@ def run_commit(cache):
 
 def action_commit(session):
     require_root()
+    remove_old_scratch()
     dpkg_environment()
     dpkg_options()
     if not take_lock(session):
