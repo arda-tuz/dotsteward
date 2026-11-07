@@ -22,6 +22,12 @@ for skill in gone kept never; do
   assert_exit 0 ds laptop1 skills forget "$skill"
   up_to_date laptop1
 done
+# The machine that forgot them keeps its copies, and a later install leaves them alone.
+assert_exit 0 agents laptop1 install --skip-validation
+for skill in gone kept never; do
+  [[ -f $(copy_of laptop1 "$skill")/SKILL.md ]] || ds_fail "forget took the copy of $skill away"
+done
+assert_eq '' "$(waiting laptop1)"
 up_to_date laptop2
 root=$(home_of laptop2)/.agents/skills
 

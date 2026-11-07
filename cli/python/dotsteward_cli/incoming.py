@@ -628,9 +628,11 @@ def _evaluates(instance: config.Instance, this: str, commit: str) -> None:
     publishing.git(root, "update-ref", ref, commit)
     flake = f"git+file://{root}?ref={ref}&rev={commit}"
     attribute = f"{flake}#hostConfigurations.{this}.activationPackage.drvPath"
+    override = os.environ.get("DOTSTEWARD_FRAMEWORK_OVERRIDE")
+    arguments = ["--no-write-lock-file", "--override-input", "dotsteward", override] if override else []
     try:
         result = subprocess.run(
-            ["nix", "--extra-experimental-features", "nix-command flakes", "eval", "--raw", attribute],
+            ["nix", "--extra-experimental-features", "nix-command flakes", "eval", "--raw", attribute, *arguments],
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
@@ -641,11 +643,14 @@ def _evaluates(instance: config.Instance, this: str, commit: str) -> None:
         return
     finally:
         publishing.git(root, "update-ref", "-d", ref)
-    if result.returncode != 0 and "does not provide attribute" not in result.stderr:
-        told = [line.strip(" -") for line in result.stderr.splitlines() if "dotsteward:" in line] or [
-            result.stderr.strip()
-        ]
-        raise _NotEvaluated("this machine does not evaluate without it: " + "; ".join(told))
+    if result.returncode == 0 or "does not provide attribute" in result.stderr:
+        return
+    told = [line.strip(" -") for line in result.stderr.splitlines() if "dotsteward:" in line]
+    if told or "Failed assertions" in result.stderr:
+        raise _NotEvaluated("this machine does not evaluate without it: " + "; ".join(told or [result.stderr.strip()]))
+    # Not a word about the answer: the store, the network. It stays a question, and says why.
+    last = result.stderr.strip().splitlines()[-1:] or ["no message"]
+    raise _NotEvaluated(f"could not check this answer with Nix: {last[0]}")
 
 
 def _publish_never(instance: config.Instance, this: str, env: Mapping[str, str]) -> None:

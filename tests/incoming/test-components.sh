@@ -91,8 +91,35 @@ assert_exit 1 ds laptop2 incoming answer component:needed-tool --never
 assert_contains "$DS_STDERR" 'component needed-tool is left out on this machine, and other-app needs it'
 assert_eq "$before" "$(remote_tip)"
 assert_eq 'component:needed-tool' "$(waiting laptop2)"
+
+# Nix fails for another reason: that says nothing about the answer, and the message does not claim so.
+cat >"$DS_TEST_ROOT/bin/nix" <<STUB
+#!$BASH
+printf 'error: cannot connect to the store\n' >&2
+exit 1
+STUB
+assert_exit 1 ds laptop2 incoming answer component:needed-tool --never
+assert_contains "$DS_STDERR" 'could not check this answer with Nix: error: cannot connect to the store'
+assert_not_contains "$DS_STDERR" 'does not evaluate'
+assert_eq "$before" "$(remote_tip)"
+assert_eq 'component:needed-tool' "$(waiting laptop2)"
+
+# An older pin has no such output: nothing to say, the answer stands. Asked for with the framework
+# of an override, Nix gets it too.
+cat >"$DS_TEST_ROOT/bin/nix" <<STUB
+#!$BASH
+printf '%s\n' "\$*" >"$DS_TEST_ROOT/nix-args"
+printf "error: flake 'git+file:///x' does not provide attribute 'hostConfigurations'\n" >&2
+exit 1
+STUB
+with_override() {
+  DOTSTEWARD_FRAMEWORK_OVERRIDE=git+file:///example/framework ds "$@"
+}
+assert_exit 0 with_override laptop2 incoming answer component:needed-tool --never
+assert_contains "$(<"$DS_TEST_ROOT/nix-args")" '--override-input dotsteward git+file:///example/framework'
+assert_contains "$(<"$DS_TEST_ROOT/nix-args")" '#hostConfigurations.laptop2.activationPackage.drvPath'
+assert_contains "$(remote_file hosts/laptop2.toml)" 'needed-tool'
 rm -f -- "$DS_TEST_ROOT/bin/nix"
-assert_exit 0 ds laptop2 incoming answer component:needed-tool --install
 
 # For another machine, or a tag this one does not carry: no question, no tag, left out.
 up_to_date laptop1
@@ -104,9 +131,9 @@ assert_eq '' "$(waiting laptop2)"
 assert_exit 0 ds laptop2 skills effective --json
 assert_eq machines "$(jq -r '.reasons["component:only-there"]' <<<"$DS_STDOUT")"
 assert_eq tags "$(jq -r '.reasons["component:tagged-tool"]' <<<"$DS_STDOUT")"
-assert_eq '["machine:laptop2","no:other-tool"]' "$(nix_tags laptop2)"
+assert_eq '["machine:laptop2","no:needed-tool","no:other-tool"]' "$(nix_tags laptop2)"
 assert_eq '' "$(waiting laptop1)"
-assert_eq '["only-there","tagged-tool"]' "$(skipped laptop2 components | jq -c 'map(select(. != "other-tool"))')"
+assert_eq '["only-there","tagged-tool"]' "$(skipped laptop2 components | jq -c 'map(select(. != "other-tool" and . != "needed-tool"))')"
 
 # A reinstall under the same name brings back what is for it, without a question.
 up_to_date laptop1
