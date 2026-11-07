@@ -61,9 +61,9 @@ assert_nix_eq '{"order":["shell","herdr"],"source":"catalog"}' \
   "explicit catalog, in canonical catalog order"
 catalog_json=$(nix_lib_json 'lib.attrNames dsLib.catalog')
 expected_order=$(jq -c --argjson cat "$catalog_json" -n \
-  '["shell","herdr","claude-code","codex","opencode-pi","vscode","pdfcraft","gridcraft","wordcraft","deckcraft","craft-anything"] | map(select(. as $n | $cat | index($n)))')
+  '["shell","herdr","claude-code","codex","opencode-pi","vscode","pdfcraft","gridcraft","wordcraft","deckcraft","craft-anything","apt-policy"] | map(select(. as $n | $cat | index($n)))')
 assert_nix_eq "$expected_order" "(dsLib.config.load (/. + \"$minimal\")).components.order" "load uses lib.catalog"
-assert_nix_eq '["shell","herdr","claude-code","codex","opencode-pi","vscode","pdfcraft","gridcraft","wordcraft","deckcraft","craft-anything"]' 'dsLib.config.catalogOrder'
+assert_nix_eq '["shell","herdr","claude-code","codex","opencode-pi","vscode","pdfcraft","gridcraft","wordcraft","deckcraft","craft-anything","apt-policy"]' 'dsLib.config.catalogOrder'
 
 # resolve works on already parsed attributes; errors returns the messages
 # without throwing.
