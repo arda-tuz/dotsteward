@@ -15,6 +15,13 @@
 #                       what the hook of Claude Code sees when a file tool wrote FILE
 #   plugin_item MACHINE NAME JQ, plugin_base MACHINE NAME, settle_plugin MACHINE NAME [AGENT]
 #   remote_plugin NAME  its own_plugins entry in the tip of the remote
+#   fake_nix_mirrors MACHINE
+#                       a nix in ~/.nix-profile/bin of MACHINE (which dotsteward puts first)
+#                       that answers `nix eval ... ROOT#dotstewardMirrors` with the manifest
+#                       mirror of ROOT plus claude_code_plugins, the plugin tables of its
+#                       workstation.toml, as the real evaluation carries the component
+#                       options; each call goes to nix-calls, and while the file nix-fails
+#                       exists the evaluation fails; anything else exits 1
 # shellcheck source=tests/skills-tracking/capture-helpers.sh
 source "$DS_REPO_ROOT/tests/skills-tracking/capture-helpers.sh"
 
@@ -87,4 +94,31 @@ settle_plugin() {
 remote_plugin() {
   git -C "$remote" show refs/heads/main:agent/skills.lock.json |
     jq -c --arg name "$1" 'first((.own_plugins // [])[] | select(.name == $name)) // {}'
+}
+
+fake_nix_mirrors() {
+  mkdir -p "$(home_of "$1")/.nix-profile/bin"
+  cat >"$(home_of "$1")/.nix-profile/bin/nix" <<NIX
+#!$BASH
+printf 'nix %s\n' "\$*" >>"$DS_TEST_ROOT/nix-calls"
+for argument in "\$@"; do
+  case \$argument in
+    *'#dotstewardMirrors')
+      [[ ! -e $DS_TEST_ROOT/nix-fails ]] || { printf 'error: assertion failed\n' >&2; exit 1; }
+      exec python3 - "\${argument%#dotstewardMirrors}" ".dotsteward/manifest.$fixture_system.json" <<'PY'
+import json, sys, tomllib
+root, mirror = sys.argv[1], sys.argv[2]
+config = tomllib.load(open(f"{root}/workstation.toml", "rb"))
+plugins = config.get("components", {}).get("claude-code", {}).get("options", {}).get("plugins", [])
+manifest = json.load(open(f"{root}/{mirror}"))
+manifest["claude_code_plugins"] = plugins
+print(json.dumps({mirror.split("/")[-1]: json.dumps(manifest, indent=2) + "\n"}))
+PY
+      ;;
+  esac
+done
+exit 1
+NIX
+  chmod 0755 "$(home_of "$1")/.nix-profile/bin/nix"
+  touch "$DS_TEST_ROOT/nix-calls"
 }

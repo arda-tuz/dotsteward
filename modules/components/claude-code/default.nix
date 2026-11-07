@@ -37,8 +37,9 @@
 #   name = "<VARIABLE>"
 #   command = ["<program>", "<argument>", ...]
 # The agentsPost hook plugins.sh runs with every plugin list, also an empty
-# one (it then ends at once), so a plugin that skill tracking adds to the
-# list changes no generated file. It adds missing marketplaces, turns on
+# one (it then ends at once), so the hooks stay the same whatever the list
+# holds (the options themselves are part of the manifest, and a change of
+# them needs `dotsteward generate`). It adds missing marketplaces, turns on
 # their background auto-update (the default; autoUpdate = false opts a
 # marketplace out), and installs or enables missing plugins at user scope
 # (agents install), and verifies every listed one (both modes). Each trackAt

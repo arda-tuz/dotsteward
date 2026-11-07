@@ -14,6 +14,7 @@ commit_instance "$world/edit"
 git -C "$world/edit" push -q origin HEAD:main
 
 new_machine a
+fake_nix_mirrors a
 plugins_dir=$(home_of a)/.claude/plugins
 mkdir -p "$plugins_dir"
 jq -n '{"example-market": {source: {source: "github", repo: "example-org/example-market"},

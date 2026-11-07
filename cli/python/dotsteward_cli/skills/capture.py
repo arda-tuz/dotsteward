@@ -45,10 +45,14 @@ afterwards tries again; whatever keeps a skill waiting for more than a day is sa
 findings land in ``last-capture.json``; the matched text never does.
 
 A plugin goes the same way (``plugins``): an own plugin is copied to
-``agent/plugins/<directory>`` with its ``own_plugins`` entry, and the answer to a plugin of a
-marketplace adds its table to ``[[components.claude-code.options.plugins]]`` of
-``workstation.toml``. The claude-code component runs its plugins hook with every list, so
-the table changes no generated file, and the same two checks prove the commit.
+``agent/plugins/<directory>`` with its ``own_plugins`` entry. The answer --all or --here to a
+plugin of a marketplace is a maintenance change instead: its table goes into
+``[[components.claude-code.options.plugins]]`` of ``workstation.toml``, and the manifest mirror
+carries the component options, so the same commit carries what ``dotsteward generate`` (the
+CLI the tree pins, in the worktree) makes of the new tree. Its evaluation runs every
+assertion of the component on the table; then the same two checks, and the commit goes out
+on the maintain ref. That evaluation is Nix, so only ``skills track`` and ``skills retry``
+carry such an answer (``maintain``); a hook or a detached capture leaves it waiting.
 
 One capture at a time: a busy ``capture.lock`` ends the run with status 0, and the holder
 reads pending.json again before it ends.
@@ -710,6 +714,24 @@ def _apply_marketplace(
     return allowed
 
 
+def _stage(worktree: str, paths: Sequence[str]) -> None:
+    for path in paths:
+        added = publish.git(worktree, "-c", f"core.excludesFile={os.devnull}", "add", "-A", "-f", "--", path)
+        if added.code != 0 and os.path.lexists(os.path.join(worktree, path)):
+            raise OSError(f"git add failed: {added.stderr.strip()}")
+
+
+def _generate(worktree: str) -> list[str]:
+    """The mirrors of the tree, as ``dotsteward generate`` writes them; the paths it may
+    change. ChecksRed when the evaluation fails."""
+    generated = _launcher(worktree, "generate")
+    if generated.code != 0:
+        raise ChecksRed(
+            "generate-failed", _error_lines(generated.stderr)[:_KEPT_FINDINGS] or [_last_lines(generated.stderr)]
+        )
+    return [".dotsteward", "versions.lock.json"]
+
+
 def _apply_decline(context: Mapping[str, Any], work: Work, worktree: str, attempt: _Attempt) -> list[str]:
     machine = reconcile.machine_name(context)
     if not machine:
@@ -806,10 +828,12 @@ def _build_on(
     allowed += _announce_machine(context, worktree)
     if json.dumps(document, sort_keys=True) != before:
         _write_tree_lock(worktree, loaded_tree["lock"], document)
-    for path in allowed:
-        added = publish.git(worktree, "-c", f"core.excludesFile={os.devnull}", "add", "-A", "-f", "--", path)
-        if added.code != 0 and os.path.lexists(os.path.join(worktree, path)):
-            raise OSError(f"git add failed: {added.stderr.strip()}")
+    _stage(worktree, allowed)
+    if any(_is_maintenance(item.work) for item in attempt.applied):
+        # Nix sees what git knows: the mirrors are made of the staged tree.
+        generated = _generate(worktree)
+        _stage(worktree, generated)
+        allowed += generated
     _check_paths(worktree, tip, allowed)
     _check_writers(context, loaded_tree, worktree, tip)
     _run_checks(worktree, summary)
@@ -982,8 +1006,9 @@ def _cycle(context: Mapping[str, Any], tree: Mapping[str, str], work: Sequence[W
         last["attempt"] = attempt
         return commit
 
+    scope = "maintain" if any(_is_maintenance(item) for item in work) else "skill"
     try:
-        published = publish.publish(instance, tree["branch"], "skill", build)
+        published = publish.publish(instance, tree["branch"], scope, build)
     except ChecksRed as red:
         if len(work) > 1:
             # Which skill? Each on its own says it.
@@ -1000,7 +1025,7 @@ def _cycle(context: Mapping[str, Any], tree: Mapping[str, str], work: Sequence[W
         summary.findings += red.findings
         summary.blocked.append(item.name)
         summary.codes.append(report.PRIVACY_STOP if red.reason == "privacy" else report.FAILED)
-        _say(f"skill {item.name} was not published: {red.reason}; dotsteward skills status has the findings")
+        _say(f"{item.kind} {item.name} was not published: {red.reason}; dotsteward skills status has the findings")
         return
     except ChecksUnavailable as unavailable:
         _say(f"the checks of the instance cannot run: {unavailable}")
@@ -1037,6 +1062,11 @@ def _cycle(context: Mapping[str, Any], tree: Mapping[str, str], work: Sequence[W
 # --- a run --------------------------------------------------------------------------------
 
 
+def _is_maintenance(work: Work) -> bool:
+    """An answer that changes workstation.toml and its mirrors."""
+    return work.marketplace and bool(work.answer) and not work.answer.get("never")
+
+
 def waiting(state_root: str) -> bool:
     """Whether something still waits for a capture."""
     return any(
@@ -1046,10 +1076,15 @@ def waiting(state_root: str) -> bool:
 
 
 def _ready(
-    context: Mapping[str, Any], names: Sequence[str] | None, handled: set[str], only_due: bool = False
+    context: Mapping[str, Any],
+    names: Sequence[str] | None,
+    handled: set[str],
+    only_due: bool = False,
+    maintain: bool = False,
 ) -> list[Work]:
     """The items that wait for a capture; each only once in a run. ONLY_DUE: the run of a
-    deadline, which leaves alone what still has its delay to wait."""
+    deadline, which leaves alone what still has its delay to wait. MAINTAIN: the run of an
+    answer, which may carry a maintenance change (Nix); no other run does."""
     document = state.load_pending(str(context["state_root"]))
     now = time.time()
     delay = sleeper.delay_seconds(context)
@@ -1078,9 +1113,12 @@ def _ready(
         if not answer and isinstance(path, str) and not os.path.isdir(path):
             state.drop_item(str(context["state_root"]), key)
             continue
-        work.append(
-            Work(key, name, item, path if isinstance(path, str) else None, answer if isinstance(answer, dict) else {})
+        found = Work(
+            key, name, item, path if isinstance(path, str) else None, answer if isinstance(answer, dict) else {}
         )
+        if _is_maintenance(found) and not maintain:
+            continue
+        work.append(found)
     return work
 
 
@@ -1139,9 +1177,15 @@ def _write_last(state_root: str, summary: Summary) -> None:
 
 
 def run_now(
-    context: Mapping[str, Any], tree: Mapping[str, str], names: Sequence[str] | None = None, *, only_due: bool = False
+    context: Mapping[str, Any],
+    tree: Mapping[str, str],
+    names: Sequence[str] | None = None,
+    *,
+    only_due: bool = False,
+    maintain: bool = False,
 ) -> Summary:
-    """One capture run: publishes what waits and reads pending.json again before it ends."""
+    """One capture run: publishes what waits and reads pending.json again before it ends.
+    MAINTAIN: also an answer that changes workstation.toml (see the module text)."""
     state_root = str(context["state_root"])
     instance = str(context["instance"])
     summary = Summary()
@@ -1156,7 +1200,7 @@ def run_now(
     try:
         sleeper.log(state_root, "run")
         while True:
-            work = _ready(context, names, handled, only_due)
+            work = _ready(context, names, handled, only_due, maintain)
             if not work:
                 break
             ready = _settled(work)
@@ -1164,7 +1208,9 @@ def run_now(
             if not ready:
                 continue
             ran = True
-            answers = [item for item in ready if set(item.answer) & {"never", "forget", "clear"}]
+            answers = [
+                item for item in ready if set(item.answer) & {"never", "forget", "clear"} or _is_maintenance(item)
+            ]
             captures = [item for item in ready if item not in answers]
             for batch in [[item] for item in answers] + ([captures] if captures else []):
                 _cycle(context, tree, batch, summary)

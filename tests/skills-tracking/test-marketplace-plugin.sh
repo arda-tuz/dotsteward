@@ -11,18 +11,8 @@
 # it, and one of a tracked plugin changes nothing. A project-scope plugin, a plugin of a
 # marketplace that is not a GitHub one and the plugins Claude Code brings itself are no
 # question, and neither is anything without the files.
-# shellcheck source=tests/skills-tracking/capture-helpers.sh
-source "$DS_REPO_ROOT/tests/skills-tracking/capture-helpers.sh"
-
-for agent in claude codex; do
-  cat >"$DS_TEST_ROOT/bin/$agent" <<FAKE
-#!$BASH
-printf '%s %s\n' "$agent" "\$*" >>"$DS_TEST_ROOT/agent-calls"
-exit 1
-FAKE
-  chmod 0755 "$DS_TEST_ROOT/bin/$agent"
-done
-: >"$DS_TEST_ROOT/agent-calls"
+# shellcheck source=tests/skills-tracking/plugin-helpers.sh
+source "$DS_REPO_ROOT/tests/skills-tracking/plugin-helpers.sh"
 
 # The instance manages Claude Code, with one plugin tracked already.
 git clone -q "$remote" "$world/edit"
@@ -39,6 +29,7 @@ commit_instance "$world/edit"
 git -C "$world/edit" push -q origin HEAD:main
 
 new_machine a
+fake_nix_mirrors a
 plugins_dir=$(home_of a)/.claude/plugins
 mkdir -p "$plugins_dir"
 
@@ -72,16 +63,6 @@ installed() {
   printf '%s\n' "$document" >"$plugins_dir/installed_plugins.json"
   # A new file time, as an install by Claude Code gives it.
   touch -d "@$(($(date +%s) + VERSION))" "$plugins_dir/installed_plugins.json"
-}
-
-plugin_item() {
-  local pending
-  pending=$(state_of "$1")/skills/pending.json
-  [[ -f $pending ]] || {
-    jq -rn "{} | $3"
-    return 0
-  }
-  jq -r --arg key "plugin:$2" ".items[\$key] // {} | $3" "$pending"
 }
 
 remote_plugins() {
@@ -171,7 +152,9 @@ ds_code a skills track shared-plugin@example-market --all
 assert_eq "$start" "$(git -C "$remote" rev-parse 'refs/heads/main^')" "one commit"
 assert_eq "chore(plugins): track shared-plugin@example-market" "$(git -C "$remote" log -1 --format=%s refs/heads/main)"
 assert_contains "$(git -C "$remote" log -1 --format=%B refs/heads/main)" "Dotsteward-Machine: a"
-assert_eq "workstation.toml" "$(git -C "$remote" diff-tree --no-commit-id --name-only -r refs/heads/main)"
+# With the mirrors generate makes of the new tree (test-marketplace-mirrors.sh).
+assert_eq ".dotsteward/manifest.$fixture_system.json
+workstation.toml" "$(git -C "$remote" diff-tree --no-commit-id --name-only -r refs/heads/main | LC_ALL=C sort)"
 assert_json - '.[-1] == {"spec": "shared-plugin@example-market", "marketplace": "example-org/example-market"}' <<<"$(remote_plugins)"
 # What the file said before stays as it was, comments included.
 assert_eq "$(git -C "$remote" show "$start:workstation.toml")" \

@@ -37,7 +37,12 @@ A plugin is tracked the same way, under its own name in `dotsteward skills statu
 
 For a plugin of a marketplace, `--all` adds a `[[components.claude-code.options.plugins]]`
 table with `spec` and `marketplace` to `workstation.toml`, `--here` with `machines` too, and
-the plugins hook of the claude-code component installs it on the other machines; `--never`
+the plugins hook of the claude-code component installs it on the other machines. The
+manifest mirror carries the component options, so the same commit carries what `dotsteward
+generate` makes of the new tree (its evaluation also runs every check of the component on the
+table) and goes out on the maintain ref; a failed evaluation publishes nothing
+(`generate-failed`). This needs Nix, so only `skills track` and `skills retry` carry such an
+answer, never a hook or a capture in the background; `--never`
 puts the spec into `declined.plugins` of the host file. `--own` does not apply. Take the
 table out of `workstation.toml` again (by hand, or on another machine) and the plugin is not
 tracked any more: once the checkout has that change, a machine where it is installed asks

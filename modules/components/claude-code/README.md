@@ -185,9 +185,10 @@ equivalent, but TOML 1.0 requires each inline table on a single line.
 
 The `plugins` hook (`plugins.sh`, an agentsPost hook: agents phase, before
 validation) is part of the component with every list; with an empty one it
-ends at once. So when skill tracking adds the table of a plugin you answered
-with `dotsteward skills track NAME@MARKETPLACE --all`, no generated file
-changes (see `docs/skill-tracking.md`). `dotsteward agents install`:
+ends at once, so the hooks of the manifest stay the same whatever the list
+holds. The list itself is part of the manifest: a change of it needs
+`dotsteward generate`, which `dotsteward skills track NAME@MARKETPLACE --all`
+runs for the table it adds (see `docs/skill-tracking.md`). `dotsteward agents install`:
 
 - runs `claude plugin marketplace add OWNER/REPO` when a `marketplace` is
   not listed by `claude plugin marketplace list --json`;

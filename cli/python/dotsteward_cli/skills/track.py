@@ -167,7 +167,7 @@ def _pinned_source(item: Mapping[str, Any]) -> dict[str, Any]:
 
 def _finish(context: Mapping[str, Any], loaded: config.Instance, name: str) -> int:
     """Carries out the answer now."""
-    summary = capture.run_now(context, capture.tree_paths(loaded), [name])
+    summary = capture.run_now(context, capture.tree_paths(loaded), [name], maintain=True)
     return summary.code
 
 

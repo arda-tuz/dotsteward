@@ -19,32 +19,7 @@ git -C "$world/edit" push -q origin HEAD:main
 
 new_machine a
 mirror=.dotsteward/manifest.$fixture_system.json
-# nix eval --json ... ROOT#dotstewardMirrors: the manifest of ROOT with the plugin specs of
-# its workstation.toml, as the real evaluation puts them into the component options.
-mkdir -p "$(home_of a)/.nix-profile/bin"
-cat >"$(home_of a)/.nix-profile/bin/nix" <<NIX
-#!$BASH
-printf 'nix %s\n' "\$*" >>"$DS_TEST_ROOT/nix-calls"
-for argument in "\$@"; do
-  case \$argument in
-    *'#dotstewardMirrors')
-      [[ ! -e $DS_TEST_ROOT/nix-fails ]] || { printf 'error: assertion failed\n' >&2; exit 1; }
-      exec python3 - "\${argument%#dotstewardMirrors}" "$mirror" <<'PY'
-import json, sys, tomllib
-root, mirror = sys.argv[1], sys.argv[2]
-config = tomllib.load(open(f"{root}/workstation.toml", "rb"))
-plugins = config.get("components", {}).get("claude-code", {}).get("options", {}).get("plugins", [])
-manifest = json.load(open(f"{root}/{mirror}"))
-manifest["claude_code_plugins"] = plugins
-print(json.dumps({mirror.split("/")[-1]: json.dumps(manifest, indent=2) + "\n"}))
-PY
-      ;;
-  esac
-done
-exit 1
-NIX
-chmod 0755 "$(home_of a)/.nix-profile/bin/nix"
-: >"$DS_TEST_ROOT/nix-calls"
+fake_nix_mirrors a
 
 plugins_dir=$(home_of a)/.claude/plugins
 mkdir -p "$plugins_dir"
