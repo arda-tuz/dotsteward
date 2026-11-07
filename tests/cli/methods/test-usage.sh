@@ -33,7 +33,7 @@ assert_calls
 # The manifest mirror must exist, be schema 1 and describe this system.
 mv "$methods_manifest" "$DS_TEST_ROOT/manifest.json"
 assert_exit 1 run_install --profile fresh
-assert_eq "[dotsteward] ERROR: manifest not found: $methods_manifest (run 'dotsteward sync' to regenerate the mirrors)" "$DS_STDERR"
+assert_eq "[dotsteward] ERROR: manifest not found: $methods_manifest (run 'dotsteward generate' to regenerate the mirrors)" "$DS_STDERR"
 mv "$DS_TEST_ROOT/manifest.json" "$methods_manifest"
 
 manifest_edit '.schema_version = 2'
