@@ -1,10 +1,11 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2153 # DS_REPO_ROOT comes from tests/lib/harness.sh
 # The flow of skills/dotsteward-maintain: the frontmatter text,
-# the reference set, the start sequence, the single maintain-scope gate after
-# staging, the fixed commit, activate, verify and publish order (after a red
-# E2E too: gate, rebuild, then E2E again), the version and skill steps of
-# the implementation, the settings buffer workflow, the report in the
+# the reference set, the start sequence that ends in `maintain begin`, one
+# `dotsteward apply` for the gate, commit, activate, verify and publish steps
+# (after a red E2E too: a new commit through apply, which runs the gate, the
+# rebuild, then E2E again), none of those steps by hand, the version and skill
+# steps of the implementation, the settings buffer workflow, the report in the
 # user's language unless the overlay names one, and no legacy script path or
 # engine command (the CLI commands do that work).
 
@@ -45,20 +46,18 @@ references=$(find "$skill_dir/references" -mindepth 1 -maxdepth 1 -printf '%f\n'
 assert_eq "classification.md component-contract.md framework-map.md integration-contract.md local-maintained-files.md " \
   "$references" "reference files"
 
-# Start: context, overlay, classification, then the remote check, the dirty
-# tree, the read-only preflight of the current profile, the maintain-scope
-# prepare and the settings status, in this order.
+# Start: context, overlay, classification, then `maintain begin`, which does
+# the checkout guards, the preflight, the prepare and the settings status; its
+# questions (dirty tree, unpublished commits, local settings, adaptive route)
+# go to the user before any write.
 in_order "$skill" \
   "dotsteward context --json" \
   "overlay" \
   "references/classification.md" \
-  "git remote get-url origin" \
-  "git status --porcelain" \
-  "dotsteward preflight --read-only --json --profile" \
-  "dotsteward txn prepare --official-sources-only --scope maintain" \
-  "dotsteward settings status"
-assert_contains "$(grep -F 'dotsteward preflight --read-only' "$skill")" ".profiles.current" \
-  "preflight uses the current profile of the context"
+  "dotsteward maintain begin --json"
+for code in checkout-dirty unpublished-commits settings-local adaptive-route; do
+  grep -qF -- "\`$code\`" "$skill" || ds_fail "SKILL.md does not say what to do about $code"
+done
 
 # Plan: version changes follow the update skill's references and pins latest.
 assert_contains "$(<"$skill")" "../dotsteward-update/references/" "plan links the update references"
@@ -70,25 +69,31 @@ assert_contains "$(fenced "$skill")" "dotsteward pins sync --skill" "new instanc
 assert_contains "$(<"$skill")" "--check-only" "installers keep a --check-only validation"
 assert_contains "$(<"$skill")" "gate.updatePaths" "the update allowlist comes from gate.updatePaths"
 
-# Validate once: stage, then the one maintain-scope gate, in the background.
-in_order "$skill" "git add -A" "dotsteward gate --scope maintain"
-[[ $(grep -c 'dotsteward gate' <(fenced "$skill")) == 1 ]] ||
-  ds_fail "SKILL.md runs the gate in more than one fenced command"
-grep -qi 'background' "$skill" || ds_fail "SKILL.md does not run the gate in the background"
-grep -q 'timeout 60' "$skill" || ds_fail "SKILL.md does not bound network commands with timeout 60"
-
-# Commit, activate, verify, publish: fixed order after the gate.
+# Validate, commit, activate, verify, publish: one apply, in the background,
+# with a conventional subject and the activation and publish options. Its
+# description names the steps in their fixed order, and no fenced command
+# runs one of them by hand.
+[[ $(grep -c 'dotsteward apply -m' <(fenced "$skill")) == 1 ]] ||
+  ds_fail "SKILL.md does not run exactly one fenced dotsteward apply -m"
+assert_contains "$(fenced "$skill" | grep -F 'dotsteward apply -m')" "--activate --publish" \
+  "apply takes the activation and publish options"
+for step in 'dotsteward gate' 'git commit' 'git add' 'dotsteward rebuild' 'dotsteward e2e' 'dotsteward txn' 'git pull'; do
+  if fenced "$skill" | grep -qF -- "$step"; then
+    ds_fail "SKILL.md runs [$step] by hand; dotsteward apply does it"
+  fi
+done
 in_order "$skill" \
+  "dotsteward apply -m" \
+  "git add -A" \
   "dotsteward gate --scope maintain" \
-  "git commit" \
-  "dotsteward rebuild --profile" \
-  "dotsteward e2e --profile" \
+  "trace line" \
+  "dotsteward rebuild --profile <profile> --switch" \
+  "dotsteward e2e" \
   "dotsteward txn publish --scope maintain"
-assert_contains "$(fenced "$skill" | grep -F 'dotsteward rebuild')" "--switch" "rebuild switches"
-# shellcheck disable=SC2016 # the literal command text
-assert_contains "$(fenced "$skill" | grep -F 'dotsteward e2e')" \
-  '--expected-remote-base "$(dotsteward txn status --json | jq -r .candidate.base_oid)"' \
-  "e2e takes the prepared base"
+grep -qi 'background' "$skill" || ds_fail "SKILL.md does not run apply in the background"
+grep -q 'timeout 60' "$skill" || ds_fail "SKILL.md does not bound network commands with timeout 60"
+grep -qF 'contribute upgrade --carry' "$skill" ||
+  ds_fail "SKILL.md does not carry the unpublished commits across a framework fix"
 
 # A red E2E: a new commit, the gate, the rebuild that activates it, then E2E
 # again, in this order.
@@ -117,8 +122,7 @@ in_order "$settings_ref" \
   "dotsteward settings status --json" \
   "dotsteward settings resolve" \
   "dotsteward settings flush" \
-  "dotsteward gate --scope maintain" \
-  "dotsteward txn publish --scope maintain" \
+  "dotsteward apply" \
   "dotsteward settings reconcile"
 for word in track track-file untrack validate; do
   grep -q "dotsteward settings $word" "$settings_ref" ||
