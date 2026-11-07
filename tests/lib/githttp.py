@@ -44,7 +44,7 @@ def planned_failure():
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def log_message(self, format, *args):  # noqa: A002 - the base class names it format
+    def log_message(self, format, *args):
         pass
 
     def log_request(self, code="-", size="-"):
