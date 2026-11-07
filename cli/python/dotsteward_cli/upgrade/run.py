@@ -44,7 +44,7 @@ from typing import Any
 
 from dotsteward_cli import apt_plan, atomic, config, firmware, incoming, machine, procs, report, runner
 from dotsteward_cli import publish as publishing
-from dotsteward_cli.host import commit_identity
+from dotsteward_cli.host import commit_identity, commit_message
 from dotsteward_cli.skills import commands as skills_commands
 from dotsteward_cli.skills import state as skill_state
 from dotsteward_cli.upgrade import analysis, facts, holds, plugins
@@ -140,9 +140,9 @@ class Upgrade(runner.Runner):
         """Where the tree of this run is: the clone while it has a commit, else the checkout."""
         return self.work or self.root
 
-    def _work_git(self, *arguments: str) -> publishing.GitResult:
+    def _work_git(self, *arguments: str, stdin: str | None = None) -> publishing.GitResult:
         assert self.work is not None
-        return publishing.git(self.work, *arguments)
+        return publishing.git(self.work, *arguments, stdin=stdin)
 
     def _command_again(self) -> str:
         """The command that does what waits."""
@@ -769,7 +769,8 @@ class Upgrade(runner.Runner):
         self._work_git("add", "-A")
         subject = self.instance.config["commit"]["update_subject"]
         identity = commit_identity(self.root, self.tip)
-        committed = self._work_git(*identity, "commit", "--quiet", "-m", subject)
+        # The trace line says which machine made the commit.
+        committed = self._work_git(*identity, "commit", "--quiet", "-F", "-", stdin=commit_message(subject, self.name))
         if committed.code != 0:
             self.run.step("commit", report.FAILED, detail=committed.stderr.strip())
             self.framework_moved = False
