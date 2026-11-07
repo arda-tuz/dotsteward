@@ -17,8 +17,8 @@ at most once in 24 hours, with at most 10 names, and never any content of a skil
 A question needs somebody to answer it, and every ``claude -p`` is a session of its own,
 so the default is silence: ``CLAUDE_CODE_SESSION_ATTENDED=0`` never speaks, ``1`` or an
 entrypoint of ``cli`` does, anything else does not. Codex has no such variable: it speaks
-only under a ``codex`` process that is not ``codex exec``, read from ``/proc``, so not on
-macOS; it never blocks. The items wait in pending.json for the next session or `upgrade`.
+only under a ``codex`` process that is not ``codex exec``, read from ``/proc`` on Linux and
+from ``ps`` on macOS; it never blocks. The items wait in pending.json for the next session or `upgrade`.
 
 Nothing here imports at module level what the path without a change does not need:
 modules below this one take no ``pathlib``, ``tomllib``, ``subprocess`` or
@@ -91,20 +91,54 @@ def attended(agent: str, payload: Mapping[str, Any]) -> bool:
 
 def _under_codex_session() -> bool:
     """A process above this one is ``codex``, and it is not ``codex exec``."""
+    from dotsteward_cli import config
+
+    read = _proc_process if config.runtime_platform() == "linux" else _ps_process
     pid = os.getppid()
     for _ in range(5):
         if pid <= 1:
             return False
-        try:
-            with open(f"/proc/{pid}/cmdline", "rb") as handle:
-                arguments = handle.read().split(b"\0")
-            with open(f"/proc/{pid}/stat", "rb") as handle:
-                pid = int(handle.read().rpartition(b")")[2].split()[1])
-        except (OSError, ValueError, IndexError):
+        process = read(pid)
+        if process is None or not process[1]:
             return False
+        pid, arguments = process
         if os.path.basename(arguments[0]) == b"codex":
             return b"exec" not in arguments[1:]
     return False
+
+
+def _proc_process(pid: int) -> tuple[int, list[bytes]] | None:
+    """(parent pid, command line) of PID from ``/proc`` (Linux); None when unreadable."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as handle:
+            arguments = handle.read().split(b"\0")
+        with open(f"/proc/{pid}/stat", "rb") as handle:
+            parent = int(handle.read().rpartition(b")")[2].split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+    return parent, arguments
+
+
+def _ps_process(pid: int) -> tuple[int, list[bytes]] | None:
+    """The same from ``ps``, where there is no ``/proc`` (macOS). The command line comes
+    back as one line, split at blanks; an argument with a blank in it is several."""
+    import subprocess
+
+    try:
+        done = subprocess.run(
+            ["ps", "-ww", "-o", "ppid=", "-o", "args=", "-p", str(pid)],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=_PAYLOAD_SECONDS,
+            env={**os.environ, "LC_ALL": "C"},
+            check=False,
+        )
+        fields = done.stdout.split()
+        if done.returncode != 0 or len(fields) < 2:
+            return None
+        return int(fields[0]), fields[1:]
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
 
 
 # --- what a file tool wrote ------------------------------------------------------------
