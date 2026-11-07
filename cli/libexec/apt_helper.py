@@ -385,6 +385,13 @@ def version_of(cache, name, wanted):
     return next((v for v in cache[name].versions if v.version == wanted), None)
 
 
+def loses_running(losses, running):
+    """Whether a module of the running kernel is among LOSSES: its ABI, not a part of it."""
+    return any(
+        (match := ABI_PACKAGE_RE.match(name.split(":")[0])) and match.group(1) == running for name in losses
+    )
+
+
 def abi_of_release(release):
     """The ABI of `uname -r`: 7.0.0-42-generic is 7.0.0-42."""
     match = re.match(rf"^{ABI}", release)
@@ -585,6 +592,23 @@ def joint_target(session, cache, classes):
             pairs.add((respins[0].source_name, respins[0].version))
         else:
             losses.append(pkg.name)
+    # A series change: the module of the old series goes with it, on every kernel that has one. The
+    # new series takes its place where the archive has a module that suits the driver.
+    fallback_modules = []
+    if changing_driver and classes["nvidia"]:
+        old = re.compile(rf"^{re.escape(classes['nvidia']['module_prefix'])}-({ABI})-([a-z0-9-]+)$")
+        for pkg in cache:
+            match = old.match(pkg.shortname)
+            if not (match and pkg.is_installed) or match.group(1) == abi:
+                continue
+            name = f"{line['module_prefix']}-{match.group(1)}-{match.group(2)}"
+            versions = cache[name].versions if name in cache else ()
+            suited = [v for v in newest_first(versions) if session.stable(v) and accepts(v, line["common"], dv.version)]
+            if suited:
+                pairs.add((suited[0].source_name, suited[0].version))
+                fallback_modules.append(name)
+            else:
+                losses.append(pkg.name)
     target.update(
         kernel=kv.version,
         module=mv.version,
@@ -596,7 +620,7 @@ def joint_target(session, cache, classes):
     )
     if changing_driver:
         # The module first: its Provides satisfies the driver, which otherwise pulls the DKMS package.
-        target["installs"] = [module_meta, driver_name]
+        target["installs"] = [module_meta, *sorted(fallback_modules), driver_name]
         target["old_series"] = classes["nvidia"]
     return target, items
 
@@ -1128,8 +1152,15 @@ def make_plan(session):
             report_item(
                 "module-loss",
                 packages=target["losses"],
-                running=any(running in name for name in target["losses"]),
+                running=loses_running(target["losses"], running),
                 message=loss_message(target["losses"], running),
+            )
+        )
+    if target and target.get("old_series"):
+        items.append(
+            report_item(
+                "driver-needs-reboot",
+                message="the loaded module stays the one of the old series: driver and user space do not match until a reboot",
             )
         )
     module_names = {row["name"].split(":")[0] for bucket in ("install", "upgrade") for row in rows[bucket]}
@@ -1160,7 +1191,7 @@ def make_plan(session):
 
 def loss_message(losses, running):
     text = "NVIDIA modules of older kernels go: " + ", ".join(losses)
-    if any(running in name for name in losses):
+    if loses_running(losses, running):
         text += "; the running kernel is one of them, so driver and user space do not match until a reboot"
     return text
 
