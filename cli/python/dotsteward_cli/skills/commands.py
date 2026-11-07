@@ -131,10 +131,15 @@ def _status(args: argparse.Namespace, loaded: config.Instance) -> int:
     in_sync = 0
     shown_dropped: set[str] = set()
     for skill in document["own"]:
+        key = f"{skill.get('kind') or 'skill'}:{skill['name']}"
+        waiting = document["pending"].get(key)
         if skill["state"] == threeway.IN_SYNC:
             in_sync += 1
+        elif isinstance(waiting, dict) and waiting.get("state") == reconcile.NAME_TAKEN:
+            # Its place is taken here: said with the pending item, never as missing.
+            pass
         else:
-            print(f"[dotsteward] {skill['name']}: {skill['state']}")
+            print(f"[dotsteward] {key}: {skill['state']}")
         for path in skill["dropped"]:
             print(f"[dotsteward] {skill['name']}: left out by an ignore rule: {path}")
             shown_dropped.add(f"{skill['name']}:{path}")
@@ -142,13 +147,19 @@ def _status(args: argparse.Namespace, loaded: config.Instance) -> int:
             print(f"[dotsteward] {skill['name']}: link out of the tree or broken: {path}")
     for key, item in sorted(document["pending"].items()):
         if isinstance(item, dict):
+            if item.get("state") == reconcile.NAME_TAKEN:
+                why = f": {item.get('reason') or 'another copy'}"
+                print(f"[dotsteward] {key}: name-taken{why} ({item.get('path')})")
+                continue
             why = f": {item['reason']}" if item.get("reason") else ""
             print(f"[dotsteward] {key}: {item.get('state')} ({item.get('origin')}){why}")
             copy = item.get("path")
             if item.get("state") in reconcile.KEPT_OUT and not (isinstance(copy, str) and os.path.isdir(copy)):
                 print(f"[dotsteward] {key}: no copy is left: dotsteward skills forget --clear {item.get('name')}")
+            if item.get("state") == reconcile.CAPTURE and isinstance(item.get("answer"), dict) and item["answer"]:
+                print(f"[dotsteward] {key}: answered, not published yet: dotsteward skills retry {item.get('name')}")
             for line in str(item.get("detail") or "").splitlines():
-                print(f"[dotsteward] {key}: {line}")
+                print(f"[dotsteward] {key}: {line.removeprefix('[dotsteward] ')}")
     # What the last capture published and left out, which the checkout may not have yet.
     last = document.get("last_capture")
     if isinstance(last, dict):

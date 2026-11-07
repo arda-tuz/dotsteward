@@ -629,6 +629,12 @@ def restore(loaded: config.Instance, name: str) -> int:
                 path = os.path.join(plugins.plugin_root(str((entry.get("agents") or [plugins.AGENT])[0])), directory)
             else:
                 path = os.path.join(_home(), ".agents", "skills", directory)
+            if os.path.lexists(path):
+                # It holds something that is no copy of this one: never deleted.
+                raise AnswerRefused(
+                    f"{path} holds something else; move it away (or rename it) and restore again, "
+                    f"or keep it with 'dotsteward skills track {name} --never'"
+                )
             digest = _install_from(context, loaded, tip, entry, path)
             state.record_base(state_root, str(entry["name"]), digest, tip, path, kind)
             state.drop_item(state_root, key)
@@ -636,7 +642,10 @@ def restore(loaded: config.Instance, name: str) -> int:
                 state.change_pending(
                     state_root, lambda document: document.get("missing", {}).pop(key, None) is not None
                 )
-            _say(f"{name}: installed from the remote into {path}; the next rebuild links it")
+            if kind == state.PLUGIN:
+                _say(f"{name}: installed from the remote into {path}")
+            else:
+                _say(f"{name}: installed from the remote into {path}; the next rebuild links it")
         finally:
             lock.release()
         return report.OK
