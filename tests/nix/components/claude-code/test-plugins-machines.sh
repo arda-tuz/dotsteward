@@ -43,8 +43,7 @@ assert_exit 0 agents install
 assert_contains "$DS_STDOUT" "claude plugin beta@builtin-market 1.0.0 verified"
 assert_exit 0 agents check
 
-# A plugin entry that names machines is for those machines only. The hook reads the
-# entry from workstation.toml; the manifest of this instance stays as it was.
+# A plugin entry that names machines is for those machines only.
 sed -i 's/{ spec = "beta@builtin-market" }/{ spec = "beta@builtin-market", machines = ["desktop"] }/' "$inst/workstation.toml"
 : >"$DS_CALL_LOG"
 assert_exit 0 agents check
@@ -54,3 +53,21 @@ sed -i 's/declined = { plugins = \["beta@builtin-market"\] }//' "$inst/hosts/des
 : >"$DS_CALL_LOG"
 assert_exit 0 agents check
 assert_contains "$DS_STDOUT" "claude plugin beta@builtin-market 1.0.0 verified"
+
+# The same through the evaluation: the module takes the key, so the mirror holds the entry
+# and the instance passes as it is.
+inst=$(cc_instance scoped-nix "method = \"external\"
+options = { plugins = [
+  { spec = \"alpha@builtin-market\" },
+  { spec = \"gamma@builtin-market\", machines = [\"desktop\"] },
+] }")
+cc_mirror "$inst"
+mkdir -p "$inst/hosts"
+printf 'schema_version = 1\n' >"$inst/hosts/laptop.toml"
+printf 'schema_version = 1\n' >"$inst/hosts/desktop.toml"
+export DOTSTEWARD_MACHINE=laptop
+assert_exit 0 agents install
+assert_not_contains "$DS_STDOUT" "gamma@builtin-market"
+export DOTSTEWARD_MACHINE=desktop
+assert_exit 0 agents install
+assert_contains "$DS_STDOUT" "gamma@builtin-market 1.0.0 verified"

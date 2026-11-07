@@ -40,8 +40,25 @@ assert_exit 0 agents install
 assert_contains "$DS_STDOUT" "codex plugin beta@other-market 1.0.0 verified"
 assert_exit 0 agents check
 
-# A plugin entry that names machines is for those machines only. The hook reads the
-# entry from workstation.toml; the manifest of this instance stays as it was.
+# A plugin entry that names machines is for those machines only.
 sed -i 's/{ spec = "beta@other-market" }/{ spec = "beta@other-market", machines = ["desktop"] }/' "$inst/workstation.toml"
 assert_exit 0 agents check
 assert_not_contains "$DS_STDOUT" "beta@other-market"
+
+# The same through the evaluation: the module takes the key, so the mirror holds the entry
+# and the instance passes as it is.
+inst=$(codex_instance scoped-nix '["x86_64-linux"]' "method = \"external\"
+options = { plugins = [
+  { spec = \"alpha@other-market\" },
+  { spec = \"gamma@other-market\", machines = [\"desktop\"] },
+] }")
+codex_mirror "$inst"
+mkdir -p "$inst/hosts"
+printf 'schema_version = 1\n' >"$inst/hosts/laptop.toml"
+printf 'schema_version = 1\n' >"$inst/hosts/desktop.toml"
+export DOTSTEWARD_MACHINE=laptop
+assert_exit 0 agents install
+assert_not_contains "$DS_STDOUT" "gamma@other-market"
+export DOTSTEWARD_MACHINE=desktop
+assert_exit 0 agents install
+assert_contains "$DS_STDOUT" "gamma@other-market 1.0.0 verified"
