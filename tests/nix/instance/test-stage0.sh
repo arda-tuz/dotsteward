@@ -123,3 +123,22 @@ copy=$(instance_copy "$nix_instance_fixtures/example")
 jq 'del(.nix.installer_sha256)' "$nix_instance_fixtures/example/versions.lock.json" >"$copy/versions.lock.json"
 assert_inst_fails "(instance { root = /. + \"$copy\"; }).dotstewardMirrors.\"stage0.linux.env\"" \
   "dotsteward: versions.lock.json lacks nix.installer_sha256 (required by component core)"
+
+# Platform files: the fast path of each Linux release that declares one, in parallel
+# arrays sorted by platform; a file without a fast path and a macOS file add nothing.
+copy=$(instance_copy "$nix_instance_fixtures/example")
+mkdir -p "$copy/platforms"
+printf 'schema_version = 1\n[fast_path]\nos_id = "ubuntu"\nos_version = "26.04"\narchitecture = "x86_64"\n' \
+  >"$copy/platforms/ubuntu-26.04.toml"
+printf 'schema_version = 1\n[fast_path]\nos_id = "ubuntu"\nos_version = "22.04"\narchitecture = "x86_64"\n' \
+  >"$copy/platforms/ubuntu-22.04.toml"
+printf 'schema_version = 1\n[components.example]\nunavailable = "not here"\n' >"$copy/platforms/ubuntu.toml"
+printf 'schema_version = 1\n[components.example]\nunavailable = "not here"\n' >"$copy/platforms/macos-15.toml"
+platforms=$(stage0_dump "instance { root = /. + \"$copy\"; }" linux)
+expect_array "$platforms" 'DS_STAGE0_PLATFORM_IDS=([0]="ubuntu-22.04" [1]="ubuntu-26.04")'
+expect_array "$platforms" 'DS_STAGE0_PLATFORM_OS_IDS=([0]="ubuntu" [1]="ubuntu")'
+expect_array "$platforms" 'DS_STAGE0_PLATFORM_OS_VERSIONS=([0]="22.04" [1]="26.04")'
+expect_array "$platforms" 'DS_STAGE0_PLATFORM_ARCHITECTURES=([0]="x86_64" [1]="x86_64")'
+assert_eq 38 "$(grep -c '^declare' <<<"$platforms")" "number of linux variables with platform files"
+platforms_darwin=$(stage0_dump "instance { root = /. + \"$copy\"; }" darwin)
+assert_not_contains "$platforms_darwin" "DS_STAGE0_PLATFORM_IDS" "no Linux fast path on darwin"
