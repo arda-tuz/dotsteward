@@ -1410,4 +1410,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # The module as the rest of the package imports it: `python3 -m` loads this file as
+    # __main__, whose error classes are not the ones the other modules raise.
+    from dotsteward_cli import config as _package_module
+
+    sys.exit(_package_module.main())
