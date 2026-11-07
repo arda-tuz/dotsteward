@@ -587,23 +587,12 @@ check_overlays() {
 # and returns 1 on findings or errors.
 run_privacy() (
   trap - ERR
-  local rule message pattern shown denylist noun cache
-  local -a globs=()
+  local rule shown denylist noun cache
   if [[ $target == framework ]]; then
     ds_privacy_load_policy "$root/privacy/policy.toml" || exit 1
     ds_privacy_load_allowlist "$root/privacy/allowlist.txt"
   else
-    ds_privacy_load_instance_policy
-    for rule in "${DS_PRIVACY_FORBIDDEN_PATHS_CONFIG[@]}"; do
-      ds_privacy_add_forbidden_path "$rule" || exit 1
-    done
-    while IFS= read -r rule; do
-      [[ -n $rule ]] || continue
-      message=$(jq -r '.message' <<<"$rule")
-      pattern=$(jq -r '.pattern' <<<"$rule")
-      mapfile -t globs < <(jq -r '.files[]' <<<"$rule")
-      ds_privacy_add_file_rule "$message" "$pattern" "${globs[@]}" || exit 1
-    done < <(jq -c '.[]' <<<"$DS_PRIVACY_FILE_RULES_JSON")
+    ds_privacy_load_instance_config || exit 1
     while IFS= read -r rule; do
       [[ -n $rule ]] || continue
       ds_privacy_add_exemption "$(jq -r '.path' <<<"$rule")" "$(jq -r '.rule' <<<"$rule")" \

@@ -210,6 +210,6 @@ sed -i '/^\[skills\]/i [privacy]\ndenylist = "'"$denylist"'"\n' "$agents_inst/wo
 assert_exit 0 run_host init --tags denied-name
 before_scan=$(remote_tip)
 assert_exit 4 run_host publish
-assert_contains "$DS_STDERR" "the privacy scan"
+assert_contains "$DS_STDERR" "the privacy scan found something in hosts/laptop.toml"
 assert_not_contains "$DS_STDOUT$DS_STDERR" "tags = "
 assert_eq "$before_scan" "$(remote_tip)"

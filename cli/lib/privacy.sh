@@ -8,7 +8,8 @@
 #   1. configuration: ds_privacy_load_policy FILE (the framework policy) or
 #      ds_privacy_load_instance_policy (an instance: generic secret rules
 #      only) followed by ds_privacy_add_forbidden_path GLOB and
-#      ds_privacy_add_file_rule MESSAGE ERE GLOB...; then
+#      ds_privacy_add_file_rule MESSAGE ERE GLOB..., or
+#      ds_privacy_load_instance_config for both from the configuration; then
 #      ds_privacy_load_allowlist FILE, ds_privacy_load_terms KIND FILE (KIND:
 #      denylist | extra-terms);
 #   2. collection between ds_privacy_begin and ds_privacy_end:
@@ -618,6 +619,26 @@ ds_privacy_load_instance_policy() {
   _DS_FILE_RULE_MESSAGE=()
   _DS_FILE_RULE_PATTERN=()
   _DS_FILE_RULE_GLOBS=()
+}
+
+# ds_privacy_load_instance_config: the policy of an instance scan with the rules of
+# the loaded configuration: the forbidden paths (DS_PRIVACY_FORBIDDEN_PATHS_CONFIG, a
+# copy of its list, since this library owns the name) and the file rules
+# (DS_PRIVACY_FILE_RULES_JSON). Needs jq.
+ds_privacy_load_instance_config() {
+  local rule message pattern
+  local -a globs=()
+  ds_privacy_load_instance_policy
+  for rule in "${DS_PRIVACY_FORBIDDEN_PATHS_CONFIG[@]}"; do
+    ds_privacy_add_forbidden_path "$rule" || return 1
+  done
+  while IFS= read -r rule; do
+    [[ -n $rule ]] || continue
+    message=$(jq -r '.message' <<<"$rule")
+    pattern=$(jq -r '.pattern' <<<"$rule")
+    mapfile -t globs < <(jq -r '.files[]' <<<"$rule")
+    ds_privacy_add_file_rule "$message" "$pattern" "${globs[@]}" || return 1
+  done < <(jq -c '.[]' <<<"$DS_PRIVACY_FILE_RULES_JSON")
 }
 
 # ds_privacy_add_forbidden_path GLOB: one more forbidden path glob.

@@ -16,6 +16,8 @@ checkout stays clean and the bootstrap needs no git identity.
 the checkout. The bootstrap tries it at its end. Without a network or a login it
 says so and the next `host publish` picks it up. A checkout that is behind the
 remote after that passes `dotsteward e2e` with a note; `git pull --ff-only` moves it.
+The file is scanned first with the policy of the instance, as `dotsteward static`
+scans everything there: a finding stops the publish.
 
 ## The host file
 

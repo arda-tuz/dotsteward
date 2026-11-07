@@ -464,20 +464,31 @@ def host_text(current: str | None, facts: Mapping[str, Any]) -> str:
     return text
 
 
-def _scan_commit(instance: config.Instance, base: str, commit: str, env: Mapping[str, str]) -> int:
-    """The privacy scan of the one new commit, with the instance's denylist."""
-    arguments = ["scan", "--range", f"{base}..{commit}", "--redact"]
+def _scan_file(instance: config.Instance, path: str, text: str, env: Mapping[str, str]) -> int:
+    """The privacy scan of the file a commit brings, as `dotsteward static` scans the
+    content of an instance: its policy, its denylist. The public policy of the framework
+    does not apply to a private instance, and the identity of the commit is no content."""
+    arguments = ["--instance", str(instance.root), "scan", "--tree", "--instance-policy", "--redact"]
     denylist = config.runtime_values(instance, env)["denylist"]
     if denylist is not None:
         if not os.path.isfile(denylist):
             raise Refusal(f"the denylist file is missing or unreadable: {denylist}")
         arguments += ["--denylist", denylist]
-    return subprocess.run(
-        [str(config.FRAMEWORK_ROOT / "cli" / "dotsteward"), *arguments],
-        cwd=instance.root,
-        env={**os.environ, "DOTSTEWARD_INSTANCE": str(instance.root)},
-        check=False,
-    ).returncode
+    with tempfile.TemporaryDirectory(prefix="dotsteward-host-") as scratch:
+        atomic.atomic_write(Path(scratch) / path, text, parents=True)
+        result = subprocess.run(
+            [str(config.FRAMEWORK_ROOT / "cli" / "dotsteward"), *arguments],
+            cwd=scratch,
+            # A plain directory, also below the work tree of another repository.
+            env={**os.environ, "GIT_CEILING_DIRECTORIES": os.path.dirname(scratch)},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    if result.returncode != 0:
+        for stream, output in ((sys.stdout, result.stdout), (sys.stderr, result.stderr)):
+            print(output, end="", file=stream)
+    return result.returncode
 
 
 def _commit_on_tip(instance: config.Instance, tip: str, name: str, text: str) -> str:
@@ -565,9 +576,8 @@ def publish(instance: config.Instance, env: Mapping[str, str] | None = None) -> 
             return 0
         machine.parse_host(text, path, root)
         commit = _commit_on_tip(instance, tip, name, text)
-        scan = _scan_commit(instance, tip, commit, env)
-        if scan != 0:
-            _error(f"the privacy scan of {path} failed (exit {scan}); nothing was published")
+        if _scan_file(instance, path, text, env) != 0:
+            _error(f"the privacy scan found something in {path}; nothing was published")
             return EXIT_PRIVACY
         result = _git_net(root, PUSH_SECONDS, "push", "--quiet", "origin", f"{commit}:refs/heads/{branch}")
         if result is not None and result.returncode == 0:

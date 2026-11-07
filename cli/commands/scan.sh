@@ -19,6 +19,11 @@
 #                       the policy's denylist path is used
 #   --extra-terms F     more terms in the denylist format
 #   --redact            print rule and location only, never the matched text
+#   --instance-policy   the policy of the instance found like every instance
+#                       command (`dotsteward --instance DIR`, for example), as
+#                       `dotsteward static` applies it to personal content:
+#                       generic secret rules, [privacy] forbidden_paths and
+#                       file_rules; the terms come from --denylist
 #
 # The policy is privacy/policy.toml of the scanned repository root when it
 # exists, otherwise the framework's own; privacy/allowlist.txt next to it
@@ -61,6 +66,7 @@ extra_terms=""
 require_denylist=0
 metadata=0
 redact=0
+instance_policy=0
 
 # need_value FLAG ARGC VALUE: fails unless an option that takes a value got one.
 need_value() {
@@ -119,6 +125,10 @@ while (($#)); do
       redact=1
       shift
       ;;
+    --instance-policy)
+      instance_policy=1
+      shift
+      ;;
     -*)
       error "unknown option: $1"
       exit 1
@@ -163,12 +173,24 @@ case $mode in
     ;;
 esac
 
-policy_dir=$framework_root/privacy
-if [[ -f $root/privacy/policy.toml ]]; then
-  policy_dir=$root/privacy
+if ((instance_policy)); then
+  # Only here: the pre-push hook runs this file without Python or jq.
+  # shellcheck source=cli/lib/lib.sh
+  source "$framework_root/cli/lib/lib.sh"
+  # shellcheck source=cli/lib/config.sh
+  source "$framework_root/cli/lib/config.sh"
+  # shellcheck disable=SC2119 # the instance comes from --instance or discovery
+  config_load
+  DS_PRIVACY_FORBIDDEN_PATHS_CONFIG=("${DS_PRIVACY_FORBIDDEN_PATHS[@]}")
+  ds_privacy_load_instance_config
+else
+  policy_dir=$framework_root/privacy
+  if [[ -f $root/privacy/policy.toml ]]; then
+    policy_dir=$root/privacy
+  fi
+  ds_privacy_load_policy "$policy_dir/policy.toml"
+  ds_privacy_load_allowlist "$policy_dir/allowlist.txt"
 fi
-ds_privacy_load_policy "$policy_dir/policy.toml"
-ds_privacy_load_allowlist "$policy_dir/allowlist.txt"
 
 # load_terms KIND SHOWN FILE: SHOWN is the path as the user gave it.
 load_terms() {
