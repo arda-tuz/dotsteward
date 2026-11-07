@@ -694,6 +694,8 @@ skills_process_own_plugin() {
   SKILLS_SOFT_LAYOUT=1
   SKILLS_OWN_KIND=plugin
   SKILLS_OWN_MARKER=.claude-plugin/plugin.json
+  # The plugin root is where this copy lives: a refresh of an incoming one may replace it.
+  SKILLS_MANAGED_ROOTS+=("$SKILLS_PLUGIN_ROOT")
   found=$SKILLS_PLUGIN_ROOT/$directory
   if [[ -L $found ]]; then
     skills_fail plugin-not-directory "$found" \
