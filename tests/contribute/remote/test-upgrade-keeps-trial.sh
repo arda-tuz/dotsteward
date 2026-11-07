@@ -41,10 +41,10 @@ assert_exit 0 run_contribute release
 base=$(git -C "$ct_inst" rev-parse HEAD)
 
 # update prepare: the instance is unchanged.
-stand_in_fail update 'prepare*'
+stand_in_fail txn 'prepare*'
 reset_calls
 assert_exit 1 run_contribute upgrade --tag v0.1.1
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: upgrade: update prepare failed; the instance is unchanged"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: upgrade: txn prepare failed; the instance is unchanged"
 assert_contains "$DS_STDOUT" "$keeps_trial"
 no_recovery
 assert_eq upgrade "$(field .step)" "step after a red prepare"
@@ -101,7 +101,7 @@ git -C "$ct_inst" push -q origin HEAD:main
 # --- a red upgrade that the user ends with abort: the recovery runs then --------------------------
 
 switched_run third-feature 0.1.1
-stand_in_fail update 'prepare*'
+stand_in_fail txn 'prepare*'
 reset_calls
 assert_exit 1 run_contribute upgrade --main
 assert_contains "$DS_STDOUT" "or end the run with abort or report, which return the machine to the pinned framework"

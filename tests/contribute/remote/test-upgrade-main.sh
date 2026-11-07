@@ -62,12 +62,12 @@ state_json | assert_json - '(.upgrade_to // null) == null'
 reset_calls
 assert_exit 0 run_contribute upgrade --main
 assert_eq "$(
-  call_line dotsteward-update prepare --official-sources-only --scope maintain
-  pinned sync
+  call_line dotsteward-txn prepare --official-sources-only --scope maintain
+  pinned generate
   pinned gate --scope maintain
   pinned rebuild --profile main --switch
   pinned e2e --profile main --expected-remote-base "$base"
-  pinned update publish --scope maintain --expected-base "$base"
+  pinned txn publish --scope maintain --expected-base "$base"
 )" "$(instance_calls)" "calls of the upgrade to main"
 assert_contains "$(cat "$ct_inst/flake.nix")" "dotsteward.url = \"github:example-org/dotsteward/$merged\";"
 jq -e --arg sha "$merged" '.nodes.dotsteward.locked.rev == $sha

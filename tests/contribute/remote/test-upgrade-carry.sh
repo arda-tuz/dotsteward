@@ -57,14 +57,14 @@ reset_calls
 assert_exit 0 run_contribute upgrade --tag v0.1.1 --carry
 assert_contains "$DS_STDOUT" "[dotsteward] carrying 1 unpublished instance commit(s) across the upgrade: saved as refs/dotsteward/carry/$(current_id) (${maintain:0:12}); the upgrade starts from origin/main (${base:0:12})"
 assert_eq "$(
-  call_line dotsteward-update prepare --official-sources-only --scope maintain
-  pinned sync
+  call_line dotsteward-txn prepare --official-sources-only --scope maintain
+  pinned generate
   pinned gate --scope maintain
-  pinned sync
+  pinned generate
   pinned gate --scope maintain
   pinned rebuild --profile main --switch
   pinned e2e --profile main --expected-remote-base "$base"
-  pinned update publish --scope maintain --expected-base "$base"
+  pinned txn publish --scope maintain --expected-base "$base"
 )" "$(instance_calls)" "calls of the carrying upgrade"
 assert_eq "chore(dotsteward): upgrade to 0.1.1
 feat(components): add example-widget" "$(git -C "$ct_inst" log --reverse --format=%s "$base..HEAD")" \
@@ -112,11 +112,11 @@ reset_calls
 assert_exit 0 run_contribute upgrade
 assert_contains "$DS_STDOUT" "[dotsteward] the carried commits are on top of the upgrade commit"
 assert_eq "$(
-  pinned sync
+  pinned generate
   pinned gate --scope maintain
   pinned rebuild --profile main --switch
   pinned e2e --profile main --expected-remote-base "$base"
-  pinned update publish --scope maintain --expected-base "$base"
+  pinned txn publish --scope maintain --expected-base "$base"
 )" "$(instance_calls)" "calls of the resumed carrying upgrade"
 assert_eq "chore(dotsteward): upgrade to 0.1.2
 fix(flake): note the pin" "$(git -C "$ct_inst" log --reverse --format=%s "$base..HEAD")" "history after the resolved carry"
@@ -134,7 +134,7 @@ mirror=$(cd "$ct_inst" && ls .dotsteward/manifest.*.json)
 # upgrade's sync writes the mirror from the instance files.
 printf 'old framework mirror\n' >"$ct_inst/$mirror"
 maintain_commit "feat(components): add example-gadget" components.txt example-gadget
-hub_knob sync-mirror on
+hub_knob generate-mirror on
 reset_calls
 assert_exit 0 run_contribute upgrade --tag v0.1.3 --carry
 assert_contains "$DS_STDOUT" "[dotsteward] folded the synced mirrors into the last carried commit"
@@ -143,7 +143,7 @@ feat(components): add example-gadget" "$(git -C "$ct_inst" log --reverse --forma
 assert_eq "mirror of: example-gadget" "$(cat "$ct_inst/$mirror")" "the mirror synced from the carried change"
 assert_eq "" "$(git -C "$ct_inst" status --porcelain)" "instance after the mirror conflict"
 published
-rm -f "$rt_hub/knobs/sync-mirror"
+rm -f "$rt_hub/knobs/generate-mirror"
 
 # --- abort while a carry waits on a conflict: the saved commits are named ---------------------------
 
@@ -178,12 +178,12 @@ reset_calls
 assert_exit 0 run_contribute upgrade --tag v0.1.5 --carry
 assert_contains "$DS_STDOUT" "[dotsteward] the instance was behind origin/main: fast-forwarded to ${remote:0:12}, nothing to carry"
 assert_eq "$(
-  call_line dotsteward-update prepare --official-sources-only --scope maintain
-  pinned sync
+  call_line dotsteward-txn prepare --official-sources-only --scope maintain
+  pinned generate
   pinned gate --scope maintain
   pinned rebuild --profile main --switch
   pinned e2e --profile main --expected-remote-base "$remote"
-  pinned update publish --scope maintain --expected-base "$remote"
+  pinned txn publish --scope maintain --expected-base "$remote"
 )" "$(instance_calls)" "calls of an upgrade with nothing to carry"
 assert_eq "$remote" "$(git -C "$ct_inst" rev-parse HEAD^)" "the upgrade commit on the fast-forwarded instance"
 state_json | assert_json - '.carry == null and .step == "report"'

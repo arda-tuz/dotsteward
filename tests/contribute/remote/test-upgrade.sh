@@ -1,16 +1,16 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and ct_* variables come from the harness and the helpers
 # `dotsteward contribute upgrade --tag TAG`:
-# in the instance, `update prepare --scope maintain`, the dotsteward input
+# in the instance, `txn prepare --scope maintain`, the dotsteward input
 # of flake.nix moved to the tag (github:owner/repo/TAG, a git+ URL with
 # ?ref=refs/tags/TAG, or a one-line block keeping its other parameters),
 # `nix flake update dotsteward` (flake.lock must lock the tag's commit),
 # bootstrap.sh and .dotsteward/cli.sh from the release's template/, sync,
 # the gate after `git add -A`, one commit with commit.upgrade_subject,
 # rebuild --switch and e2e (no override; e2e against the remote base),
-# `update publish --scope maintain`; every step after the verified lock
+# `txn publish --scope maintain`; every step after the verified lock
 # runs through the instance launcher (the CLI pinned by the new flake.lock,
-# whose template/ the refreshed files match), only `update prepare` through
+# whose template/ the refreshed files match), only `txn prepare` through
 # the running CLI. Re-runs resume after the commit;
 # --build-only rebuilds without switching and skips e2e; a red step keeps
 # the instance's changes uncommitted and the live generation as it is
@@ -32,12 +32,12 @@ pinned() {
 }
 
 upgrade_calls() {
-  call_line dotsteward-update prepare --official-sources-only --scope maintain
-  pinned sync
+  call_line dotsteward-txn prepare --official-sources-only --scope maintain
+  pinned generate
   pinned gate --scope maintain
   pinned rebuild --profile main --switch
   pinned e2e --profile main --expected-remote-base "$base"
-  pinned update publish --scope maintain --expected-base "$base"
+  pinned txn publish --scope maintain --expected-base "$base"
 }
 
 # --- refusals -----------------------------------------------------------------------
@@ -107,7 +107,7 @@ assert_eq "$commit" "$(field .instance_commit)" "recorded instance commit"
 assert_eq false "$(field .trial_switched)" "the upgrade's switch replaced the trial generation"
 assert_eq null "$(field .recovery)" "the upgrade's switch replaced the failed recovery"
 assert_not_contains "$DS_STDERR" "recovery"
-assert_call_count 0 dotsteward-update 'publish*'
+assert_call_count 0 dotsteward-txn 'publish*'
 stand_in_clear e2e
 reset_calls
 assert_exit 0 run_contribute upgrade --tag v0.1.2
@@ -115,7 +115,7 @@ assert_contains "$DS_STDOUT" "[dotsteward] resuming the upgrade at the instance 
 assert_eq "$(
   pinned rebuild --profile main --switch
   pinned e2e --profile main --expected-remote-base "$base"
-  pinned update publish --scope maintain --expected-base "$base"
+  pinned txn publish --scope maintain --expected-base "$base"
 )" "$(instance_calls)" "calls of the resumed upgrade"
 assert_call_count 0 nix
 
@@ -150,11 +150,11 @@ git -C "$ct_inst" stash pop -q
 reset_calls
 assert_exit 0 run_contribute upgrade --build-only
 assert_eq "$(
-  call_line dotsteward-update prepare --official-sources-only --scope maintain
-  pinned sync
+  call_line dotsteward-txn prepare --official-sources-only --scope maintain
+  pinned generate
   pinned gate --scope maintain
   pinned rebuild --profile main --build-only
-  pinned update publish --scope maintain --expected-base "$base"
+  pinned txn publish --scope maintain --expected-base "$base"
 )" "$(instance_calls)" "calls of the build-only upgrade"
 state_json | assert_json - '.upgrade == "build-only" and .step == "report"'
 assert_contains "$DS_STDERR" "[dotsteward] WARNING: the live generation still uses the trial framework (a build-only upgrade does not switch); switch to the upgraded instance with: dotsteward rebuild --profile main --switch"
@@ -177,8 +177,8 @@ assert_contains "$DS_STDOUT" "[dotsteward] nothing to publish: the instance's pu
 assert_eq "$base" "$(git -C "$ct_inst" rev-parse HEAD)" "no commit for an instance on the release"
 assert_eq "$base" "$(field .instance_commit)" "instance commit of an instance on the release"
 assert_eq "$(
-  call_line dotsteward-update prepare --official-sources-only --scope maintain
-  pinned sync
+  call_line dotsteward-txn prepare --official-sources-only --scope maintain
+  pinned generate
   pinned gate --scope maintain
   pinned rebuild --profile main --switch
   pinned e2e --profile main

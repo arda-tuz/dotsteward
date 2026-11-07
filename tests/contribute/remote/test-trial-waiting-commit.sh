@@ -61,6 +61,6 @@ assert_exit 0 run_contribute upgrade --tag v0.1.1 --carry
 assert_eq "chore(dotsteward): upgrade to 0.1.1
 feat(components): add example-widget" "$(git -C "$ct_inst" log --reverse --format=%s "$base..HEAD")" \
   "the upgrade, then the waiting maintain commit"
-assert_call_count 1 dotsteward-update "publish --scope maintain --expected-base $base"
+assert_call_count 1 dotsteward-txn "publish --scope maintain --expected-base $base"
 assert_eq pinned "$(live)" "live framework after the upgrade"
 state_json | assert_json - '.step == "report" and .carry.applied == true'

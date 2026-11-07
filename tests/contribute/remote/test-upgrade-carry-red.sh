@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* and ct_* variables come from the harness and the helpers
 # `dotsteward contribute upgrade --carry` before its first commit. The fetch of
-# origin is made again after a network failure. A red `update prepare` after
+# origin is made again after a network failure. A red `txn prepare` after
 # the reset says where the instance and the carried commits are (the instance
 # is not unchanged), and such a run no longer ends at publish: its commits are
 # only in the saved ref, so report refuses, and abort names them.
@@ -19,12 +19,12 @@ git -C "$ct_inst" add waiting.txt
 git -C "$ct_inst" commit -q -m 'feat: a commit that waits for the fix'
 waiting=$(git -C "$ct_inst" rev-parse HEAD)
 
-stand_in_fail update 'prepare*'
+stand_in_fail txn 'prepare*'
 network_plan x
 reset_calls
 assert_exit 1 run_contribute upgrade --main --carry
 assert_contains "$DS_STDERR" "[dotsteward] WARNING: cannot fetch origin/main of the instance; trying again in 1s"
-assert_contains "$DS_STDERR" "[dotsteward] ERROR: upgrade: update prepare failed; the instance is at origin/main, and the carried commits stay saved as refs/dotsteward/carry/$id"
+assert_contains "$DS_STDERR" "[dotsteward] ERROR: upgrade: txn prepare failed; the instance is at origin/main, and the carried commits stay saved as refs/dotsteward/carry/$id"
 assert_eq "$base" "$(git -C "$ct_inst" rev-parse HEAD)" "the instance after the reset"
 assert_eq "$waiting" "$(git -C "$ct_inst" rev-parse "refs/dotsteward/carry/$id")" "the saved commits"
 state_json | assert_json - '.instance_base == null and .carry != null and .step == "release"'

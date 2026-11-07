@@ -11,22 +11,24 @@
 #                     instance launcher), tagged v0.1.0 (an annotated tag) on
 #                     the upstream and the fork
 #   rt_fw             a copy of the framework under test whose gate,
-#                     rebuild, e2e, update and sync commands are recording
+#                     rebuild, e2e, txn and generate commands are recording
 #                     stand-ins: each records "dotsteward-<command> ARG..."
 #                     (plus "dotsteward-env DOTSTEWARD_FRAMEWORK_OVERRIDE=..."
 #                     when that variable reaches it) and fails with the
 #                     status of the first matching stand_in_fail rule;
 #                     rebuild --switch writes the live framework to rt_live
-#                     (the --framework-override value, else "pinned"); sync
+#                     (the --framework-override value, else "pinned"); generate
 #                     writes the untracked mirror .dotsteward/synced (and,
-#                     with the knob sync-mirror, every
+#                     with the knob generate-mirror, every
 #                     .dotsteward/manifest.*.json as "mirror of:
 #                     <components.txt>"); gate refuses untracked files, as
 #                     the real gate does; e2e --expected-remote-base BASE
 #                     fails unless origin main is BASE, as the real e2e does;
-#                     with the knob update-publish-lost (any value), the next
-#                     update publish pushes the instance and fails, as when
-#                     the answer of its push is lost (once)
+#                     with the knob txn-publish-lost (any value), the next
+#                     txn publish pushes the instance and fails, as when
+#                     the answer of its push is lost (once); the old names
+#                     update and sync refuse, because the framework does not
+#                     call its own old names
 #   DOTSTEWARD_CLI    (exported) the CLI the instance launcher runs (its
 #                     step 1): a wrapper that records "dotsteward-launcher
 #                     ARG..." and runs rt_fw, standing in for the CLI pinned
@@ -140,7 +142,10 @@ git -C "$ct_upstream_src" push -q "$ct_fork_bare" main refs/tags/v0.1.0
 mkdir -p "$rt_fw"
 cp -R "$DS_REPO_ROOT/cli" "$DS_REPO_ROOT/privacy" "$DS_REPO_ROOT/schema" "$DS_REPO_ROOT/VERSION" \
   "$DS_REPO_ROOT/modules" "$rt_fw/"
-for command in gate rebuild e2e update sync; do
+for command in update sync; do
+  printf '#!/usr/bin/env bash\n# summary: stand-in old name of the remote contribute tests\nprintf "the framework called its old name %s\\n" >&2\nexit 64\n' "$command" >"$rt_fw/cli/commands/$command.sh"
+done
+for command in gate rebuild e2e txn generate; do
   {
     printf '# summary: stand-in %s of the remote contribute tests\n' "$command"
     printf 'set -euo pipefail\n'
@@ -177,8 +182,8 @@ if [[ " $* " == *" --switch "* ]]; then
 fi
 EOF
         ;;
-      sync)
-        printf 'mirror_knob=%q\n' "$rt_hub/knobs/sync-mirror"
+      generate)
+        printf 'mirror_knob=%q\n' "$rt_hub/knobs/generate-mirror"
         cat <<'EOF'
 printf 'synced\n' >"$DOTSTEWARD_INSTANCE/.dotsteward/synced"
 if [[ -f $mirror_knob ]]; then
@@ -211,8 +216,8 @@ for ((i = 0; i < ${#args[@]} - 1; i++)); do
 done
 EOF
         ;;
-      update)
-        printf 'lost_knob=%q\n' "$rt_hub/knobs/update-publish-lost"
+      txn)
+        printf 'lost_knob=%q\n' "$rt_hub/knobs/txn-publish-lost"
         cat <<'EOF'
 if [[ ${1:-} == publish && -f $lost_knob ]]; then
   rm -f -- "$lost_knob"
