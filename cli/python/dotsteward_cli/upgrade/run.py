@@ -51,6 +51,8 @@ from dotsteward_cli.upgrade import analysis, facts, holds, plugins
 
 WAITING_REF = "refs/dotsteward/upgrade/waiting"
 _WORK = "work"
+# What the waiting commit moved, next to it: {schema_version, commit, moved}.
+_WAITING_FILE = "waiting.json"
 _PUBLISH_SCOPE = "upgrade"
 _WEEK_SECONDS = 7 * 24 * 60 * 60
 _STALE_PRODUCER_SECONDS = 14 * 24 * 60 * 60
@@ -145,10 +147,7 @@ class Upgrade:
         self.paths: report.ReportPaths | None = None
         self.quiet_output = ""
         self.e2e_status = 0
-        last = report.load_last(state_root, "upgrade") or {}
-        data = last.get("data") if isinstance(last.get("data"), dict) else {}
-        if isinstance(data, dict) and isinstance(data.get("moved"), list):
-            self.moved = data["moved"]
+        self.moved = self._waiting_moves()
         self.run.data.update(mode=mode)
 
     # --- helpers ---------------------------------------------------------------------------
@@ -284,9 +283,8 @@ class Upgrade:
                     message=message,
                     run=RETRY_HELD,
                 )
-        self.run.data.update(
-            own_commits=[self.waiting] if self.waiting else [], moved=self.moved if self.waiting else []
-        )
+        waiting = self.waiting or self._waiting_ref()
+        self.run.data.update(own_commits=[waiting] if waiting else [], moved=self.moved if waiting else [])
         self.paths = self.run.write()
         for step in self.run.steps:
             if step["status"] != "ok":
@@ -362,16 +360,45 @@ class Upgrade:
         if named and skills_commands.tracking_on(self.instance):
             self._ds_output("skills", "hooks", "install")
 
-    def _keep_waiting(self) -> None:
-        """The commit of the clone, in the objects of the checkout under a ref of its own."""
+    def _waiting_ref(self) -> str | None:
+        return self._git("rev-parse", "--verify", "--quiet", WAITING_REF).stdout.strip() or None
+
+    def _waiting_moves(self) -> list[dict[str, Any]]:
+        """What the waiting commit moved: its own file, else the last report (a commit of 1.4.0)."""
+        commit = self._waiting_ref()
+        if commit is None:
+            return []
+        try:
+            document = json.loads((self.upgrade_dir / _WAITING_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            document = None
+        if isinstance(document, dict) and document.get("commit") == commit and isinstance(document.get("moved"), list):
+            return list(document["moved"])
+        last = report.load_last(self.state_root, "upgrade") or {}
+        data = last.get("data") if isinstance(last.get("data"), dict) else {}
+        moved = data.get("moved") if isinstance(data, dict) else None
+        return list(moved) if isinstance(moved, list) else []
+
+    def _keep_waiting(self, moved: Sequence[dict[str, Any]]) -> None:
+        """The commit of the clone, in the objects of the checkout under a ref of its own, and what it
+        moved next to it: a run that is refused before it looks must not lose that."""
         assert self.work is not None
         self._git("fetch", "--quiet", "--no-tags", "--refmap=", str(self.work), f"+HEAD:{WAITING_REF}")
         self.waiting = self._work_git("rev-parse", "HEAD").stdout.strip()
+        self.moved = list(moved)
+        atomic.make_private_dirs(self.upgrade_dir)
+        document = {"schema_version": 1, "commit": self.waiting, "moved": self.moved}
+        atomic.atomic_write_json(self.upgrade_dir / _WAITING_FILE, document, mode=0o600)
 
-    def _drop_waiting(self) -> None:
+    def _drop_waiting(self, *, forget_binaries: bool = True) -> None:
+        """The waiting commit goes, and what it moved; the saved binaries of its move too, unless the
+        way back still puts them in place."""
         self._git("update-ref", "-d", WAITING_REF)
+        (self.upgrade_dir / _WAITING_FILE).unlink(missing_ok=True)
         self.waiting = None
         self.moved = []
+        if forget_binaries:
+            self._forget_binaries()
 
     # --- phase 0 ---------------------------------------------------------------------------
 
@@ -789,8 +816,7 @@ class Upgrade:
             self.framework_moved = False
             self._remove_work()
             return
-        self._keep_waiting()
-        self.moved = moved
+        self._keep_waiting(moved)
         # Known at once: the next run must find this commit, however this one ends.
         self.run.data.update(own_commits=[self.waiting], moved=self.moved)
         self.run.write()
@@ -1094,7 +1120,7 @@ class Upgrade:
         saved = self._saved_binaries()
         moved = self.moved
         base = self._git("rev-parse", f"{self.waiting}^").stdout.strip()
-        self._drop_waiting()
+        self._drop_waiting(forget_binaries=False)
         self._remove_work()
         self.framework_moved = False
         if (self.dirty or self._head() != base) and not self._open_work(base):
