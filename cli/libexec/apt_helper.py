@@ -11,7 +11,8 @@ nothing of the framework. dotsteward_cli.apt_plan calls it:
               the changes of the depcache and what the refusal list says about them;
               it needs no privileges and changes nothing
     analysis  the upgradable packages outside the tracked set, read only
-    policy    (root) the pin file and the unattended-upgrades drop-in, from what dpkg has
+    policy    (root) under the lock of dpkg: the pin file and the unattended-upgrades drop-in, from
+              what dpkg has, and the hook that keeps the pin file there whoever calls dpkg
     recover   (root) `dpkg --configure -a` when dpkg was left half way
     commit    (root) the plan, under the lock of dpkg, and when nothing refuses it the
               same depcache applied
@@ -61,6 +62,7 @@ GATED_SOURCE = re.compile(
 )
 KERNEL_GLOBS = ("linux-meta*",)
 NVIDIA_GLOBS = ("linux-restricted-modules*", "linux-restricted-signatures*", "nvidia-graphics-drivers-*")
+NVIDIA_GLOB = f"src:{NVIDIA_GLOBS[-1]}:any"
 UNATTENDED_FILE = "52dotsteward-unattended-upgrades"
 UNATTENDED_TEXT = """// Managed by dotsteward: no automatic removal of kernels and dependencies.
 Unattended-Upgrade::Remove-Unused-Kernel-Packages "false";
@@ -148,8 +150,9 @@ def pin_text(pairs, *, kernel, nvidia):
     return PIN_HEADER + "\n" + "\n".join(body)
 
 
-def installed_pin(classes):
-    return pin_text(classes["pairs"], kernel=classes["kernel"] is not None, nvidia=classes["nvidia"] is not None)
+def installed_pin(classes, *, keep_nvidia=False):
+    nvidia = classes["nvidia"] is not None or keep_nvidia
+    return pin_text(classes["pairs"], kernel=classes["kernel"] is not None, nvidia=nvidia)
 
 
 def target_pin(classes, target):
@@ -1273,12 +1276,50 @@ def last_update():
 # --- the command line ------------------------------------------------------------------
 
 
+def interrupted_plan(session):
+    """A journal that holds updates: apt sees half a transaction, in which a driver or a kernel may
+    look absent. Nothing can be decided from that picture."""
+    message = "dpkg is running or was stopped half way: the next run with sudo recovers it first"
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "apt": apt_pkg.VERSION,
+        "mode": session.mode,
+        "newest_kernel": None,
+        "codename": session.codename,
+        "gated": {
+            "enabled": session.gated,
+            "kernel": None,
+            "nvidia": None,
+            "other_metas": [],
+            "installed_pairs": [],
+            "pin": None,
+            "decision": "waiting",
+            "target": None,
+        },
+        "changes": {"install": [], "upgrade": [], "remove": [], "downgrade": []},
+        "phased": [],
+        "kept_back": [],
+        "items": [report_item("dpkg-interrupted", pending=True, message=message)],
+        "applicable": False,
+    }
+
+
 def action_plan(session):
+    if journal_dirty():
+        return interrupted_plan(session)
     _cache, plan = make_plan(session)
     return plan
 
 
 # --- the changes: pin file, recovery, commit -------------------------------------------
+
+
+def read_text(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()
+    except OSError:
+        return ""
 
 
 def write_file(path, text, mode=0o644):
@@ -1316,7 +1357,9 @@ def apply_policy(session, classes):
     pin_path = os.path.join(session.real_parts, PIN_FILE)
     wanted_pin = session.gated and (classes["kernel"] is not None or classes["nvidia"] is not None)
     if wanted_pin:
-        pin_changed = write_file(pin_path, installed_pin(classes))
+        # Half a transaction may hide the driver; the class stays until dpkg is whole again.
+        keep_nvidia = classes["nvidia"] is None and bool(dpkg_audit()) and NVIDIA_GLOB in read_text(pin_path)
+        pin_changed = write_file(pin_path, installed_pin(classes, keep_nvidia=keep_nvidia))
     else:
         pin_changed = False
         if os.path.exists(pin_path):
@@ -1332,8 +1375,27 @@ def apply_policy(session, classes):
 
 
 def action_policy(session):
-    classes = read_classes(session.open_pinless())
-    return {"schema_version": SCHEMA_VERSION, **apply_policy(session, classes)}
+    """Under the lock of dpkg, after the journal of a killed dpkg is worked off: what dpkg has is only
+    then what apt sees. When others keep the lock the files stay as they are."""
+    if not take_lock(session):
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "status": "blocked",
+            "items": [lock_busy_item(session)],
+            "recovery": None,
+        }
+    try:
+        classes = read_classes(session.open_pinless())
+        recovery = {"ran": session.journal_recovery is not None, "clean": not dpkg_audit()}
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "status": "done",
+            "items": [],
+            "recovery": recovery,
+            **apply_policy(session, classes),
+        }
+    finally:
+        apt_pkg.pkgsystem_unlock()
 
 
 def dpkg_environment():
