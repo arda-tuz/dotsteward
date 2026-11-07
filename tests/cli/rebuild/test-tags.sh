@@ -72,3 +72,15 @@ chmod 0600 "$record"
 : >"$DS_CALL_LOG"
 assert_exit 0 run_rebuild --profile workstation --build-only
 assert_not_contains "$(<"$DS_CALL_LOG")" ' build '
+
+# The activation record says which tags the machine runs with.
+write_tagged() {
+  mkdir -p "$rb_inst/hosts"
+  printf 'schema_version = 1\nsystem = "x86_64-linux"\nprofile = "workstation"\ntags = ["nvidia"]\n' >"$rb_inst/hosts/laptop.toml"
+  instance_commit "chore: a host again"
+  jq -n '{schema_version: 1, name: "laptop", machine_key: "00", named_at: "2026-01-01T00:00:00Z",
+    host: {system: "x86_64-linux", profile: "workstation", platform: "ubuntu-24.04", tags: []}}' >"$rb_state/machine.json"
+}
+write_tagged
+assert_exit 0 run_rebuild --profile workstation --switch
+assert_json "$rb_current/activation.json" '.tags == ["machine:laptop", "nvidia"]'

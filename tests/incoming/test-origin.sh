@@ -54,3 +54,24 @@ assert_eq 'skill:mine' "$(waiting laptop1)"
 up_to_date laptop2
 assert_exit 0 ds laptop2 incoming list --json
 assert_json - '.items[0].id == "skill:signed" and .items[0].by == "laptop1"' <<<"$DS_STDOUT"
+
+# Who brought a skill: the commit that added it. The later batch commit of a producer that touches
+# its directory neither takes the question away nor gives it another name.
+third=0123456789012345678901234567890123456789
+up_to_date laptop1
+up_to_date laptop2
+hand_skill laptop2 from-two "$third"
+git -C "$(clone_of laptop2)" add -A
+git -C "$(clone_of laptop2)" commit -q -m $'feat: a third party skill\n\nDotsteward-Machine: laptop2'
+git -C "$(clone_of laptop2)" push -q origin main
+up_to_date laptop1
+assert_exit 0 ds laptop1 incoming list --json
+assert_json - '[.items[] | select(.id == "skill:from-two")][0].by == "laptop2"' <<<"$DS_STDOUT"
+printf 'a new upstream version\n' >>"$(clone_of laptop1)/agent/skills/from-two/SKILL.md"
+git -C "$(clone_of laptop1)" add -A
+git -C "$(clone_of laptop1)" commit -q -m $'chore: update\n\nDotsteward-Machine: laptop1'
+assert_exit 0 ds laptop1 incoming list --json
+assert_json - '[.items[] | select(.id == "skill:from-two")][0].by == "laptop2"' <<<"$DS_STDOUT"
+git -C "$(clone_of laptop1)" push -q origin main
+assert_exit 0 ds laptop1 incoming list --json
+assert_json - '[.items[] | select(.id == "skill:from-two")][0].by == "laptop2"' <<<"$DS_STDOUT"

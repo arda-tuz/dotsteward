@@ -137,3 +137,38 @@ chmod 000 "$root/steady/SKILL.md"
 assert_exit 0 ds laptop2 incoming list
 chmod 644 "$root/steady/SKILL.md"
 assert_eq 'skill:steady' "$(waiting laptop2)"
+
+# M6: a copy that is a link out of the skill roots: the link goes, what it points at is the user's.
+up_to_date laptop1
+assert_exit 0 ds laptop2 incoming answer skill:steady --install
+captured laptop1 linked
+up_to_date laptop1
+up_to_date laptop2
+assert_exit 0 ds laptop2 incoming answer skill:linked --install
+tree=$DS_TEST_ROOT/dev-tree/linked
+mkdir -p "${tree%/*}"
+mv -- "$root/linked" "$tree"
+printf 'a note not in the repository\n' >"$tree/notes.txt"
+ln -s "$tree" "$root/linked"
+assert_exit 0 ds laptop2 skills status
+assert_exit 0 ds laptop1 skills forget linked
+up_to_date laptop1
+up_to_date laptop2
+assert_exit 0 ds laptop2 incoming answer skill:linked --install
+[[ ! -L $root/linked && ! -e $root/linked ]] || ds_fail "the link is still here"
+[[ -f $tree/notes.txt && -f $tree/SKILL.md ]] || ds_fail "the removal followed the link"
+
+# m3: a copy without SKILL.md is still a copy: a question, nothing goes without an answer.
+captured laptop1 hollow
+up_to_date laptop1
+up_to_date laptop2
+assert_exit 0 ds laptop2 incoming answer skill:hollow --install
+assert_exit 0 ds laptop1 skills forget hollow
+up_to_date laptop1
+up_to_date laptop2
+rm -- "$root/hollow/SKILL.md"
+printf 'kept\n' >"$root/hollow/notes.txt"
+assert_eq 'skill:hollow' "$(waiting laptop2)"
+assert_exit 0 agents laptop2 install --skip-validation
+[[ -f $root/hollow/notes.txt ]] || ds_fail "an install took a copy away without an answer"
+assert_exit 0 ds laptop2 incoming answer skill:hollow --install

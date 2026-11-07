@@ -108,16 +108,33 @@ assert_inst_eq '{"linux":["desktop","laptop","laptop3","server"],"darwin":["mac"
   }" "each distinct tag set"
 assert_inst_eq '[]' 'example.checks.x86_64-linux.hosts-eval.passthru.evaluated' "an instance without hosts"
 
-# An assertion of one machine fails the check, and names what it needs.
-failing="instance { root = /. + \"$root\"; homeModules = [ ({ ... }: {
+# `requires` is a statement about the machine it concerns: no machine's gate fails for another
+# machine's answer. It is data in the manifest, which the CLI of that machine reads.
+requiring="instance { root = /. + \"$root\"; homeModules = [ ({ ... }: {
   dotsteward.components.example-app.requires = [ \"example-term\" ];
 }) ]; }"
-assert_inst_fails "($failing).checks.x86_64-linux.hosts-eval.drvPath" \
-  "dotsteward: component example-term is left out on this machine, and example-app needs it"
+assert_inst_eq 'true' "builtins.isString ($requiring).checks.x86_64-linux.hosts-eval.drvPath" \
+  "laptop3 leaves out what example-app needs: no failure of the gate"
+assert_inst_eq '["example-term"]' "let
+    entry = lib.findFirst (c: c.name == \"example-app\") null ($requiring).dotstewardManifest.x86_64-linux.components;
+  in entry.requires" "a requirement is data"
+assert_inst_eq '{"has":false}' 'let
+    entry = lib.findFirst (c: c.name == "example-app") null example.dotstewardManifest.x86_64-linux.components;
+  in { has = entry ? requires; }' "no requirement, no key"
 
-# Without the dependency, or with it in place, the machine evaluates.
-assert_inst_eq 'true' "builtins.isString ($failing).hostConfigurations.server.activationPackage.drvPath" \
-  "what is inactive itself needs nothing"
+# Any other assertion of one machine stops the gate, and names the machine it is about.
+failing="instance { root = /. + \"$root\"; homeModules = [ ({ lib, dotsteward, ... }: {
+  assertions = [ { assertion = !(lib.elem \"no:example-term\" dotsteward.tags); message = \"example-home needs example-term\"; } ];
+}) ]; }"
+assert_inst_fails "($failing).checks.x86_64-linux.hosts-eval.drvPath" \
+  "machine desktop: example-home needs example-term"
+
+# Links are data of their component, and the generation says which targets are active.
+assert_inst_eq '["~/.example-term/AGENTS.md"]' "(lib.findFirst (c: c.name == \"example-term\") null ($hosted).dotstewardManifest.x86_64-linux.components).managed_links" \
+  "the links of a component"
+assert_inst_eq '{"desktop":false,"laptop":true}' "let
+    active = name: (($hosted).hostConfigurations.\${name}.config.dotsteward.cli.settingsTargets).example-term.active;
+  in { desktop = active \"desktop\"; laptop = active \"laptop\"; }" "active targets of a machine"
 
 # What mkInstance refuses.
 bad=$DS_TEST_ROOT/bad

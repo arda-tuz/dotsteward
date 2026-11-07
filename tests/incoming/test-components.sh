@@ -135,6 +135,84 @@ assert_eq '["machine:laptop2","no:needed-tool","no:other-tool"]' "$(nix_tags lap
 assert_eq '' "$(waiting laptop1)"
 assert_eq '["only-there","tagged-tool"]' "$(skipped laptop2 components | jq -c 'map(select(. != "other-tool" and . != "needed-tool"))')"
 
+# M1: installed and not active yet: the generation of this machine says no:, so nothing expects it
+# until the rebuild, which builds it.
+up_to_date laptop1
+add_component_on pending-tool
+up_to_date laptop2
+state_activation=$(state_of laptop2)/current/activation.json
+mkdir -p "$(dirname "$state_activation")"
+jq -n '{schema_version: "1.0", tags: ["machine:laptop2", "no:pending-tool"], tags_sha256: "x"}' >"$state_activation"
+assert_exit 0 ds laptop2 incoming answer component:pending-tool --install
+assert_exit 0 ds laptop2 skills effective --json
+assert_eq not-activated "$(jq -r '.reasons["component:pending-tool"]' <<<"$DS_STDOUT")"
+assert_not_contains "$(jq -c .nix_tags <<<"$DS_STDOUT")" 'no:pending-tool'
+assert_eq '' "$(waiting laptop2)"
+jq -n '{schema_version: "1.0", tags: ["machine:laptop2"], tags_sha256: "x"}' >"$state_activation"
+assert_not_contains "$(skipped laptop2 components)" 'pending-tool'
+
+# M2: what a component this machine runs needs arrives with the tree, without a question, and
+# the report names both. M2b: both new: Install of the one takes the other along.
+up_to_date laptop1
+set_requires() {
+  local clone manifest
+  clone=$(clone_of laptop1)
+  manifest=$clone/.dotsteward/manifest.x86_64-linux.json
+  jq --arg name "$1" --argjson requires "$2" '
+    if any(.components[]?; .name == $name) then
+      (.components[] | select(.name == $name)).requires = $requires
+    else .components += [{name: $name, requires: $requires}] end' "$manifest" >"$manifest.new"
+  mv -- "$manifest.new" "$manifest"
+}
+add_component_on running-tool
+up_to_date laptop2
+assert_exit 0 ds laptop2 incoming answer component:running-tool --install
+up_to_date laptop1
+set_requires running-tool '["new-dep"]'
+add_component_on new-dep
+up_to_date laptop2
+assert_eq '' "$(waiting laptop2)"
+assert_not_contains "$(nix_tags laptop2)" 'no:new-dep'
+assert_exit 0 ds laptop2 skills effective --json
+assert_json - '.requires.arriving == [{"component": "new-dep", "needed_by": "running-tool"}]' <<<"$DS_STDOUT"
+assert_exit 0 ds laptop2 incoming
+assert_contains "$DS_STDERR" 'new-dep comes with this tree: running-tool needs it'
+assert_json "$(state_of laptop2)/review.json" '[.items[] | select(.code == "component-needed" and .component == "new-dep")] | length == 1'
+up_to_date laptop1
+add_component_on pair-base
+up_to_date laptop1
+set_requires pair-top '["pair-base"]'
+add_component_on pair-top
+up_to_date laptop2
+assert_eq 'component:pair-base component:pair-top' "$(waiting laptop2)"
+assert_exit 0 ds laptop2 incoming list --json
+assert_json - '(.items[] | select(.id == "component:pair-top") | .needs) == ["pair-base"]' <<<"$DS_STDOUT"
+assert_contains "$(ask_on_tty laptop2 $'l\nl' incoming)" 'needed by pair-top'
+assert_exit 0 ds laptop2 incoming answer component:pair-top --install
+assert_eq '' "$(waiting laptop2)"
+
+# M3: what this machine declined and another component of it now needs: it is out too, on this
+# machine, and the person here is told. No other machine hears of it.
+up_to_date laptop1
+add_component_on lone
+up_to_date laptop2
+assert_exit 0 ds laptop2 incoming answer component:lone --never
+up_to_date laptop1
+set_requires running-tool '["lone"]'
+git -C "$(clone_of laptop1)" add -A
+git -C "$(clone_of laptop1)" commit -q -m $'feat: needs lone\n\nDotsteward-Machine: laptop1'
+git -C "$(clone_of laptop1)" push -q origin main
+up_to_date laptop2
+assert_exit 0 ds laptop2 skills effective --json
+assert_eq requires "$(jq -r '.reasons["component:running-tool"]' <<<"$DS_STDOUT")"
+assert_json - '.requires.unmet == [{"component": "running-tool", "needs": "lone", "why": "declined"}]' <<<"$DS_STDOUT"
+assert_contains "$(jq -c .nix_tags <<<"$DS_STDOUT")" 'no:running-tool'
+assert_exit 0 ds laptop2 incoming
+assert_contains "$DS_STDERR" 'running-tool is left out: it needs lone, which this machine declined'
+assert_json "$(state_of laptop2)/review.json" '[.items[] | select(.code == "requires-unmet" and .component == "running-tool")] | length == 1'
+up_to_date laptop1
+assert_not_contains "$(nix_tags laptop1)" 'no:running-tool'
+
 # A reinstall under the same name brings back what is for it, without a question.
 up_to_date laptop1
 rm -rf -- "$(state_of laptop1)" "$(home_of laptop1)"
