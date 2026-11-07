@@ -279,6 +279,18 @@ let
       catalog
       (paths [ "tests/cli/update" ])
     ];
+    cli-apply = fs.unions [
+      runner
+      cli
+      catalog
+      (paths [
+        "engines"
+        "privacy"
+        "tests/apply"
+        "tests/cli/update/helpers.sh"
+        "tests/upgrade"
+      ])
+    ];
     cli-upgrade = fs.unions [
       runner
       cli
