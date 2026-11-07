@@ -82,14 +82,19 @@ for step in 'dotsteward gate' 'git commit' 'git add' 'dotsteward rebuild' 'dotst
     ds_fail "SKILL.md runs [$step] by hand; dotsteward apply does it"
   fi
 done
-in_order "$skill" \
-  "dotsteward apply -m" \
-  "git add -A" \
-  "dotsteward gate --scope maintain" \
-  "trace line" \
-  "dotsteward rebuild --profile <profile> --switch" \
-  "dotsteward e2e" \
-  "dotsteward txn publish --scope maintain"
+in_order "$skill" "dotsteward apply -m" "It stages every change"
+steps_line=$(grep -F 'It stages every change' "$skill")
+steps_order=$(awk -v text="$steps_line" 'BEGIN {
+  n = split("git add -A|dotsteward gate --scope maintain|trace line|dotsteward rebuild --profile <profile> --switch|dotsteward e2e|dotsteward txn publish --scope maintain", want, "|")
+  at = 0
+  for (i = 1; i <= n; i++) {
+    found = index(substr(text, at + 1), want[i])
+    if (!found) { print "missing " want[i]; exit }
+    at += found
+  }
+  print "ok"
+}')
+assert_eq "ok" "$steps_order" "apply: stage, gate, commit with the trace line, rebuild, E2E, publish"
 grep -qi 'background' "$skill" || ds_fail "SKILL.md does not run apply in the background"
 grep -q 'timeout 60' "$skill" || ds_fail "SKILL.md does not bound network commands with timeout 60"
 grep -qF 'contribute upgrade --carry' "$skill" ||
