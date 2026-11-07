@@ -5,8 +5,17 @@ The work happens in ``cli/libexec/apt_helper.py``, which runs under the system's
 turns its answer into report items. Nothing here decides about a package.
 
     request = apt_plan.Request(mode="tracked", tracked=("example-app",))
-    plan = apt_plan.plan(request)
-    apt_plan.record(run, plan)
+    apt_plan.recover(request)                      # sudo: dpkg left half way
+    apt_plan.policy(request)                       # sudo: the pin file from what dpkg has
+    answer = apt_plan.commit(request)              # sudo: plan and apply one depcache
+    apt_plan.record(run, answer)
+
+``plan`` and ``analysis`` need no privileges and change nothing. The three others ask
+sudo without a prompt, so the caller opens the sudo window first, and they run as a
+protected child: Ctrl-C at the terminal does not stop dpkg half way, it ends up in
+``interrupted`` of the answer. What dpkg prints goes to a file below the state root
+(``log`` of the answer) and from there to standard error while it lasts: a terminal that
+closes must not fail a write of dpkg, which then stops half way.
 
 The internal command line of the same functions, for tests and for a look by hand:
 
@@ -20,21 +29,30 @@ after an answer and 1 when the helper could not run.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import datetime
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
-from collections.abc import Mapping, Sequence
+import tempfile
+import threading
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from dotsteward_cli import config, report
+from dotsteward_cli import atomic, config, procs, report
 
 _HELPER = Path(__file__).resolve().parents[2] / "libexec" / "apt_helper.py"
 _SYSTEM_PYTHON = "/usr/bin/python3"
 _INSTALL_APT_BINDING = "sudo apt-get install python3-apt"
+_MODULE_SIGNER = "Canonical Ltd. Kernel Module Signing"
+_LOG_DIRECTORY = "apt-logs"
+# The newest logs that stay.
+_KEEP_LOGS = 20
 
 MODES = ("tracked", "all")
 
@@ -46,6 +64,7 @@ class AptEngineError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+        self.interrupted: Sequence[str] = ()
 
 
 @dataclass(frozen=True)
@@ -64,6 +83,8 @@ class Request:
     codename: str | None = None
     boot_path: str | None = None
     boot_low_mib: int | None = None
+    lock_timeout: int | None = None
+    rollback_dir: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         """The request as the helper reads it."""
@@ -81,6 +102,10 @@ class Request:
             data["boot_path"] = self.boot_path
         if self.boot_low_mib:
             data["boot_low_mib"] = self.boot_low_mib
+        if self.lock_timeout is not None:
+            data["lock_timeout"] = self.lock_timeout
+        if self.rollback_dir:
+            data["rollback_dir"] = self.rollback_dir
         return data
 
     @classmethod
@@ -103,6 +128,8 @@ class Request:
             codename=data.get("codename"),
             boot_path=data.get("boot_path"),
             boot_low_mib=data.get("boot_low_mib"),
+            lock_timeout=data.get("lock_timeout"),
+            rollback_dir=data.get("rollback_dir"),
         )
 
 
@@ -153,29 +180,196 @@ def analysis(request: Request) -> dict[str, Any]:
     return _read_only("analysis", request)
 
 
+def _sudo_prefix() -> list[str]:
+    """Root needs no sudo; ``DOTSTEWARD_APT_SUDO`` is the way in for tests of rootless worlds."""
+    configured = os.environ.get("DOTSTEWARD_APT_SUDO")
+    if configured is not None:
+        return shlex.split(configured)
+    return [] if os.geteuid() == 0 else ["sudo", "-n"]
+
+
+def _new_log(action: str, state_root: str | os.PathLike[str] | None) -> Path:
+    """An empty private file for the output of ACTION; older ones beyond the newest few go."""
+    try:
+        root = os.fspath(state_root) if state_root is not None else config.required_state_root()
+    except config.DotstewardError as error:
+        raise AptEngineError("no-state-root", str(error)) from error
+    directory = Path(root) / _LOG_DIRECTORY
+    atomic.make_private_dirs(directory)
+    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S")
+    path = directory / f"{action}-{stamp}-{os.getpid()}.log"
+    path.touch(mode=0o600)
+    logs = sorted(directory.glob("*.log"), key=lambda log: log.stat().st_mtime_ns, reverse=True)
+    for old in logs[_KEEP_LOGS:]:
+        old.unlink(missing_ok=True)
+    return path
+
+
+@contextlib.contextmanager
+def _shown_on_stderr(log: Path) -> Iterator[None]:
+    """Standard error shows what the file gets, while there is someone to see it. A failed write
+    ends this and nothing else; a stream nobody reads does not hold up the end of the run."""
+    finished = threading.Event()
+
+    def show() -> None:
+        with contextlib.suppress(OSError), log.open("rb") as source:
+            while True:
+                last_round = finished.is_set()
+                data = source.read(65536)
+                while data:
+                    data = data[os.write(2, data) :]
+                if last_round:
+                    return
+                finished.wait(0.1)
+
+    shower = threading.Thread(target=show, daemon=True)
+    shower.start()
+    try:
+        yield
+    finally:
+        finished.set()
+        shower.join(timeout=5)
+
+
+def _privileged(action: str, request: Request, state_root: str | os.PathLike[str] | None) -> dict[str, Any]:
+    """Runs an action of the helper as a protected child, its answer in one file and what dpkg prints
+    in another. Raises AptEngineError; with signals in ``interrupted``."""
+    prefix = _sudo_prefix()
+    if prefix[:1] == ["sudo"]:
+        check = subprocess.run([*prefix, "true"], capture_output=True, check=False)
+        if check.returncode != 0:
+            raise AptEngineError("sudo-required", "this step needs sudo: run the command in a terminal")
+    log = _new_log(action, state_root)
+    with tempfile.TemporaryDirectory(prefix="dotsteward-apt-") as directory:
+        answer_path = Path(directory) / "answer.json"
+        request_path = Path(directory) / "request.json"
+        request_path.write_text(json.dumps(request.to_json()), encoding="utf-8")
+        argv = [*prefix, *_helper_argv(action), "--output", str(answer_path)]
+        try:
+            with request_path.open("rb") as stdin, log.open("ab") as output, _shown_on_stderr(log):
+                result = procs.run_protected(argv, stdin=stdin, stdout=output, stderr=output)
+        except OSError as error:
+            raise AptEngineError("python3-apt-missing", f"cannot start {shlex.join(argv)}: {error}") from error
+        finally:
+            printed = log.stat().st_size > 0
+            if not printed:
+                log.unlink()
+        if not answer_path.exists():
+            where = f", see {log}" if printed else ""
+            detail = f"the apt helper ended with status {result.returncode}{where}"
+            failure = AptEngineError("apt-helper-failed", detail)
+            failure.interrupted = result.interrupted
+            raise failure
+        answer: dict[str, Any] = json.loads(answer_path.read_text(encoding="utf-8"))
+    try:
+        checked = _checked(answer)
+    except AptEngineError as failure:
+        failure.interrupted = result.interrupted
+        raise
+    checked["interrupted"] = list(result.interrupted)
+    if printed:
+        checked["log"] = str(log)
+    return checked
+
+
+def policy(request: Request, *, state_root: str | os.PathLike[str] | None = None) -> dict[str, Any]:
+    """Writes the pin file and the unattended-upgrades drop-in from what dpkg has, whatever they
+    said before: the first step that writes in a run, and the repair of an interrupted one."""
+    return _privileged("policy", request, state_root)
+
+
+def recover(request: Request, *, state_root: str | os.PathLike[str] | None = None) -> dict[str, Any]:
+    """``dpkg --audit``, and ``dpkg --configure -a`` when dpkg was left half way."""
+    return _privileged("recover", request, state_root)
+
+
+def commit(request: Request, *, state_root: str | os.PathLike[str] | None = None) -> dict[str, Any]:
+    """The plan and, when nothing refuses it, the same depcache applied under the lock of dpkg. The
+    pin file follows what dpkg has afterwards. ``status`` tells the outcome: committed, nothing,
+    refused, blocked, fetch-failed, dpkg-failed; the items say the rest. Without STATE_ROOT the one
+    the commands agree on (config.required_state_root) holds what dpkg prints."""
+    answer = _privileged("commit", request, state_root)
+    if answer.get("committed"):
+        answer["items"] = [*answer.get("items", ()), *module_check(answer.get("after") or {})]
+    return answer
+
+
+def module_check(gated: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The module of the newest kernel, as ``modinfo`` finds it. A machine with the prebuilt modules
+    has them signed by the distribution; anything else is said (DKMS signs with the machine's key)."""
+    kernel, nvidia = gated.get("kernel"), gated.get("nvidia")
+    if not kernel or not nvidia:
+        return []
+    modinfo = shutil.which("modinfo", path=f"{os.environ.get('PATH', '')}:/usr/sbin:/sbin")
+    release = f"{kernel['abi']}-{kernel['base']}"
+    if modinfo is None:
+        return [{"code": "module-unchecked", "pending": False, "kernel": release, "message": "no modinfo"}]
+    done = subprocess.run(
+        [modinfo, "-k", release, "-F", "signer", "nvidia"], capture_output=True, text=True, check=False
+    )
+    if done.returncode != 0:
+        message = f"the newest kernel {release} has no nvidia module: do not reboot into it yet"
+        return [{"code": "module-missing", "pending": True, "kernel": release, "message": message}]
+    signer = done.stdout.strip()
+    if signer == _MODULE_SIGNER:
+        return []
+    message = f"the nvidia module of {release} is signed by {signer or 'nobody'}"
+    return [{"code": "module-signer", "pending": False, "kernel": release, "signer": signer, "message": message}]
+
+
+_STEP_OUTCOME = {"fetch-failed": report.PARTIAL, "dpkg-failed": report.FAILED}
+
+
 def record(run: report.RunReport, answer: Mapping[str, Any], *, step: str = "apt-plan") -> None:
     """Puts an answer of the helper into a run report: one step, and one review item for each
     item of the answer. An item with ``pending`` makes the run wait for a person."""
-    outcome = report.OK
+    outcome = _STEP_OUTCOME.get(answer.get("status", ""), report.OK)
     for item in answer.get("items", ()):
         fields = {key: value for key, value in item.items() if key not in {"code", "pending"}}
         pending = bool(item.get("pending"))
         run.item(item["code"], pending=pending, **fields)
         if pending:
-            outcome = report.PENDING
-    run.step(step, outcome)
+            outcome = report.combine([outcome, report.PENDING])
+    for path in answer.get("dpkg_dist", ()):
+        run.item("dpkg-dist", pending=False, path=path)
+    rollback = answer.get("rollback") or {}
+    if rollback.get("missing"):
+        run.item("rollback-missing", pending=False, packages=rollback["missing"])
+    details = {"apt_status": answer["status"]} if "status" in answer else {}
+    if answer.get("message"):
+        details["detail"] = answer["message"]
+    if answer.get("log"):
+        details["log"] = answer["log"]
+    run.step(step, outcome, **details)
+    if answer.get("interrupted"):
+        run.mark_interrupted(answer["interrupted"])
 
 
 def record_failure(run: report.RunReport, failure: AptEngineError, *, step: str = "apt-plan") -> None:
     """Puts a helper that could not run into a run report."""
+    if failure.interrupted:
+        run.mark_interrupted(list(failure.interrupted))
     if failure.code == "python3-apt-missing":
         run.item(failure.code, run=_INSTALL_APT_BINDING, message=failure.message)
+        run.step(step, report.PENDING, detail=failure.message)
+        return
+    if failure.code == "sudo-required":
+        run.item(failure.code, run="dotsteward upgrade", message=failure.message)
         run.step(step, report.PENDING, detail=failure.message)
         return
     run.step(step, report.FAILED, detail=f"{failure.code}: {failure.message}")
 
 
-ACTIONS = {"plan": plan, "analysis": analysis}
+def _action(name: str, request: Request, state_root: str | None) -> dict[str, Any]:
+    if name == "plan":
+        return plan(request)
+    if name == "analysis":
+        return analysis(request)
+    changing = {"policy": policy, "recover": recover, "commit": commit}
+    return changing[name](request, state_root=state_root)
+
+
+ACTIONS = ("analysis", "commit", "plan", "policy", "recover")
 
 
 def _load_request(source: str | None) -> Request:
@@ -189,7 +383,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="dotsteward_cli.apt_plan", description="The apt engine, for tests and by hand."
     )
-    parser.add_argument("action", choices=sorted(ACTIONS))
+    parser.add_argument("action", choices=ACTIONS)
     parser.add_argument("--request", help="a JSON file with the request, - for standard input")
     parser.add_argument("--report", metavar="COMMAND", help="write a run report and review.json for COMMAND")
     parser.add_argument("--state-root", help="the state root of the report")
@@ -201,10 +395,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     run = None
     if options.report:
-        root = Path(options.state_root) if options.state_root else config.discovered_state_root()
-        run = report.RunReport(options.report, root)
+        try:
+            run = report.RunReport(options.report, options.state_root or config.required_state_root())
+        except config.DotstewardError as error:
+            print(f"[dotsteward] ERROR: {error}", file=sys.stderr)
+            return report.FAILED
     try:
-        answer = ACTIONS[options.action](request)
+        answer = _action(options.action, request, options.state_root)
     except AptEngineError as failure:
         print(f"[dotsteward] ERROR: {failure.code}: {failure.message}", file=sys.stderr)
         if run is None:
@@ -212,12 +409,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         record_failure(run, failure, step=options.action)
         run.write()
         return run.exit_code
-    print(json.dumps(answer, indent=2, sort_keys=True))
-    if run is None:
-        return report.OK
-    record(run, answer, step=options.action)
-    run.write()
-    return run.exit_code
+    # The report first: the terminal that gets the answer may be gone by now.
+    if run is not None:
+        record(run, answer, step=options.action)
+        run.write()
+    with contextlib.suppress(OSError):
+        print(json.dumps(answer, indent=2, sort_keys=True), flush=True)
+    return report.OK if run is None else run.exit_code
 
 
 if __name__ == "__main__":

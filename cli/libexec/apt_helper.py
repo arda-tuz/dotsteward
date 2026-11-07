@@ -1,4 +1,4 @@
-"""The apt engine of `dotsteward upgrade`: it plans in one depcache and refuses by named risk classes.
+"""The apt engine of `dotsteward upgrade`: it plans and applies in one depcache and refuses by named risk classes.
 
 This file runs under the system's /usr/bin/python3 with python3-apt, not under the
 python of the CLI, and as root when it changes something, so it holds to Python 3.10
@@ -11,6 +11,10 @@ nothing of the framework. dotsteward_cli.apt_plan calls it:
               the changes of the depcache and what the refusal list says about them;
               it needs no privileges and changes nothing
     analysis  the upgradable packages outside the tracked set, read only
+    policy    (root) the pin file and the unattended-upgrades drop-in, from what dpkg has
+    recover   (root) `dpkg --configure -a` when dpkg was left half way
+    commit    (root) the plan, under the lock of dpkg, and when nothing refuses it the
+              same depcache applied
 
 The answer is one JSON document on standard output or in FILE. Exit status 0: the
 action ran, whatever the plan says; 1: it could not, and the document holds `error`
@@ -19,7 +23,9 @@ with `code` and `message`; 2: a usage error.
 The classes of the kernel and of the NVIDIA stack are gated: only the shared target
 moves them, kernel, module meta package and driver as one unit, all or nothing, and
 never past the phasing of any member. Everything is derived from the records of what
-is installed; no version of a kernel or a driver is data of the framework.
+is installed; no version of a kernel or a driver is data of the framework. The pin file
+in /etc/apt/preferences.d always tells what dpkg has, so that no other user of libapt
+ever sees a target: a plan and a commit read their pin from a temporary directory.
 """
 
 from __future__ import annotations
@@ -30,12 +36,15 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 
 try:
     import apt
+    import apt.progress.base
+    import apt.progress.text
     import apt_pkg
 except ImportError:
     apt = None
@@ -50,7 +59,16 @@ PIN_HEADER = "# Managed by dotsteward: gated classes stay as dpkg has them. Only
 GATED_SOURCE = re.compile(
     r"^(?:linux-meta|linux-restricted-modules|linux-restricted-signatures|nvidia-graphics-drivers-)"
 )
-GATED_GLOBS = ("linux-meta*", "linux-restricted-modules*", "linux-restricted-signatures*", "nvidia-graphics-drivers-*")
+KERNEL_GLOBS = ("linux-meta*",)
+NVIDIA_GLOBS = ("linux-restricted-modules*", "linux-restricted-signatures*", "nvidia-graphics-drivers-*")
+UNATTENDED_FILE = "52dotsteward-unattended-upgrades"
+UNATTENDED_TEXT = """// Managed by dotsteward: no automatic removal of kernels and dependencies.
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "false";
+Unattended-Upgrade::Remove-New-Unused-Dependencies "false";
+"""
+ROLLBACK_DIR = "/var/cache/dotsteward/apt-rollback"
+ROLLBACK_CLASSES = {"nvidia-driver", "nvidia-module"}
+DEFAULT_LOCK_TIMEOUT = 300
 ABI = r"\d+\.\d+\.\d+-\d+"
 IMAGE_RE = re.compile(rf"^linux-image-(?:unsigned-)?({ABI})-([a-z0-9]+(?:-[a-z0-9]+)*)$")
 # A package of one kernel ABI: linux-modules-7.0.0-42-generic, linux-hwe-7.0-headers-7.0.0-42.
@@ -96,7 +114,7 @@ def series_of(version):
 
 
 def series_key(series):
-    return tuple(int(part) for part in series.split("."))
+    return tuple(int(part) for part in series.split(".") if part)
 
 
 def source_class(name, source):
@@ -114,17 +132,29 @@ def source_class(name, source):
     return None
 
 
-def pin_text(pairs):
-    """The pin file: each (source, version) at 990, every other version of a gated Source at -1.
+def pin_text(pairs, *, kernel, nvidia):
+    """The pin file: each (source, version) at 990, every other version of a gated Source at -1,
+    for the classes this machine has: a machine without the NVIDIA stack can still install it.
     `:any` because a `src:` pin without it holds only packages of the native architecture,
     and the driver stack has i386 libraries."""
     body = [
         f"Package: src:{source}:any\nPin: version {version}\nPin-Priority: {PIN_PRIORITY}\n"
         for source, version in pairs
     ]
-    glob = " ".join(f"src:{name}:any" for name in GATED_GLOBS)
-    body.append(f"Package: {glob}\nPin: version *\nPin-Priority: -1\n")
+    globs = (KERNEL_GLOBS if kernel else ()) + (NVIDIA_GLOBS if nvidia else ())
+    if globs:
+        names = " ".join(f"src:{name}:any" for name in globs)
+        body.append(f"Package: {names}\nPin: version *\nPin-Priority: -1\n")
     return PIN_HEADER + "\n" + "\n".join(body)
+
+
+def installed_pin(classes):
+    return pin_text(classes["pairs"], kernel=classes["kernel"] is not None, nvidia=classes["nvidia"] is not None)
+
+
+def target_pin(classes, target):
+    nvidia = classes["nvidia"] is not None or bool(target.get("installs"))
+    return pin_text(target["pairs"], kernel=classes["kernel"] is not None, nvidia=nvidia)
 
 
 class Session:
@@ -155,6 +185,10 @@ class Session:
         self.preferences = apt_pkg.config.find("Dir::Etc::Preferences")
         self.scratch = tempfile.mkdtemp(prefix="dotsteward-apt-")
         self.pin_dirs = 0
+        self.lock_error = ""
+        self.journal_recovery = None
+        self.fix_broken = False
+        self.classes = None
 
     def close(self):
         shutil.rmtree(self.scratch, ignore_errors=True)
@@ -662,7 +696,10 @@ def series_items(session, cache, classes, target):
                     suite=session.suite_of(top),
                     nvidia_ready=ready if line else None,
                     accept=f"dotsteward upgrade --accept series:kernel={series}",
-                    message=f"kernel {series} ({session.suite_of(top)}) is available",
+                    message=(
+                        f"kernel {series} ({session.suite_of(top)}) is available"
+                        + (f"; it has no module of NVIDIA {line['series']} yet" if line and not ready else "")
+                    ),
                 )
             )
     if line and not session.accept_nvidia:
@@ -729,26 +766,38 @@ def upgradable(cache):
     return rows
 
 
-def upgrade_all(cache, extra=()):
-    """The full upgrade of this cache, which keeps to pins, holds and phasing, plus EXTRA new
-    packages. Answers the packages it keeps or brings in, by name."""
+def mark_series_change(cache, target):
+    """The driver series a person chose in place of the installed one: the old stack goes by name,
+    first. Left to the problem resolver the same move works or fails with the rest of the system,
+    because its scores count every reverse dependency."""
+    extra = (target or {}).get("installs") or ()
+    old = (target or {}).get("old_series")
+    if old:
+        prefix = old["module_prefix"] + "-"
+        for pkg in cache:
+            if pkg.is_installed and (pkg.installed.source_name == old["source"] or pkg.shortname.startswith(prefix)):
+                pkg.mark_delete(auto_fix=False)
+    for name in extra:
+        cache[name].mark_install()
+
+
+def upgrade_all(cache, target=None):
+    """The full upgrade of this cache, which keeps to pins, holds and phasing, plus the series change
+    of TARGET. Answers the packages it keeps or brings in, by name."""
     cache.upgrade(dist_upgrade=True)
-    if extra:
-        with cache.actiongroup():
-            for name in extra:
-                cache[name].mark_install()
+    with cache.actiongroup():
+        mark_series_change(cache, target)
     return {pkg.name for pkg in cache.get_changes() if not pkg.marked_delete}
 
 
-def mark_tracked(cache, names, extra=()):
+def mark_tracked(cache, names, target=None):
     """The tracked mode marks by hand; every name comes from the full upgrade, because a mark
     goes through phasing where a full upgrade does not."""
     cache.clear()
     with cache.actiongroup():
         for name in sorted(names):
             cache[name].mark_upgrade()
-        for name in extra:
-            cache[name].mark_install()
+        mark_series_change(cache, target)
 
 
 def origin_text(version):
@@ -849,7 +898,7 @@ def evaluate(session, cache, classes, target):
             rows["downgrade"].append(row)
             deny("downgrade", name)
         else:
-            row["from"] = pkg.installed.version
+            row["from"] = pkg.installed.version if pkg.installed else None
             rows["upgrade"].append(row)
         if cls in {"kernel", "nvidia-driver", "nvidia-module"} and not session.stable(version):
             deny(
@@ -928,6 +977,7 @@ def make_plan(session):
     """The plan of one run. The answer holds the depcache that a later commit applies."""
     pinless = session.open_pinless()
     classes = read_classes(pinless)
+    session.classes = classes
     items = []
     target = None
     gated_info = {
@@ -936,7 +986,7 @@ def make_plan(session):
         "nvidia": classes["nvidia"],
         "other_metas": classes["other_metas"],
         "installed_pairs": classes["pairs"],
-        "pin": pin_text(classes["pairs"]),
+        "pin": installed_pin(classes),
         "decision": "off" if not session.gated else "no-move",
         "target": None,
     }
@@ -960,7 +1010,6 @@ def make_plan(session):
 
     cache = None
     moves = set()
-    extra = ()
     upgrades = set()
     candidates = {}
     if not session.gated:
@@ -969,11 +1018,10 @@ def make_plan(session):
         upgrades = upgrade_all(cache)
     else:
         if moved:
-            cache = session.open_cache(pin_text(target["pairs"]))
+            cache = session.open_cache(target_pin(classes, target))
             candidates = upgradable(cache)
             moves = {name for name, row in candidates.items() if GATED_SOURCE.match(row["source"])}
-            extra = tuple(target.get("installs") or ())
-            upgrades = upgrade_all(cache, extra)
+            upgrades = upgrade_all(cache, target)
             left = moves - upgrades
             if left:
                 # The set stays together; the pin of what is installed takes over.
@@ -992,7 +1040,6 @@ def make_plan(session):
                 gated_info["decision"] = "waiting"
                 moved = False
                 moves = set()
-                extra = ()
                 target = None
             else:
                 gated_info["decision"] = "move"
@@ -1007,9 +1054,9 @@ def make_plan(session):
             for name, row in candidates.items()
             if name in upgrades
             and (name in session.tracked or row["short"] in session.tracked)
-            and not GATED_SOURCE.match(row["source"])
+            and not (session.gated and GATED_SOURCE.match(row["source"]))
         }
-        mark_tracked(cache, names | moves, extra)
+        mark_tracked(cache, names | moves, target if moved else None)
         outside = [pkg.name for pkg in cache.get_changes() if pkg.marked_upgrade and pkg.name not in upgrades]
         for name in outside:
             items.append(
@@ -1021,6 +1068,9 @@ def make_plan(session):
                     message=f"a tracked upgrade pulls {name}, which a full upgrade leaves alone",
                 )
             )
+    if session.fix_broken:
+        # dpkg was stopped during an unpack: the commit has to unpack that package again.
+        cache.fix_broken()
     if cache.broken_count:
         items.append(report_item("apt-denied", pending=True, **{"class": "unsolvable"}, packages=[]))
 
@@ -1092,7 +1142,7 @@ def action_analysis(session):
     pinless = session.open_pinless()
     classes = read_classes(pinless)
     del pinless
-    cache = session.open_cache(pin_text(classes["pairs"]) if session.gated else None)
+    cache = session.open_cache(installed_pin(classes) if session.gated else None)
     candidates = upgradable(cache)
     upgrades = upgrade_all(cache)
     packages = [
@@ -1151,21 +1201,323 @@ def action_plan(session):
     return plan
 
 
-ACTIONS = {"plan": action_plan, "analysis": action_analysis}
+# --- the changes: pin file, recovery, commit -------------------------------------------
 
 
-def write_answer(answer, output):
+def write_file(path, text, mode=0o644):
+    """Replaces a file through a rename, so a reader sees the old text or the new one, also after
+    a crash; a file that already holds TEXT is left alone. Answers whether it wrote."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            if handle.read() == text and (os.stat(path).st_mode & 0o777) == mode:
+                return False
+    except OSError:
+        pass
+    directory = os.path.dirname(path) or "."
+    handle, temporary = tempfile.mkstemp(prefix=".dotsteward-", dir=directory)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(text)
+            stream.flush()
+            os.fchmod(stream.fileno(), mode)
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+        raise
+    descriptor = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    return True
+
+
+def apply_policy(session, classes):
+    """The files of this action from what dpkg has now, whatever they said before."""
+    pin_path = os.path.join(session.real_parts, PIN_FILE)
+    wanted_pin = session.gated and (classes["kernel"] is not None or classes["nvidia"] is not None)
+    if wanted_pin:
+        pin_changed = write_file(pin_path, installed_pin(classes))
+    else:
+        pin_changed = False
+        if os.path.exists(pin_path):
+            os.unlink(pin_path)
+            pin_changed = True
+    unattended_path = os.path.join(apt_pkg.config.find_dir("Dir::Etc::Parts"), UNATTENDED_FILE)
+    unattended_changed = write_file(unattended_path, UNATTENDED_TEXT)
+    return {
+        "pin": {"path": pin_path, "present": wanted_pin, "changed": pin_changed},
+        "unattended": {"path": unattended_path, "changed": unattended_changed},
+        "installed_pairs": classes["pairs"],
+    }
+
+
+def action_policy(session):
+    classes = read_classes(session.open_pinless())
+    return {"schema_version": SCHEMA_VERSION, **apply_policy(session, classes)}
+
+
+def dpkg_environment():
+    """No question reaches a person: the child has no terminal to ask on."""
+    os.environ["DEBIAN_FRONTEND"] = "noninteractive"
+    os.environ["APT_LISTCHANGES_FRONTEND"] = "none"
+    os.environ["UCF_FORCE_CONFFOLD"] = "1"
+    os.environ.setdefault("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+
+
+def dpkg_options():
+    """A changed configuration file stays as it is; the new one lands next to it as .dpkg-dist."""
+    apt_pkg.config.set("Dpkg::Options::", "--force-confdef")
+    apt_pkg.config.set("Dpkg::Options::", "--force-confold")
+    apt_pkg.config.set("APT::Get::AutomaticRemove", "false")
+
+
+def dpkg_binary():
+    return apt_pkg.config.find_file("Dir::Bin::dpkg", "/usr/bin/dpkg")
+
+
+def dpkg_audit():
+    done = subprocess.run([dpkg_binary(), "--audit"], capture_output=True, text=True, check=False)
+    return done.stdout.strip()
+
+
+def journal_dirty():
+    """Whether the journal of dpkg holds updates: of a dpkg that runs now, or of one that was killed."""
+    status = apt_pkg.config.find_file("Dir::State::status")
+    directory = os.path.join(os.path.dirname(status), "updates")
+    try:
+        return any(name.isdigit() for name in os.listdir(directory))
+    except OSError:
+        return False
+
+
+def configure_all(env=None):
+    """`dpkg --configure -a`. Without its own lock (ENV) dpkg takes the lock or stops right away."""
+    dpkg_environment()
+    done = subprocess.run(
+        [dpkg_binary(), "--configure", "-a", "--force-confdef", "--force-confold"],
+        env=env,
+        stdin=subprocess.DEVNULL,
+        check=False,
+    )
+    return done.returncode
+
+
+def take_lock(session):
+    """The lock of dpkg, waiting as long as the request allows; False when others keep it. apt holds
+    the lock back from a journal of a killed dpkg, and only dpkg itself reads that journal: dpkg
+    takes the lock for this one call, and stops at once if a running dpkg has it after all."""
+    apt_pkg.config.set("DPkg::Lock::Timeout", str(session.request.get("lock_timeout", DEFAULT_LOCK_TIMEOUT)))
+    try:
+        apt_pkg.pkgsystem_lock()
+        return True
+    except (apt_pkg.Error, SystemError) as error:
+        session.lock_error = str(error)
+    if not journal_dirty():
+        return False
+    before = dpkg_audit()
+    session.journal_recovery = {"audit_before": before, "status": configure_all()}
+    apt_pkg.config.set("DPkg::Lock::Timeout", "0")
+    try:
+        apt_pkg.pkgsystem_lock()
+    except (apt_pkg.Error, SystemError) as error:
+        session.lock_error = str(error)
+        return False
+    return True
+
+
+def run_recovery(session):
+    """`dpkg --configure -a` under the lock, when dpkg was stopped half way. A package left half
+    unpacked stays in the audit: the plan after this unpacks it again."""
+    journal = session.journal_recovery
+    before = dpkg_audit()
+    if not before and not journal:
+        return {"ran": False, "clean": True}
+    returncode = journal["status"] if journal else 0
+    if before:
+        apt_pkg.pkgsystem_unlock_inner()
+        try:
+            returncode = configure_all({**os.environ, "DPKG_FRONTEND_LOCKED": "1"})
+        finally:
+            apt_pkg.pkgsystem_lock_inner()
+    after = dpkg_audit()
+    session.fix_broken = bool(after)
+    audit_before = journal["audit_before"] if journal else before
+    return {"ran": True, "clean": not after, "status": returncode, "audit_before": audit_before, "audit": after}
+
+
+def lock_busy_item(session):
+    return report_item(
+        "dpkg-lock-busy",
+        pending=True,
+        message=f"another package manager keeps the lock of dpkg: {session.lock_error}",
+    )
+
+
+def action_recover(session):
+    require_root()
+    if not take_lock(session):
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "status": "blocked",
+            "items": [lock_busy_item(session)],
+            "recovery": None,
+        }
+    try:
+        recovery = run_recovery(session)
+    finally:
+        apt_pkg.pkgsystem_unlock()
+    items = []
+    if not recovery["clean"]:
+        message = "the next commit unpacks these again"
+        items.append(report_item("dpkg-half-installed", audit=recovery["audit"], message=message))
+    return {"schema_version": SCHEMA_VERSION, "status": "done", "items": items, "recovery": recovery}
+
+
+def require_root():
+    if os.geteuid() != 0:
+        raise HelperError("not-root", "this action changes the system and needs root")
+
+
+def dpkg_dist_files():
+    found = set()
+    for directory, _subdirectories, names in os.walk("/etc"):
+        found.update(os.path.join(directory, name) for name in names if name.endswith(".dpkg-dist"))
+    return found
+
+
+def rollback_file_name(pkg, version):
+    quoted = version.version.replace(":", "%3a")
+    return f"{pkg.shortname}_{quoted}_{version.architecture}.deb"
+
+
+def fill_rollback(session, cache, rows):
+    """The packages of the driver and of its modules that this commit replaces, in their old versions:
+    what a person needs to go back. A version the archive has dropped is named; the run goes on."""
+    directory = session.request.get("rollback_dir") or ROLLBACK_DIR
+    wanted = []
+    for row in rows["upgrade"] + rows["remove"]:
+        pkg = cache[row["name"]]
+        if source_class(pkg.shortname, pkg.installed.source_name) in ROLLBACK_CLASSES:
+            wanted.append((pkg, pkg.installed))
+    answer = {"directory": directory, "kept": [], "missing": []}
+    if not wanted:
+        return answer
+    os.makedirs(directory, mode=0o755, exist_ok=True)
+    archives = apt_pkg.config.find_dir("Dir::Cache::Archives")
+    keep = set()
+    for pkg, version in wanted:
+        name = rollback_file_name(pkg, version)
+        target = os.path.join(directory, name)
+        cached = os.path.join(archives, name)
+        try:
+            if os.path.exists(cached):
+                shutil.copyfile(cached, target)
+            else:
+                fetched = version.fetch_binary(directory, apt.progress.base.AcquireProgress())
+                target = fetched or target
+        except (OSError, ValueError, SystemError, apt_pkg.Error, apt.package.FetchError):
+            pass
+        if os.path.exists(target):
+            keep.add(os.path.basename(target))
+            answer["kept"].append(os.path.basename(target))
+        else:
+            answer["missing"].append(f"{pkg.name}={version.version}")
+    for name in os.listdir(directory):
+        if name.endswith(".deb") and name not in keep:
+            os.unlink(os.path.join(directory, name))
+    return answer
+
+
+def run_commit(cache):
+    """The depcache of the plan, applied. Answers a status for the report."""
+    fetch_progress = apt.progress.text.AcquireProgress(sys.stderr) if sys.stderr.isatty() else None
+    try:
+        if not cache.commit(fetch_progress or apt.progress.base.AcquireProgress(), apt.progress.base.InstallProgress()):
+            return "dpkg-failed", "dpkg did not complete the transaction"
+    except apt.cache.FetchFailedException as error:
+        return "fetch-failed", str(error)
+    except apt.cache.LockFailedException as error:
+        return "blocked", str(error)
+    except (SystemError, apt_pkg.Error) as error:
+        return "dpkg-failed", str(error)
+    return "committed", None
+
+
+def action_commit(session):
+    require_root()
+    dpkg_environment()
+    dpkg_options()
+    if not take_lock(session):
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "status": "blocked",
+            "committed": False,
+            "items": [lock_busy_item(session)],
+        }
+    try:
+        recovery = run_recovery(session)
+        cache, plan = make_plan(session)
+        plan["recovery"] = recovery
+        plan["committed"] = False
+        # A refused plan changes nothing but it still repairs the pin file.
+        plan["policy"] = apply_policy(session, session.classes)
+        if not plan["applicable"]:
+            plan["status"] = "refused"
+            return plan
+        changes = plan["changes"]
+        if not any(changes.values()):
+            plan["status"] = "nothing"
+            return plan
+        plan["rollback"] = fill_rollback(session, cache, changes)
+        before = dpkg_dist_files()
+        status, message = run_commit(cache)
+        plan["status"] = status
+        plan["committed"] = status == "committed"
+        if message:
+            plan["message"] = message
+        plan["dpkg_dist"] = sorted(dpkg_dist_files() - before)
+        del cache
+        # What dpkg has now: the pin follows it; apt-cache and the others never see a target.
+        after = read_classes(session.open_pinless())
+        plan["policy"] = apply_policy(session, after)
+        plan["after"] = {"kernel": after["kernel"], "nvidia": after["nvidia"], "installed_pairs": after["pairs"]}
+        if plan["committed"]:
+            audit = dpkg_audit()
+            if audit:
+                plan["status"] = "dpkg-failed"
+                plan["committed"] = False
+                plan["message"] = audit
+        return plan
+    finally:
+        apt_pkg.pkgsystem_unlock()
+
+
+ACTIONS = {
+    "plan": action_plan,
+    "analysis": action_analysis,
+    "policy": action_policy,
+    "recover": action_recover,
+    "commit": action_commit,
+}
+# The actions that must finish once they started: a signal is noted and reported.
+PROTECTED = {"commit", "recover"}
+
+
+def write_answer(answer, output, stream):
     text = json.dumps(answer, indent=2, sort_keys=True) + "\n"
     if output is None:
-        sys.stdout.write(text)
-        sys.stdout.flush()
+        stream.write(text)
+        stream.flush()
         return
     directory = os.path.dirname(output) or "."
     handle, temporary = tempfile.mkstemp(prefix=".apt-helper-", dir=directory)
-    with os.fdopen(handle, "w", encoding="utf-8") as stream:
-        stream.write(text)
-        stream.flush()
-        os.fsync(stream.fileno())
+    with os.fdopen(handle, "w", encoding="utf-8") as written:
+        written.write(text)
+        written.flush()
+        os.fsync(written.fileno())
     # Under sudo the caller reads its own answer; the file is private to it.
     uid = os.environ.get("SUDO_UID")
     gid = os.environ.get("SUDO_GID")
@@ -1188,20 +1540,42 @@ def main(argv):
         sys.stderr.write("usage: apt_helper.py ACTION [--output FILE] < request.json; ACTION: ")
         sys.stderr.write(", ".join(sorted(ACTIONS)) + "\n")
         return 2
+    action = arguments[0]
+    # What dpkg prints goes to standard error and the answer to its own stream.
+    answer_stream = os.fdopen(os.dup(1), "w", encoding="utf-8")
+    os.dup2(2, 1)
     if apt is None or apt_pkg is None:
         write_answer(
             {"schema_version": SCHEMA_VERSION, "error": {"code": "python3-apt-missing", "message": "no python3-apt"}},
             output,
+            answer_stream,
         )
         return 1
+    received = []
+    if action in PROTECTED:
+
+        def note(signum, _frame):
+            name = signal.Signals(signum).name
+            if name not in received:
+                received.append(name)
+
+        for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            signal.signal(number, note)
     session = None
     try:
         request = json.load(sys.stdin)
+        devnull = os.open(os.devnull, os.O_RDONLY)
+        os.dup2(devnull, 0)
+        os.close(devnull)
         session = Session(request)
-        answer = ACTIONS[arguments[0]](session)
+        answer = ACTIONS[action](session)
+        if received:
+            answer["signals"] = received
     except HelperError as error:
         write_answer(
-            {"schema_version": SCHEMA_VERSION, "error": {"code": error.code, "message": error.message}}, output
+            {"schema_version": SCHEMA_VERSION, "error": {"code": error.code, "message": error.message}},
+            output,
+            answer_stream,
         )
         return 1
     except (apt_pkg.Error, SystemError, OSError, ValueError, KeyError) as error:
@@ -1211,12 +1585,13 @@ def main(argv):
                 "error": {"code": "apt-error", "message": f"{type(error).__name__}: {error}"},
             },
             output,
+            answer_stream,
         )
         return 1
     finally:
         if session is not None:
             session.close()
-    write_answer(answer, output)
+    write_answer(answer, output, answer_stream)
     return 0
 
 
