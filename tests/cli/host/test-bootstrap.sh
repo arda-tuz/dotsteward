@@ -61,8 +61,34 @@ assert_calls \
 assert_eq "$bare_before" "$(remote_tip)" "the bootstrap pushed"
 clean_and_still
 
-# --- a name from the environment ----------------------------------------------------------
+# --- an instance that names no machine, and a name ----------------------------------------
 
+# The machine has its name here, and the remote stays as it is: a first host file is not
+# for the end of a bootstrap, because an older instance may hold its tree to a list of
+# files. Registering it is one command, when the instance is ready for it.
+bare_before=$(remote_tip)
+: >"$DS_CALL_LOG"
+assert_exit 0 env DOTSTEWARD_MACHINE=laptop "$agents_fw/cli/dotsteward" --instance "$agents_inst" \
+  bootstrap --profile fresh --stage 1 </dev/null
+assert_eq "$final" "$(tail -n 1 <<<"$DS_STDOUT")"
+assert_eq '"laptop"' "$(record .name)"
+assert_contains "$DS_STDOUT" "'dotsteward host publish' registers it"
+assert_not_contains "$DS_STDOUT" "published"
+assert_eq "$bare_before" "$(remote_tip)" "the bootstrap registered the first machine"
+clean_and_still
+rm -- "$(machine_file)"
+assert_exit 0 env DOTSTEWARD_ASSUME_YES=1 "$agents_fw/cli/dotsteward" --instance "$agents_inst" \
+  bootstrap --profile fresh --stage 1 </dev/null
+assert_not_contains "$DS_STDOUT" "published"
+assert_eq "$bare_before" "$(remote_tip)" "the bootstrap registered the first machine"
+rm -- "$(machine_file)"
+
+# --- an instance with a producer: the file lands at the end ----------------------------------
+
+printf '\n[hosts]\nproducer = "laptop"\n' >>"$agents_inst/workstation.toml"
+publish_instance "chore(hosts): name the producer"
+head=$(git -C "$agents_inst" rev-parse HEAD)
+bare_before=$(remote_tip)
 : >"$DS_CALL_LOG"
 assert_exit 0 env DOTSTEWARD_MACHINE=laptop "$agents_fw/cli/dotsteward" --instance "$agents_inst" \
   bootstrap --profile fresh --stage 1 </dev/null
