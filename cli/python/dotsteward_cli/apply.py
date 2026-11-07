@@ -23,6 +23,7 @@ import json
 import os
 import re
 import signal
+import subprocess
 import sys
 import time
 from collections.abc import Sequence
@@ -507,18 +508,23 @@ class Apply(_Checkout):
                 names.append(name)
         return names
 
+    def _in_place(self, name: str) -> bool:
+        """``install --check-only`` finds the component NAME in place; what it says is not shown,
+        since a missing component is the expected answer here."""
+        assert self.profile is not None
+        argv = [*self._cli(), "install", "--profile", self.profile, "--component", name, "--check-only"]
+        done = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
+        if done.returncode in runner.SIGNALLED:
+            raise KeyboardInterrupt
+        return done.returncode == 0
+
     def _install(self) -> bool:
         assert self.profile is not None
         names = self._system_components()
         if not names:
             return True
         started = time.monotonic()
-        missing = [
-            name
-            for name in names
-            if self._ds_output("install", "--profile", self.profile, "--component", name, "--check-only").returncode
-            != 0
-        ]
+        missing = [name for name in names if not self._in_place(name)]
         if not missing:
             self._step("install", report.OK, started, detail="in place", components=names)
             return True
