@@ -15,8 +15,8 @@ Maintain one system: this machine is the observed input, the instance checkout i
 
 - **Local-only requests stay local.** If the user wants a change only on this machine, or the component is not managed by the instance, make the local change without touching the repository and stop. Ask when it is unclear.
 - **Work in the instance checkout on its branch** (`instance.branch` of the context, normally `main`). Never `git stash`, never stage unrelated files, never amend a commit after validation.
-- **One gate, run once per final tree:** `dotsteward gate --scope maintain`. It runs the preflight, the static checks (privacy scan included), the pins check, one `nix flake check` and the CLI probes of the candidate generation, and answers from its memo for an unchanged tree. Never run `dotsteward static`, `dotsteward pins check`, `nix flake check` or profile builds separately. Start the gate in the background (Claude Code `run_in_background`; Codex with a timeout of at least 45 minutes) and wait for it once instead of polling.
-- **Stage before Nix** (`git add -A`): flakes ignore untracked files, and the gate refuses them.
+- **One gate, run once per final tree,** by `dotsteward apply` (section 4): `dotsteward gate --scope maintain` runs the preflight, the static checks (privacy scan included), the pins check, one `nix flake check` and the CLI probes of the candidate generation, and answers from its memo for an unchanged tree. Never run `dotsteward static`, `dotsteward pins check`, `nix flake check` or profile builds separately. Start `apply` in the background (Claude Code `run_in_background`; Codex with a timeout of at least 45 minutes) and wait for it once instead of polling.
+- **Stage before Nix** (`git add -A`, which `apply` does): flakes ignore untracked files, and the gate refuses them. A Nix command you run by hand before `apply` (`nix flake lock`, `dotsteward generate`) needs new files staged first.
 - **Bound the network** with `timeout 60` on every command you run by hand that reaches the network. If the binary cache (`gate.cache_url`) is unreachable, stop and report; never use mirrors or extra substituters.
 - **Read narrowly.** Read `references/framework-map.md`, then only what it lists for the affected components: their `maintenance.md` and `README.md` in the framework source, the instance files they touch, and the overlay. Use `git grep -n` for everything else.
 - **Protected and generated files.** The paths under `protected` in the context are byte-protected. Never hand-edit `flake.lock` (change inputs with `nix flake lock` or `nix flake update <input>`), the `.dotsteward/` mirrors, `bootstrap.sh` or `.dotsteward/cli.sh` (framework-owned bytes). Versions live in `versions.lock.json`; after changing pins run `dotsteward generate`.
@@ -35,27 +35,22 @@ Maintain one system: this machine is the observed input, the instance checkout i
 
 2. If `overlays["dotsteward-maintain"]` in that document is not null, read that overlay file now. An overlay may add steps, phrasing, report formats and notes on private components; it never relaxes the rules of this skill.
 3. Classify the request with `references/classification.md` before any write. Personal requests continue here. Framework requests go to `dotsteward-contribute`. Mixed requests go to `dotsteward-contribute` first, which ends with an upgrade of the instance to the new framework release; the personal part then continues here on the upgraded instance.
-4. Check the checkout and open the transaction:
+4. Open the transaction from the instance checkout. One command checks that this is the instance checkout on its branch, fast-forwards it when it is only behind the remote, runs the read-only preflight of the current profile, records the base with `txn prepare --scope maintain` and reads the settings status:
 
    ```bash
    cd "$(dotsteward context --json | jq -r .instance.path)"
-   test "$(git remote get-url origin)" = "$(dotsteward context --json | jq -r .instance.remote)"
-   git status --porcelain
-   dotsteward preflight --read-only --json --profile "$(dotsteward context --json | jq -r .profiles.current)"
-   dotsteward txn prepare --official-sources-only --scope maintain
-   dotsteward settings status
+   dotsteward maintain begin --json
    ```
 
-- A failed remote check means this is not the instance checkout: stop and ask.
-- Non-empty `git status`: ask whether those changes belong to this transaction.
-- The preflight `route` must be `fast` (exit 0). Exit 3 is the adaptive route: report the reasons from the preflight document, write no tracked file, and ask how to proceed.
-- The prepare step records the base OID and requires `HEAD` to equal `origin/<branch>`. If `HEAD` is behind, run `git pull --ff-only` and prepare again; if it is ahead, ask.
-- Prepare warnings: an unreachable binary cache means stop and report; `gh` not logged in means ask the user to run `gh auth login`; low disk space is only reported (the gate stops below `gate.min_free_gib` GiB). Never collect garbage or delete Home Manager generations without the user's explicit approval.
-- Settings entries in `local-changed` or `local-deleted` are local settings not yet in the repository: ask whether to write them in this transaction (next section).
+- Exit 1 is a refusal: not the instance checkout, a checkout that diverged from the remote, a failed preflight. Stop, report its message and ask.
+- Exit 3 means questions in `ask`; put each to the user before writing any tracked file. `checkout-dirty`: do those changes belong to this transaction (`apply` commits them all)? `unpublished-commits`: do those commits belong to it (`apply` publishes them with it)? `settings-local`: write those local settings in this transaction (next section)? `adaptive-route` opens nothing (`open` is false): report the reasons from the `preflight` document, write no tracked file, and ask how to proceed.
+- Exit 6: no network; report it and ask.
+- `warnings`: an unreachable binary cache means stop and report; `gh` not logged in means ask the user to run `gh auth login`; low disk space is only reported (the gate stops below `gate.min_free_gib` GiB). Never collect garbage or delete Home Manager generations without the user's explicit approval.
+- `activate` and `publish` are the defaults of `apply` on this instance (`[maintain]` of `workstation.toml`).
 
 ## Locally maintained settings
 
-When the user wants local settings written to the repository, or accepts pending entries found at the start, follow the "Write local settings to the repository" workflow in `references/local-maintained-files.md`: `status --json`, a decision report for every entry that needs a decision, `resolve` per the user's answer, `flush`, then the usual gate, commit, rebuild, E2E and publish, and finally `reconcile`. The decision report is plain text by default; an overlay may ask for another format. Tracking or untracking a setting is a normal transaction with `track`, `track-file` or `untrack`.
+When the user wants local settings written to the repository, or accepts pending entries found at the start, follow the "Write local settings to the repository" workflow in `references/local-maintained-files.md`: `status --json`, a decision report for every entry that needs a decision, `resolve` per the user's answer, `flush`, then the usual `dotsteward apply`, and finally `reconcile`. The decision report is plain text by default; an overlay may ask for another format. Tracking or untracking a setting is a normal transaction with `track`, `track-file` or `untrack`.
 
 ## 2. Plan the transaction
 
@@ -89,34 +84,28 @@ dotsteward pins sync --skill NAME
 
 `dotsteward agents install` (run by the rebuild) installs it into the canonical skill root and creates the per-agent links. When a vendored third-party file trips a generic secret rule or a forbidden-path glob without holding a secret, review each finding and record it as a `[[privacy.exemptions]]` entry bound to the file's SHA-256 (with the reason); never exempt a denylist term, and never edit the vendored text to dodge a rule. Framework skills (`dotsteward-*`) never go into the skills lock.
 
-## 4. Validate once
+## 4. Validate, commit, activate, verify, publish
+
+One command does every mechanical step, in a fixed order, under the instance lock:
 
 ```bash
-git add -A
-dotsteward gate --scope maintain
+dotsteward apply -m "<type>: <summary>" --activate --publish
 ```
 
-Also exercise the changed component through one real user-facing path when the gate does not (for example an isolated CLI workflow), not only `--version`.
+- It stages every change (`git add -A`), runs the one gate `dotsteward gate --scope maintain`, commits with the subject and the trace line of this machine, then with `--activate` runs `dotsteward rebuild --profile <profile> --switch` and `dotsteward e2e` against the base, and with `--publish` runs `dotsteward txn publish --scope maintain`. The rebuild and E2E use the committed tree; the publish step refuses a tree that is active on this machine until E2E passed for it, checks the validated tree, the remote base and the commit subjects, pushes without force and verifies the remote OID.
+- Pass `--activate` only when local activation is requested or clearly expected, and `--publish` only when the user wants the remote updated; an option you leave out takes `activate` or `publish` of the begin document. Without activation the commit is published without E2E only when the user asks for exactly that.
+- Use a conventional commit subject (`feat`, `fix`, `perf`, `refactor`, `docs`, `chore`, `test`, `build`, `ci`, `style`, `revert`; the list is `commit.conventional_types` of the context); any other subject is refused with exit 2 before anything is staged.
+- Also exercise the changed component through one real user-facing path when the gate does not (for example an isolated CLI workflow), not only `--version`.
+- Exit 0 is done. Exit 1 is a refusal or a red step, exit 3 a sudo step that waits, exit 6 no network (the push waits): `review.json` and the run report (`dotsteward apply --json`) name the step, and the same command goes on from there once the cause is gone. Never `git commit`, `rebuild`, `e2e` or `txn publish` by hand in between.
 
-## 5. Commit, activate, verify, publish
+## 5. When a step is red or waits
 
-The order is fixed, because the rebuild and the E2E checks need a clean committed tree:
-
-```bash
-profile=$(dotsteward context --json | jq -r .profiles.current)
-git commit -m "<type>: <summary>"
-dotsteward rebuild --profile "$profile" --switch
-dotsteward e2e --profile "$profile" --expected-remote-base "$(dotsteward txn status --json | jq -r .candidate.base_oid)"
-dotsteward txn publish --scope maintain
-```
-
-- Use a conventional commit subject (`feat`, `fix`, `perf`, `refactor`, `docs`, `chore`, `test`, `build`, `ci`, `style`, `revert`; the list is `commit.conventional_types` of the context); the publish step rejects any other subject.
-- Run the rebuild only when local activation is requested or clearly expected, and publish only when the user wants the remote updated.
-- If E2E fails, fix it, add a new commit (no amend), run the gate again, then the rebuild with `--switch` (E2E verifies the activated generation, not the commit), then E2E again. A failed check means no push: `txn publish` refuses a tree that is active on this machine until E2E passed for it. When the cause lies in the framework (a catalog component, an engine, a hook), the fix goes through `dotsteward-contribute`, whose `upgrade` requires the instance `HEAD` to equal `origin/<branch>`: save the diff of the unpublished commit, reset the branch to `origin/<branch>`, and after the upgrade apply the diff again as a new transaction (prepare, sync, gate, commit, rebuild, E2E, publish).
+- A red gate commits nothing: fix the tree and run the same `apply`. A red rebuild leaves the commit here and runs no E2E.
+- If E2E fails, fix it, then run `dotsteward apply -m "fix: <summary>"` with the same options: a new commit (no amend), the gate again, the rebuild with `--switch` (E2E verifies the activated generation, not the commit), then E2E again, and only then the push. A failed check means no push. When the cause lies in the framework (a catalog component, an engine, a hook), the fix goes through `dotsteward-contribute`; its `contribute upgrade --carry` carries the unpublished commits of this transaction across the upgrade, and afterwards `dotsteward apply` with the same options finishes them.
 - If the rebuild warns that the login shell is still on a versioned Nix path, ask the user to run the same rebuild once in a terminal; moving the login shell needs `sudo`.
-- **Adopt-mode profiles do not install system-level components.** The rebuild of a profile in `adopt` mode never installs a component whose method is system-level (`deb` on Linux, `app-archive` on macOS). When the transaction adds one, ask the user to run `dotsteward --instance <instance.path> install --profile "$profile" --component <name>` (repeatable; fill in `instance.path` of the context, since their terminal need not be in the instance checkout) after the commit and before the rebuild; it needs `sudo`, so the user runs it in their own terminal. Without it the rebuild stops at the command probe with `required command not found: <command>`. The same command brings in a raised floor of an installed component, which the rebuild does not enforce; `dotsteward --instance <instance.path> install --profile "$profile" --component <name> --check-only` confirms the result.
-- The publish step checks the validated tree, the remote base and the commit subjects, pushes without force and verifies the remote OID.
+- **Adopt-mode profiles do not install system-level components.** The rebuild of a profile in `adopt` mode never installs a component whose method is system-level (`deb` on Linux, `app-archive` on macOS), so `apply --activate` installs each one that the transaction adds or changes and that is not in place yet, after the commit and before the rebuild. On a terminal it runs the install there, which asks for `sudo`. Without a terminal it stops with exit 3 and an `install-required` item whose `run` is the exact command, `dotsteward --instance <instance.path> install --profile <profile> --component <name>`: ask the user to run it in their own terminal, since it needs `sudo` (their terminal need not be in the instance checkout), then run the same `apply` again. Without it the rebuild would stop at the command probe with `required command not found: <command>`. The same command brings in a raised floor of an installed component, which the rebuild does not enforce; `dotsteward --instance <instance.path> install --profile <profile> --component <name> --check-only` confirms the result.
+- `publish-race`: another machine published first. The commits stay local; run the `run` of the item (a `git pull --rebase` and the same `apply`), which proves and activates the combined tree before it pushes.
 
 ## 6. Report
 
-Report what became reproducible, the locked versions, the local activation status, the gate step durations (`validation.step_seconds` of `dotsteward txn status --json`), the tests run, the commit and remote OIDs, the exclusions made for secrets or machine state, and any unresolved upstream risk. Write the report in the language the overlay asks for, else in the user's language.
+Report what became reproducible, the locked versions, the local activation status, the step durations (`seconds` of each step in `dotsteward apply --json`, and the gate's `validation.step_seconds` of `dotsteward txn status --json`), the tests run, the commit and remote OIDs, the exclusions made for secrets or machine state, and any unresolved upstream risk. Write the report in the language the overlay asks for, else in the user's language.

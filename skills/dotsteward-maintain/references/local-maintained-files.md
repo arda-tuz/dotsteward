@@ -83,8 +83,8 @@ Run every command from the instance checkout after the Start section of `SKILL.m
    dotsteward settings flush
    ```
 
-4. `git add -A`, then the gate (`dotsteward gate --scope maintain`), then a commit with `commit.settings_subject` of the context (or include the change in the transaction's own commit).
-5. Rebuild, E2E and `dotsteward txn publish --scope maintain` as in `SKILL.md`, then advance this machine's base:
+4. `dotsteward apply` as in `SKILL.md`, with `commit.settings_subject` of the context as the subject (or include the change in the transaction's own commit): it stages, runs the gate, commits, rebuilds, runs E2E and publishes.
+5. Once it published, advance this machine's base:
 
    ```bash
    dotsteward settings reconcile
@@ -92,7 +92,7 @@ Run every command from the instance checkout after the Start section of `SKILL.m
 
 6. Report each entry with its old and new repository value.
 
-**Track or untrack**: `dotsteward settings track`, `dotsteward settings track-file` or `dotsteward settings untrack` in the transaction, `dotsteward settings validate`, then gate, commit, rebuild, E2E, publish and `dotsteward settings reconcile`. Refuse secrets, credentials, account state, caches and machine-specific paths. When an application renames a key, the old entry shows up as `local-deleted`; move the entry to the new key with `untrack` and `track`. A target that no component declares needs a `[targets.<name>]` table in `buffer.toml` first; a target every user of a catalog component would want belongs in the framework (`dotsteward-contribute`).
+**Track or untrack**: `dotsteward settings track`, `dotsteward settings track-file` or `dotsteward settings untrack` in the transaction, `dotsteward settings validate`, then `dotsteward apply` and `dotsteward settings reconcile`. Refuse secrets, credentials, account state, caches and machine-specific paths. When an application renames a key, the old entry shows up as `local-deleted`; move the entry to the new key with `untrack` and `track`. A target that no component declares needs a `[targets.<name>]` table in `buffer.toml` first; a target every user of a catalog component would want belongs in the framework (`dotsteward-contribute`).
 
 **Change a value for every machine from the repository**: edit the entry's `value` in `buffer.toml` within the transaction; on this machine the next rebuild sees `remote-changed` and applies it.
 

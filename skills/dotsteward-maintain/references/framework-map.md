@@ -67,13 +67,15 @@ Read this first, then only the files it points to for the components you change.
 
 | Command | Role |
 | --- | --- |
-| `dotsteward preflight --read-only --json --profile P` | read-only machine check (exit 3: adaptive route) |
-| `dotsteward txn prepare --official-sources-only --scope maintain` | records the base of the transaction |
-| `dotsteward gate --scope maintain` | the one validation of the final tree (preflight, static, pins, flake check, CLI probes) |
+| `dotsteward maintain begin --json` | opens the transaction: checkout guards, fast-forward, preflight, `txn prepare`, settings status, the questions for the user |
+| `dotsteward apply -m SUBJECT [--activate] [--publish]` | finishes it: stage, gate, commit with the trace line, system-level installs of an adopt-mode profile, rebuild, E2E, publish; the same command goes on after a fix |
+| `dotsteward preflight --read-only --json --profile P` | read-only machine check (exit 3: adaptive route), run by `maintain begin` |
+| `dotsteward txn prepare --official-sources-only --scope maintain` | records the base of the transaction, run by `maintain begin` |
+| `dotsteward gate --scope maintain` | the one validation of the final tree (preflight, static, pins, flake check, CLI probes), run by `apply` |
 | `dotsteward txn status --json` | the candidate and validation records |
-| `dotsteward txn publish --scope maintain` | pushes the validated commits without force |
-| `dotsteward rebuild --profile P --switch` | builds and activates the generation, applies settings, installs agent tools and skills |
-| `dotsteward e2e --profile P` | verifies the machine against the instance |
+| `dotsteward txn publish --scope maintain` | pushes the validated commits without force, run by `apply --publish` |
+| `dotsteward rebuild --profile P --switch` | builds and activates the generation, applies settings, installs agent tools and skills, run by `apply --activate` |
+| `dotsteward e2e --profile P` | verifies the machine against the instance, run by `apply --activate` |
 | `dotsteward generate` | regenerates the `.dotsteward/` mirrors, then the derived lock values |
 | `dotsteward pins latest`, `dotsteward pins sync --skill NAME` | official version candidates; skill digests in the skills lock |
 | `dotsteward install --profile P --check-only` | checks every install method of the profile |
@@ -83,7 +85,7 @@ Read this first, then only the files it points to for the components you change.
 
 ## New-file checklist
 
-- Stage every new file (`git add -A`); Nix and the gate see only tracked files.
+- Stage every new file (`git add -A`) before a Nix command you run by hand; `apply` stages everything itself. Nix and the gate see only tracked files.
 - Shell scripts: a file with a shebang is executable; one without declares `# shellcheck shell=bash`. The static check runs `bash -n` and ShellCheck at the locked version.
 - No script pipes a download into a shell, force-pushes or allows package downgrades (static bans).
 - Hook and check scripts live in the component directory and are referenced from `default.nix` (they are copied into the store); they read the hook environment (`DOTSTEWARD_PROFILE`, `DOTSTEWARD_PROFILE_MODE`, `DOTSTEWARD_CHECK_ONLY`, ...), never hard-coded paths.
