@@ -72,8 +72,12 @@ _NOT_COMPONENTS = {"core", "setup"}
 # 128 + SIGINT, SIGTERM, SIGHUP.
 _SIGNALLED = {130, 143, 129}
 _APT_BUCKETS = ("install", "upgrade", "remove", "downgrade")
-# Config of the checkout the clone needs to behave the same.
-_CLONE_CONFIG = ("core.hooksPath", "core.sshCommand", "user.name", "user.email")
+# The local settings of the checkout that are about the checkout itself, not about how git behaves
+# there: the clone has its own. Everything else is copied, so the clone signs, pushes and asks for
+# credentials as the checkout would; the hooks are the checkout's, by an absolute core.hooksPath.
+_OWN_SECTIONS = ("remote.", "branch.", "extensions.", "submodule.", "worktree.")
+_OWN_KEYS = {"core.bare", "core.worktree", "core.repositoryformatversion", "core.hookspath"}
+_KEPT_REMOTE_KEYS = {"remote.origin.pushurl"}
 _STEP_WORDS = {"pending": "waits for you", "partial": "skipped, no network", "failed": "failed"}
 # What says that the gate could not judge the tree, rather than that the tree is red: in its own
 # words or in its log. A red of these holds nothing.
@@ -335,16 +339,37 @@ class Upgrade:
         self.work = path
         remote = str(self.instance.config["instance"]["remote"])
         self._work_git("remote", "set-url", "origin", remote)
-        for key in _CLONE_CONFIG:
-            value = self._git("config", "--get", key).stdout.strip()
-            if value:
-                self._work_git("config", key, value)
+        self._copy_config()
         checked = self._work_git("checkout", "--quiet", "-B", self.branch, commit)
         if checked.code != 0:
             self.run.step("clone", report.FAILED, detail=checked.stderr.strip())
             self._remove_work()
             return False
         return True
+
+    def _copy_config(self) -> None:
+        """The local settings and the hooks of the checkout, in the clone."""
+        git_dir = self._git("rev-parse", "--path-format=absolute", "--git-dir").stdout.strip()
+        listing = self._git("config", "--local", "--null", "--list").stdout
+        values: dict[str, list[str]] = {}
+        for entry in listing.split("\0"):
+            key, _, value = entry.partition("\n")
+            lowered = key.lower()
+            if not key or lowered in _OWN_KEYS:
+                continue
+            if lowered.startswith(_OWN_SECTIONS) and lowered not in _KEPT_REMOTE_KEYS:
+                continue
+            if lowered.startswith(("include.", "includeif.")) and not os.path.isabs(os.path.expanduser(value)):
+                # A path relative to the config file of the checkout.
+                value = os.path.join(git_dir, value)
+            values.setdefault(key, []).append(value)
+        for key, found in values.items():
+            self._work_git("config", "--unset-all", key)
+            for value in found:
+                self._work_git("config", "--add", key, value)
+        hooks = self._git("rev-parse", "--path-format=absolute", "--git-path", "hooks").stdout.strip()
+        if hooks:
+            self._work_git("config", "core.hooksPath", hooks)
 
     def _remove_work(self) -> None:
         shutil.rmtree(self.upgrade_dir / _WORK, ignore_errors=True)
