@@ -392,19 +392,7 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
         named |= names
         machines = entry.get("machines")
         if isinstance(machines, list) and machine not in machines:
-            record = state.base_entry(base, name)
-            if record is None and directory in found and _is_candidate(found[directory]):
-                key = state.skill_key(name)
-                if not isinstance(items.get(key), dict) or items[key].get("state") != NAME_TAKEN:
-                    plan.set_items[key] = {
-                        "kind": "skill",
-                        "name": name,
-                        "path": found[directory],
-                        "state": NAME_TAKEN,
-                        "origin": origin.UNKNOWN,
-                        "detected_at": now,
-                        "last_asked": None,
-                    }
+            _name_taken(name, directory, found, base, items, plan, now, state.SKILL)
             continue
         if _is_own(entry, context):
             own.add(name)
@@ -417,6 +405,7 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
         plugin_names |= {name, directory}
         machines = entry.get("machines")
         if isinstance(machines, list) and machine not in machines:
+            _name_taken(name, directory, found, base, items, plan, now, state.PLUGIN)
             continue
         own_plugins.add(name)
         path = _own_plugin_path(found, base, name, directory)
@@ -476,6 +465,36 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
     if document.get("reconciled_at") is None:
         plan.looked_at = now
     return plan
+
+
+def _name_taken(
+    name: str,
+    directory: str,
+    found: Mapping[str, str],
+    base: Mapping[str, Any],
+    items: Mapping[str, Any],
+    plan: Plan,
+    now: float,
+    kind: str,
+) -> None:
+    """A copy here under the name of an entry that is for other machines only: it holds the
+    name, so it is said, never captured."""
+    path = found.get(directory)
+    if state.base_entry(base, name, kind) is not None or path is None or _kind_of(path) != kind:
+        return
+    key = state.item_key(kind, name)
+    item = items.get(key)
+    if isinstance(item, dict) and item.get("state") in {NAME_TAKEN, *KEPT_OUT}:
+        return
+    plan.set_items[key] = {
+        "kind": kind,
+        "name": name,
+        "path": path,
+        "state": NAME_TAKEN,
+        "origin": origin.UNKNOWN,
+        "detected_at": now,
+        "last_asked": None,
+    }
 
 
 def _blocked_changed(item: Any, since: Any, full: bool, context: Mapping[str, Any]) -> bool:
