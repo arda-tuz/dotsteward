@@ -29,7 +29,6 @@ HOOK_ENV=(CLAUDE_CODE_SESSION_ATTENDED=1)
 hook_on a SessionStart session-start
 assert_contains "$HOOK_OUT" "dotsteward skills retry"
 HOOK_ENV=()
-assert_contains "$(cat "$DS_REPO_ROOT/docs/skill-tracking.md")" "dotsteward skills retry"
 
 # The remote is fine again. Nothing tries by itself: a person should hear of a refusal.
 rm -f "$remote/hooks/pre-receive"

@@ -60,6 +60,7 @@ assert_jq - '. == {
     codex: { enable: true, method: "official-binary" },
     vscode: { enable: true, method_by_platform: { linux: "deb", darwin: "app-archive" } }
   },
+  skills: { tracking: true },
   upstream: { contribute: "owner" }
 }' --arg home "$HOME" <<<"$(toml_json "$file")"
 # The tables as init writes them, after the template's comment on
