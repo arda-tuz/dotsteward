@@ -17,7 +17,6 @@ git -C "$(clone_of a)" pull -q --ff-only
 assert_exit 0 ds a agents install --profile workstation --skip-validation
 copy=$(home_of a)/.agents/skills/foo
 [[ -d $copy && ! -L $copy ]] || ds_fail "the copy is in the canonical root"
-original=$(remote_file agent/skills/foo/SKILL.md)
 tip=$(remote_tip)
 
 # write_to PATH: what the hook sees when a file tool wrote SKILL.md below PATH.
