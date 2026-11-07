@@ -57,6 +57,13 @@ def manifest(loaded: config.Instance) -> dict[str, Any]:
     return document if isinstance(document, dict) else {}
 
 
+def component_names(loaded: config.Instance) -> set[str]:
+    """The components the manifest enables."""
+    components = manifest(loaded).get("components")
+    listed = components if isinstance(components, list) else []
+    return {str(item["name"]) for item in listed if isinstance(item, dict) and isinstance(item.get("name"), str)}
+
+
 def read(loaded: config.Instance) -> Layout:
     home = os.environ.get("HOME") or os.path.expanduser("~")
     document = manifest(loaded)

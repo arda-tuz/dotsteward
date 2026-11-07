@@ -129,7 +129,8 @@ assert_eq capture "$(plugin_item b codex-tool .state)"
 # --- without the codex component: nothing ---------------------------------------------------
 
 new_machine c
-git -C "$(clone_of c)" checkout -q "$start" -- .dotsteward
+# The manifest of the commit before codex was enabled.
+git -C "$(clone_of c)" checkout -q "$start~1" -- .dotsteward
 new_plugin c lonely-tool codex
 assert_exit 0 ds c skills hooks install --agent codex
 assert_exit 0 ds c skills reconcile

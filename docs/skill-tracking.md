@@ -31,7 +31,8 @@ A plugin is tracked the same way, under its own name in `dotsteward skills statu
 | What it is | What happens |
 | --- | --- |
 | a directory in `~/.claude/skills` with `.claude-plugin/plugin.json` (`claude plugin init`; Claude Code loads it as `<name>@skills-dir`) | tracked, no question: the copy goes to `agent/plugins/<directory>/` with an `own_plugins` entry of the lock, and `agents install` puts it into `~/.claude/skills` of the other machines as a real directory, under the rules of the next section |
-| the same with a `.git` directory | a question; `--own` tracks your own copy of it |
+| with the codex component, a directory in `${CODEX_HOME:-~/.codex}/plugins` with `.codex-plugin/plugin.json` or `plugin.json` (the place of a personal plugin in the Codex documentation) | the same, with `agents = ["codex"]`; on the other machines `agents install` also adds it to the personal marketplace `~/.agents/plugins/marketplace.json` (a file of yours keeps its name and its plugins) and runs `codex plugin add`, again after an incoming change, because Codex runs the copy in its cache |
+| either with a `.git` directory | a question; `--own` tracks your own copy of it |
 | a plugin of a GitHub marketplace, installed at user scope (`installed_plugins.json` and `known_marketplaces.json` of `${CLAUDE_CONFIG_DIR:-~/.claude}/plugins`) | a question, by its spec `NAME@MARKETPLACE` |
 
 For a plugin of a marketplace, `--all` adds a `[[components.claude-code.options.plugins]]`
@@ -45,7 +46,11 @@ marketplace keeps its plugins up to date by itself: an update is no change to pu
 update of a plugin you did not track never tracks it. No question comes for a plugin at
 project scope, of a marketplace that is not a GitHub one, of Claude Code itself (`synced`,
 `builtin`), or while the instance does not enable claude-code. Finding them reads those two
-files, only after they changed, and starts no process. Codex plugins are not tracked yet.
+files, only after they changed, and starts no process. Plugins of Codex marketplaces are not
+tracked yet. A name holds one own plugin: one of Claude Code and one of Codex with the same
+directory name are no two plugins. An own plugin that is for other machines only
+(`machines`) holds its name here too: a directory of that name is `name-taken`, like a
+skill.
 
 ## Your copy is never overwritten
 

@@ -548,7 +548,7 @@ def _own_plugin_path(found: Mapping[str, str], base: Mapping[str, Any], name: st
             return found[candidate]
     record = state.base_entry(base, name, state.PLUGIN)
     known = record.get("local_path") if record else None
-    if isinstance(known, str) and os.path.isfile(os.path.join(known, plugins.PLUGIN_MANIFEST)):
+    if isinstance(known, str) and plugins.is_own_plugin_dir(known):
         return known
     return None
 
@@ -689,7 +689,7 @@ def note_writes(
             continue
         key = _item_key(path, name)
         known = document["items"].get(key)
-        if below not in (SKILL_FILE, origin.PLUGIN_MANIFEST) or not _is_candidate(path):
+        if below not in (SKILL_FILE, plugins.PLUGIN_MANIFEST, *plugins.CODEX_MANIFESTS) or not _is_candidate(path):
             if isinstance(known, dict) and known.get("state") == CAPTURE and known.get("origin") == origin.OWN:
                 plan.set_items[key] = {"detected_at": now, "digest": None, "due": False}
                 if session:

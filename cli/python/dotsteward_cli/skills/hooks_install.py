@@ -206,6 +206,11 @@ def build_context(loaded: config.Instance) -> dict[str, Any]:
     where = layout.read(loaded)
     state_root = config.state_root(loaded)
     roots = [where.canonical, *where.legacy_roots, *where.link_roots, *where.agent_roots.values()]
+    from dotsteward_cli.skills import plugins
+
+    if plugins.CODEX_COMPONENT in layout.component_names(loaded):
+        # The own plugins of Codex; the cache of Codex below it is no candidate.
+        roots.append(plugins.codex_plugins_dir())
     context: dict[str, Any] = {
         "schema_version": 1,
         "instance": str(loaded.root),

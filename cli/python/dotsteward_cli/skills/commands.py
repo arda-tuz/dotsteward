@@ -108,11 +108,11 @@ def _status_document(loaded: config.Instance) -> dict[str, Any]:
         if isinstance(machines, list) and machine not in machines:
             continue
         directory = str(entry.get("directory") or entry.get("name"))
-        copy = os.path.join(plugins.claude_skills_dir(), directory)
+        copy = plugins.own_copy(directory, entry.get("agents")) or ""
         digest = entry.get("directory_sha256")
         if not isinstance(digest, str) or not digest:
             digest = normal.normal_form(str(loaded.root / plugins.OWN_PLUGINS_DIR / directory), None).digest
-        found = copy if plugins.is_own_plugin_dir(copy) else None
+        found = copy or None
         own.append(threeway.assess(str(entry.get("name")), found, digest, instance, state_root, state.PLUGIN))
     return {
         "schema_version": state.SCHEMA_VERSION,

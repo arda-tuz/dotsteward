@@ -87,10 +87,14 @@
 #       directory <claude-code link root>/<directory> (~/.claude/skills,
 #       where Claude Code loads it as <name>@skills-dir), copied from
 #       agent/plugins/<directory>, whose digest is verified against the lock
-#       first. dotsteward_cli.skills.threeway decides about the copy as for an
+#       first. A plugin of Codex (agents names codex) lives in
+#       ${CODEX_HOME:-~/.codex}/plugins/<directory> with the codex component,
+#       gets an entry of the personal marketplace ~/.agents/plugins/
+#       marketplace.json and `codex plugin add` (_skills_codex_plugin).
+#       dotsteward_cli.skills.threeway decides about the copy as for an
 #       own skill (records plugin:<name>): a missing one is installed, a
 #       local change is never overwritten, a deleted one is not installed
-#       again. Without the claude-code link root it is a note.
+#       again. Without the root of its agent it is a note.
 #   skills_sweep
 #       removes (install) or reports (check) every dangling link directly
 #       in the canonical root, the link roots and the agent roots whose
@@ -160,6 +164,8 @@ SKILLS_OWN_KIND=skill
 SKILLS_OWN_MARKER=SKILL.md
 # The skill root of Claude Code, where own plugins live; empty without it.
 SKILLS_PLUGIN_ROOT=''
+# ${CODEX_HOME:-~/.codex}/plugins with the codex component, where own plugins of Codex live.
+SKILLS_CODEX_PLUGIN_ROOT=''
 
 # --- Findings -------------------------------------------------------------
 
@@ -241,6 +247,11 @@ skills_init() {
     | select(.value.component == "claude-code") | .key) // empty' <<<"$DS_MANIFEST_JSON")
   if [[ -n $SKILLS_PLUGIN_ROOT ]]; then
     SKILLS_PLUGIN_ROOT=$(_skills_expand "$SKILLS_PLUGIN_ROOT") || exit 1
+  fi
+  SKILLS_CODEX_PLUGIN_ROOT=''
+  if jq -e '(.components // []) | any(.name == "codex")' >/dev/null <<<"$DS_MANIFEST_JSON"; then
+    SKILLS_CODEX_PLUGIN_ROOT=${CODEX_HOME:-$HOME/.codex}
+    SKILLS_CODEX_PLUGIN_ROOT=${SKILLS_CODEX_PLUGIN_ROOT%/}/plugins
   fi
 
   SKILLS_AGENT_NAMES=()
@@ -670,7 +681,7 @@ skills_own_plugin_entries() {
 
 skills_process_own_plugin() {
   (($# == 1)) || die "usage: skills_process_own_plugin ENTRY_JSON"
-  local entry=$1 name directory digest agents source found decision
+  local entry=$1 name directory digest agents source found decision root manifest
   local -a fields=()
   mapfile -d '' fields < <(jq -j '[.name, (.directory // .name), (.directory_sha256 // ""),
     ((.agents // ["claude"]) | join(" "))] | map(. + "\u0000") | add' <<<"$entry")
@@ -678,32 +689,116 @@ skills_process_own_plugin() {
   directory=${fields[1]}
   digest=${fields[2]}
   agents=${fields[3]}
-  if [[ " $agents " != *" claude "* ]]; then
-    log "own plugin $name is for ${agents// /, }: only plugins of Claude Code are installed"
-    return 0
-  fi
-  if [[ -z $SKILLS_PLUGIN_ROOT ]]; then
-    log "own plugin $name: this profile has no skill root of claude-code; not installed"
-    return 0
-  fi
   source=$DS_INSTANCE_ROOT/agent/plugins/$directory
-  [[ -f $source/.claude-plugin/plugin.json && ! -L $source/.claude-plugin/plugin.json ]] ||
+  case $agents in
+    claude)
+      root=$SKILLS_PLUGIN_ROOT
+      manifest=.claude-plugin/plugin.json
+      [[ -n $root ]] || {
+        log "own plugin $name: this profile has no skill root of claude-code; not installed"
+        return 0
+      }
+      ;;
+    codex)
+      root=$SKILLS_CODEX_PLUGIN_ROOT
+      manifest=.codex-plugin/plugin.json
+      [[ -f $source/$manifest ]] || manifest=plugin.json
+      [[ -n $root ]] || {
+        log "own plugin $name: this profile has no codex component; not installed"
+        return 0
+      }
+      ;;
+    *)
+      log "own plugin $name is for ${agents// /, }: an own plugin is for claude or for codex"
+      return 0
+      ;;
+  esac
+  [[ -f $source/$manifest && ! -L $source/$manifest ]] ||
     skills_fail source-missing "$source" "plugin source missing: $name ($source)"
   [[ $(directory_sha256 "$source") == "$digest" ]] ||
     skills_fail source-digest-mismatch "$source" "plugin source digest differs from the lock: $name ($source)"
   SKILLS_SOFT_LAYOUT=1
   SKILLS_OWN_KIND=plugin
-  SKILLS_OWN_MARKER=.claude-plugin/plugin.json
+  SKILLS_OWN_MARKER=$manifest
   # The plugin root is where this copy lives: a refresh of an incoming one may replace it.
-  SKILLS_MANAGED_ROOTS+=("$SKILLS_PLUGIN_ROOT")
-  found=$SKILLS_PLUGIN_ROOT/$directory
+  SKILLS_MANAGED_ROOTS+=("$root")
+  found=$root/$directory
   if [[ -L $found ]]; then
     skills_fail plugin-not-directory "$found" \
-      "own plugin $name: $found is a link; Claude Code loads a plugin of its skill root from a real directory"
+      "own plugin $name: $found is a link; the agent loads an own plugin from a real directory"
   fi
   [[ -f $found/$SKILLS_OWN_MARKER ]] || found=''
   decision=$(_skills_own_decision "$name" "$found" "$digest")
-  _skills_own_apply "$name" "$directory" "$found" "$decision" "$digest" "$source" "$SKILLS_PLUGIN_ROOT"
+  ((SKILLS_CHECK_ONLY)) || mkdir -p -- "$root"
+  _skills_own_apply "$name" "$directory" "$found" "$decision" "$digest" "$source" "$root"
+  if [[ $agents == codex && -n $SKILLS_OWN_COPY ]]; then
+    _skills_codex_plugin "$name" "$SKILLS_OWN_COPY" "$decision"
+  fi
+}
+
+# _skills_codex_plugin NAME COPY DECISION: Codex runs a plugin from a marketplace, and the
+# copy in its cache. The personal marketplace ~/.agents/plugins/marketplace.json (created
+# with the name personal; a file of the user keeps its name and its plugins) gets an entry
+# with the path of COPY from the home, unless it names NAME already; install then runs
+# `codex plugin add NAME@MARKETPLACE` when `codex plugin list --json` does not list it as
+# installed and enabled, and after a copy that changed (missing, incoming), which refreshes
+# the cache. What cannot be done is a note: an own plugin never fails a check.
+_skills_codex_plugin() {
+  local name=$1 copy=$2 decision=$3 market_file market relative listed spec updated tmp
+  market_file=$HOME/.agents/plugins/marketplace.json
+  if [[ $copy != "$HOME"/* ]]; then
+    _skills_placement_note "own plugin $name: $copy is outside the home, which the personal marketplace of Codex cannot name"
+    return 0
+  fi
+  relative=./${copy#"$HOME"/}
+  if [[ -f $market_file ]] && ! jq -e 'type == "object" and ((.plugins // []) | type == "array")' "$market_file" >/dev/null 2>&1; then
+    _skills_placement_note "own plugin $name: $market_file is no marketplace of Codex; left as it is"
+    return 0
+  fi
+  if [[ ! -f $market_file ]] || ! jq -e --arg name "$name" 'any((.plugins // [])[]; .name == $name)' "$market_file" >/dev/null; then
+    if ((SKILLS_CHECK_ONLY)); then
+      _skills_placement_note "own plugin $name is not in $market_file; $(_skills_rebuild_hint)"
+      return 0
+    fi
+    mkdir -p -- "${market_file%/*}"
+    [[ -f $market_file ]] || printf '{"name": "personal", "plugins": []}\n' >"$market_file"
+    # shellcheck disable=SC2016 # a jq program
+    updated=$(jq --arg name "$name" --arg path "$relative" '
+      .plugins = ((.plugins // []) + [{name: $name, source: {source: "local", path: $path},
+        policy: {installation: "AVAILABLE"}}])' "$market_file")
+    tmp=$(mktemp "$market_file.XXXXXX")
+    printf '%s\n' "$updated" >"$tmp"
+    chmod 0644 "$tmp"
+    mv -f -- "$tmp" "$market_file"
+    log "own plugin $name: added to the personal marketplace of Codex ($market_file)"
+    decision=missing
+  elif ! jq -e --arg name "$name" --arg path "$relative" \
+    'any(.plugins[]; .name == $name and .source.source == "local" and .source.path == $path)' "$market_file" >/dev/null; then
+    _skills_placement_note "own plugin $name: $market_file names another plugin $name; left as it is"
+    return 0
+  fi
+  market=$(jq -r '.name // empty | strings' "$market_file")
+  [[ $market =~ ^[A-Za-z0-9._-]+$ ]] || {
+    _skills_placement_note "own plugin $name: $market_file has no plain name"
+    return 0
+  }
+  spec=$name@$market
+  if ! command -v codex >/dev/null 2>&1; then
+    _skills_placement_note "own plugin $name: no codex on PATH to add $spec"
+    return 0
+  fi
+  listed=$(codex plugin list --json 2>/dev/null) || listed=''
+  if [[ $decision != missing && $decision != incoming ]] &&
+    jq -e --arg spec "$spec" 'any((.installed // [])[]; .pluginId == $spec and .installed != false and .enabled == true)' \
+      >/dev/null 2>&1 <<<"$listed"; then
+    return 0
+  fi
+  if ((SKILLS_CHECK_ONLY)); then
+    _skills_placement_note "codex plugin $spec is not installed and enabled; $(_skills_rebuild_hint)"
+    return 0
+  fi
+  log "own plugin $name: codex plugin add $spec"
+  codex plugin add "$spec" >/dev/null || _skills_placement_note "own plugin $name: codex plugin add $spec failed"
 }
 
 skills_instance_entries() {

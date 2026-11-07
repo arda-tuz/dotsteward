@@ -79,8 +79,7 @@ def _own_plugin_copy(name: str, item: Mapping[str, Any] | None) -> str | None:
     path = item.get("path") if item else None
     if isinstance(path, str) and os.path.isdir(path):
         return path
-    candidate = os.path.join(plugins.claude_skills_dir(), name)
-    return candidate if plugins.is_own_plugin_dir(candidate) else None
+    return plugins.own_copy(name)
 
 
 def _is_plugin(loaded: config.Instance, state_root: str, name: str) -> bool:
@@ -603,7 +602,7 @@ def restore(loaded: config.Instance, name: str) -> int:
                 raise AnswerRefused(f"the remote has no {kind} {name}")
             directory = str(entry.get("directory") or entry.get("name"))
             if kind == state.PLUGIN:
-                path = os.path.join(plugins.claude_skills_dir(), directory)
+                path = os.path.join(plugins.plugin_root(str((entry.get("agents") or [plugins.AGENT])[0])), directory)
             else:
                 path = os.path.join(_home(), ".agents", "skills", directory)
             digest = _install_from(context, loaded, tip, entry, path)

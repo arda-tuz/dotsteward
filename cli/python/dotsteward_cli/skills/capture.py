@@ -653,7 +653,12 @@ def _apply_plugin_copy(
         attempt.repeated.append(work)
         return []
     if entry is None:
-        entry = {"name": declared, "directory": directory, "agents": [plugins.AGENT], "directory_sha256": local}
+        entry = {
+            "name": declared,
+            "directory": directory,
+            "agents": [plugins.agent_of(path) or plugins.AGENT],
+            "directory_sha256": local,
+        }
         if answer.get("here"):
             entry["machines"] = [machine]
         _insert_sorted(entries, entry)

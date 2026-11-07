@@ -4,7 +4,10 @@ Two kinds, both under ``plugin:<name>`` keys of pending.json and base.json:
 
 - **An own plugin**: a directory directly in ``~/.claude/skills`` with a
   ``.claude-plugin/plugin.json`` (what `claude plugin init` makes; Claude Code loads it as
-  ``<name>@skills-dir``, from no marketplace). It is a skill as far as tracking goes: the
+  ``<name>@skills-dir``, from no marketplace); or, with the codex component, one directly in
+  ``${CODEX_HOME:-~/.codex}/plugins`` with ``.codex-plugin/plugin.json`` or ``plugin.json``
+  (where the Codex documentation puts a personal plugin; ``cache`` there is Codex's own),
+  which another machine also gets into its personal marketplace and ``codex plugin add``. It is a skill as far as tracking goes: the
   copy lands in ``agent/plugins/<directory>`` with an ``own_plugins`` entry of the lock
   (``{name, directory, agents, directory_sha256, machines?}``), and `agents install` puts it
   in ``~/.claude/skills`` of another machine as a real directory.
@@ -34,6 +37,12 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 PLUGIN_MANIFEST = os.path.join(".claude-plugin", "plugin.json")
+# A plugin of Codex: its manifest, or the plugin.json at the root of a portable plugin.
+CODEX_MANIFESTS = (os.path.join(".codex-plugin", "plugin.json"), "plugin.json")
+CODEX_AGENT = "codex"
+CODEX_COMPONENT = "codex"
+# Below the plugins of Codex, what Codex itself keeps: its installed copies.
+CODEX_OWN_DIRS = frozenset({"cache"})
 # Where the repository keeps own plugins; `static` checks the same place.
 OWN_PLUGINS_DIR = "agent/plugins"
 COMPONENT = "claude-code"
@@ -61,18 +70,60 @@ def claude_config_dir() -> str:
     return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(_home(), ".claude")
 
 
+def codex_plugins_dir() -> str:
+    """Where the Codex documentation puts a personal plugin: ``${CODEX_HOME:-~/.codex}/plugins``."""
+    return os.path.join(os.environ.get("CODEX_HOME") or os.path.join(_home(), ".codex"), "plugins")
+
+
+def manifest_of(path: str) -> str | None:
+    """The plugin manifest of the directory PATH, when it is an own plugin of an agent: directly
+    in ~/.claude/skills with .claude-plugin/plugin.json, or directly in the plugins of Codex
+    with .codex-plugin/plugin.json or plugin.json (not the cache of Codex)."""
+    normal_path = os.path.normpath(path)
+    parent, name = os.path.split(normal_path)
+    if parent == claude_skills_dir():
+        candidates: tuple[str, ...] = (PLUGIN_MANIFEST,)
+    elif parent == codex_plugins_dir() and name not in CODEX_OWN_DIRS and not name.startswith("."):
+        candidates = CODEX_MANIFESTS
+    else:
+        return None
+    for candidate in candidates:
+        if os.path.isfile(os.path.join(normal_path, candidate)):
+            return os.path.join(normal_path, candidate)
+    return None
+
+
+def agent_of(path: str) -> str | None:
+    """The agent of the own plugin at PATH, None when it is none."""
+    if manifest_of(path) is None:
+        return None
+    return AGENT if os.path.dirname(os.path.normpath(path)) == claude_skills_dir() else CODEX_AGENT
+
+
 def is_own_plugin_dir(path: str) -> bool:
-    """A directory directly in ~/.claude/skills that carries a plugin manifest."""
-    return os.path.dirname(os.path.normpath(path)) == claude_skills_dir() and os.path.isfile(
-        os.path.join(path, PLUGIN_MANIFEST)
-    )
+    return manifest_of(path) is not None
+
+
+def plugin_root(agent: str) -> str:
+    return codex_plugins_dir() if agent == CODEX_AGENT else claude_skills_dir()
+
+
+def own_copy(name: str, agents: Any = None) -> str | None:
+    """The local copy of the own plugin NAME in the roots of AGENTS (all of them without)."""
+    wanted = [str(agent) for agent in agents] if isinstance(agents, list) and agents else [AGENT, CODEX_AGENT]
+    for agent in wanted:
+        candidate = os.path.join(plugin_root(agent), name)
+        if is_own_plugin_dir(candidate):
+            return candidate
+    return None
 
 
 def manifest_name(path: str) -> str | None:
     """The ``name`` of the plugin manifest of the directory PATH."""
     from dotsteward_cli.skills import state
 
-    document = state.read_json(os.path.join(path, PLUGIN_MANIFEST), None)
+    manifest = manifest_of(path)
+    document = state.read_json(manifest, None) if manifest else None
     name = document.get("name") if isinstance(document, dict) else None
     return name.strip() if isinstance(name, str) and name.strip() else None
 

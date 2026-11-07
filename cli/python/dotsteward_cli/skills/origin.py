@@ -3,8 +3,9 @@
     1  a record in ~/.agents/.skill-lock.json (`npx skills`)   downloaded   a question
     2  a .git directory                                        downloaded   a question
     3  a file tool of an agent wrote its SKILL.md or
-       plugin.json; or `claude plugin init` made
-       ~/.claude/skills/<name>/.claude-plugin/plugin.json      own          tracked, no question
+       plugin.json; or an own plugin: `claude plugin init`
+       made ~/.claude/skills/<name>/.claude-plugin/plugin.json,
+       or ${CODEX_HOME:-~/.codex}/plugins/<name> holds one     own          tracked, no question
     4  anything else: a tree no file tool touched              unknown      a question
 
 The evidence is the write itself, not what the tool reports about it, so an edit after
@@ -73,7 +74,9 @@ def classify(name: str, path: str, evidence: Mapping[str, Any] | None) -> tuple[
         return DOWNLOADED, git_source(path)
     if evidence:
         return OWN, None
-    claude_skills = os.path.join(home, ".claude", "skills")
-    if os.path.dirname(path) == claude_skills and os.path.isfile(os.path.join(path, PLUGIN_MANIFEST)):
+    from dotsteward_cli.skills import plugins
+
+    # `claude plugin init`, or the place the Codex documentation gives a personal plugin.
+    if plugins.is_own_plugin_dir(path):
         return OWN, None
     return UNKNOWN, None
