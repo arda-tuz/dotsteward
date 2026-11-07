@@ -83,12 +83,23 @@ printf '[]\n' >"$ss/base.json"
 all_events
 # The state directory is missing, then cannot be made. The sleepers of these events end
 # here: what names them goes with the state.
-_kill_sleepers
-rm -rf "$state"
+# replace_state [TEXT]: the state goes, and a file with TEXT takes its place when TEXT is
+# given. What the last events started detached may still be on its way and make the
+# directory again, so an attempt that meets it is made again.
+replace_state() {
+  local tries
+  for ((tries = 0; tries < 300; tries++)); do
+    _kill_sleepers
+    if { rm -rf "$state" && { (($# == 0)) || printf '%s\n' "$1" >"$state"; }; } 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  ds_fail "the state directory keeps coming back"
+}
+replace_state
 all_events
-_kill_sleepers
-rm -rf "$state"
-printf 'not a directory\n' >"$state"
+replace_state 'not a directory'
 all_events
 rm -f "$state"
 # A context that names a place nobody can write.
