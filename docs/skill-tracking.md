@@ -79,9 +79,16 @@ is neither tried nor told again. Whatever keeps a skill waiting for more than a 
 network, a launcher that cannot run, a capture that failed) is said in the session too, so a
 dead credential does not stay silent.
 
+A copy of a skill that still carries its `name` never lands on that skill: it waits as
+`name-taken` until you rename it, and then lands as a skill of its own.
+
 `dotsteward skills forget <name>` takes a skill from all machines. `dotsteward skills restore
-<name>` brings one you deleted back from the repository. All of this lives in
-`<state>/skills/`, which never enters the repository.
+<name>` brings one you deleted back from the repository. What `--never` and `forget` keep out
+stays out when an agent edits the copy later; only another answer takes it back. A copy
+linked to a place outside the skill roots is not refreshed: it stays a `conflict` until you
+answer, so it never replaces what another machine published. A refresh and `resolve --theirs`
+leave what the normal form leaves out (ignored files, the `.git` of a clone) where it is. All
+of this lives in `<state>/skills/`, which never enters the repository.
 
 ## The hooks
 

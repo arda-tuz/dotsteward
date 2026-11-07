@@ -8,7 +8,7 @@ what it does not know, and the text in the agent's configuration outlives any CL
     SessionStart  reconcile; say what waits, if somebody attends the session
     PostToolUse   a file tool wrote below a skill root: evidence, and the debounce
     Stop          reconcile; Claude Code only: one block per session with what waits
-    SessionEnd    capture now, detached, when something waits for it
+    SessionEnd    what this session wrote is captured now, detached
 
 ``DOTSTEWARD_HOOKS_OFF=1`` ends it first. In a subagent PostToolUse records its evidence,
 so a skill it wrote asks no question, and everything else ends at once. An item is said
