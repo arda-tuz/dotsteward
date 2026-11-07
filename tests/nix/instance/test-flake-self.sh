@@ -35,7 +35,7 @@ assert_inst_eq "$(inst_json 'storeless example.dotstewardMirrors')" \
   "$(flake_instance 'storeless (flakeInstance exampleRoot { }).dotstewardMirrors')" "mirrors through inputs.self"
 assert_inst_eq "$(inst_json 'example.lib.pinnedVersions')" \
   "$(flake_instance '(flakeInstance exampleRoot { }).lib.pinnedVersions')" "pinned versions through inputs.self"
-assert_inst_eq '["dotsteward-manifest","example-app","fresh-home","home","home-fresh","home-workstation","instance-contract","instance-static","manifest-consistent"]' \
+assert_inst_eq '["dotsteward-manifest","example-app","fresh-home","home","home-fresh","home-workstation","hosts-eval","instance-contract","instance-static","manifest-consistent"]' \
   "$(flake_instance 'builtins.attrNames (flakeInstance exampleRoot { }).checks.x86_64-linux')" \
   "checks through inputs.self"
 assert_inst_eq '"x86_64-linux"' \

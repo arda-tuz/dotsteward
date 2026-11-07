@@ -20,7 +20,7 @@ expr=$(instance_expr "$inst")
 
 # --- evaluation ------------------------------------------------------------------
 
-assert_inst_eq '["dotsteward-manifest","home","home-fresh","home-workstation","instance-contract","instance-static","manifest-consistent"]' \
+assert_inst_eq '["dotsteward-manifest","home","home-fresh","home-workstation","hosts-eval","instance-contract","instance-static","manifest-consistent"]' \
   "builtins.attrNames ($expr).checks.x86_64-linux" "checks of the template instance"
 assert_inst_eq '["user"]' "builtins.attrNames ($expr).homeConfigurations" "homeConfigurations"
 assert_inst_eq '["dotsteward","local-maintained-files"]' "builtins.attrNames ($expr).packages.x86_64-linux" \

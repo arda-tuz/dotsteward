@@ -78,7 +78,7 @@ contract_coverage='let
   installed = builtins.attrNames defined.install;
 in {
   count = builtins.length definitions;
-  missing = lib.subtractLists ([ "enable" "profiles" "options" ] ++ visible defined) (visible sub);
+  missing = lib.subtractLists ([ "enable" "profiles" "machines" "tags" "options" ] ++ visible defined) (visible sub);
   nestedMissing = lib.filterAttrs (_: names: names != [ ]) (lib.genAttrs nested (name:
     lib.subtractLists (visible defined.${name}) (visible (sub.${name}.type.getSubOptions [ ]))));
   installMissing = lib.genAttrs installed (method:

@@ -44,10 +44,10 @@ assert_inst_fails 'example.lib.mkHome { username = "alice"; homeDirectory = "/ho
 
 # Checks: home-<profile> per profile, home (check profile), check_aliases,
 # component packages with check = true and the instance checks.
-expected='["dotsteward-manifest","example-app","fresh-home","home","home-fresh","home-workstation","instance-contract","instance-static","manifest-consistent"]'
+expected='["dotsteward-manifest","example-app","fresh-home","home","home-fresh","home-workstation","hosts-eval","instance-contract","instance-static","manifest-consistent"]'
 assert_inst_eq "$expected" 'builtins.attrNames example.checks.x86_64-linux' "example checks"
 assert_inst_eq "$expected" 'builtins.attrNames example.checks.aarch64-darwin' "example darwin checks"
-assert_inst_eq '["dotsteward-manifest","home","home-workstation","instance-contract","instance-static","manifest-consistent"]' \
+assert_inst_eq '["dotsteward-manifest","home","home-workstation","hosts-eval","instance-contract","instance-static","manifest-consistent"]' \
   'builtins.attrNames minimal.checks.x86_64-linux' "minimal checks"
 
 # Home checks are the activation packages of the check identity per profile.

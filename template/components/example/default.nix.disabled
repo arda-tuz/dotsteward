@@ -55,6 +55,9 @@ in
       "linux"
       "darwin"
     ];
+    # Components this one needs where it is active: leaving one out on a machine
+    # (machines, tags, declined) fails the evaluation of that machine.
+    requires = [ ];
     supportedMethods = {
       linux = [
         "official-binary"
