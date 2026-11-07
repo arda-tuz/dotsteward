@@ -335,6 +335,14 @@ def check_problems(instance: config.Instance) -> list[str]:
             problems.append(f"{label}: system {host['system']} is not in nix.systems")
         if "profile" in host and host["profile"] not in instance.config["profiles"]["names"]:
             problems.append(f"{label}: profile {host['profile']} is not in profiles.names")
+        for entry in _entries(_read_lock(instance), "skills"):
+            if (
+                entry.get("name") in host.get("declined", {}).get("skills", [])
+                and entry.get("deployment") == "home-manager"
+            ):
+                problems.append(
+                    f"{label}: declined skill {entry['name']} has the home-manager deployment, on every machine"
+                )
     lock = _read_lock(instance)
     lock_name = instance.config["skills"]["lock"]
     for entry in _entries(lock, "skills"):
@@ -344,9 +352,13 @@ def check_problems(instance: config.Instance) -> list[str]:
             problems.append(f"{label}: machines needs the copy deployment")
     for entry in _entries(lock, "own_plugins"):
         problems += _machines_problems(f"{lock_name}: plugin {entry.get('name')}", entry.get("machines"), names)
+    answers: dict[Any, Any] = {}
     for plugin in _plugin_entries(instance):
         label = f"{config.CONFIG_FILE}: plugin {plugin.get('spec')}"
         problems += _machines_problems(label, plugin.get("machines"), names)
+        # What a machine leaves out goes by the spec, so a spec has one answer.
+        if answers.setdefault(plugin.get("spec"), plugin.get("machines")) != plugin.get("machines"):
+            problems.append(f"{label}: the components list it for different machines")
     return problems
 
 

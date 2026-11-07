@@ -842,7 +842,10 @@ def newer_tree_hint(
     the key is what the problem says it is. A key this release knows but refuses
     (const null: only a later release acts on it) counts as well."""
     env = os.environ if env is None else env
-    if not any(problem.startswith("unknown key ") or ": expected null, got " in problem for problem in problems):
+    if not any(
+        problem.startswith("unknown key ") or ": expected null, got " in problem or ": expected one of " in problem
+        for problem in problems
+    ):
         return None
     if _env_get(env, "DOTSTEWARD_CLI") is not None or _env_get(env, "DOTSTEWARD_FRAMEWORK_OVERRIDE") is not None:
         return None
@@ -851,7 +854,7 @@ def newer_tree_hint(
         return None
     return (
         f"this CLI is revision {running[:12]}, while flake.lock pins the framework at {pinned[:12]}, which may "
-        f"know that key; run the command with the pinned CLI: {instance_root}/.dotsteward/cli.sh <command>"
+        f"read it; run the command with the pinned CLI: {instance_root}/.dotsteward/cli.sh <command>"
     )
 
 
