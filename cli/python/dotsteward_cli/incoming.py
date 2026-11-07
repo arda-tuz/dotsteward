@@ -163,23 +163,14 @@ def _lock_digest(entry: Mapping[str, Any]) -> str:
     return str(entry.get("directory_sha256") or entry.get("skill_sha256") or "")
 
 
-def _unpublished(root: Path, *where: str) -> bool:
-    """Whether a commit no remote has seen touches WHERE. Every fetch leaves its tip in
-    origin/* or refs/dotsteward/*, so a checkout moved to a tip has no such commit."""
-    return bool(
-        _git(
-            root,
-            "log",
-            "-1",
-            "--format=%H",
-            "HEAD",
-            "--not",
-            "--remotes=origin",
-            "--glob=refs/dotsteward/*",
-            "--",
-            *where,
-        ).strip()
-    )
+def _unpublished(root: Path, *where: str, text: str | None = None) -> bool:
+    """Whether a commit no remote has seen touches WHERE, or adds or removes TEXT there. Every
+    fetch leaves its tip in origin/* or refs/dotsteward/*, so a checkout moved to a tip has no
+    such commit."""
+    arguments = ["log", "-1", "--format=%H", "HEAD", "--not", "--remotes=origin", "--glob=refs/dotsteward/*"]
+    if text is not None:
+        arguments.append(f"-S{text}")
+    return bool(_git(root, *arguments, "--", *where).strip())
 
 
 def _source(root: Path, *where: str, text: str | None = None, pattern: str | None = None) -> dict[str, Any]:
@@ -225,7 +216,7 @@ def _item(
     """The question about NAME, None when the change is this machine's own: WHERE are the
     paths of the change, SOURCES (default: the same), TEXT and PATTERN find its commit."""
     root = instance.root
-    if _unpublished(root, *where):
+    if _unpublished(root, *where, text=None if sources else text):
         return None
     origin = _source(root, *(sources or where), text=text, pattern=pattern)
     if origin["by"] == this:
@@ -245,7 +236,6 @@ def _item(
 
 def _left_behind(
     instance: config.Instance,
-    state_root: str,
     base: Mapping[str, Any],
     in_scope: Collection[str],
     reasons: Mapping[str, str],
@@ -253,7 +243,8 @@ def _left_behind(
     """The own skills in BASE the checkout holds nothing for on this machine. A capture
     pushes and leaves the checkout alone, so a record from a commit the checkout has not
     reached is a skill that is too new for its lock, not one that left it."""
-    from dotsteward_cli.skills import state as skill_state, threeway
+    from dotsteward_cli.skills import state as skill_state
+    from dotsteward_cli.skills import threeway
 
     for key in sorted(base):
         name = key.removeprefix("skill:")
@@ -305,10 +296,14 @@ def _skill_items(
             items.append(_item(instance, this, "skill", NEW, name, [vendor]))
         elif record["base_sha256"] != digest and accepted.get(name) != digest:
             where = where or layout.read(instance)
-            answer = threeway.assess(name, layout.find_copy(where, entry), digest, str(instance.root), state_root)
+            try:
+                answer = threeway.assess(name, layout.find_copy(where, entry), digest, str(instance.root), state_root)
+            except (OSError, RuntimeError):
+                # A copy that cannot be read is no reason for a command to fail; `skills status` says it.
+                continue
             if answer["state"] == threeway.INCOMING:
                 items.append(_item(instance, this, "skill", CHANGED, name, [vendor], path=answer["path"]))
-    for name, record in _left_behind(instance, state_root, base, in_scope, reasons):
+    for name, record in _left_behind(instance, base, in_scope, reasons):
         local = record.get("local_path")
         if not (isinstance(local, str) and os.path.isfile(os.path.join(local, "SKILL.md"))):
             continue
@@ -380,6 +375,9 @@ def waiting(
     if known is None:
         return []
     lock = machine.read_lock(instance)
+    if not isinstance(lock.get("skills"), list):
+        # A lock that cannot be read says nothing about any item, only that it says nothing.
+        return []
     return [
         *_skill_items(instance, state_root, name, known, reasons, lock),
         *_plugin_items(instance, name, known, reasons, lock),
@@ -467,8 +465,12 @@ def settle(instance: config.Instance, env: Mapping[str, str] | None = None) -> N
         _write_known(state_root, updated)
     # A skill this machine removed itself in a commit: its copy goes with the record.
     base = skill_state.load_base(state_root)
-    for name, record in list(_left_behind(instance, state_root, base, current["skills"], reasons)):
-        if f"skill:{name}" not in open_ids:
+    lock = machine.read_lock(instance)
+    in_lock = {entry.get("name") for entry in machine.entries_of(lock, "skills")}
+    if not isinstance(lock.get("skills"), list):
+        return
+    for name, record in list(_left_behind(instance, base, current["skills"], reasons)):
+        if name not in in_lock and f"skill:{name}" not in open_ids:
             _remove_copy(instance, state_root, name, record)
 
 
