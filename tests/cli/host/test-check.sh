@@ -6,13 +6,19 @@
 # shellcheck source=tests/cli/host/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/host/helpers.sh"
 
+# problems: what `host check` reports, which `dotsteward static` reports too, so the gate
+# refuses a commit that would drop a skill from every machine without a word.
 problems() {
   assert_exit 1 run_host check
+  printf '%s\n' "$DS_STDERR"
+  assert_exit 1 "$agents_fw/cli/dotsteward" --instance "$agents_inst" static --only hosts </dev/null
+  assert_contains "$DS_STDERR" "static checks failed"
   printf '%s\n' "$DS_STDERR"
 }
 
 assert_exit 0 run_host check
 assert_contains "$DS_STDOUT" "0 registered"
+assert_exit 0 "$agents_fw/cli/dotsteward" --instance "$agents_inst" static --only hosts </dev/null
 
 lock_add alpha
 lock_add beta
@@ -69,3 +75,4 @@ printf 'stray\n' >"$agents_inst/hosts/README.md"
 assert_contains "$(problems)" "hosts/README.md: expected hosts/<name>.toml"
 rm -- "$agents_inst/hosts/README.md"
 assert_exit 0 run_host check
+assert_exit 0 "$agents_fw/cli/dotsteward" --instance "$agents_inst" static --only hosts </dev/null
