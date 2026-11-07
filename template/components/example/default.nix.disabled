@@ -84,6 +84,9 @@ in
         # at-least keeps a newer binary the tool updated itself to.
         policy = "at-least";
         verify = "sha256";
+        # Further release assets the binary starts, each with its own pin and
+        # installed next to dest: { pin; member; file; since; }.
+        companions = [ ];
       };
       external = {
         command = "example-term";

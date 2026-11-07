@@ -11,7 +11,7 @@
       "name": "dotsteward-maintain",
       "directory": "dotsteward-maintain",
       "skill_sha256": "a9a161d67d780be97e7ac813007fa5ccdb079201b3abe45fdb298ac256bf0789",
-      "directory_sha256": "44af93509bc4f4e8a330380c73b18f08ed3728f1cb8ab60452ce553001fe66ad"
+      "directory_sha256": "41b30737a0a751737bedc7eea6a6daf0674d7e76097fd32f878d3f084c847f7c"
     },
     {
       "name": "dotsteward-update",
