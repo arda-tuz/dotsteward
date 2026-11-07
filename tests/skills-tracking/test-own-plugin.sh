@@ -8,61 +8,8 @@
 # as a real directory from `agents install`, a local change there is never overwritten, and
 # --here keeps it to one machine. A clone of somebody else's plugin is asked about, and an
 # update of what is not tracked never tracks it. Nothing here starts claude or codex.
-# shellcheck source=tests/skills-tracking/capture-helpers.sh
-source "$DS_REPO_ROOT/tests/skills-tracking/capture-helpers.sh"
-
-# Fake agent CLIs: reconciling reads files and starts no process.
-for agent in claude codex; do
-  cat >"$DS_TEST_ROOT/bin/$agent" <<FAKE
-#!$BASH
-printf '%s %s\n' "$agent" "\$*" >>"$DS_TEST_ROOT/agent-calls"
-exit 1
-FAKE
-  chmod 0755 "$DS_TEST_ROOT/bin/$agent"
-done
-: >"$DS_TEST_ROOT/agent-calls"
-
-# new_plugin MACHINE NAME: a plugin as `claude plugin init` lays it out, with a skill.
-new_plugin() {
-  local dir
-  dir=$(home_of "$1")/.claude/skills/$2
-  mkdir -p "$dir/.claude-plugin" "$dir/skills/$2-helper"
-  printf '{\n  "name": "%s",\n  "version": "0.1.0",\n  "description": "Synthetic plugin."\n}\n' "$2" \
-    >"$dir/.claude-plugin/plugin.json"
-  printf -- '---\nname: %s-helper\ndescription: Synthetic skill of a plugin.\n---\n\n# Helper\n' "$2" \
-    >"$dir/skills/$2-helper/SKILL.md"
-}
-
-# tool_wrote MACHINE FILE [FIXTURE]: what the hook sees when a file tool wrote FILE.
-tool_wrote() {
-  on "$1" bash -c 'sed -e "s|@HOME@|$HOME|g" -e "s|@CWD@|$PWD|g" -e "s|@SESSION@|fe058fc9|g" -e "s|@FILE@|$2|g" "$1" |
-    "$3" skills hook PostToolUse --agent claude' _ "$fixtures/claude/${3:-post-tool-use-write}.json" "$2" \
-    "$DS_REPO_ROOT/cli/dotsteward"
-}
-
-plugin_item() {
-  local pending
-  pending=$(state_of "$1")/skills/pending.json
-  [[ -f $pending ]] || {
-    jq -rn "{} | $3"
-    return 0
-  }
-  jq -r --arg key "plugin:$2" ".items[\$key] // {} | $3" "$pending"
-}
-
-plugin_base() {
-  jq -r --arg key "plugin:$2" '.[$key].base_sha256 // "none"' "$(state_of "$1")/skills/base.json" 2>/dev/null ||
-    printf 'none\n'
-}
-
-settle_plugin() {
-  find "$(home_of "$1")/.claude/skills/$2" -exec touch -h -d '2001-01-01' {} +
-}
-
-remote_plugin() {
-  git -C "$remote" show refs/heads/main:agent/skills.lock.json |
-    jq -c --arg name "$1" 'first((.own_plugins // [])[] | select(.name == $name)) // {}'
-}
+# shellcheck source=tests/skills-tracking/plugin-helpers.sh
+source "$DS_REPO_ROOT/tests/skills-tracking/plugin-helpers.sh"
 
 new_machine a
 plugin=$(home_of a)/.claude/skills/example-plugin
