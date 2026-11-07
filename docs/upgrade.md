@@ -116,7 +116,9 @@ Update these too? [y/N] n
    the run with it too. What fails in one group of the writer is named, and what the others moved
    goes on. Skills with a recorded transform are counted and left to `dotsteward-update` without
    holding the exit status; other items of the writer wait in `review.json` under `pins-apply`.
-   The commit is kept as `refs/dotsteward/upgrade/waiting` until it is on the remote.
+   The commit is kept as `refs/dotsteward/upgrade/waiting` until it is on the remote, and what it moved
+   in `<state>/upgrade/waiting.json`. The clone keeps the local settings of the checkout (signing, a
+   `pushurl`, credentials) and runs its hooks: `.git/hooks` or its `core.hooksPath`, as an absolute path.
 5. **Own updaters.** A component that declares its updater (`claude update`) is asked to update
    when it has `updater = "self"`, or no `updater` and a method other than `deb`. Nothing else.
 6. **Plugins are not updated here.** Marketplaces update themselves; `upgrade` starts no agent and
@@ -128,14 +130,18 @@ Update these too? [y/N] n
    clone while a commit waits, else from the checkout, if it is clean. E2E runs in full, unless its
    key is unchanged after a green run: the generation, the tree, the profile, the versions of the
    tracked packages and of the own updaters. Without a network or with a dirty checkout it runs
-   without the repository checks. An apt commit that changed something always runs it.
+   without the repository checks. An apt commit that changed something always runs it. A dirty
+   checkout behind what was published waits as `checkout-behind`, exit 3: the active generation is of
+   the published commit, and the lock of the checkout is older.
 8. **Machine checks.** Whether a reboot is due: the newest installed kernel as the apt engine names
    it against `uname -r`, or `/run/reboot-required` when it is there. Its absence proves nothing. The
    engine also checks the module of that kernel, in every run. Only said.
 9. **Publish, then the checkout follows.** `txn publish` from the clone, only after a green E2E of
-   that tree on this machine. Then the checkout fast-forwards if it is clean, a last rebuild gives it
-   the records of the machine back (the build comes from the store), and the clone goes. Then the
-   analysis and the offer, firmware last, and the run report.
+   that tree on this machine. Then the checkout fast-forwards if it is clean, on the branch of the
+   instance and without commits of its own; else `checkout-behind` says which and the command for it,
+   and the checkout is not touched. Its tracking ref follows the remote. A last rebuild gives it the
+   records of the machine back (the build comes from the store), and the clone goes; when that rebuild
+   fails, approved firmware waits. Then the analysis and the offer, firmware last, and the run report.
 
 The profile of a run is the one of the machine (`hosts/<name>.toml`, `machine.json`, the last
 rebuild), never `profiles.default`. A machine without a name is asked on a terminal, and gets
@@ -210,13 +216,15 @@ The heaviest one of a run is the status, in the order 4, 1, 3, 6, 0 ([exit-codes
 | `upgrade/latest.json` | the rows of the last `pins latest` |
 | `upgrade/nix-week.json` | when flake inputs last moved |
 | `upgrade/e2e-key.json` | the key of the last green E2E |
+| `upgrade/waiting.json` | what the waiting commit moved |
 | `plugins/scan.json` | the digests of the installed plugin trees and the open findings |
 | `holds.json` | the local holds |
 | `rollback/` | the official binaries saved while a move is not green yet |
 | `apt-logs/` | what dpkg printed, the newest 20 |
 
 Review codes of this command: `sudo-required`, `machine-name-required`, `profile-required`,
-`remote-refused`, `gate-failed`, `publish-waits`, `publish-race`, `publish-refused`, `red-held`,
+`remote-refused`, `gate-failed`, `e2e-no-result`, `checkout-behind` (a dirty checkout behind what was
+published), `publish-waits`, `publish-race`, `publish-refused`, `red-held`,
 `e2e-red`, `firmware-available`, `firmware-needs-ac`, the codes of the apt engine that wait
 (`apt-denied`, `dpkg-lock-busy`, `module-missing`, `python3-apt-missing`), and of the skills
 (`origin-unknown`, `skill-conflict`, `capture-blocked`). Notes that wait for nothing: `analysis`,

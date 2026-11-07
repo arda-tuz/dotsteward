@@ -56,11 +56,13 @@ assert_exit 3 upgrade --tracked
 assert_eq partial "$(step_status skills-capture)"
 
 # A commit of the writer on a dirty checkout: the rebuild ran from the clone, and the checkout cannot
-# take the records back. The hooks must not keep naming a clone that is gone.
+# take the records back.
 rm -f -- "$UP_CONTROL/capture-status"
 move agent_tools.codex.linux 2.0.0 download
 printf 'a note\n' >>"$up_inst/docs/guide.md"
 clear_log
 assert_exit 3 upgrade --tracked
-assert_order '^rebuild .*root=.*/upgrade/work' '^skills hooks install'
+assert_order '^rebuild .*root=.*/upgrade/work'
+# A rebuild writes no context of the hooks, so the clone that goes leaves nothing to install again.
+assert_no_step '^skills hooks install'
 git -C "$up_inst" checkout -q -- docs/guide.md

@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from the harness and the helpers
+# shellcheck disable=SC2016 # the scripts of tool_stub run later and are single-quoted on purpose
 # What a waiting commit moved is kept next to the commit, not in the last report: a run refused in
 # between does not erase it, so a later red still goes back with its hold. A waiting commit that goes
 # because another machine came first takes the saved binaries of its move along.

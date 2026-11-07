@@ -204,7 +204,8 @@ cmd_prepare() {
 # --- publish ------------------------------------------------------------------------
 
 # canonical_checkout: the canonical checkout path (inventory.json written by
-# rebuild, else instance.checkout).
+# rebuild, else instance.checkout). A recorded path that is gone, as the clone
+# of an upgrade is once it ends, falls back too.
 canonical_checkout() {
   local inventory canonical=""
   inventory=$(state_root)/host-overrides/inventory.json
@@ -212,6 +213,7 @@ canonical_checkout() {
     canonical=$(jq -r 'if type == "object" then .canonical_repo // empty | strings else empty end' \
       "$inventory" 2>/dev/null) || canonical=""
   fi
+  [[ -z $canonical || -e $canonical ]] || canonical=""
   printf '%s\n' "${canonical:-$DS_INSTANCE_CHECKOUT}"
 }
 

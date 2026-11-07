@@ -1661,8 +1661,8 @@ Exit status: 0 done (already published included), 1 refused or failed.
 Bring this machine and the shared lock to the newest stable versions, with one command.
 
 ```text
-usage: dotsteward upgrade [-h] [--tracked | --all] [--plan] [--json]
-                          [--accept KEY]
+usage: dotsteward upgrade [-h] [--tracked | --all] [--plan] [--retry-held]
+                          [--json] [--accept KEY]
 
 Brings this machine and the shared lock to the newest stable versions. Without
 a flag a terminal asks what to update; without a terminal it is --tracked.
@@ -1678,6 +1678,8 @@ options:
   --all         also apt as a whole, snap, flatpak and the tools of
                 [[upgrade.tools]]; no second question
   --plan        say what both modes would do and change nothing
+  --retry-held  take back every local hold (<state>/holds.json) first, so the
+                held pins move again
   --json        print the report as one JSON document
   --accept KEY  answer in advance: install:PACKAGE, series:kernel=X.Y,
                 series:nvidia=N, firmware; all of them need a terminal in the

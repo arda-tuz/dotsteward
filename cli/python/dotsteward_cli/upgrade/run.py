@@ -209,7 +209,8 @@ class Upgrade:
         return child.returncode
 
     def _git(self, *arguments: str) -> publishing.GitResult:
-        """Git in the checkout: reading, a fetch, a fast-forward. Nothing else ever runs there."""
+        """Git in the checkout: reading, a fetch, its tracking ref, a fast-forward. Nothing else ever
+        runs there."""
         return publishing.git(self.root, *arguments)
 
     def _work_git(self, *arguments: str) -> publishing.GitResult:
@@ -376,14 +377,17 @@ class Upgrade:
         self.work = None
 
     def _leave_work(self) -> None:
-        """The clone goes. The hooks of the agents must not keep naming it, also when the checkout
-        cannot take the records of the machine back yet."""
-        path = self.upgrade_dir / _WORK
-        named = os.path.realpath(str(self._activation().get("root"))) == os.path.realpath(path)
+        """The clone goes. Nothing the agents read names it: the hooks of skill tracking take their
+        context from `skills hooks install`, which a rebuild does not run."""
         self._remove_work()
         self.framework_moved = False
-        if named and skills_commands.tracking_on(self.instance):
-            self._ds_output("skills", "hooks", "install")
+
+    def _track(self, commit: str) -> None:
+        """The tracking ref of the checkout says what the remote has, so `git status` does not count
+        a published commit as one of its own."""
+        tracking = f"refs/remotes/origin/{self.branch}"
+        if self._git("rev-parse", "--verify", "--quiet", tracking).code == 0:
+            self._git("update-ref", tracking, commit)
 
     def _waiting_ref(self) -> str | None:
         return self._git("rev-parse", "--verify", "--quiet", WAITING_REF).stdout.strip() or None
@@ -494,6 +498,7 @@ class Upgrade:
                 self.run.step("fetch", report.PARTIAL, detail="offline")
             return True
         self.tip = tip
+        self._track(tip)
         self.run.step("fetch", report.OK)
         head = self._head()
         ahead = self._git("rev-list", f"{tip}..{head}").stdout.split()
@@ -502,7 +507,11 @@ class Upgrade:
             return self._refuse(
                 f"this checkout has local commits that are not published: {ahead[0][:12]}; publish them first"
             )
-        if waiting and self._git("rev-parse", f"{waiting}^").stdout.strip() == tip:
+        if waiting == tip:
+            # The push of an earlier run landed, and its answer did not.
+            self._drop_waiting()
+            _say("the waiting commit is already published: the checkout follows it")
+        elif waiting and self._git("rev-parse", f"{waiting}^").stdout.strip() == tip:
             self.waiting = waiting
         elif waiting:
             # Another machine came first: no merge of pins, the writer starts again on the new tip.
@@ -1088,6 +1097,20 @@ class Upgrade:
             # Without a network its rebuild waits; this generation says nothing about the commit.
             self.run.step("e2e", report.PARTIAL, detail="the commit that waits is not active yet")
             return
+        if self.work is None and self.dirty and self._behind():
+            # The generation is of what was published, the lock of the checkout is older: its E2E would
+            # say red about a lock nobody runs.
+            self.verified = False
+            self.run.step("e2e", report.PENDING, detail="the checkout has changes and is behind what is published")
+            self.run.item(
+                "checkout-behind",
+                run=self._stash_and_follow(),
+                message=(
+                    "the checkout has uncommitted changes and is behind what was published: E2E waits until "
+                    "it follows, since it would check a lock the active generation does not have"
+                ),
+            )
+            return
         if not force and not self.apt_changed and self._e2e_green_for(self._e2e_key(self._repo_checks())):
             self.verified = True
             self.run.step("e2e", report.OK, detail="skipped: nothing changed since the last green run")
@@ -1261,32 +1284,73 @@ class Upgrade:
         self._drop_waiting()
         self._back_to_checkout()
 
+    def _behind(self) -> bool:
+        """The checkout is behind what the remote has, or had at the last fetch."""
+        tip = self.tip or self._git("rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{self.branch}").stdout
+        tip = tip.strip()
+        return bool(tip) and bool(self._git("rev-list", f"HEAD..{tip}").stdout.strip())
+
+    def _stash_and_follow(self) -> str:
+        root = self.root
+        return f"git -C {root} stash && git -C {root} pull --ff-only && git -C {root} stash pop"
+
+    def _why_behind(self, commit: str) -> tuple[str, str] | None:
+        """Why the checkout cannot fast-forward to COMMIT: the command and the words, or None."""
+        root = self.root
+        current = self._git("symbolic-ref", "--quiet", "--short", "HEAD").stdout.strip()
+        if current != self.branch:
+            return (
+                f"git -C {root} switch {self.branch} && git -C {root} pull --ff-only",
+                f"the checkout is on {current or 'a detached HEAD'}, not on {self.branch}: nothing moved it, and "
+                f"{self.branch} stays behind what was published",
+            )
+        if not self._checkout_clean():
+            return (
+                self._stash_and_follow(),
+                "the checkout has uncommitted changes, so it stays behind what was published; nothing in it changed",
+            )
+        if self._git("merge-base", "--is-ancestor", "HEAD", commit).code != 0:
+            return (
+                f"git -C {root} pull --rebase",
+                "the checkout has commits of its own, so it stays behind what was published; they are not published",
+            )
+        return None
+
     def _follow(self, commit: str) -> None:
-        """The commit is on the remote: the checkout fast-forwards when it is clean, and takes the
-        records of the machine back from the clone. It is the only time a run moves it this late."""
+        """The commit is on the remote: the checkout fast-forwards when it can, and takes the records
+        of the machine back from the clone. It is the only time a run moves it this late."""
         self._remove_work()
-        head = self._head()
-        if head != commit:
-            clean = self._checkout_clean()
-            if not clean or self._git("merge", "--quiet", "--ff-only", commit).code != 0:
-                self.framework_moved = False
-                self.run.item(
-                    "checkout-behind",
-                    pending=False,
-                    run=f"git -C {self.root} pull --ff-only",
-                    message="the checkout is not clean, so it stays behind what was published; the next run follows",
+        self._track(commit)
+        if self._head() != commit:
+            why = self._why_behind(commit)
+            if why is None and self._git("merge", "--quiet", "--ff-only", commit).code != 0:
+                why = (
+                    f"git -C {self.root} pull --ff-only",
+                    "the checkout could not fast-forward to what was published",
                 )
+            if why is not None:
+                self.framework_moved = False
+                self.run.item("checkout-behind", pending=False, run=why[0], message=why[1])
                 return
         if self.profile is not None and not self._is_active(self.root):
             self.dirty = False
-            self.run.step("checkout-rebuild", self._ds("rebuild", "--profile", self.profile, "--switch"))
+            self._checkout_rebuild()
+
+    def _checkout_rebuild(self) -> None:
+        """The last rebuild, from the checkout. Red, it leaves the records naming the clone: no firmware
+        on top of that."""
+        assert self.profile is not None
+        status = self._ds("rebuild", "--profile", self.profile, "--switch")
+        self.run.step("checkout-rebuild", status)
+        if status != 0:
+            self.verified = False
 
     def _back_to_checkout(self) -> None:
         """A commit that goes nowhere leaves the generation of the checkout active."""
         self._remove_work()
         self.framework_moved = False
         if self.profile is not None and not self.dirty and not self._is_active(self.root):
-            self.run.step("checkout-rebuild", self._ds("rebuild", "--profile", self.profile, "--switch"))
+            self._checkout_rebuild()
 
     def _analysis(self) -> Mapping[str, Any]:
         commands = facts.tracked_commands(facts.mirror(self.instance, self.env), self._active())

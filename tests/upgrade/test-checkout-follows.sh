@@ -49,7 +49,7 @@ clear_log
 assert_exit 3 upgrade --tracked
 assert_no_step '^e2e '
 last_report '[.items[] | select(.code == "e2e-red")] == []'
-last_report '[.items[] | select(.code == "checkout-behind" and .pending)] | length == 1'
+review_json '[.items[] | select(.code == "checkout-behind")] | length == 1'
 assert_eq pending "$(step_status e2e)"
 rm -f "$UP_CONTROL/e2e-red"
 git -C "$up_inst" checkout -q -- workstation.toml

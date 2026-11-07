@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from the harness and the helpers
+# shellcheck disable=SC2016 # the scripts of tool_stub run later and are single-quoted on purpose
 # The clone of the writer behaves as the checkout would: the hooks of the checkout run on its push,
 # from .git/hooks as from a core.hooksPath relative to the checkout, and its local settings hold, a
 # pushurl and commit signing among them. A hook or a pushurl that refuses leaves the remote where it
