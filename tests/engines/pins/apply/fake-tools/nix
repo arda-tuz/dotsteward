@@ -18,8 +18,11 @@
 
 FAKE_NIX_STATE holds the scenario: fail-lock (input names whose relock
 fails), fail-build (attributes whose build fails with a builder error),
-fail-prefetch (URLs that do not download), store (hashes built so far), calls
-(one line per command). A prefetched file holds "download:<url>".
+fail-prefetch (URLs that do not download), serve/<sha256 of the URL> (the
+file a URL downloads), store (hashes built so far), calls (one line per
+command). A prefetched file that is not served holds "download:<url>", except
+a sigstore bundle next to a download (.sigstore, .sigstore.json, .bundle),
+which does not exist unless it is served.
 """
 
 import base64
@@ -32,6 +35,8 @@ import subprocess
 import sys
 
 STATE = pathlib.Path(os.environ["FAKE_NIX_STATE"])
+# Files published next to a download that only exist when a scenario serves them.
+SIGNATURE_SUFFIXES = (".sigstore", ".sigstore.json", ".bundle")
 
 
 def sri(text):
@@ -143,7 +148,13 @@ def main():
         url = rest[-1]
         if url in lines_of("fail-prefetch"):
             sys.exit(f"error: unable to download '{url}': HTTP error 404")
-        body = f"download:{url}".encode()
+        served = STATE / "serve" / hashlib.sha256(url.encode()).hexdigest()
+        if served.is_file():
+            body = served.read_bytes()
+        elif url.endswith(SIGNATURE_SUFFIXES):
+            sys.exit(f"error: unable to download '{url}': HTTP error 404")
+        else:
+            body = f"download:{url}".encode()
         blob = STATE / f"prefetch-{hashlib.sha256(url.encode()).hexdigest()}"
         blob.write_bytes(body)
         digest = "sha256-" + base64.b64encode(hashlib.sha256(body).digest()).decode()

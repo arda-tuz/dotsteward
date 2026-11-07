@@ -1,0 +1,1 @@
+printf 'example-release %s\n' 5.0.0

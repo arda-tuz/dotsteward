@@ -9,8 +9,8 @@
 # download_verified, extracts the member, backs up a previous regular file
 # into <state>/backups/<UTC>/files/<abs>, installs it with mode 0755 and
 # re-checks the version. A non-regular dest is refused, a dest that cannot
-# be backed up is left untouched; sigstore verification is refused until it
-# is supported. `install --check-only` fails with the rebuild hint;
+# be backed up is left untouched; sha256+sigstore without a recorded
+# signature is refused. `install --check-only` fails with the rebuild hint;
 # `install` itself leaves the method to `dotsteward agents install`.
 # shellcheck source=tests/cli/methods/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/methods/helpers.sh"
@@ -208,12 +208,14 @@ assert_eq "installed: example-term 1.0.0" "$DS_STDOUT"
 assert_file_mode "$dest" 755
 assert_eq "example-term 1.0.0" "$("$dest" --version)"
 
-# sigstore verification is refused rather than skipped.
+# sigstore verification without a recorded signature is refused before any
+# download rather than skipped (tests/cli/methods/test-signatures.sh covers
+# the verification).
 rm -f "$dest"
 set_block '.verify = "sha256+sigstore"'
 : >"$DS_CALL_LOG"
 assert_exit 1 install_term
-assert_eq "[dotsteward] ERROR: example-term (official-binary): verify = \"sha256+sigstore\" is not supported yet; use \"sha256\"" "$DS_STDERR"
+assert_eq "[dotsteward] ERROR: example-term (official-binary): verify = \"sha256+sigstore\" needs a recorded signature, and versions.lock.json agent_tools.example-term has none; run 'dotsteward pins apply' to record one" "$DS_STDERR"
 assert_eq "0" "$(ds_call_count curl)"
 
 # The lock entry must carry a version and the download fields.

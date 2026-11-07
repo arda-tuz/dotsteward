@@ -8,7 +8,8 @@
 #     each, committed;
 #   - bare git remotes under $github behind url.insteadOf, holding the tags and
 #     the upstream skill the rows name;
-#   - the fake nix, npm and example-compiler of fake-tools first on PATH;
+#   - the fake nix, npm and example-compiler of fake-tools first on PATH, and
+#     the gh stub without routes (no attestation, no trusted root);
 #   - the state root at $state.
 #
 #   apply ARG...             `dotsteward --instance $inst pins apply ARG...`
@@ -123,6 +124,7 @@ apply_world() {
   git config --global url."$github/".insteadOf https://github.com/
   # shellcheck disable=SC2031 # the subshell of tree_state does not change PATH
   export PATH=$DS_REPO_ROOT/tests/engines/pins/apply/fake-tools:$PATH
+  ds_use_stubs gh
 
   pins_instance
 
