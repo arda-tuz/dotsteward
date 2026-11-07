@@ -12,6 +12,7 @@
 #   requiredFiles = ["<relative path>", ...]     # optional
 #   trackAt = "<versions.lock.json path>"        # read by the pins engine
 #   watched = ["<path pattern>", ...]            # read by the pins engine
+#   machines = ["<machine name>", ...]           # optional: only on these machines
 #
 # install (DOTSTEWARD_CHECK_ONLY=0) runs `claude plugin marketplace add
 # OWNER/REPO` for a marketplace that `claude plugin marketplace list --json`

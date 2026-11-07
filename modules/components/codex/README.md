@@ -161,6 +161,7 @@ equivalent, but TOML 1.0 requires each inline table on a single line.
 | `marketplace` | no | the GitHub repository `OWNER/REPO` of a Git marketplace that `codex plugin marketplace add` adds under the spec's marketplace name; entries naming the same marketplace name the same repository |
 | `minimumAt` | no | a `versions.lock.json` path holding the minimum version: a version string, or an entry with `minimum_version` or `version` |
 | `requiredSkillDirectories` | no | directory names that must hold `skills/<name>/SKILL.md` inside the installed plugin |
+| `machines` | no | the names of the machines the plugin is for; other machines neither install it nor miss it ([machines](../../../docs/machines.md)) |
 | `trackAt` | no | a `versions.lock.json` path of an entry with `source` (`https://github.com/OWNER/REPO` of the marketplace) and `observed_marketplace_revision` (the 40-digit commit the plugin was last reviewed at); needs `watched` |
 | `watched` | with `trackAt` | regular expressions (full match) of the marketplace paths that belong to the plugin |
 

@@ -177,6 +177,7 @@ let
     "minimumAt"
     "requiredFiles"
     "mcpServers"
+    "machines"
   ]
   ++ tracking.keys;
 

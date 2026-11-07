@@ -144,6 +144,7 @@ let
     "marketplace"
     "minimumAt"
     "requiredSkillDirectories"
+    "machines"
   ]
   ++ tracking.keys;
 

@@ -44,7 +44,8 @@ comes back.
 ## What applies to a machine
 
 An entry with `machines = ["<name>", ...]` is for those machines only. In this
-release that goes for the entries of the skills lock and for `own_plugins` there.
+release that goes for the entries of the skills lock, for `own_plugins` there and for
+`[[components.<agent>.options.plugins]]`.
 Other machines never get such an entry and are never asked; a machine without a name
 is another machine. `hosts/<name>.toml` declines entries for one machine.
 
@@ -58,10 +59,7 @@ installs nor misses what is left out, and neither do the checks of the agents.
 `name_taken` lists the skills the lock keeps for other machines while this machine
 has one of that name.
 
-`machines` on `[[components.<agent>.options.plugins]]` is read by the plugin hooks.
-The catalog modules refuse the key until the release that accepts it.
-
-`dotsteward host check` reports the problems of the tree: a host file that is not
+`dotsteward host check`, which `dotsteward static` runs, reports the problems of the tree: a host file that is not
 valid, and `machines` lists that are empty or name a machine without a host file.
 
 ## The producer

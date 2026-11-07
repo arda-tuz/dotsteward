@@ -8,6 +8,7 @@
 #   marketplace = "OWNER/REPO"                   # optional
 #   minimumAt = "<versions.lock.json path>"       # optional
 #   requiredSkillDirectories = ["<dir>", ...]     # optional
+#   machines = ["<machine name>", ...]           # optional: only on these machines
 #
 # install (DOTSTEWARD_CHECK_ONLY=0) runs `codex plugin marketplace add
 # OWNER/REPO` for an entry's marketplace that `codex plugin marketplace list

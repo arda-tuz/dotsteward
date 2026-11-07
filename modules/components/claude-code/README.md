@@ -170,6 +170,7 @@ equivalent, but TOML 1.0 requires each inline table on a single line.
 | `minimumAt` | no | a `versions.lock.json` path holding the minimum version: a version string, or an entry with `minimum_version` or `version`. Only for plugins with a dotted manifest version |
 | `requiredFiles` | no | paths relative to the installed plugin directory that must exist |
 | `mcpServers` | no | names of the plugin's MCP servers; the E2E check requires Claude Code to connect to each, `plugin:NAME:SERVER` (see Launch environment) |
+| `machines` | no | the names of the machines the plugin is for; other machines neither install it nor miss it ([machines](../../../docs/machines.md)) |
 | `trackAt` | no | a `versions.lock.json` path of an entry with `source` (`https://github.com/OWNER/REPO` of the marketplace) and `observed_marketplace_revision` (the 40-digit commit the plugin was last reviewed at); needs `watched` |
 | `watched` | with `trackAt` | regular expressions (full match) of the marketplace paths that belong to the plugin |
 
