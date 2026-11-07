@@ -2,7 +2,9 @@
 
 One command that brings this machine and the shared lock to the newest stable versions. It stops
 only for what a person decides. Run it again at any time: every run works out what is left, so
-there is no resume command and nothing to clean up after a run that was cut short.
+there is no resume command. Your checkout is yours: `upgrade` never resets, cleans or adds anything
+in it. The new pins are made, proven and published from a clone of its own, and the checkout only
+fast-forwards, when it is clean.
 
 ```sh
 dotsteward upgrade              # asks: tracked only, or everything
@@ -47,7 +49,7 @@ Firmware Example SSD: 1.0 -> 2.0. Apply? [y/N] y
 [upgrade] apt (tracked): 1 install, 2 upgrade
 [upgrade] pins moved: flake_inputs.nixpkgs, agent_tools.codex.linux; the gate decides
 [dotsteward] flake-check  ok (41s)
-[upgrade] committed 15e283e055db locally; it goes out after a green E2E
+[upgrade] committed 15e283e055db next to the checkout; it goes out after a green E2E
 [upgrade] rebuild of profile workstation
 [upgrade] E2E of profile workstation
 [upgrade] E2E is green
@@ -68,39 +70,53 @@ Update these too? [y/N] n
    (`DOTSTEWARD_UPGRADE_REEXEC`). A development CLI (`DOTSTEWARD_CLI`, `DOTSTEWARD_FRAMEWORK_OVERRIDE`,
    no `source-info`) stays. The same happens after a pull that moves the pin, with the mode of the menu.
 2. **Lock and front work.** The instance lock; a busy lock is refused at once. The host file, the
-   skill comparison and capture go out first. Then the fetch and the fast-forward. A local commit
-   that `upgrade` did not make is refused. One it made and could not publish goes out now, or is
-   dropped and made again when another machine came first. A dirty checkout does not stop apt: the
-   repository steps wait and say so. The questions come here: the firmware list and its approval.
+   skill comparison and capture go out first. Then the fetch, and the fast-forward when the checkout
+   is clean. A commit in the checkout that is not on the remote is yours: the run is refused and it
+   stays. Uncommitted changes stop nothing but the fast-forward and a rebuild from the checkout. The
+   questions come here: the firmware list and its approval.
 3. **One sudo window before all Nix work.** `sudo -v`, `dpkg --configure -a` when dpkg was left half
    way, the pin file from what dpkg has, the apt bridge when it is installed, `apt-get update`, the
    apt plan and its commit in one depcache, snap and flatpak with `--all`, then `sudo -k`. Sudo runs
    out during a long step: a terminal asks once more; if that fails too, the rest of the window waits
    in `review.json` and everything else still runs.
-4. **The pins, on the producer only.** `pins latest`, `pins apply`, the gate in the update scope and
-   a local commit. The producer is `[hosts] producer`; without one it is this machine when `hosts/`
-   holds at most one file, and nobody when it holds more (the command to name one is said). Flake
+4. **The pins, on the producer only, in a clone.** A clone of the fetched tip below
+   `<state>/upgrade/work` takes `pins latest`, `pins apply`, the gate in the update scope and a commit.
+   The producer is `[hosts] producer`; without one it is this machine when `hosts/` holds at most one
+   file, and nobody when it holds more (the command to name one is said). A machine without a name or
+   a profile moves no pins, since nothing could prove them there: the command to run is said. Flake
    inputs move at most once a week; every other pin, such as an official binary of Codex, moves when
    upstream does. A framework that moved runs the writer once more with its own CLI, and the rest of
-   the run with it too. Review items of the writer wait in `review.json` under `pins-apply`.
+   the run with it too. What fails in one group of the writer is named, and what the others moved
+   goes on. Skills with a recorded transform are counted and left to `dotsteward-update` without
+   holding the exit status; other items of the writer wait in `review.json` under `pins-apply`.
+   The commit is kept as `refs/dotsteward/upgrade/waiting` until it is on the remote.
 5. **Own updaters.** A component that declares its updater (`claude update`) is asked to update
    when it has `updater = "self"`, or no `updater` and a method other than `deb`. Nothing else.
 6. **Plugins are not updated here.** Marketplaces update themselves; `upgrade` starts no agent and
    changes no `autoUpdate`. It compares the installed trees with `<state>/plugins/scan.json`, scans
-   what changed with `dotsteward scan --tree --redact`, and says so. A finding is a review item and nothing is rolled
-   back. The scan looks for secrets and private data; it does not look for prompt injection.
-7. **Rebuild and E2E.** `rebuild --switch` when another tree or profile is active. E2E runs in full,
-   unless its key is unchanged after a green run: the generation, the tree, the profile, the versions
-   of the tracked packages and of the own updaters. Without a network or with a dirty checkout it
-   runs without the repository checks. An apt commit that changed something always runs it.
-8. **Machine checks.** Whether a reboot is due, by comparing `uname -r` with the newest installed
-   kernel; `/run/reboot-required` is not trusted alone. Only said.
-9. **Publish, then the report.** `txn publish` when this run or an earlier one left a commit and E2E
-   is green. Then the analysis and the offer, firmware last, and the run report.
+   what changed with `dotsteward scan --tree --secrets-only --redact`, and says so. A finding is a
+   note and nothing is rolled back. The scan looks for the shape of real credentials; it does not
+   look for prompt injection.
+7. **Rebuild and E2E.** `rebuild --switch` when another tree, profile or place is active: from the
+   clone while a commit waits, else from the checkout, if it is clean. E2E runs in full, unless its
+   key is unchanged after a green run: the generation, the tree, the profile, the versions of the
+   tracked packages and of the own updaters. Without a network or with a dirty checkout it runs
+   without the repository checks. An apt commit that changed something always runs it.
+8. **Machine checks.** Whether a reboot is due: the newest installed kernel as the apt engine names
+   it against `uname -r`, or `/run/reboot-required` when it is there. Its absence proves nothing. The
+   engine also checks the module of that kernel, in every run. Only said.
+9. **Publish, then the checkout follows.** `txn publish` from the clone, only after a green E2E of
+   that tree on this machine. Then the checkout fast-forwards if it is clean, a last rebuild gives it
+   the records of the machine back (the build comes from the store), and the clone goes. Then the
+   analysis and the offer, firmware last, and the run report.
 
 The profile of a run is the one of the machine (`hosts/<name>.toml`, `machine.json`, the last
 rebuild), never `profiles.default`. A machine without a name is asked on a terminal, and gets
-`machine-name-required` without one; without any profile the rebuild and E2E wait.
+`machine-name-required` without one; without any profile the rebuild and E2E wait. Without a green E2E
+nothing is published and no firmware is written.
+
+Ctrl-C, SIGTERM and SIGHUP stop the whole run from every phase with status 130: no later step starts,
+dpkg and a firmware write under way are left to finish, the clone goes, and the next run finishes.
 
 ## Kernel, NVIDIA and firmware
 
@@ -117,18 +133,23 @@ left to the vendor. Without a terminal it is never applied.
 
 ## When something goes red
 
-- **The gate says no:** nothing is committed, the writer's tree goes, exit 1. A moved flake input
-  still starts its week, so the next run tries the other pins without it.
-- **E2E is red after a move of this run:** the commit goes (`git reset --keep`), the rebuild returns
-  the tree from before, official binaries that moved get their saved copy back, and E2E checks the
-  way back. A local hold goes to `<state>/holds.json` for the pins of the red component, or all that
-  moved when the checks do not name one; the writer leaves those pins until upstream calls something
-  newer the latest. Item `red-held`, exit 3. If the way back is red too: `e2e-red`, exit 1.
-- **E2E is red with nothing of this run to go back to:** `e2e-red` names the checks, exit 1. A
-  `deb` component that is red gets a local hold and the `sudo apt-mark hold` command to run if you
-  want it. Nothing is written to the TOML; later releases carry holds in the machine layer.
+- **The gate says no:** nothing is committed, the clone goes, exit 1. The pins that moved get a hold,
+  so the next run tries the others and is not stuck on them.
+- **E2E or the rebuild is red after a move of this run:** the commit goes with its clone, the checkout
+  never had it. A rebuild from the checkout returns the tree from before (from a clone of that tree when
+  the checkout is dirty), official binaries that moved get their saved copy back, and E2E checks the way
+  back. When that is green, the pins of the red component get a local hold in `<state>/holds.json`, or
+  all that moved when the checks do not name one; the writer leaves those pins until upstream calls
+  something newer the latest, and each run says what is held. Item `red-held`, exit 3. If the way back
+  is red too, the move is not what broke the machine: no hold, `e2e-red`, exit 1.
+- **E2E is red with nothing of this run to go back to:** `e2e-red` names the checks, exit 1, no offer
+  and no firmware. A red `deb` component gets the `sudo apt-mark hold` command to run if you want it.
+  Nothing is written to the TOML; later releases carry holds in the machine layer.
+- **The remote refuses the commit:** `publish-refused` says why, exit 1; the commit goes and the next
+  run makes it again. **Another machine came first:** `publish-race`, exit 3, the same.
 - **No network:** network steps are skipped and the checks run, exit 6. A waiting commit stays and
-  the next online run publishes it.
+  the next online run publishes it, or makes it again when the remote moved. A rebuild that fails
+  because the network is gone holds nothing.
 
 ## Exit status and files
 
@@ -140,12 +161,15 @@ left to the vendor. Without a terminal it is never applied.
 | 3 | a decision or a sudo step waits: `review.json` |
 | 4 | a privacy stop: nothing was published |
 | 6 | no network: the network steps were skipped, the checks ran |
+| 130 | Ctrl-C, SIGTERM or SIGHUP stopped the run: the report has `interrupted`, the next run finishes |
 
-The heaviest one of a run is the status, in the order 4, 1, 3, 6, 0 ([exit-codes.md](exit-codes.md)).
+The heaviest one of a run is the status, in the order 4, 1, 3, 6, 0 ([exit-codes.md](exit-codes.md));
+130 is the status of the process, and the report of that run says `failed` with `interrupted`.
 
 | Path under `<state>` | What |
 | --- | --- |
-| `runs/upgrade/<run>.json` | the run report; `data.own_commits` holds a commit waiting for the remote |
+| `runs/upgrade/<run>.json` | the run report; `data.own_commits` names a commit waiting for the remote |
+| `upgrade/work` | the clone of the run; it goes at the end of every run |
 | `review.json` | what needs a person or an agent |
 | `upgrade/analysis.json` | the read only analysis of the last tracked run |
 | `upgrade/latest.json` | the rows of the last `pins latest` |
@@ -156,12 +180,13 @@ The heaviest one of a run is the status, in the order 4, 1, 3, 6, 0 ([exit-codes
 | `rollback/` | the official binaries saved while a move is not green yet |
 | `apt-logs/` | what dpkg printed, the newest 20 |
 
-Review codes of this command: `sudo-required`, `machine-name-required`, `checkout-dirty`,
-`remote-refused`, `gate-failed`, `publish-race`, `red-held`, `e2e-red`, `firmware-available`,
-`firmware-needs-ac`, the codes of the apt engine that wait (`apt-denied`, `dpkg-lock-busy`,
-`module-missing`, `python3-apt-missing`), and of the skills (`origin-unknown`, `skill-conflict`,
-`capture-blocked`). Notes that wait for nothing: `analysis`, `boot-space-low`, `reboot-required`,
+Review codes of this command: `sudo-required`, `machine-name-required`, `profile-required`,
+`remote-refused`, `gate-failed`, `publish-waits`, `publish-race`, `publish-refused`, `red-held`,
+`e2e-red`, `firmware-available`, `firmware-needs-ac`, the codes of the apt engine that wait
+(`apt-denied`, `dpkg-lock-busy`, `module-missing`, `python3-apt-missing`), and of the skills
+(`origin-unknown`, `skill-conflict`, `capture-blocked`). Notes that wait for nothing: `analysis`,
+`boot-space-low`, `reboot-required`, `checkout-dirty`, `checkout-behind`, `held`, `pins-group-failed`,
 `series-available`, `phased-waiting`, `module-loss`, `producer-unset`, `producer-stale`,
-`plugin-scan-finding`, `firmware-locked`, `firmware-needs-reboot`.
+`plugin-scan-finding`, `plugin-scan-failed`, `firmware-locked`, `firmware-needs-reboot`.
 
 macOS has no apt, snap or firmware step; the rest runs the same.

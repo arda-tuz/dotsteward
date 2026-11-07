@@ -92,6 +92,18 @@ def tracked_commands(document: Mapping[str, Any], active: list[dict[str, Any]]) 
     return {entry["command"] for entry in commands if entry.get("component") in names}
 
 
+def pin_owners(active: list[dict[str, Any]]) -> dict[str, str]:
+    """Which component a pin of an official binary or of its companions belongs to."""
+    owners: dict[str, str] = {}
+    for component in active:
+        install = component.get("install") or {}
+        pins = [install.get("pin"), *(companion.get("pin") for companion in install.get("companions") or ())]
+        for pin in pins:
+            if isinstance(pin, str):
+                owners[pin] = component["name"]
+    return owners
+
+
 @dataclass(frozen=True)
 class SelfUpdate:
     """A component whose own updater `upgrade` may start."""
@@ -120,7 +132,10 @@ def self_updates(active: list[dict[str, Any]], instance: config.Instance) -> lis
 
 def role(instance: config.Instance, name: str | None) -> str:
     """Who moves the pins from this machine's point of view: ``this-machine``, the name of another
-    machine, or ``nobody`` with several machines and no producer."""
+    machine, ``nobody`` with several machines and no producer, ``unnamed`` when this machine has no
+    name yet: a fresh machine must not move the lock of the others."""
+    if name is None:
+        return "unnamed"
     producer = instance.config.get("hosts", {}).get("producer")
     if producer:
         return "this-machine" if producer == name else str(producer)

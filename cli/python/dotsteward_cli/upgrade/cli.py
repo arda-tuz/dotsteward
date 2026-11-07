@@ -13,11 +13,12 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from dotsteward_cli import apt_plan, config, locks, report
+from dotsteward_cli import apt_plan, config, firmware, locks, report
 from dotsteward_cli.upgrade import plan, run
 
 REEXEC = "DOTSTEWARD_UPGRADE_REEXEC"
 EXIT_USAGE = 2
+EXIT_INTERRUPTED = 130
 _MENU = """\
 Update what?
   1) Tracked only (then a read only analysis of the system and an offer)
@@ -26,8 +27,8 @@ _DESCRIPTION = (
     "Brings this machine and the shared lock to the newest stable versions. Without a flag a terminal "
     "asks what to update; without a terminal it is --tracked. Exit status: 0 done, 1 a refusal or a "
     "failed step, 2 usage error, 3 a decision or a sudo step waits (review.json), 4 a privacy stop, "
-    "6 no network: the network steps were skipped and the checks ran. Never: an OS release upgrade, "
-    "autoremove, a reboot."
+    "6 no network: the network steps were skipped and the checks ran, 130 interrupted: the next run "
+    "finishes. Never: an OS release upgrade, autoremove, a reboot."
 )
 
 
@@ -59,10 +60,6 @@ def _parser() -> argparse.ArgumentParser:
 
 def _say_error(text: str) -> None:
     print(f"[dotsteward] ERROR: {text}", file=sys.stderr)
-
-
-def _on_terminal() -> bool:
-    return sys.stdin.isatty() and sys.stdout.isatty()
 
 
 def _choose_mode() -> str | None:
@@ -108,7 +105,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return report.FAILED
     _go_to_pinned_cli(root, arguments)
 
-    terminal = _on_terminal()
+    terminal = firmware.on_terminal()
     # With --json everything else goes to standard error, of this process and its children.
     document_out = None
     if options.json:
@@ -127,7 +124,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     mode = "tracked" if options.tracked else "all" if options.all else None
     if mode is None:
-        mode = _choose_mode() if terminal else "tracked"
+        try:
+            mode = _choose_mode() if terminal else "tracked"
+        except KeyboardInterrupt:
+            print()
+            _say_error("no answer: nothing was changed")
+            return EXIT_INTERRUPTED
         if mode is None:
             _say_error("no answer: nothing was changed")
             return EXIT_USAGE

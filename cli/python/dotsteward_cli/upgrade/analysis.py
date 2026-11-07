@@ -26,6 +26,8 @@ _FILE = Path("upgrade") / "analysis.json"
 _RUSTUP_UPDATE = re.compile(r"update available", re.IGNORECASE)
 _TOOL_OUTDATED = re.compile(r"^(\S+) v?(\S+) \[latest: v?([^\]]+)\]")
 _MAX_NAMES = 3
+# 128 + SIGINT, SIGTERM, SIGHUP.
+_SIGNALLED = {130, 143, 129}
 
 
 def _read(argv: Sequence[str], env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -218,10 +220,14 @@ def lines(channels: Mapping[str, Any]) -> list[str]:
 
 
 def _run(argv: Sequence[str], env: Mapping[str, str] | None = None) -> int:
+    """The status of an update. A signal that ended it ends the run: no next channel starts."""
     try:
-        return procs.run_attached(list(argv), env=env)
+        status = procs.run_attached(list(argv), env=env)
     except OSError:
         return 127
+    if status in _SIGNALLED:
+        raise KeyboardInterrupt
+    return status
 
 
 def update_user_channels(tracked_commands: set[str], offline: bool, env: Mapping[str, str]) -> dict[str, int]:

@@ -1,8 +1,8 @@
 """The red path of the first release: ``<state>/holds.json``, local to this machine.
 
-A hold says that a version of something went red here: the writer leaves that pin alone until
-upstream has something newer, and the way out for a package is named. It is no intent, so nothing
-of it enters the repository or the TOML. Later releases write holds to the machine layer.
+A hold says that a version of a pin went red here: the writer leaves that pin alone until upstream
+has something newer. It is no intent, so nothing of it enters the repository or the TOML. Later
+releases write holds to the machine layer.
 """
 
 from __future__ import annotations
@@ -64,16 +64,10 @@ def _latest_rows(latest: str | os.PathLike[str]) -> dict[str, str]:
 
 def skip_patterns(state_root: str, latest: str | os.PathLike[str]) -> list[str]:
     """The pins the writer leaves alone. A hold of a version upstream no longer calls the newest
-    is over: what comes now gets its own chance. A package holds until the person lets it go."""
+    is over: what comes now gets its own chance."""
     rows = _latest_rows(latest)
-    kept, skips = [], []
-    for hold in read(state_root):
-        identifier = hold.get("id")
-        if isinstance(identifier, str) and identifier in rows and rows[identifier] != hold.get("version"):
-            continue
-        kept.append(hold)
-        if isinstance(identifier, str) and not identifier.startswith("apt:"):
-            skips.append(identifier)
-    if len(kept) != len(read(state_root)):
+    held = read(state_root)
+    kept = [hold for hold in held if rows.get(str(hold.get("id")), hold.get("version")) == hold.get("version")]
+    if len(kept) != len(held):
         write(state_root, kept)
-    return skips
+    return [str(hold["id"]) for hold in kept if isinstance(hold.get("id"), str)]

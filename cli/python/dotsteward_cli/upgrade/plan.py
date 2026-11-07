@@ -71,7 +71,9 @@ def _changes(answer: Mapping[str, Any]) -> str:
 
 def text(document: Mapping[str, Any]) -> str:
     remote = document["remote"]
-    where = "not reachable" if not remote["reachable"] else "up to date" if remote["up_to_date"] else "ahead of here"
+    where = (
+        "not reachable" if not remote["reachable"] else "up to date" if remote["up_to_date"] else "not the same as here"
+    )
     said = [
         f"Machine: {document['machine'] or 'no name yet'}, profile {document['profile'] or 'unknown'}",
         f"Remote: {where}",
@@ -83,6 +85,12 @@ def text(document: Mapping[str, Any]) -> str:
         f"  {_changes(document['all']['apt'])}",
     ]
     said += [f"  {line}" for line in analysis.lines(document["channels"]) if not line.startswith("apt")]
+    told = {str(item.get("message")): item for item in document["all"]["apt"].get("items") or ()}
+    said += [
+        f"Waits for you: {message}" + (f" -> {item['accept']}" if item.get("accept") else "")
+        for message, item in told.items()
+        if item.get("code") == "series-available" or item.get("pending")
+    ]
     installable = (document["firmware"] or {}).get("installable") or []
     said.append(f"Firmware: {len(installable)} can be applied, only after a yes on a terminal")
     return "\n".join(said)

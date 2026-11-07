@@ -31,8 +31,7 @@ def _roots(env: Mapping[str, str]) -> list[tuple[str, Path]]:
 
 def _digest(tree: Path) -> str:
     digest = hashlib.sha256()
-    for directory, names, files in sorted(os.walk(tree)):
-        names.sort()
+    for directory, _, files in sorted(os.walk(tree)):
         for name in sorted(files):
             path = Path(directory) / name
             digest.update(str(path.relative_to(tree)).encode())
@@ -57,8 +56,9 @@ def _installed(env: Mapping[str, str]) -> dict[str, Path]:
 
 
 def scan(state_root: str, env: Mapping[str, str] | None = None) -> dict[str, Any]:
-    """``{"updated": N, "findings": [plugin, ...], "learned": bool}``; writes the state. A finding stays
-    a finding until its tree changes, without a second scan."""
+    """``{"updated": N, "findings": [plugin, ...], "failed": [plugin, ...], "learned": bool}``; writes the
+    state. A finding stays a finding until its tree changes, without a second scan. Only the shape of a
+    real secret counts: a mail address or a word in another script says nothing about a plugin."""
     env = os.environ if env is None else env
     path = Path(state_root) / _FILE
     try:
@@ -71,19 +71,22 @@ def scan(state_root: str, env: Mapping[str, str] | None = None) -> dict[str, Any
     installed = _installed(env)
     digests = {key: _digest(tree) for key, tree in installed.items()}
     findings = {key: digest for key, digest in flagged.items() if digests.get(key) == digest}
+    failed = []
     updated = 0
     if known is not None:
-        scanner = [str(config.FRAMEWORK_ROOT / "cli" / "dotsteward"), "scan", "--tree", "--redact"]
+        scanner = [str(config.FRAMEWORK_ROOT / "cli" / "dotsteward"), "scan", "--tree", "--secrets-only", "--redact"]
         for key, digest in digests.items():
             if known.get(key) == digest:
                 continue
             updated += 1
             ceiling = {**env, "GIT_CEILING_DIRECTORIES": str(installed[key].parent)}
             done = subprocess.run(scanner, cwd=installed[key], env=ceiling, capture_output=True, check=False)
-            if done.returncode != 0:
+            if done.returncode != 0 and done.stdout.strip():
                 findings[key] = digest
+            elif done.returncode != 0:
+                failed.append(key)
     if known != digests or flagged != findings:
         atomic.make_private_dirs(path.parent)
         document = {"schema_version": SCHEMA_VERSION, "plugins": digests, "findings": findings}
         atomic.atomic_write(path, json.dumps(document, indent=2, sort_keys=True) + "\n", mode=0o600)
-    return {"updated": updated, "findings": sorted(findings), "learned": known is None}
+    return {"updated": updated, "findings": sorted(findings), "failed": failed, "learned": known is None}
