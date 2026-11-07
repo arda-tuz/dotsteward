@@ -208,7 +208,11 @@ def _new_log(action: str, state_root: str | os.PathLike[str] | None) -> Path:
 @contextlib.contextmanager
 def _shown_on_stderr(log: Path) -> Iterator[None]:
     """Standard error shows what the file gets, while there is someone to see it. A failed write
-    ends this and nothing else; a stream nobody reads does not hold up the end of the run."""
+    ends this and nothing else; a stream nobody reads does not hold up the end of the run. Without
+    a standard error descriptor 2 can be any file of this process, so nothing is shown."""
+    if sys.stderr is None:
+        yield
+        return
     finished = threading.Event()
 
     def show() -> None:

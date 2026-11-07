@@ -149,6 +149,7 @@ status=0
 core_python -m dotsteward_cli.apt_plan commit >"$work/out" 2>&- || status=$?
 assert_eq 0 "$status"
 assert_json "$work/out" '.status == "committed"'
+assert_eq 2 "$(wc -l <"$(jq -r .log "$work/out")" | tr -d ' ')" "the log holds what the child printed, once"
 # Old logs do not pile up.
 for _ in {1..22}; do
   core_python -m dotsteward_cli.apt_plan commit >/dev/null 2>&1
