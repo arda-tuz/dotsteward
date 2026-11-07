@@ -435,6 +435,26 @@ codex_mirror "$inst"
 assert_eq '[]' "$(inst_json "map (hook: hook.name) (homeOf ($(codex_expr "$inst")) \"x86_64-linux\" \"workstation\").dotsteward.components.codex.checks.e2e" | jq -c .)" \
   "no helper hook with the external method"
 
+# --- A library older than the hook ---------------------------------------------------
+
+# An older `dotsteward rebuild --switch` or e2e runs the hook with its own
+# library, which lacks the helper. The hook says so and stays green; a shell
+# error in its loop would pass as a check that found nothing.
+inst=$(codex_instance older-library)
+publish_codex "$inst" "$current"
+publish_host "$inst" "$current"
+codex_mirror "$inst"
+assert_exit 0 agents install
+old_lib=$DS_TEST_ROOT/lib-of-an-older-cli
+mkdir -p "$old_lib"
+for file in "$DS_REPO_ROOT"/cli/lib/*.sh; do
+  printf 'source %q\n' "$file" >"$old_lib/${file##*/}"
+done
+printf 'unset -f methods_official_binary_companions\n' >>"$old_lib/methods.sh"
+run_hook 0 "$inst" "DOTSTEWARD_LIB=$old_lib"
+assert_not_contains "$DS_STDERR" "command not found"
+assert_contains "$DS_STDOUT$DS_STDERR" "the library of this CLI cannot read the companions of codex"
+
 # --- The declaration ----------------------------------------------------------------
 
 inst=$(codex_instance declared)
