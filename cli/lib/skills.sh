@@ -776,7 +776,7 @@ _skills_own_decision() {
 # when there is none. ROOT: the scoped store, instead of the canonical root.
 SKILLS_OWN_COPY=''
 _skills_own_apply() {
-  local name=$1 directory=$2 found=$3 decision=$4 digest=$5 source=$6 root=${7:-} installed
+  local name=$1 directory=$2 found=$3 decision=$4 digest=$5 source=$6 root=${7:-} installed kept refreshed
   SKILLS_OWN_COPY=$found
   _skills_own_note "$name" "$decision"
   case $decision in
@@ -799,8 +799,17 @@ _skills_own_apply() {
       ;;
     incoming)
       if ((!SKILLS_CHECK_ONLY)); then
+        # What the repository cannot bring back stays in the live skill. b moves only
+        # for a copy that took the new one: a link out of the skill roots does not.
+        kept=$(_skills_staging_dir)
+        _skills_threeway keep --name "$name" --found "$found" --digest "$digest" --kept "$kept" ||
+          skills_fail skill-unresolvable "$found" "cannot read the own skill $name ($found)"
         _skills_refresh "$name" "$found" "$source" "$digest"
-        _skills_threeway record --name "$name" --found "$found" --digest "$digest"
+        refreshed=$(_skills_threeway refreshed --name "$name" --found "$found" --digest "$digest" --kept "$kept") ||
+          skills_fail skill-unresolvable "$found" "cannot read the own skill $name ($found)"
+        rm -rf -- "$kept"
+        [[ $refreshed == in-sync ]] ||
+          log "skill $name: conflict: this copy did not take what the repository holds; left as it is; see 'dotsteward skills status'"
       fi
       ;;
   esac

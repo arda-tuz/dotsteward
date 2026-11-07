@@ -287,9 +287,14 @@ def _install_from(
         if not _extract(instance, tip, _vendor_path(loaded, entry), staged):
             raise AnswerRefused("the remote does not hold this skill")
         real = os.path.realpath(path) if os.path.lexists(path) else path
+        kept = os.path.join(scratch, "kept")
+        os.mkdir(kept)
+        if os.path.isdir(real):
+            normal.keep_left_out(real, os.path.join(instance, ".gitignore"), kept)
         shutil.rmtree(real, ignore_errors=True)
         os.makedirs(os.path.dirname(real), exist_ok=True)
         shutil.move(staged, real)
+        normal.restore_left_out(kept, real)
     digest = entry.get("directory_sha256")
     return str(digest) if isinstance(digest, str) and digest else normal.plain_digest(path)
 

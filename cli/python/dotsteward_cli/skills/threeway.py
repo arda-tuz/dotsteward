@@ -25,10 +25,19 @@ Command line, for ``cli/lib/skills.sh``::
       --name NAME --found PATH --digest SHA --mode install|check
     python3 -m dotsteward_cli.skills.threeway record --instance DIR --state-root DIR \\
       --name NAME --found PATH --digest SHA
+    python3 -m dotsteward_cli.skills.threeway keep --instance DIR --state-root DIR \\
+      --name NAME --found PATH --digest SHA --kept DIR
+    python3 -m dotsteward_cli.skills.threeway refreshed --instance DIR --state-root DIR \\
+      --name NAME --found PATH --digest SHA --kept DIR
 
 ``decide`` prints the decision; with ``--mode install`` it records it. ``record``
-says that the copy at PATH now equals the lock. Exit status: 0 done, 1 failed, 2 usage
-error.
+says that the copy at PATH now equals the lock. ``keep`` saves what the normal form of an
+incoming copy leaves out, so that a refresh does not take it away. ``refreshed`` puts that
+back and looks at the copy: b moves only when it now equals the lock (``in-sync``). A copy
+that was not refreshed (a link out of the skill roots) has not taken what the repository
+holds, so b stays and the state is ``conflict``: with b moved, the next capture would read
+the old copy as a change of this machine and push it over the other machine's. Exit status:
+0 done, 1 failed, 2 usage error.
 """
 
 from __future__ import annotations
@@ -50,6 +59,7 @@ INCOMING = "incoming"
 CONFLICT = "conflict"
 DELETED = "deleted"
 MISSING = "missing"
+NOT_REFRESHED = "not-refreshed"
 
 
 def decide(local: str | None, repository: str, base: str | None, behind: bool) -> str:
@@ -143,6 +153,10 @@ def _record_install(answer: Mapping[str, Any], instance: str, state_root: str) -
     key = state.skill_key(name)
     decision = answer["state"]
     if decision == IN_SYNC:
+        known = state.base_entry(state.load_base(state_root), name)
+        if known and known["base_sha256"] != answer["lock_sha256"] and is_behind(instance, str(known.get("base_commit"))):
+            # The copy went back to the old lock of a checkout that is behind: b is not older.
+            return
         state.record_base(state_root, name, str(answer["lock_sha256"]), head_commit(instance), str(answer["path"]))
         items = state.load_pending(state_root)["items"]
         if isinstance(items.get(key), dict) and items[key].get("state") in {CONFLICT, DELETED}:
@@ -154,15 +168,33 @@ def _record_install(answer: Mapping[str, Any], instance: str, state_root: str) -
         state.set_item(state_root, key, _item(name, answer["path"], decision, answer["local_sha256"]))
 
 
+def _refreshed(name: str, found: str, digest: str, kept: str, instance: str, state_root: str) -> str:
+    """After a refresh of the copy at FOUND: the decision, and what it means for b."""
+    real = os.path.realpath(found)
+    if kept:
+        normal.restore_left_out(kept, real)
+    local, _ = local_digest(found, instance)
+    key = state.skill_key(name)
+    if local == digest:
+        state.record_base(state_root, name, digest, head_commit(instance), found)
+        state.drop_item(state_root, key)
+        return IN_SYNC
+    known = state.load_pending(state_root)["items"].get(key)
+    if not (isinstance(known, dict) and known.get("state") == CONFLICT and known.get("digest") == local):
+        state.set_item(state_root, key, {**_item(name, found, CONFLICT, local), "reason": NOT_REFRESHED})
+    return CONFLICT
+
+
 def _arguments(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="dotsteward_cli.skills.threeway", add_help=False)
-    parser.add_argument("action", choices=["decide", "record"])
+    parser.add_argument("action", choices=["decide", "record", "keep", "refreshed"])
     parser.add_argument("--instance", required=True)
     parser.add_argument("--state-root", required=True)
     parser.add_argument("--name", required=True)
     parser.add_argument("--found", default="")
     parser.add_argument("--digest", required=True)
     parser.add_argument("--mode", choices=["install", "check"], default="check")
+    parser.add_argument("--kept", default="")
     return parser.parse_args(argv)
 
 
@@ -172,6 +204,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.action == "record":
             state.record_base(args.state_root, args.name, args.digest, head_commit(args.instance), args.found)
             state.drop_item(args.state_root, state.skill_key(args.name))
+            return 0
+        if args.action == "keep":
+            normal.keep_left_out(os.path.realpath(args.found), excludes_file(args.instance), args.kept)
+            return 0
+        if args.action == "refreshed":
+            print(_refreshed(args.name, args.found, args.digest, args.kept, args.instance, args.state_root))
             return 0
         answer = assess(args.name, args.found or None, args.digest, args.instance, args.state_root)
         if args.mode == "install":

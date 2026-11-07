@@ -34,6 +34,7 @@ BLOCKED = "blocked"
 DELETED = "deleted"
 LOCAL_EDIT = "local-edit"
 NAME_TAKEN = "name-taken"
+NOT_REFRESHED = "not-refreshed"
 DECLINED = "declined"
 FORGOTTEN = "forgotten"
 _KEPT_OUT = frozenset({DECLINED, FORGOTTEN})
@@ -270,7 +271,9 @@ def _look_at_own(
     plan.looked_at = now
     digest = _local_digest(path, context)
     if digest == base.get("base_sha256"):
-        if isinstance(item, dict) and item.get("state") in {CAPTURE, BLOCKED, CONFLICT, DELETED}:
+        # A copy that could not take what the repository holds is no local change gone away.
+        waits = isinstance(item, dict) and item.get("reason") == NOT_REFRESHED
+        if isinstance(item, dict) and item.get("state") in {CAPTURE, BLOCKED, CONFLICT, DELETED} and not waits:
             plan.drop_items.append(key)
         return
     if isinstance(item, dict) and item.get("state") == BLOCKED and item.get("blocked_digest") == digest:

@@ -23,8 +23,10 @@ base of the engines and imports neither of them (docs/python.md).
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -142,6 +144,53 @@ def _file_sha256(path: str | bytes) -> str:
         while chunk := handle.read(_CHUNK):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _copy_entry(source: str, target: str) -> None:
+    """SOURCE, a file, a link or a tree, at TARGET, with its parents as they are at SOURCE."""
+    if os.path.isdir(source) and not os.path.islink(source):
+        shutil.copytree(source, target, symlinks=True)
+    else:
+        shutil.copy2(source, target, follow_symlinks=False)
+
+
+def keep_left_out(directory: str, excludes_file: str | None, keep: str) -> None:
+    """Copies to the directory KEEP what the normal form of DIRECTORY leaves out and what a
+    copy of the repository cannot bring back: what ignore rules drop, and the ``.git`` of a
+    clone. Caches can go."""
+    names = [
+        name.rstrip(b"/")
+        for name in _git_list(directory, excludes_file, "--ignored")
+        if not _excluded(name.rstrip(b"/"))
+    ]
+    if os.path.lexists(os.path.join(directory, ".git")):
+        names.append(b".git")
+    for name in names:
+        relative = os.fsdecode(name)
+        source = os.path.join(directory, relative)
+        parent = ""
+        for part in os.path.dirname(relative).split("/"):
+            parent = os.path.join(parent, part) if part else parent
+            if parent and not os.path.isdir(os.path.join(keep, parent)):
+                os.mkdir(os.path.join(keep, parent))
+                shutil.copystat(os.path.join(directory, parent), os.path.join(keep, parent))
+        with contextlib.suppress(FileNotFoundError):
+            _copy_entry(source, os.path.join(keep, relative))
+
+
+def restore_left_out(keep: str, directory: str) -> None:
+    """Puts what ``keep_left_out`` kept back into DIRECTORY; what the new copy holds wins."""
+    for current, directories, files in os.walk(keep):
+        relative = os.path.relpath(current, keep)
+        for name in list(directories) + files:
+            source = os.path.join(current, name)
+            target = os.path.normpath(os.path.join(directory, relative, name))
+            if os.path.isdir(source) and not os.path.islink(source):
+                if not os.path.lexists(target):
+                    os.mkdir(target)
+                    shutil.copystat(source, target)
+            elif not os.path.lexists(target):
+                _copy_entry(source, target)
 
 
 def plain_digest(directory: str) -> str:
