@@ -187,6 +187,7 @@ class Session:
         self.pin_dirs = 0
         self.lock_error = ""
         self.journal_recovery = None
+        self.dpkg_broken = []
         self.fix_broken = False
         self.classes = None
 
@@ -824,19 +825,25 @@ def mark_series_change(cache, target):
         cache[name].mark_install()
 
 
-def upgrade_all(cache, target=None):
+def upgrade_all(cache, target=None, fix=False):
     """The full upgrade of this cache, which keeps to pins, holds and phasing, plus the series change
-    of TARGET. Answers the packages it keeps or brings in, by name."""
+    of TARGET. FIX: dpkg was stopped during an unpack, and that package is unpacked again; first, so
+    that the answer also tells what this does to the upgrade. Answers the packages it keeps or brings
+    in, by name."""
+    if fix:
+        cache.fix_broken()
     cache.upgrade(dist_upgrade=True)
     with cache.actiongroup():
         mark_series_change(cache, target)
     return {pkg.name for pkg in cache.get_changes() if not pkg.marked_delete}
 
 
-def mark_tracked(cache, names, target=None):
+def mark_tracked(cache, names, target=None, fix=False):
     """The tracked mode marks by hand; every name comes from the full upgrade, because a mark
     goes through phasing where a full upgrade does not."""
     cache.clear()
+    if fix:
+        cache.fix_broken()
     with cache.actiongroup():
         for name in sorted(names):
             cache[name].mark_upgrade()
@@ -1047,6 +1054,18 @@ def make_plan(session):
         items += target_items
         items += series_items(session, pinless, classes, target)
         moved = target is not None and bool({tuple(pair) for pair in target["pairs"]} - set(classes["pairs"]))
+        if session.dpkg_broken:
+            items.append(
+                report_item(
+                    "dpkg-broken",
+                    pending=True,
+                    packages=session.dpkg_broken,
+                    message="dpkg cannot configure these: no kernel or driver moves on top of that",
+                )
+            )
+            gated_info["decision"] = "waiting"
+            moved = False
+            target = None
         if target is not None:
             gated_info["target"] = {key: value for key, value in target.items() if key != "old_series"}
     del pinless
@@ -1058,13 +1077,13 @@ def make_plan(session):
     if not session.gated:
         cache = session.open_cache(None)
         candidates = upgradable(cache)
-        upgrades = upgrade_all(cache)
+        upgrades = upgrade_all(cache, fix=session.fix_broken)
     else:
         if moved:
             cache = session.open_cache(target_pin(classes, target))
             candidates = upgradable(cache)
             moves = {name for name, row in candidates.items() if GATED_SOURCE.match(row["source"])}
-            upgrades = upgrade_all(cache, target)
+            upgrades = upgrade_all(cache, target, fix=session.fix_broken)
             left = moves - upgrades
             if left:
                 # The set stays together; the pin of what is installed takes over.
@@ -1089,7 +1108,7 @@ def make_plan(session):
         if not moved:
             cache = session.open_cache(gated_info["pin"])
             candidates = upgradable(cache)
-            upgrades = upgrade_all(cache)
+            upgrades = upgrade_all(cache, fix=session.fix_broken)
 
     if session.mode == "tracked":
         names = {
@@ -1099,7 +1118,7 @@ def make_plan(session):
             and (name in session.tracked or row["short"] in session.tracked)
             and not (session.gated and GATED_SOURCE.match(row["source"]))
         }
-        mark_tracked(cache, names | moves, target if moved else None)
+        mark_tracked(cache, names | moves, target if moved else None, fix=session.fix_broken)
         outside = [pkg.name for pkg in cache.get_changes() if pkg.marked_upgrade and pkg.name not in upgrades]
         for name in outside:
             items.append(
@@ -1111,9 +1130,6 @@ def make_plan(session):
                     message=f"a tracked upgrade pulls {name}, which a full upgrade leaves alone",
                 )
             )
-    if session.fix_broken:
-        # dpkg was stopped during an unpack: the commit has to unpack that package again.
-        cache.fix_broken()
     if cache.broken_count:
         items.append(report_item("apt-denied", pending=True, **{"class": "unsolvable"}, packages=[]))
 
@@ -1339,15 +1355,20 @@ def dpkg_binary():
     return apt_pkg.config.find_file("Dir::Bin::dpkg", "/usr/bin/dpkg")
 
 
+def dpkg_admin_dir():
+    return os.path.dirname(apt_pkg.config.find_file("Dir::State::status"))
+
+
 def dpkg_audit():
-    done = subprocess.run([dpkg_binary(), "--audit"], capture_output=True, text=True, check=False)
+    done = subprocess.run(
+        [dpkg_binary(), f"--admindir={dpkg_admin_dir()}", "--audit"], capture_output=True, text=True, check=False
+    )
     return done.stdout.strip()
 
 
 def journal_dirty():
     """Whether the journal of dpkg holds updates: of a dpkg that runs now, or of one that was killed."""
-    status = apt_pkg.config.find_file("Dir::State::status")
-    directory = os.path.join(os.path.dirname(status), "updates")
+    directory = os.path.join(dpkg_admin_dir(), "updates")
     try:
         return any(name.isdigit() for name in os.listdir(directory))
     except OSError:
@@ -1389,24 +1410,74 @@ def take_lock(session):
     return True
 
 
+def dpkg_rows():
+    """(status abbreviation, name) of every package dpkg knows."""
+    done = subprocess.run(
+        [dpkg_binary() + "-query", f"--admindir={dpkg_admin_dir()}", "-W", "-f=${db:Status-Abbrev} ${binary:Package}\\n"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return [tuple(line.split()) for line in done.stdout.splitlines() if len(line.split()) == 2]
+
+
+def half_removed():
+    """Installed packages whose selection says they go: what a removal that was killed leaves, and
+    what a later dselect, aptitude or `dpkg --remove --pending` would still act on."""
+    return sorted(name for abbrev, name in dpkg_rows() if abbrev[0] in "rp" and abbrev[1] not in "nc")
+
+
+def unconfigurable():
+    """Packages dpkg stays unable to configure after `--configure -a`; an unpack starts these over only
+    when a person has looked at why."""
+    return sorted(name for abbrev, name in dpkg_rows() if abbrev[1] in "FWt")
+
+
 def run_recovery(session):
-    """`dpkg --configure -a` under the lock, when dpkg was stopped half way. A package left half
-    unpacked stays in the audit: the plan after this unpacks it again."""
+    """`dpkg --configure -a` under the lock, when dpkg was stopped half way, with the selections of a
+    removal that was killed taken back first: dpkg leaves such a package alone otherwise. A package
+    left half unpacked stays in the audit: the plan after this unpacks it again."""
+    dpkg_environment()
     journal = session.journal_recovery
+    halves = half_removed()
     before = dpkg_audit()
-    if not before and not journal:
+    if not before and not journal and not halves:
         return {"ran": False, "clean": True}
     returncode = journal["status"] if journal else 0
-    if before:
+    if before or halves:
+        locked = {**os.environ, "DPKG_FRONTEND_LOCKED": "1"}
         apt_pkg.pkgsystem_unlock_inner()
         try:
-            returncode = configure_all({**os.environ, "DPKG_FRONTEND_LOCKED": "1"})
+            if halves:
+                subprocess.run(
+                    [dpkg_binary(), f"--admindir={dpkg_admin_dir()}", "--set-selections"],
+                    input="".join(f"{name} install\n" for name in halves),
+                    text=True,
+                    env=locked,
+                    check=False,
+                )
+            returncode = configure_all(locked)
         finally:
             apt_pkg.pkgsystem_lock_inner()
     after = dpkg_audit()
     session.fix_broken = bool(after)
+    session.dpkg_broken = unconfigurable() if after else []
     audit_before = journal["audit_before"] if journal else before
-    return {"ran": True, "clean": not after, "status": returncode, "audit_before": audit_before, "audit": after}
+    return {
+        "ran": True,
+        "clean": not after,
+        "status": returncode,
+        "audit_before": audit_before,
+        "audit": after,
+        "selections_restored": halves,
+    }
+
+
+def recovery_items(recovery):
+    if not recovery.get("selections_restored"):
+        return []
+    message = "a removal was stopped half way: these stay installed, and no later tool acts on it"
+    return [report_item("dpkg-selection-restored", packages=recovery["selections_restored"], message=message)]
 
 
 def lock_busy_item(session):
@@ -1430,7 +1501,7 @@ def action_recover(session):
         recovery = run_recovery(session)
     finally:
         apt_pkg.pkgsystem_unlock()
-    items = []
+    items = recovery_items(recovery)
     if not recovery["clean"]:
         message = "the next commit unpacks these again"
         items.append(report_item("dpkg-half-installed", audit=recovery["audit"], message=message))
@@ -1523,6 +1594,7 @@ def action_commit(session):
         recovery = run_recovery(session)
         cache, plan = make_plan(session)
         plan["recovery"] = recovery
+        plan["items"] = [*recovery_items(recovery), *plan["items"]]
         plan["committed"] = False
         # A refused plan changes nothing but it still repairs the pin file.
         plan["policy"] = apply_policy(session, session.classes)
@@ -1550,11 +1622,11 @@ def action_commit(session):
         plan["after"] = {"kernel": after["kernel"], "nvidia": after["nvidia"], "installed_pairs": after["pairs"]}
         plan["newest_kernel"] = newest_kernel(after)
         if plan["committed"]:
-            audit = dpkg_audit()
-            if audit:
+            left = dpkg_audit() or " ".join(half_removed())
+            if left:
                 plan["status"] = "dpkg-failed"
                 plan["committed"] = False
-                plan["message"] = audit
+                plan["message"] = left
         return plan
     finally:
         apt_pkg.pkgsystem_unlock()
