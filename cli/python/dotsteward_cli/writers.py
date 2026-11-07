@@ -101,8 +101,9 @@ def _json(text: str | None) -> Any:
 
 
 def _leaves(value: Any, prefix: tuple[str, ...] = ()) -> Iterator[tuple[tuple[str, ...], Any]]:
-    """Every value of a JSON document that is not an object, by its path of keys."""
-    if isinstance(value, dict) and value:
+    """Every value of a JSON document that is not an object, by its path of keys. An empty object
+    holds none: its first key is new."""
+    if isinstance(value, dict):
         for key, inner in value.items():
             yield from _leaves(inner, (*prefix, str(key)))
     else:
