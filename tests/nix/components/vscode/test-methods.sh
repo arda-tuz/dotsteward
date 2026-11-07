@@ -46,13 +46,12 @@ for system in x86_64-linux aarch64-darwin; do
     "$(pins_of editor-absent "$system")" "default pins on $system"
 done
 
-# deb on darwin and app-archive on Linux are refused by the supported-methods
-# assertion; the other system still evaluates.
+# deb for every platform leaves vscode out on darwin (the platform filter);
+# app-archive, which no Linux system can have, is refused.
 assert_vscode_eq '"deb"' '(entryOf (vscode { case = "darwin-deb"; }) "x86_64-linux").method' \
   "deb on Linux in a two-system instance"
-assert_vscode_fails '(vscode { case = "darwin-deb"; }).dotstewardManifest.aarch64-darwin.system' \
-  "Failed assertions:" \
-  "dotsteward: component vscode does not support method deb on darwin (supported: app-archive, external)"
+assert_vscode_eq '"method"' '(entryOf (vscode { case = "darwin-deb"; }) "aarch64-darwin").unavailable' \
+  "darwin leaves vscode with deb out (the platform filter)"
 assert_vscode_fails '(vscode { case = "linux-app-archive"; }).dotstewardManifest.x86_64-linux.system' \
   "Failed assertions:" \
   "dotsteward: component vscode does not support method app-archive on linux (supported: deb, external)"

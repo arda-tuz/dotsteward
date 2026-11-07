@@ -138,13 +138,12 @@ assert_cc_eq '"agent_tools.claude-code.darwin-arm64"' \
   '(ccEntry (cc { config = ccCase "deb-linux-official-darwin"; }) "aarch64-darwin").install.pin' \
   "darwin release pin with deb on Linux"
 
-# deb on darwin is refused by the supported-methods assertion; Linux still
-# evaluates.
+# deb for every platform: Linux has it, darwin leaves the component out (the platform
+# filter) and says why.
 assert_cc_eq '"deb"' '(ccEntry (cc { config = ccCase "darwin-deb"; }) "x86_64-linux").method' \
   "deb on Linux in a two-system instance"
-assert_cc_fails '(cc { config = ccCase "darwin-deb"; }).dotstewardManifest.aarch64-darwin.system' \
-  "Failed assertions:" \
-  "dotsteward: component claude-code does not support method deb on darwin (supported: official-binary, external)"
+assert_cc_eq '"method"' '(ccEntry (cc { config = ccCase "darwin-deb"; }) "aarch64-darwin").unavailable' \
+  "deb on darwin is left out"
 
 # The settings targets, agent rules target and skill layout do not depend
 # on the method.

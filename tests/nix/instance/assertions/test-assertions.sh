@@ -25,16 +25,13 @@ for output in "$home" lib.pinnedVersions packages.x86_64-linux dotstewardMirrors
     "components/example-missing/default.nix"
 done
 
-# An enabled component that does not support a configured system: the Linux
-# evaluation passes, the darwin one fails, and so does the mirror check of
-# the Linux system (it renders every system).
+# An enabled component that does not support a configured system: both systems evaluate,
+# darwin without it (tests/nix/instance/test-platform-filter.sh), and so does the mirror
+# check of the Linux system (it renders every system).
 assert_inst_eq '"x86_64-linux"' '(instance { case = "unsupported-system"; }).dotstewardManifest.x86_64-linux.system' \
   "the Linux evaluation of a Linux-only component"
-assert_inst_fails '(instance { case = "unsupported-system"; }).dotstewardManifest.aarch64-darwin.system' \
-  "Failed assertions:" \
-  "dotsteward: component example-linux does not support darwin (nix.systems contains aarch64-darwin; supported: linux)"
-assert_inst_fails '(instance { case = "unsupported-system"; }).checks.x86_64-linux.dotsteward-manifest.drvPath' \
-  "dotsteward: component example-linux does not support darwin"
+assert_inst_eq '"platform"' '(lib.findFirst (c: c.name == "example-linux") null (instance { case = "unsupported-system"; }).dotstewardManifest.aarch64-darwin.components).unavailable' \
+  "the darwin evaluation leaves it out"
 
 # A method the component does not support on the platform.
 assert_inst_fails "(instance { case = \"unsupported-method\"; }).$home" \

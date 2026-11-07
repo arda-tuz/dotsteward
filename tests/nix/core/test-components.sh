@@ -63,7 +63,7 @@ assert_core_eq '"/usr/local/bin/zsh"' '(homeOf { modules = [ { dotsteward.loginS
 # end of PATH in ~/.zshrc, once; without pathAppend, or where the component
 # is not active, there is no block.
 pypi_term() {
-  printf '{ dotsteward.components.example-term = { method = lib.mkForce "pypi"; install.pypi = { pin = "pypi.example-term"; distribution = "example-term"; requirements = builtins.toFile "requirements.txt" "example-term==1.0.0\\n"; venv = "~/.local/share/example-term/venv"; bin = [ "example-term" ]; pathAppend = %s; }; }; }' "$1"
+  printf '{ dotsteward.components.example-term = { method = lib.mkForce "pypi"; supportedMethods.linux = lib.mkForce [ "pypi" ]; install.pypi = { pin = "pypi.example-term"; distribution = "example-term"; requirements = builtins.toFile "requirements.txt" "example-term==1.0.0\\n"; venv = "~/.local/share/example-term/venv"; bin = [ "example-term" ]; pathAppend = %s; }; }; }' "$1"
 }
 expected_block='# example-term (pypi): the commands of its virtual environment, after every other PATH entry
 if [[ ":$PATH:" != *":$HOME/.local/share/example-term/venv/bin:"* ]]; then

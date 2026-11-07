@@ -1,0 +1,23 @@
+# The platform filter: components of the common intent that a configured system cannot
+# have. example-linux supports Linux only; example-app supports external on Linux only.
+schema_version = 1
+
+[identity]
+username = "alice"
+
+[instance]
+remote = "git@github.com:alice/workstation.git"
+
+[nix]
+systems = ["x86_64-linux", "aarch64-darwin"]
+state_version = "25.11"
+
+[profiles]
+names = ["workstation"]
+
+[components.example-linux]
+enable = true
+
+[components.example-app]
+enable = true
+method = "external"

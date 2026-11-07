@@ -41,8 +41,8 @@ let
     unknown-component = activation (instance {
       case = "unknown-component";
     });
-    unsupported-system =
-      (instance { case = "unsupported-system"; }).dotstewardManifest.aarch64-darwin.system;
+    platform-explicit =
+      (instance { case = "platform-explicit"; }).dotstewardManifest.aarch64-darwin.system;
     unsupported-method = activation (instance {
       case = "unsupported-method";
     });
@@ -69,6 +69,9 @@ let
     example = activation example;
     linux-only-on-linux =
       (instance { case = "unsupported-system"; }).dotstewardManifest.x86_64-linux.system;
+    # The platform filter: darwin leaves the Linux-only component out.
+    linux-only-on-darwin =
+      (instance { case = "unsupported-system"; }).dotstewardManifest.aarch64-darwin.system;
   };
 
   succeeded = lib.filter (name: (builtins.tryEval cases.${name}).success) (lib.attrNames cases);
