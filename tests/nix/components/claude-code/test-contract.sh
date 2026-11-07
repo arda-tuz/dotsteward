@@ -111,12 +111,12 @@ assert_cc_eq 'true' 'let h = homeOf (cc { }) "x86_64-linux" "baseline"; in h.hom
   "agent rules link in the adopt-mode profile"
 
 # Nothing the spec does not list: no probes, E2E commands, floors, hooks but
-# the skill tracking hook, snapshots, prerequisites, adopt paths, detectors,
+# the plugins hook (an empty list passes it) and the skill tracking hook, snapshots, prerequisites, adopt paths, detectors,
 # flake inputs or resolved versions (an instance's adopt-mode profile checks
 # no Claude Code).
 assert_cc_eq '{
   "probes": [], "commands": [], "e2e": [], "agents": [], "floors": [],
-  "hooks": ["skill-hooks"], "snapshots": [], "apt": [], "adopt": [], "restore": [],
+  "hooks": ["plugins", "skill-hooks"], "snapshots": [], "apt": [], "adopt": [], "restore": [],
   "detectors": {}, "flakeInputs": [], "resolved": {}, "updatePaths": [], "options": {}
 }' 'let c = ccComponent (cc { }) "x86_64-linux"; in {
   inherit (c) probes options;

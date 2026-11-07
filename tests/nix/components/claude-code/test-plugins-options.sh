@@ -1,8 +1,9 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # The claude-code plugins option as lib.mkInstance evaluates it: the options
-# in the manifest entry, the agentsPost hook plugins.sh (only with a
-# non-empty list, read from the framework source in place), one git-compare
+# in the manifest entry, the agentsPost hook plugins.sh (with every list, also
+# an empty one, so that a plugin tracked later changes no mirror; read from the
+# framework source in place), one git-compare
 # review row per plugin that names a tracking entry (trackAt) with every
 # method, and the validation that fails the evaluation with every problem
 # listed.
@@ -97,13 +98,13 @@ cp -- "$nix_instance_fixtures/example/flake.nix" "$nix_instance_fixtures/example
 cc_mirror "$tracked"
 assert_exit 0 cc_cli "$tracked" pins check
 
-# --- No plugins: only the hook of skill tracking, no rows -----------------------------------
+# --- No plugins: both hooks, no rows ---------------------------------------------------------
 
 for options in '' 'options = { plugins = [] }'; do
   empty=$(cc_instance empty "method = \"external\"
 $options")
   result=$(manifest "$empty")
-  json_check "$result" '[.hooks[][] | select(.component == "claude-code") | .name]' '["skill-hooks"]'
+  json_check "$result" '[.hooks[][] | select(.component == "claude-code") | .name]' '["plugins","skill-hooks"]'
   json_check "$result" '[.pins.latest[] | select(.component == "claude-code")]' '[]'
 done
 
