@@ -89,8 +89,9 @@
 #       agent/plugins/<directory>, whose digest is verified against the lock
 #       first. A plugin of Codex (agents names codex) lives in
 #       ${CODEX_HOME:-~/.codex}/plugins/<directory> with the codex component,
-#       gets an entry of the personal marketplace ~/.agents/plugins/
-#       marketplace.json and `codex plugin add` (_skills_codex_plugin).
+#       is offered by the marketplace dotsteward-own of dotsteward (never the
+#       personal marketplace of the user) and added with `codex plugin add`
+#       (_skills_codex_plugin).
 #       dotsteward_cli.skills.threeway decides about the copy as for an
 #       own skill (records plugin:<name>): a missing one is installed, a
 #       local change is never overwritten, a deleted one is not installed
@@ -742,57 +743,67 @@ skills_process_own_plugin() {
 }
 
 # _skills_codex_plugin NAME COPY DECISION: Codex runs a plugin from a marketplace, and the
-# copy in its cache. The personal marketplace ~/.agents/plugins/marketplace.json (created
-# with the name personal; a file of the user keeps its name and its plugins) gets an entry
-# with the path of COPY from the home, unless it names NAME already; install then runs
-# `codex plugin add NAME@MARKETPLACE` when `codex plugin list --json` does not list it as
-# installed and enabled, and after a copy that changed (missing, incoming), which refreshes
-# the cache. What cannot be done is a note: an own plugin never fails a check.
+# copy in its cache. dotsteward offers own plugins through a marketplace of its own,
+# ${XDG_DATA_HOME:-~/.local/share}/dotsteward/codex-marketplace (.agents/plugins/marketplace.json
+# named dotsteward-own, plugins/NAME a link to COPY); the personal marketplace of the user is
+# never touched. A plugin a marketplace of the user installed from COPY is left to it.
+# Install adds the marketplace once (`codex plugin marketplace add`) and runs `codex plugin
+# add NAME@dotsteward-own` when Codex does not list it installed and enabled, and after a
+# copy that changed (missing, incoming), which refreshes the cache. What cannot be done is a
+# note: an own plugin never fails a check.
+SKILLS_CODEX_MARKET=dotsteward-own
 _skills_codex_plugin() {
-  local name=$1 copy=$2 decision=$3 market_file market relative listed spec updated tmp
-  market_file=$HOME/.agents/plugins/marketplace.json
-  if [[ $copy != "$HOME"/* ]]; then
-    _skills_placement_note "own plugin $name: $copy is outside the home, which the personal marketplace of Codex cannot name"
-    return 0
-  fi
-  relative=./${copy#"$HOME"/}
-  if [[ -f $market_file ]] && ! jq -e 'type == "object" and ((.plugins // []) | type == "array")' "$market_file" >/dev/null 2>&1; then
-    _skills_placement_note "own plugin $name: $market_file is no marketplace of Codex; left as it is"
-    return 0
-  fi
-  if [[ ! -f $market_file ]] || ! jq -e --arg name "$name" 'any((.plugins // [])[]; .name == $name)' "$market_file" >/dev/null; then
-    if ((SKILLS_CHECK_ONLY)); then
-      _skills_placement_note "own plugin $name is not in $market_file; $(_skills_rebuild_hint)"
-      return 0
-    fi
-    mkdir -p -- "${market_file%/*}"
-    [[ -f $market_file ]] || printf '{"name": "personal", "plugins": []}\n' >"$market_file"
-    # shellcheck disable=SC2016 # a jq program
-    updated=$(jq --arg name "$name" --arg path "$relative" '
-      .plugins = ((.plugins // []) + [{name: $name, source: {source: "local", path: $path},
-        policy: {installation: "AVAILABLE"}}])' "$market_file")
-    tmp=$(mktemp "$market_file.XXXXXX")
-    printf '%s\n' "$updated" >"$tmp"
-    chmod 0644 "$tmp"
-    mv -f -- "$tmp" "$market_file"
-    log "own plugin $name: added to the personal marketplace of Codex ($market_file)"
-    decision=missing
-  elif ! jq -e --arg name "$name" --arg path "$relative" \
-    'any(.plugins[]; .name == $name and .source.source == "local" and .source.path == $path)' "$market_file" >/dev/null; then
-    _skills_placement_note "own plugin $name: $market_file names another plugin $name; left as it is"
-    return 0
-  fi
-  market=$(jq -r '.name // empty | strings' "$market_file")
-  [[ $market =~ ^[A-Za-z0-9._-]+$ ]] || {
-    _skills_placement_note "own plugin $name: $market_file has no plain name"
-    return 0
-  }
-  spec=$name@$market
+  local name=$1 copy=$2 decision=$3 root market_file link listed spec updated tmp real
+  root=${XDG_DATA_HOME:-$HOME/.local/share}
+  root=${root%/}/dotsteward/codex-marketplace
+  market_file=$root/.agents/plugins/marketplace.json
+  link=$root/plugins/$name
+  spec=$name@$SKILLS_CODEX_MARKET
   if ! command -v codex >/dev/null 2>&1; then
     _skills_placement_note "own plugin $name: no codex on PATH to add $spec"
     return 0
   fi
   listed=$(codex plugin list --json 2>/dev/null) || listed=''
+  real=$(realpath -e -- "$copy" 2>/dev/null) || real=$copy
+  # shellcheck disable=SC2016 # a jq program
+  if jq -e --arg spec "$spec" --arg real "$real" --arg copy "$copy" 'any((.installed // [])[];
+      .pluginId != $spec and .installed != false and .source.source == "local"
+      and (.source.path == $real or .source.path == $copy))' >/dev/null 2>&1 <<<"$listed"; then
+    log "own plugin $name: Codex has it from a marketplace of the user; left to it"
+    return 0
+  fi
+  if [[ $(readlink -- "$link" 2>/dev/null) != "$copy" ]] ||
+    ! jq -e --arg name "$name" 'any((.plugins // [])[]; .name == $name)' "$market_file" >/dev/null 2>&1; then
+    if ((SKILLS_CHECK_ONLY)); then
+      _skills_placement_note "own plugin $name is not offered to Codex yet ($market_file); $(_skills_rebuild_hint)"
+      return 0
+    fi
+    mkdir -p -- "$root/plugins" "${market_file%/*}"
+    ln -sfn -- "$copy" "$link"
+    [[ -f $market_file ]] || printf '{"name": "%s", "plugins": []}\n' "$SKILLS_CODEX_MARKET" >"$market_file"
+    # shellcheck disable=SC2016 # a jq program
+    updated=$(jq --arg market "$SKILLS_CODEX_MARKET" --arg name "$name" '.name = $market
+      | .plugins = ([(.plugins // [])[] | select(.name != $name)]
+        + [{name: $name, source: {source: "local", path: ("./plugins/" + $name)}, policy: {installation: "AVAILABLE"}}])' \
+      "$market_file")
+    tmp=$(mktemp "$market_file.XXXXXX")
+    printf '%s\n' "$updated" >"$tmp"
+    chmod 0644 "$tmp"
+    mv -f -- "$tmp" "$market_file"
+    log "own plugin $name: offered to Codex by the marketplace $SKILLS_CODEX_MARKET ($root)"
+    decision=missing
+  fi
+  # shellcheck disable=SC2016 # a jq program
+  if ! codex plugin marketplace list --json 2>/dev/null |
+    jq -e --arg market "$SKILLS_CODEX_MARKET" 'any((.marketplaces // [])[]; .name == $market)' >/dev/null 2>&1; then
+    if ((SKILLS_CHECK_ONLY)); then
+      _skills_placement_note "the marketplace $SKILLS_CODEX_MARKET is not added to Codex; $(_skills_rebuild_hint)"
+      return 0
+    fi
+    log "own plugin $name: codex plugin marketplace add $root"
+    codex plugin marketplace add "$root" >/dev/null ||
+      _skills_placement_note "own plugin $name: codex plugin marketplace add $root failed"
+  fi
   if [[ $decision != missing && $decision != incoming ]] &&
     jq -e --arg spec "$spec" 'any((.installed // [])[]; .pluginId == $spec and .installed != false and .enabled == true)' \
       >/dev/null 2>&1 <<<"$listed"; then
