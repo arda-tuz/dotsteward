@@ -182,8 +182,10 @@ class Authenticity:
                 if path is None:
                     continue
                 bundle = _json(path.read_bytes())
-                if bundle is None:
-                    raise Waits("authenticity-failed", error=f"{base + suffix} is not JSON", origin=base + suffix)
+                if not _is_bundle(bundle):
+                    # A server that answers every path (a page, another document): no
+                    # signature. Only a bundle that does not verify stops the pin.
+                    continue
                 if member is None:
                     found.append(Candidate(bundle, "asset", origin=base + suffix))
                     continue
@@ -353,6 +355,14 @@ def _matches(regexp: str, identity: str) -> bool:
     except re.error:
         # A hand-written expression Python does not read: cosign decides.
         return True
+
+
+def _is_bundle(value: Any) -> bool:
+    """VALUE has what a signature bundle carries: a Sigstore bundle's message
+    signature or DSSE envelope, or a legacy cosign bundle's signature."""
+    return isinstance(value, dict) and any(
+        key in value for key in ("messageSignature", "dsseEnvelope", "base64Signature")
+    )
 
 
 def _object(value: Any) -> dict[str, Any]:

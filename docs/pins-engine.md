@@ -201,7 +201,8 @@ The digest of a pin binds the file the pin names; a digest published next to the
 file catches corruption, not a compromised release. So when the writer moves a
 `download-pin` it also looks for a signature of the new file and verifies it:
 
-1. A Sigstore bundle published next to the file: `<url>.sigstore.json`,
+1. A Sigstore bundle published next to the file (a page or another document at
+   that address is no bundle and is ignored): `<url>.sigstore.json`,
    `<url>.sigstore`, `<url>.bundle`, and for an archive (`.tar.gz`, `.tgz`,
    `.tar.xz`, `.txz`, `.tar.bz2`, `.tbz2`, `.tar`, `.zip`) the same names after the
    archive without its extension: the signature of the member of that name (the
