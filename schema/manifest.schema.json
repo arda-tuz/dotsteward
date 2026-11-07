@@ -59,7 +59,10 @@
             },
             "required": ["command", "version"],
             "additionalProperties": false
-          }
+          },
+          "machines": { "type": "array", "items": { "type": "string" }, "description": "The machines the component is for, only when set." },
+          "tags": { "type": "array", "items": { "type": "string" }, "description": "The machine tags the component is for, only when set." },
+          "requires": { "type": "array", "items": { "$ref": "#/$defs/name" }, "description": "What the component needs, only when set; the CLI of each machine reads it." }
         },
         "required": ["name", "source", "method", "profiles", "platforms", "options", "modes", "supported_methods", "install"],
         "additionalProperties": false
@@ -180,6 +183,11 @@
       "additionalProperties": false
     },
     "managed_links": { "$ref": "#/$defs/hostPaths" },
+    "component_managed_links": {
+      "type": "object",
+      "description": "The managed links of each component that has any: what is not active on a machine is not expected there.",
+      "additionalProperties": { "$ref": "#/$defs/hostPaths" }
+    },
     "force_linked_restore": {
       "type": "array",
       "items": {

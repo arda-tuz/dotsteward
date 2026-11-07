@@ -49,7 +49,8 @@ TEST
 assert_exit 1 env HOLD_PROBE="$probe" bash "$DS_REPO_ROOT/tests/run.sh" --jobs 1 "$probe/test-leaves-a-holder.sh"
 assert_contains "$DS_STDOUT" "a failure while a holder runs"
 left=$(<"$probe/pid")
-for _ in $(seq 500); do
+# As long as wait_for: on a busy machine the harness takes its time to remove the root.
+for _ in $(seq 1500); do
   alive "$left" || break
   sleep 0.02
 done

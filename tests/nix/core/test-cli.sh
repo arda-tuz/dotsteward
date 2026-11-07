@@ -105,11 +105,12 @@ for root in '"$(id)/state"' '"`id`/state"' '"/state/\"quoted\""' '"/state\\\\x"'
     "dotsteward: state.root" "unsupported shell syntax"
 done
 
-# The settings targets of the active components, rendered for the platform.
+# The settings targets of the enabled components, rendered for the platform, with active.
 assert_core_eq "$(<"$nix_core_fixtures/targets.workstation.json")" \
   "builtins.fromJSON (homeOf $workstation).dotsteward.cli.aliasPackage.targetsFile.text"
-assert_core_eq '{"schema_version":1,"targets":{"alpha":{"component":"example-app","path":"~/.config/example-app/alpha.json","format":"json","create_if_missing":true,"create_mode":"0644","backup":true,"reload":null}},"reload_hooks":{}}' \
-  'builtins.fromJSON (homeOf { config = "workstation"; profile = "fresh"; modules = componentModules; }).dotsteward.cli.aliasPackage.targetsFile.text'
+# Another profile: every target is there, and says whether its component is active here.
+assert_core_eq '{"alpha":true,"beta":false,"delta":false}' \
+  'builtins.mapAttrs (_: target: target.active) (builtins.fromJSON (homeOf { config = "workstation"; profile = "fresh"; modules = componentModules; }).dotsteward.cli.aliasPackage.targetsFile.text).targets'
 assert_core_eq '"~/Library/Application Support/example-term/beta.toml"' \
   '(builtins.fromJSON (homeOf { config = "workstation"; system = "aarch64-darwin"; homeDirectory = "/Users/alice"; modules = componentModules; }).dotsteward.cli.aliasPackage.targetsFile.text).targets.beta.path'
 assert_core_eq '{"schema_version":1,"targets":{},"reload_hooks":{}}' \

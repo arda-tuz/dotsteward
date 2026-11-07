@@ -28,7 +28,7 @@ for commit in "$head" "$head^"; do
 done
 assert_contains "$(git -C "$up_inst" log -1 --format=%B "$head")" 'A body that stays.'
 assert_eq 'fix(docs): second' "$(git -C "$up_inst" log -1 --format=%s "$head")"
-assert_eq 'somebody 2001-02-03T04:05:06+00:00' "$(TZ=UTC git -C "$up_inst" log -1 --format='%an %aI' "$head")"
+assert_eq 'somebody 981173106' "$(git -C "$up_inst" log -1 --format='%an %at' "$head")"
 assert_eq "$base" "$(git -C "$up_inst" rev-parse "$head~2")"
 [[ -z $(git -C "$up_inst" status --porcelain) ]] || ds_fail "the checkout is not clean"
 

@@ -52,7 +52,7 @@ for system in x86_64-linux aarch64-darwin; do
   json_check "$manifest" '.reload_hooks["herdr-server"] | del(.component)' "$engine_hook"
   json_check "$manifest" '.reload_hooks["herdr-server"].component' '"herdr"'
   # The generation's local-maintained-files alias carries both.
-  json_check "$all" '.targets_file.targets.herdr' "$(jq -cS . <<<"$target")"
+  json_check "$all" '.targets_file.targets.herdr' "$(jq -cS '. + {active: true}' <<<"$target")"
   json_check "$all" '.targets_file.reload_hooks["herdr-server"] | del(.component)' "$engine_hook"
 
   # Backup path, probe, E2E command.

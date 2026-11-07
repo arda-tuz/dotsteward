@@ -8,7 +8,8 @@
       "create_if_missing": true,
       "create_mode": "0644",
       "backup": true,
-      "reload": null
+      "reload": null,
+      "active": true
     },
     "beta": {
       "component": "example-term",
@@ -17,7 +18,8 @@
       "create_if_missing": true,
       "create_mode": "0600",
       "backup": true,
-      "reload": "example-term-reload"
+      "reload": "example-term-reload",
+      "active": true
     },
     "delta": {
       "component": "example-term",
@@ -27,23 +29,36 @@
       "create_mode": "0644",
       "backup": false,
       "reload": {
-        "command": ["example-term", "reload", "{home}"],
+        "command": [
+          "example-term",
+          "reload",
+          "{home}"
+        ],
         "timeout": 5,
         "env": {},
         "unset_env": [],
         "require_command": null,
         "on_success": "silent",
         "on_failure": "warn"
-      }
+      },
+      "active": true
     }
   },
   "reload_hooks": {
     "example-term-reload": {
       "component": "example-term",
-      "command": ["example-term", "server", "reload-config"],
+      "command": [
+        "example-term",
+        "server",
+        "reload-config"
+      ],
       "timeout": 15,
-      "env": { "HOME": "{home}" },
-      "unset_env": ["EXAMPLE_TERM_SOCKET"],
+      "env": {
+        "HOME": "{home}"
+      },
+      "unset_env": [
+        "EXAMPLE_TERM_SOCKET"
+      ],
       "require_command": "example-term",
       "on_success": "log",
       "on_failure": "silent"

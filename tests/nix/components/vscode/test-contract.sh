@@ -93,7 +93,7 @@ for system in x86_64-linux aarch64-darwin; do
   json_check "$manifest" '.settings_targets["vscode-settings"]' "$target"
   json_check "$manifest" '.settings_targets | keys' '["vscode-settings"]'
   json_check "$manifest" '.reload_hooks' '{}'
-  json_check "$all" '.targets_file.targets["vscode-settings"]' "$target"
+  json_check "$all" '.targets_file.targets["vscode-settings"]' "$(jq -cS '. + {active: true}' <<<"$target")"
 
   # Pins: the download pin and the official update API declaration of every
   # pinned platform of nix.systems, in both manifests (one lock serves every
