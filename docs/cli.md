@@ -1675,8 +1675,8 @@ options:
   -h, --help    show this help message and exit
   --tracked     what the instance tracks, then a read only analysis of
                 everything else and one offer
-  --all         also apt as a whole, snap, flatpak, npm, rustup and sampletool tool;
-                no second question
+  --all         also apt as a whole, snap, flatpak and the tools of
+                [[upgrade.tools]]; no second question
   --plan        say what both modes would do and change nothing
   --json        print the report as one JSON document
   --accept KEY  answer in advance: install:PACKAGE, series:kernel=X.Y,
