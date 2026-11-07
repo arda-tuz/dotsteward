@@ -68,8 +68,9 @@ rm -f -- "$UP_CONTROL/rebuild-status" "$UP_CONTROL/network-down" "$UP_CONTROL/re
 # the checks that ran without repository checks run again.
 clear_log
 assert_exit 0 on_terminal 'Update these too=n' -- --tracked
-assert_eq "$waiting" "$(remote_oid)"
-assert_eq "$waiting" "$(git -C "$up_inst" rev-parse HEAD)"
+# `txn publish` names the machine in it: the tree is what stays.
+assert_eq "$(git -C "$up_inst" rev-parse "$waiting^{tree}")" "$(git -C "$up_bare" rev-parse "refs/heads/main^{tree}")"
+assert_eq "$(remote_oid)" "$(git -C "$up_inst" rev-parse HEAD)"
 assert_eq "" "$(waiting_commit)"
 assert_no_step '^pins .*apply'
 assert_order '^e2e .*root=.*/upgrade/work'

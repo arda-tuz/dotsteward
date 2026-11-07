@@ -90,7 +90,8 @@ work_gone
 clear_log
 assert_exit 3 upgrade --tracked
 assert_order '^rebuild ' '^e2e '
-assert_eq "$waiting" "$(remote_oid)"
+# `txn publish` names the machine in it: the tree is what stays.
+assert_eq "$(git -C "$up_inst" rev-parse "$waiting^{tree}")" "$(git -C "$up_bare" rev-parse "refs/heads/main^{tree}")"
 
 # A rebuild that fails is: the commit goes, the pin holds.
 clear_log

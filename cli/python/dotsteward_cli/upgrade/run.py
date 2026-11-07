@@ -28,6 +28,7 @@ Never here: an OS release upgrade, autoremove, a reboot.
 from __future__ import annotations
 
 import collections
+import contextlib
 import hashlib
 import json
 import os
@@ -42,7 +43,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from dotsteward_cli import apt_plan, atomic, config, firmware, machine, procs, report
+from dotsteward_cli import apt_plan, atomic, config, firmware, incoming, machine, procs, report
 from dotsteward_cli import publish as publishing
 from dotsteward_cli.host import commit_identity
 from dotsteward_cli.skills import commands as skills_commands
@@ -532,8 +533,22 @@ class Upgrade:
         return False
 
     def _incoming(self) -> None:
-        """The question about changes from other machines (Y3) comes here, before sudo and the long
-        builds, with a later release: `dotsteward_cli.incoming` and its review items."""
+        """The question about changes from other machines (Y3), before sudo and the long builds. The
+        checkout is at the tip by now; without a terminal every item is an entry of this run, which
+        goes on and ends in 3. An answer Never publishes the host file, so the tip moves with it."""
+        if self.name is None:
+            return
+        head = self._head()
+        try:
+            left = incoming.ask(self.instance, self.run, terminal=self.terminal, env=self.env)
+        except (incoming.Refusal, config.DotstewardError, OSError) as failure:
+            self.run.step("incoming", report.FAILED, detail=str(failure))
+            return
+        self.run.step("incoming", report.OK, waiting=len(left))
+        self.instance = config.load_instance()
+        self._effective()
+        if self.tip and self._head() != head:
+            self.tip = self._head()
 
     def _questions(self) -> None:
         self._incoming()
@@ -955,6 +970,7 @@ class Upgrade:
         return (
             active.get("tree_oid") == self._tree_of(where)
             and active.get("profile") == self.profile
+            and active.get("tags_sha256") in (None, machine.effective(self.instance, self.env)["nix_tags_sha256"])
             and os.path.realpath(str(active.get("root"))) == os.path.realpath(where)
         )
 
@@ -1034,6 +1050,14 @@ class Upgrade:
             return ""
         return done.stdout.strip()
 
+    def _answers_digest(self) -> str:
+        """What the answers about other machines left here: the same tree can hold another machine."""
+        digest = hashlib.sha256()
+        for name in ("skills/base.json", incoming.KNOWN_FILE, incoming.NEVER_FILE):
+            with contextlib.suppress(OSError):
+                digest.update((Path(self.state_root) / name).read_bytes())
+        return digest.hexdigest()
+
     def _e2e_key(self, repo_checks: bool) -> str:
         """What the result depends on: the generation, the tree, the profile and what the tracked
         channels have installed. Nothing untracked is in it."""
@@ -1043,6 +1067,7 @@ class Upgrade:
             "profile": self.profile,
             "repo_checks": repo_checks,
             "packages": self._versions_of_tracked(),
+            "answers": self._answers_digest(),
             "self": {
                 entry.component: self._version_of(entry.version)
                 for entry in facts.self_updates(self._active(), self.instance)
@@ -1259,6 +1284,9 @@ class Upgrade:
         status = self._ds_quiet("txn", "publish", "--scope", "update", "--expected-base", self.tip)
         if status == 0:
             self.run.step("publish", report.OK)
+            # `txn publish` named the machine in it: what the remote has is what the clone has now.
+            self._keep_waiting(self.moved)
+            commit = str(self.waiting)
             self._drop_waiting()
             self._follow(commit)
             return

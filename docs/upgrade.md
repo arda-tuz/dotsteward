@@ -100,7 +100,9 @@ Update these too? [y/N] n
    skill comparison and capture go out first. Then the fetch, and the fast-forward when the checkout
    is clean. A commit in the checkout that is not on the remote is yours: the run is refused and it
    stays. Uncommitted changes stop nothing but the fast-forward and a rebuild from the checkout. The
-   questions come here: the firmware list and its approval.
+   questions come here: what other machines changed, one item at a time with the machine named (install,
+   ask later, never on this machine: [machines.md](machines.md)), then the firmware list and its approval.
+   Without a terminal every item is ask later, in `review.json` under `incoming`, and the run ends in 3.
 3. **One sudo window before all Nix work.** `sudo -v`, `dpkg --configure -a` when dpkg was left half
    way, the pin file from what dpkg has, the apt bridge when it is installed, `apt-get update`, the
    apt plan and its commit in one depcache, snap and flatpak with `--all`, then `sudo -k`. Sudo runs
