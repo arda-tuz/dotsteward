@@ -55,6 +55,15 @@ cp "$(clone_of laptop1)/agent/skills/preexisting/SKILL.md" "$(home_of laptop2)/.
 up_to_date laptop2
 assert_eq '' "$(waiting laptop2)"
 
+# A lock that cannot be read writes no baseline: everything would look new after it.
+rm -f -- "$known"
+lock=$(clone_of laptop2)/agent/skills.lock.json
+cp -- "$lock" "$DS_TEST_ROOT/lock.good"
+printf '{ not json\n' >"$lock"
+assert_exit 0 ds laptop2 incoming
+[[ ! -e $known ]] || ds_fail "a broken lock wrote known.json"
+cp -- "$DS_TEST_ROOT/lock.good" "$lock"
+
 # No name: no question, no file, and every command acts as it always did.
 unnamed=$world/unnamed
 mkdir -p "$unnamed/home/.agents/skills" "$unnamed/home/.claude/skills" "$unnamed/home/.codex/skills" "$unnamed/state"

@@ -155,6 +155,18 @@ def _own_revisions(instance: config.Instance) -> set[str]:
     return {str(revision) for revision in revisions if revision}
 
 
+def _lock_broken(instance: config.Instance) -> bool:
+    """A lock that is there and cannot be read says nothing about any item: a merge in
+    progress, a clone being replaced. An instance without a lock has no skills."""
+    try:
+        document = json.loads((instance.root / instance.config["skills"]["lock"]).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return False
+    except (OSError, ValueError):
+        return True
+    return not (isinstance(document, dict) and isinstance(document.get("skills", []), list))
+
+
 def _vendor_path(instance: config.Instance, directory: str) -> str:
     return f"{str(instance.config['skills']['vendor_dir']).rstrip('/')}/{directory}"
 
@@ -374,10 +386,9 @@ def waiting(
     known = read_known(state_root, name)
     if known is None:
         return []
-    lock = machine.read_lock(instance)
-    if not isinstance(lock.get("skills"), list):
-        # A lock that cannot be read says nothing about any item, only that it says nothing.
+    if _lock_broken(instance):
         return []
+    lock = machine.read_lock(instance)
     return [
         *_skill_items(instance, state_root, name, known, reasons, lock),
         *_plugin_items(instance, name, known, reasons, lock),
@@ -414,7 +425,7 @@ def write_baseline(instance: config.Instance, env: Mapping[str, str] | None = No
     it. Whether it wrote the file."""
     state_root = config.state_root(instance, env)
     scope = _current(instance, env)
-    if scope["name"] is None or read_known(state_root, scope["name"]) is not None:
+    if scope["name"] is None or read_known(state_root, scope["name"]) is not None or _lock_broken(instance):
         return False
     _write_known(
         state_root, {"schema_version": SCHEMA_VERSION, "machine": scope["name"], **_current_set(instance, scope)}
@@ -465,10 +476,9 @@ def settle(instance: config.Instance, env: Mapping[str, str] | None = None) -> N
         _write_known(state_root, updated)
     # A skill this machine removed itself in a commit: its copy goes with the record.
     base = skill_state.load_base(state_root)
-    lock = machine.read_lock(instance)
-    in_lock = {entry.get("name") for entry in machine.entries_of(lock, "skills")}
-    if not isinstance(lock.get("skills"), list):
+    if _lock_broken(instance):
         return
+    in_lock = {entry.get("name") for entry in machine.entries_of(machine.read_lock(instance), "skills")}
     for name, record in list(_left_behind(instance, base, current["skills"], reasons)):
         if name not in in_lock and f"skill:{name}" not in open_ids:
             _remove_copy(instance, state_root, name, record)
