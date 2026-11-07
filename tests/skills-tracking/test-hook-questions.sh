@@ -129,6 +129,13 @@ no_output "an internal session of Codex without a transcript"
 fake_codex tui session-start
 assert_json - '.hookSpecificOutput.hookEventName == "SessionStart"' <<<"$EVENT_OUT"
 assert_contains "$EVENT_OUT" foreign
+# The same where the platform the CLI sees is macOS, which has no /proc: there `ps` reads
+# the command line, so this machine runs that way too.
+age_items
+DOTSTEWARD_PLATFORM=darwin fake_codex exec session-start
+no_output "codex exec is nobody's session on macOS"
+DOTSTEWARD_PLATFORM=darwin fake_codex tui session-start
+assert_contains "$EVENT_OUT" foreign
 
 # --- at most 10 names, odd names only in skills status -------------------------------
 
