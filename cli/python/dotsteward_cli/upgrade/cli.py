@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from dotsteward_cli import apt_plan, config, firmware, locks, report
-from dotsteward_cli.upgrade import plan, run
+from dotsteward_cli.upgrade import holds, plan, run
 
 REEXEC = "DOTSTEWARD_UPGRADE_REEXEC"
 EXIT_USAGE = 2
@@ -47,6 +47,11 @@ def _parser() -> argparse.ArgumentParser:
         help="also apt as a whole, snap, flatpak and the tools of [[upgrade.tools]]; no second question",
     )
     parser.add_argument("--plan", action="store_true", help="say what both modes would do and change nothing")
+    parser.add_argument(
+        "--retry-held",
+        action="store_true",
+        help="take back every local hold (<state>/holds.json) first, so the held pins move again",
+    )
     parser.add_argument("--json", action="store_true", help="print the report as one JSON document")
     parser.add_argument(
         "--accept",
@@ -120,6 +125,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("\n".join(error.lines()), file=sys.stderr)
         return report.FAILED
 
+    if options.plan and options.retry_held:
+        _say_error("--retry-held changes the holds and --plan changes nothing: use one of them")
+        return EXIT_USAGE
     if options.plan:
         document = plan.build(instance, options.accept)
         return _finish_plan(document, document_out)
@@ -142,6 +150,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         with locks.instance_lock("upgrade", state_root=state_root):
+            if options.retry_held and holds.read(state_root):
+                holds.write(state_root, [])
+                print("[upgrade] every hold is taken back: the held pins move again", flush=True)
             upgrade = run.Upgrade(instance, state_root, mode, options.accept, terminal, arguments, again)
             code = upgrade.execute()
     except locks.LockBusy as busy:

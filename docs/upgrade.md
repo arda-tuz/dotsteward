@@ -162,6 +162,14 @@ left to the vendor. Without a terminal it is never applied.
 
 - **The gate says no:** nothing is committed, the clone goes, exit 1. The pins that moved get a hold,
   so the next run tries the others and is not stuck on them.
+- **The gate could not judge the tree:** another gate holds its lock, its preflight failed, its log
+  says the disk is full or the memory ran out, or the network went away during it. `gate-failed`
+  names it in `environment`; nothing is committed and nothing is held, and the next run tries again.
+- **E2E ends without a result, or the rebuild is killed** (137, out of memory or from outside):
+  `e2e-no-result` or a failed `rebuild`, exit 1. Nothing goes back and nothing is held; a waiting
+  commit waits for the next run.
+- **Holds:** each run names what is held (`held`). `dotsteward upgrade --retry-held` takes every hold
+  back first, so those pins move again; the hold of a version that went red again comes back.
 - **E2E or the rebuild is red after a move of this run:** the commit goes with its clone, the checkout
   never had it. A rebuild from the checkout returns the tree from before (from a clone of that tree when
   the checkout is dirty), official binaries that moved get their saved copy back, and E2E checks the way

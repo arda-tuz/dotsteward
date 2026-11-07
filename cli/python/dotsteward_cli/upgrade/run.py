@@ -31,6 +31,7 @@ import collections
 import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import stat
@@ -72,6 +73,20 @@ _APT_BUCKETS = ("install", "upgrade", "remove", "downgrade")
 # Config of the checkout the clone needs to behave the same.
 _CLONE_CONFIG = ("core.hooksPath", "core.sshCommand", "user.name", "user.email")
 _STEP_WORDS = {"pending": "waits for you", "partial": "skipped, no network", "failed": "failed"}
+# What says that the gate could not judge the tree, rather than that the tree is red: in its own
+# words or in its log. A red of these holds nothing.
+_GATE_LOCKED = "another gate is running"
+_ENVIRONMENT_MARKERS = (
+    "No space left on device",
+    "Cannot allocate memory",
+    "Out of memory",
+    "out of memory",
+    "killed by signal 9",
+)
+# A child killed from outside: 137 through a shell, a negative status straight from Python.
+_KILLED = 137
+_NO_RESULT = "unknown"
+RETRY_HELD = "dotsteward upgrade --retry-held"
 _WRITER_ITEMS = {
     "skill-transform": "have a newer upstream and a local transform; dotsteward-update moves them",
 }
@@ -128,6 +143,8 @@ class Upgrade:
         self.moved: list[dict[str, Any]] = []
         self.approved: tuple[firmware.Device, ...] = ()
         self.paths: report.ReportPaths | None = None
+        self.quiet_output = ""
+        self.e2e_status = 0
         last = report.load_last(state_root, "upgrade") or {}
         data = last.get("data") if isinstance(last.get("data"), dict) else {}
         if isinstance(data, dict) and isinstance(data.get("moved"), list):
@@ -174,11 +191,14 @@ class Upgrade:
         ) as child:
             assert child.stdout is not None
             others = []
+            said = []
             for line in child.stdout:
+                said.append(line)
                 if line.startswith("[dotsteward]"):
                     print(line, end="", flush=True)
                 else:
                     others.append(line)
+        self.quiet_output = "".join(said)
         if child.returncode in _SIGNALLED:
             raise KeyboardInterrupt
         if child.returncode != 0:
@@ -256,7 +276,14 @@ class Upgrade:
         for hold in holds.read(self.state_root):
             if hold.get("id") not in told:
                 message = f"{hold.get('id')} stays at the version before {hold.get('version')}: {hold.get('reason')}"
-                self.run.item("held", pending=False, id=hold.get("id"), version=hold.get("version"), message=message)
+                self.run.item(
+                    "held",
+                    pending=False,
+                    id=hold.get("id"),
+                    version=hold.get("version"),
+                    message=message,
+                    run=RETRY_HELD,
+                )
         self.run.data.update(
             own_commits=[self.waiting] if self.waiting else [], moved=self.moved if self.waiting else []
         )
@@ -720,7 +747,26 @@ class Upgrade:
             return
         names = ", ".join(str(row.get("id")) for row in moved) or "derived values only"
         _say(f"pins moved: {names}; the gate decides")
+        started = time.time()
         status = self._ds_quiet("gate", "--scope", "update")
+        environment = self._gate_environment(started) if status != 0 else None
+        if environment is not None:
+            network = environment.startswith("the network")
+            self.run.step("gate", report.PARTIAL if network else report.FAILED, detail=environment)
+            self.run.item(
+                "gate-failed",
+                log=str(Path(self.state_root) / "update" / "validate.log"),
+                moved=[row.get("id") for row in moved],
+                environment=environment,
+                run=self._command_again(),
+                message=(
+                    f"the gate could not judge the new pins: {environment}; nothing was committed and nothing "
+                    "is held, the next run tries again"
+                ),
+            )
+            self.framework_moved = False
+            self._remove_work()
+            return
         self.run.step("gate", status)
         if status != 0:
             reason = f"the gate said no ({status})"
@@ -751,6 +797,29 @@ class Upgrade:
         assert self.waiting is not None
         _say(f"committed {self.waiting[:12]} next to the checkout; it goes out after a green E2E")
         self.run.step("commit", report.OK, commit=self.waiting)
+
+    def _gate_environment(self, started: float) -> str | None:
+        """Why the gate could not judge the tree, or None when its no is about the tree: another gate,
+        a step that never reached the tree, a full disk or no memory in its log, the network gone."""
+        if _GATE_LOCKED in self.quiet_output:
+            return _GATE_LOCKED
+        log = Path(self.state_root) / "update" / "validate.log"
+        try:
+            # A log of an earlier gate says nothing about this one.
+            text = log.read_text(encoding="utf-8", errors="replace") if log.stat().st_mtime >= started - 1 else ""
+        except OSError:
+            text = ""
+        steps = re.findall(r"^== ([a-z0-9-]+):", text, re.MULTILINE)
+        if steps and steps[-1] == "preflight":
+            return "the preflight of the gate failed (the binary cache or the free space of the store)"
+        for marker in _ENVIRONMENT_MARKERS:
+            if marker in text or marker in self.quiet_output:
+                return marker
+        outcome, _, _ = publishing.fetch_tip(self.root, self.branch, _PUBLISH_SCOPE)
+        if outcome == publishing.NETWORK:
+            self.offline = True
+            return "the network went away during the gate"
+        return None
 
     def _self_updates(self) -> None:
         """What updates itself is only asked to; a second way in is never added."""
@@ -846,6 +915,14 @@ class Upgrade:
         if self.work is not None:
             self._save_binaries()
         status = self._ds("rebuild", "--profile", self.profile, "--switch")
+        if self.work is not None and (status == _KILLED or status < 0):
+            # Out of memory, or stopped from outside: it says nothing about the pins.
+            self.run.step(
+                "rebuild",
+                report.FAILED,
+                detail=f"killed (exit {status}), out of memory or from outside: the commit waits for the next run",
+            )
+            return
         if status != 0 and self.work is not None:
             outcome, _, _ = publishing.fetch_tip(self.root, self.branch, _PUBLISH_SCOPE)
             if outcome != publishing.OK:
@@ -936,6 +1013,7 @@ class Upgrade:
         done = self._ds_output(*arguments)
         if done.returncode in _SIGNALLED:
             raise KeyboardInterrupt
+        self.e2e_status = done.returncode
         if done.returncode == 0:
             atomic.make_private_dirs(self.upgrade_dir)
             key = self._e2e_key(repo_checks)
@@ -948,7 +1026,9 @@ class Upgrade:
             findings = json.loads(done.stdout).get("findings") or []
         except (ValueError, AttributeError):
             findings = []
-        return sorted({str(finding.get("step")) for finding in findings}) or ["unknown"]
+        if done.returncode == _KILLED or done.returncode < 0:
+            return [_NO_RESULT]
+        return sorted({str(finding.get("step")) for finding in findings}) or [_NO_RESULT]
 
     def _e2e(self, *, force: bool = False) -> None:
         if self.profile is None or self.red:
@@ -966,10 +1046,26 @@ class Upgrade:
         if red is None:
             _say("E2E is green")
             self.run.step("e2e", report.OK)
+        elif red == [_NO_RESULT]:
+            self._no_result()
         elif self.waiting is not None:
             self._go_back(f"E2E red: {', '.join(red)}", red)
         else:
             self._still_red(red)
+
+    def _no_result(self) -> None:
+        """E2E ended without naming a check: killed, out of memory, or a crash of its own. Nothing went
+        red, so nothing goes back and nothing is held; a waiting commit waits for the next run."""
+        self.verified = False
+        self.run.step("e2e", report.FAILED, detail=f"no result (exit {self.e2e_status})")
+        self.run.item(
+            "e2e-no-result",
+            run=f"dotsteward e2e --profile {self.profile} --keep-going",
+            message=(
+                "E2E ended without a result: nothing went back and nothing is held"
+                + ("; the commit waits for the next run" if self.waiting else "")
+            ),
+        )
 
     def _still_red(self, red: Sequence[str]) -> None:
         """Red, and nothing of this run to go back to: the package moved, or a setting did."""

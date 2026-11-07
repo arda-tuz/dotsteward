@@ -23,8 +23,8 @@ run_quiet() {
   on_terminal "$answer" -- --tracked >"$DS_TEST_ROOT/run.out" 2>&1 || true
 }
 
-published_codex() {
-  git -C "$up_bare" show refs/heads/main:versions.lock.json | jq -r '."agent_tools.codex.linux" // "none"'
+published() {
+  git -C "$up_bare" show refs/heads/main:versions.lock.json | jq -r --arg id "$1" '.[$id] // "none"'
 }
 
 move agent_tools.codex.linux 2.0.0 download
@@ -33,7 +33,11 @@ move agent_tools.codex.linux 2.0.0 download
 lock=$DOTSTEWARD_STATE_ROOT/update/validate.lock
 mkdir -p "$(dirname "$lock")"
 : >>"$lock"
-flock "$lock" sleep 120 &
+# One process holds it, so that ending it frees the lock.
+python3 -c 'import fcntl, sys, time
+handle = open(sys.argv[1], "a")
+fcntl.flock(handle, fcntl.LOCK_EX)
+time.sleep(120)' "$lock" &
 holder=$!
 until ! flock -n "$lock" true; do sleep 0.05; done
 run_quiet
@@ -44,7 +48,7 @@ assert_eq "[]" "$(held)"
 last_report '[.items[] | select(.code == "red-held")] == []'
 last_report '[.items[] | select(.code == "gate-failed")][0].environment | contains("another gate is running")'
 assert_eq "" "$(waiting_commit)"
-assert_eq none "$(published_codex)"
+assert_eq none "$(published agent_tools.codex.linux)"
 
 # --- the network goes away during the gate ------------------------------------------------------
 static=$fw/cli/commands/static.sh
@@ -71,14 +75,14 @@ assert_eq "[]" "$(held)"
 [[ -n $(waiting_commit) ]] || ds_fail "the commit of the move waits"
 last_report '[.items[] | select(.code == "e2e-no-result")] | length == 1'
 last_report '[.items[] | select(.code == "red-held")] == []'
-assert_eq none "$(published_codex)"
+assert_eq none "$(published agent_tools.codex.linux)"
 # The next run publishes it.
 assert_exit 0 on_terminal "$answer" -- --tracked
-assert_eq 2.0.0 "$(published_codex)"
+assert_eq 2.0.0 "$(published agent_tools.codex.linux)"
 assert_eq "" "$(waiting_commit)"
 
 # --- a rebuild killed from outside: the commit waits, nothing is held ------------------------
-move agent_tools.codex.linux 3.0.0 download
+move example.rebuilt 3.0.0 pypi
 printf '[[ $DOTSTEWARD_INSTANCE != */upgrade/work || ! -e %s/rebuild-killed ]] || { rm -f %s/rebuild-killed; exit 137; }\n' \
   "$UP_CONTROL" "$UP_CONTROL" >"$UP_CONTROL/rebuild-status-hook"
 : >"$UP_CONTROL/rebuild-killed"
@@ -89,19 +93,19 @@ assert_eq "[]" "$(held)"
 assert_no_step "^rebuild .*root=$up_inst\$"
 last_report '[.items[] | select(.code == "red-held")] == []'
 assert_exit 0 on_terminal "$answer" -- --tracked
-assert_eq 3.0.0 "$(published_codex)"
+assert_eq 3.0.0 "$(published example.rebuilt)"
 
 # --- a gate that judges the tree holds, and --retry-held takes it back ------------------------
-move agent_tools.codex.linux 4.0.0 download
+move example.judged 4.0.0 pypi
 sed -i "2a [[ ! -e $UP_CONTROL/static-red ]] || { echo 'static: a check failed' >&2; exit 1; }" "$static"
 : >"$UP_CONTROL/static-red"
 run_quiet
-assert_eq '["agent_tools.codex.linux"]' "$(held)"
+assert_eq '["example.judged"]' "$(held)"
 rm -f "$UP_CONTROL/static-red"
 assert_exit 0 on_terminal "$answer" -- --tracked
 last_report '[.items[] | select(.code == "held")][0].run == "dotsteward upgrade --retry-held"'
-assert_eq 3.0.0 "$(published_codex)"
+assert_eq none "$(published example.judged)"
 assert_exit 2 upgrade --plan --retry-held
 assert_exit 0 on_terminal "$answer" -- --tracked --retry-held
 assert_eq "[]" "$(held)"
-assert_eq 4.0.0 "$(published_codex)"
+assert_eq 4.0.0 "$(published example.judged)"
