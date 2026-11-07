@@ -241,4 +241,3 @@ world_install dkms-pull
 engine commit '{"mode": "all"}'
 assert_eq 3 "$ENGINE_STATUS"
 assert_json "$ENGINE" '.status == "refused" and (.items[] | select(.code == "module-missing") | .kernel == "7.0.0-42-generic")'
-
