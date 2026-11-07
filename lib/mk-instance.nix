@@ -39,7 +39,10 @@
 #                                 is built); instance-static ([gate] static
 #                                 scripts); instance-contract (framework
 #                                 checks over the instance: static
-#                                 --sandbox, the offline pins check,
+#                                 --sandbox, with the template-owned
+#                                 files from the evaluated framework's
+#                                 template/ under a framework override,
+#                                 the offline pins check,
 #                                 settings validate against the evaluated
 #                                 component targets, passthru.targetsFile,
 #                                 and the generic privacy scan); both run
@@ -489,6 +492,32 @@ let
 
   rootSource = "${rootValue}";
 
+  # The files of an instance that are byte copies of the framework's
+  # template/ (`dotsteward static` compares them; the upgrade refreshes them,
+  # as _contribute_refresh_template of cli/lib/contribute-remote.sh and
+  # TEMPLATE_FILES of the pins engine do).
+  templateOwned = [
+    "bootstrap.sh"
+    ".dotsteward/cli.sh"
+  ];
+
+  # Under a framework override the checks see the template-owned files as the
+  # upgrade to that framework writes them: from the template of the CLI that
+  # checks them. The copy is the check's own; the instance stays as it is.
+  refreshTemplateOwned =
+    cli:
+    lib.optionalString frameworkOverridden (
+      lib.concatMapStrings (file: ''
+        if [[ -f ${cli}/share/dotsteward/template/${file} ]]; then
+          mkdir -p "$(dirname -- ${lib.escapeShellArg file})"
+          rm -f -- ${lib.escapeShellArg file}
+          cp -- ${cli}/share/dotsteward/template/${file} ${lib.escapeShellArg file}
+          chmod u+w -- ${lib.escapeShellArg file}
+          echo "[dotsteward] framework overridden: ${file} as the upgrade writes it, from the framework's template/${file}"
+        fi
+      '') templateOwned
+    );
+
   instanceCheck =
     system: name: extra: script:
     let
@@ -511,6 +540,7 @@ let
         cp -R ${rootSource} instance
         chmod -R u+w instance
         cd instance
+        ${refreshTemplateOwned cli}
         export HOME=$TMPDIR/home DOTSTEWARD_INSTANCE=$PWD
         mkdir -p "$HOME"
         ${script}
@@ -633,7 +663,10 @@ let
   # (`--override-input dotsteward`, the contribute trial and `gate
   # --framework-override`). The mirrors describe the pinned framework, so
   # their staleness is not checked then; `dotsteward generate` refreshes them
-  # when the instance moves to the new framework (contribute upgrade).
+  # when the instance moves to the new framework (contribute upgrade). The
+  # template-owned files are checked as that upgrade writes them
+  # (refreshTemplateOwned), so a release that changes template/ can be
+  # trialled; a hand-edited copy is caught by the gate without an override.
   evaluatedFrameworkHash = inputs.dotsteward.narHash or null;
   frameworkOverridden =
     pinnedFrameworkHash != null

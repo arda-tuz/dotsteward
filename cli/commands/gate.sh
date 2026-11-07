@@ -54,8 +54,11 @@
 #                      replaced by the flake reference REF, in memory
 #                      (--override-input dotsteward REF
 #                      --no-write-lock-file); the steps see
-#                      DOTSTEWARD_FRAMEWORK_OVERRIDE=REF. Default: the
-#                      DOTSTEWARD_FRAMEWORK_OVERRIDE environment variable
+#                      DOTSTEWARD_FRAMEWORK_OVERRIDE=REF, and the instance
+#                      contract checks bootstrap.sh and .dotsteward/cli.sh
+#                      as the upgrade to REF writes them (from its
+#                      template/; the checkout is not changed). Default:
+#                      the DOTSTEWARD_FRAMEWORK_OVERRIDE environment variable
 #
 # Memo: a passed record answers without running a step when the tree id,
 # `nix --version`, the gate version (the framework VERSION), the framework
