@@ -150,6 +150,7 @@ wrote() {
 }
 
 hook_on() {
+  # shellcheck disable=SC2034 # read by the tests
   HOOK_OUT=$(on "$1" env ${HOOK_ENV[@]+"${HOOK_ENV[@]}"} bash -c \
     'sed -e "s|@HOME@|$HOME|g" -e "s|@CWD@|$PWD|g" -e "s|@SESSION@|$2|g" "$1" | "$3" skills hook "$4" --agent claude' \
     _ "$fixtures/claude/$3.json" "$HOOK_SESSION" "$DS_REPO_ROOT/cli/dotsteward" "$2")
