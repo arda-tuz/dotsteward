@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# The apt helper of the upgrade tests, in place of /usr/bin/python3 with python3-apt
+# (DOTSTEWARD_APT_PYTHON): `apt-python -I HELPER ACTION [--output FILE]`. It logs the action and the
+# request, and answers with $UP_APT/ACTION-MODE.json, else $UP_APT/ACTION.json. The real helper has suites of its own
+# (tests/apt-worlds, tests/container).
+set -euo pipefail
+action=$3
+output=
+if (($# >= 5)) && [[ $4 == --output ]]; then
+  output=$5
+fi
+request=$(cat)
+printf 'apt %s %s\n' "$action" "$(jq -c '{mode, tracked, accept, constraints, gated}' <<<"$request")" >>"$UP_LOG"
+answer=$UP_APT/$action.json
+mode=$(jq -r .mode <<<"$request")
+if [[ -e $UP_APT/$action-$mode.json ]]; then
+  answer=$UP_APT/$action-$mode.json
+fi
+if [[ -n $output ]]; then
+  cp -- "$answer" "$output"
+else
+  cat -- "$answer"
+fi

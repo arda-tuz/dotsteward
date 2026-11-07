@@ -12,7 +12,7 @@ set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
-  dbus sudo python3-apt curl git ca-certificates jq procps lsb-release \
+  dbus sudo python3-apt python3-tomlkit curl git ca-certificates jq procps lsb-release \
   kmod unattended-upgrades packagekit >/dev/null
 # The client of PackageKit is in the package above since Ubuntu 26.04 (pkgcli), before in its own.
 apt-get install -y -qq --no-install-recommends packagekit-tools >/dev/null 2>&1 || type -P pkgcli >/dev/null

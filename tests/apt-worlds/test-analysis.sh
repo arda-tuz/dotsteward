@@ -35,3 +35,7 @@ world_analysis tracked '{}'
 world_plan tracked
 assert_eq "$before" "$(sha256sum "$WORLD/var/lib/dpkg/status")"
 [[ ! -e $WORLD/etc/apt/preferences.d/60dotsteward ]] || ds_fail "a plan wrote the pin file"
+
+# What apt autoremove would take is counted, never removed.
+world_analysis tracked
+assert_json "$ANALYSIS" '.autoremovable | type == "number"'

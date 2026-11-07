@@ -42,7 +42,8 @@ for pair in x86_64-linux:linux-x64 aarch64-darwin:darwin-arm64; do
       linux: ["official-binary", "deb", "external"],
       darwin: ["official-binary", "external"]
     },
-    install: $install
+    install: $install,
+    self_update: { command: ["claude", "update"], version: ["claude", "--version"] }
   }')
   assert_cc_eq "$expected" "ccEntry (cc { }) \"$system\"" "manifest entry on $system"
 done
