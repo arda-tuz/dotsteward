@@ -414,21 +414,17 @@ def _run(argv: Sequence[str]) -> None:
 def _log_error() -> None:
     """Keeps the last errors for whoever looks; failing here is no failure either."""
     try:
-        from dotsteward_cli.skills import reconcile
+        from dotsteward_cli.skills import reconcile, state
 
         context = reconcile.load_context()
         if context is None:
             return
-        path = os.path.join(str(context["state_root"]), "skills", _ERROR_LOG)
-        mode = "a"
-        try:
-            if os.path.getsize(path) > _ERROR_LOG_BYTES:
-                mode = "w"
-        except OSError:
-            pass
         kind = sys.exc_info()[0]
-        with open(path, mode, encoding="utf-8") as handle:
-            handle.write(f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {kind.__name__ if kind else 'error'}\n")
+        state.append_log(
+            os.path.join(str(context["state_root"]), "skills", _ERROR_LOG),
+            f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {kind.__name__ if kind else 'error'}",
+            _ERROR_LOG_BYTES,
+        )
     except BaseException:
         return
 

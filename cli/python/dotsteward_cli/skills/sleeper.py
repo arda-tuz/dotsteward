@@ -99,15 +99,8 @@ def log(state_root: str, message: str) -> None:
     """One line of ``capture.log``: it stays small, and no failure reaches anyone."""
     path = os.path.join(state.directory(state_root), LOG_FILE)
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    try:
-        mode = "w" if os.path.getsize(path) > _LOG_LIMIT_BYTES else "a"
-    except OSError:
-        mode = "a"
-    try:
-        with open(path, mode, encoding="utf-8") as handle:
-            handle.write(f"{stamp} {message}\n")
-    except OSError:
-        pass
+    with contextlib.suppress(OSError):
+        state.append_log(path, f"{stamp} {message}", _LOG_LIMIT_BYTES)
 
 
 def spawn(context: Mapping[str, Any], *arguments: str) -> None:

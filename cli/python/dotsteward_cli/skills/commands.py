@@ -8,7 +8,7 @@
     skills track SKILL --all|--here|--never|--own [--no-capture]
     skills resolve SKILL --ours|--theirs
     skills diff SKILL [--json]
-    skills forget SKILL
+    skills forget SKILL [--clear]
     skills restore SKILL          the answers (track.py)
     skills hooks install|check|remove [--agent claude|codex]
                                   the hooks in the configuration of an agent
@@ -119,6 +119,9 @@ def _status(args: argparse.Namespace, loaded: config.Instance) -> int:
         if isinstance(item, dict):
             why = f": {item['reason']}" if item.get("reason") else ""
             print(f"[dotsteward] {key}: {item.get('state')} ({item.get('origin')}){why}")
+            copy = item.get("path")
+            if item.get("state") in reconcile.KEPT_OUT and not (isinstance(copy, str) and os.path.isdir(copy)):
+                print(f"[dotsteward] {key}: no copy is left: dotsteward skills forget --clear {item.get('name')}")
             for line in str(item.get("detail") or "").splitlines():
                 print(f"[dotsteward] {key}: {line}")
     print(f"[dotsteward] {in_sync} of {len(document['own'])} own skills in sync")
@@ -258,7 +261,7 @@ def _diff(args: argparse.Namespace, loaded: config.Instance) -> int:
 
 
 def _forget(args: argparse.Namespace, loaded: config.Instance) -> int:
-    return track.forget(loaded, args.name)
+    return track.clear(loaded, args.name) if args.clear else track.forget(loaded, args.name)
 
 
 def _restore(args: argparse.Namespace, loaded: config.Instance) -> int:
@@ -354,9 +357,14 @@ def _parser() -> argparse.ArgumentParser:
     gone = commands.add_parser(
         "forget",
         help="take a skill out of the repository, for all machines",
-        description="Removes the skill from the lock and the repository. A local copy stays, and nobody asks about it.",
+        description=(
+            "Removes the skill from the lock and the repository. A local copy stays, and nobody asks about it. "
+            "--clear is for later, once no copy is left: this machine stops keeping the name out, of forget and of "
+            "track --never alike, and a new skill of that name is a new skill."
+        ),
     )
     gone.add_argument("name", metavar="SKILL")
+    gone.add_argument("--clear", action="store_true", help="stop keeping out a name whose copy is gone")
     back = commands.add_parser(
         "restore",
         help="install a skill deleted here from the repository again",

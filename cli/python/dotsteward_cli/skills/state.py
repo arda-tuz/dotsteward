@@ -130,6 +130,19 @@ def empty_pending() -> dict[str, Any]:
     return {"schema_version": SCHEMA_VERSION, "reconciled_at": None, "items": {}}
 
 
+def append_log(path: str, line: str, limit_bytes: int) -> None:
+    """LINE at the end of a log of this state, which is as private as the rest of it, also
+    when it was there before. A log past LIMIT_BYTES starts over. OSError when it cannot."""
+    try:
+        too_long = os.path.getsize(path) > limit_bytes
+    except OSError:
+        too_long = False
+    flags = os.O_WRONLY | os.O_CREAT | os.O_CLOEXEC | (os.O_TRUNC if too_long else os.O_APPEND)
+    with os.fdopen(os.open(path, flags, 0o600), "w", encoding="utf-8") as handle:
+        os.fchmod(handle.fileno(), 0o600)
+        handle.write(f"{line}\n")
+
+
 def load_pending(state_root: str) -> dict[str, Any]:
     document = read_json(os.path.join(directory(state_root), PENDING_FILE), None)
     if not isinstance(document, dict) or not isinstance(document.get("items"), dict):

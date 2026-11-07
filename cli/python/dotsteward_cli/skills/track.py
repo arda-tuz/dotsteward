@@ -28,7 +28,7 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from dotsteward_cli import atomic, config, locks, publish, report
+from dotsteward_cli import atomic, config, locks, publish, report, tomlfile
 from dotsteward_cli.skills import capture, hooks_install, normal, origin, reconcile, state
 
 _PARTIAL_CLONE_SECONDS = 180
@@ -404,6 +404,55 @@ def forget(loaded: config.Instance, name: str) -> int:
     except AnswerRefused as refused:
         _say(f"ERROR: {refused}")
         return report.FAILED
+
+
+def _declined_at(context: Mapping[str, Any], tip: str, machine: str | None) -> set[str]:
+    """``declined.skills`` of the host file of MACHINE in the commit TIP."""
+    if not machine:
+        return set()
+    shown = publish.git(str(context["instance"]), "show", f"{tip}:hosts/{machine}.toml")
+    if shown.code != 0:
+        return set()
+    try:
+        return reconcile.declined_of(tomlfile.loads(shown.stdout))
+    except ValueError:
+        return set()
+
+
+def clear(loaded: config.Instance, name: str) -> int:
+    """Another answer to what ``forget`` and ``--never`` keep out, for when no copy is left to
+    answer with: the name leaves the host file and the state, and nothing is kept out."""
+    try:
+        context = _context(loaded)
+        state_root = str(context["state_root"])
+        key = state.skill_key(name)
+        item = state.load_pending(state_root)["items"].get(key)
+        item = item if isinstance(item, dict) else None
+        path = _local_copy(context, name, item)
+        if path is not None:
+            raise AnswerRefused(f"a copy of {name} is at {path}: delete it first, or answer with 'skills track {name}'")
+        if not (item and item.get("state") in reconcile.KEPT_OUT) and name not in _declined_at(
+            context, _fetch(context, loaded), reconcile.machine_name(context)
+        ):
+            raise AnswerRefused(f"nothing keeps {name} out on this machine")
+        fields = {
+            "kind": "skill",
+            "name": name,
+            "path": None,
+            "state": reconcile.CAPTURE,
+            "origin": item.get("origin", origin.OWN) if item else origin.OWN,
+            "answer": {"clear": True},
+            "reason": None,
+            "detected_at": time.time(),
+        }
+        state.set_item(state_root, key, fields)
+        return _finish(context, loaded, name)
+    except AnswerRefused as refused:
+        _say(f"ERROR: {refused}")
+        return report.FAILED
+    except Offline as offline:
+        _say(f"no network or no answer from the remote: {offline}")
+        return report.PARTIAL
 
 
 def retry(loaded: config.Instance, name: str) -> int:

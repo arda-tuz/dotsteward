@@ -40,7 +40,7 @@ TREE_REASONS = frozenset({"checks-red", "commit-refused"})
 _TREE_RETRY_SECONDS = 6 * 3600
 DECLINED = "declined"
 FORGOTTEN = "forgotten"
-_KEPT_OUT = frozenset({DECLINED, FORGOTTEN})
+KEPT_OUT = frozenset({DECLINED, FORGOTTEN})
 
 SKILL_FILE = "SKILL.md"
 DELETED_AFTER_SECONDS = 60
@@ -162,6 +162,13 @@ def _local_digest(path: str, context: Mapping[str, Any]) -> str:
         return TOO_LARGE_PREFIX + large.marker
 
 
+def declined_of(document: Mapping[str, Any]) -> set[str]:
+    """``declined.skills`` of a host file."""
+    declined = document.get("declined")
+    names = declined.get("skills") if isinstance(declined, dict) else None
+    return {name for name in names if isinstance(name, str)} if isinstance(names, list) else set()
+
+
 def declined_in(tree: str, machine: str | None) -> set[str]:
     """``declined.skills`` of ``hosts/<machine>.toml`` in TREE; read only for a candidate."""
     if not machine:
@@ -170,12 +177,9 @@ def declined_in(tree: str, machine: str | None) -> set[str]:
     from dotsteward_cli import tomlfile
 
     try:
-        document = tomlfile.load(path)
+        return declined_of(tomlfile.load(path))
     except (OSError, ValueError):
         return set()
-    declined = document.get("declined")
-    names = declined.get("skills") if isinstance(declined, dict) else None
-    return {name for name in names if isinstance(name, str)} if isinstance(names, list) else set()
 
 
 def _candidate_item(name: str, path: str, evidence: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -253,7 +257,7 @@ def _look_at_own(
 ) -> None:
     key = state.skill_key(name)
     item = document["items"].get(key)
-    if isinstance(item, dict) and item.get("state") in _KEPT_OUT:
+    if isinstance(item, dict) and item.get("state") in KEPT_OUT:
         if key in document.get("missing", {}):
             plan.not_missing.append(key)
         return
@@ -518,7 +522,7 @@ def note_writes(
         entry = by_name.get(name)
         own_key = state.skill_key(str(entry["name"]) if entry is not None else name)
         known_item = document["items"].get(own_key)
-        if isinstance(known_item, dict) and known_item.get("state") in _KEPT_OUT:
+        if isinstance(known_item, dict) and known_item.get("state") in KEPT_OUT:
             continue
         if name in declined and own_key not in base:
             continue

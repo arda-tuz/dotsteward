@@ -97,7 +97,9 @@ gone; a skill with a new name in its frontmatter is a new skill, and is tracked 
 
 `dotsteward skills forget <name>` takes a skill from all machines. `dotsteward skills restore
 <name>` brings one you deleted back from the repository. What `--never` and `forget` keep out
-stays out when an agent edits the copy later; only another answer takes it back. A copy
+stays out when an agent edits the copy later; only another answer takes it back. Once the
+copy is gone too, `dotsteward skills forget --clear <name>` is that answer: the name leaves the
+host file and `skills status`, and a new skill of that name is a new skill. A copy
 linked to a place outside the skill roots is not refreshed: it stays a `conflict` until you
 answer, so it never replaces what another machine published. A refresh and `resolve --theirs`
 leave what the normal form leaves out (ignored files, the `.git` of a clone) where it is. All

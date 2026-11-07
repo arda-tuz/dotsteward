@@ -141,6 +141,7 @@ class Applied:
     entry_name: str
     digest: str | None
     forgotten: bool = False
+    cleared: bool = False
 
 
 # --- the small pieces ---------------------------------------------------------------------
@@ -558,8 +559,20 @@ def _apply_forget(
     return allowed
 
 
+def _apply_clear(context: Mapping[str, Any], work: Work, worktree: str, attempt: _Attempt) -> list[str]:
+    """The name leaves the host file of this machine; without one there, only the item goes."""
+    machine = reconcile.machine_name(context)
+    if machine and work.name in reconcile.declined_in(worktree, machine):
+        attempt.applied.append(Applied(work, work.name, None, cleared=True))
+        return [_write_host_file(context, worktree, machine, None, accepted={work.name})]
+    attempt.finished.append(work)
+    return []
+
+
 def _subject(applied: Sequence[Applied]) -> str:
     names = ", ".join(item.entry_name for item in applied)
+    if any(item.cleared for item in applied):
+        return f"chore(skills): clear {names}"
     if any(item.forgotten for item in applied):
         return f"chore(skills): forget {names}"
     if any(item.work.answer.get("never") for item in applied):
@@ -586,6 +599,8 @@ def _build_on(
             allowed += _apply_decline(context, item, worktree, attempt)
         elif item.answer.get("forget"):
             allowed += _apply_forget(context, item, worktree, loaded_tree, document, attempt)
+        elif item.answer.get("clear"):
+            allowed += _apply_clear(context, item, worktree, attempt)
         else:
             allowed += _apply_copy(context, item, worktree, tip, loaded_tree, document, base, attempt)
     if not attempt.applied:
@@ -706,7 +721,10 @@ def _settle(state_root: str, attempt: _Attempt, published: publish.Published, su
 def _record_applied(state_root: str, attempt: _Attempt, commit: str, summary: Summary) -> None:
     for applied in attempt.applied:
         work = applied.work
-        if applied.forgotten:
+        if applied.cleared:
+            state.drop_item(state_root, work.key)
+            summary.done.append(work.name)
+        elif applied.forgotten:
             state.forget_base(state_root, applied.entry_name)
             if work.path and os.path.isdir(work.path):
                 fields = {"state": reconcile.FORGOTTEN, "answer": None, "reason": None, "last_asked": None}
@@ -933,7 +951,7 @@ def run_now(
             if not ready:
                 continue
             ran = True
-            answers = [item for item in ready if item.answer.get("never") or item.answer.get("forget")]
+            answers = [item for item in ready if set(item.answer) & {"never", "forget", "clear"}]
             captures = [item for item in ready if item not in answers]
             for batch in [[item] for item in answers] + ([captures] if captures else []):
                 _cycle(context, tree, batch, summary)
