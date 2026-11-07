@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""A fake sampletool: `sampletool pip compile - --generate-hashes ...` prints a hash-pinned
+requirements file for the requirements on standard input and one fixed
+transitive dependency; it fails when FAKE_NIX_STATE/fail-sampletool exists."""
+
+import hashlib
+import os
+import pathlib
+import sys
+
+if (pathlib.Path(os.environ["FAKE_NIX_STATE"]) / "fail-sampletool").exists():
+    sys.exit("error: no solution found when resolving dependencies")
+assert sys.argv[1:3] == ["pip", "compile"] and "--generate-hashes" in sys.argv
+for text in [*sys.stdin.read().split(), "example-transitive==1.0.0"]:
+    print(f"{text} \\\n    --hash=sha256:{hashlib.sha256(text.encode()).hexdigest()}")

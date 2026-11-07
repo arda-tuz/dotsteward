@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""A fake nix for the pins apply tests: the commands the writer and
+`dotsteward sync` call, offline, over the instance's own files.
+
+    flake lock                relocks every input whose flake.nix reference
+                              changed; the commit comes from the fake GitHub
+                              remote behind git's url.insteadOf
+    build ...#packages.S.P.A  a fixed-output build: answers "hash mismatch"
+                              with the hash FAKE_NIX_STATE/packages.json
+                              defines, and accepts a hash that is already in
+                              the fake store, as Nix does: a stale hash of an
+                              older version builds the old source silently
+    eval lib.pinnedVersions, eval dotstewardMirrors
+    flake archive             the framework source of the locked tag:
+                              FAKE_NIX_STATE/framework/<ref>
+    shell ... -c CMD          runs CMD
+    store prefetch-file, hash convert
+
+FAKE_NIX_STATE holds the scenario: fail-lock (input names whose relock
+fails), fail-build (attributes whose build fails with a builder error),
+fail-prefetch (URLs that do not download), store (hashes built so far), calls
+(one line per command). A prefetched file holds "download:<url>".
+"""
+
+import base64
+import hashlib
+import json
+import os
+import pathlib
+import re
+import subprocess
+import sys
+
+STATE = pathlib.Path(os.environ["FAKE_NIX_STATE"])
+
+
+def sri(text):
+    return "sha256-" + base64.b64encode(hashlib.sha256(text.encode()).digest()).decode()
+
+
+def lines_of(name):
+    path = STATE / name
+    return path.read_text().split() if path.exists() else []
+
+
+def lookup(document, dotted):
+    node = document
+    for key in dotted.split("."):
+        node = node[key]
+    return node
+
+
+def remote_commit(owner, repo, ref):
+    if re.fullmatch(r"[0-9a-f]{40}", ref):
+        return ref
+    url = f"https://github.com/{owner}/{repo}"
+    for name in (f"refs/tags/{ref}^{{}}", f"refs/tags/{ref}", f"refs/heads/{ref}"):
+        result = subprocess.run(["git", "ls-remote", url, name], capture_output=True, text=True, check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.split()[0]
+    sys.exit(f"error: cannot find {ref} of github:{owner}/{repo}")
+
+
+def flake_lock(root):
+    lock_path = root / "flake.lock"
+    lock = json.loads(lock_path.read_text())
+    wanted = re.findall(r'([\w-]+)(?:\.url\s*=|\s*=\s*\{\s*url\s*=)\s*"github:([^/"]+)/([^/"]+)/([^"]+)"', (root / "flake.nix").read_text())
+    for name, owner, repo, ref in wanted:
+        node = lock["nodes"].get(name)
+        original = node["original"]
+        if original.get("ref") == ref or original.get("rev") == ref:
+            continue
+        if name in lines_of("fail-lock"):
+            sys.exit(f"error: unable to download github:{owner}/{repo}/{ref}: HTTP error 504")
+        rev = remote_commit(owner, repo, ref)
+        node["original"] = {"owner": owner, "repo": repo, "type": "github"}
+        node["original"]["rev" if re.fullmatch(r"[0-9a-f]{40}", ref) else "ref"] = ref
+        node["locked"].update(rev=rev, narHash=sri(f"nar:{rev}"))
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n")
+
+
+def build(root, target):
+    parts = target.split("#", 1)[1].split(".")
+    package, attribute = parts[2], parts[3] if len(parts) > 3 else None
+    packages = json.loads((STATE / "packages.json").read_text())
+    if package not in packages or (attribute and attribute not in packages[package]):
+        sys.exit(f"error: flake does not provide attribute '{target}'")
+    if attribute in lines_of("fail-build"):
+        sys.exit(f"error: builder for '{package}.{attribute}' failed with exit code 1")
+    versions = json.loads((root / "versions.lock.json").read_text())
+    store = lines_of("store")
+    for name in [attribute] if attribute else list(packages[package]):
+        entry = packages[package][name]
+        specified = lookup(versions, entry["hash"])
+        if "file" in entry:
+            seed = (root / entry["file"]).read_text()
+        else:
+            seed = lookup(versions, entry["version"])
+        got = sri(f"{package}.{name}:{seed}")
+        if specified != got and specified not in store:
+            print(f"error: hash mismatch in fixed-output derivation '/nix/store/fake-{package}-{name}.drv':", file=sys.stderr)
+            print(f"         specified: {specified}", file=sys.stderr)
+            print(f"            got:    {got}", file=sys.stderr)
+            with open(STATE / "store", "a") as handle:
+                handle.write(got + "\n")
+            sys.exit(1)
+
+
+def evaluate(root, attribute):
+    versions = json.loads((root / "versions.lock.json").read_text())
+    if attribute == "lib.pinnedVersions":
+        print(json.dumps({key: lookup(versions, path) for key, path in json.loads((STATE / "pinned.json").read_text()).items()} | {"example-shell": "5.9"}))
+    elif attribute == "dotstewardMirrors":
+        mirrors = root / ".dotsteward"
+        names = [path.name for path in mirrors.iterdir() if re.fullmatch(r"(manifest\.[A-Za-z0-9_-]+\.json|stage0\.[a-z]+\.env)", path.name)]
+        print(json.dumps({name: (mirrors / name).read_text() for name in names}))
+    else:
+        sys.exit(f"error: unknown attribute {attribute}")
+
+
+def main():
+    args = sys.argv[1:]
+    with open(STATE / "calls", "a") as handle:
+        handle.write(" ".join(args) + "\n")
+    while args[:1] == ["--extra-experimental-features"]:
+        args = args[2:]
+    command, rest = args[0], args[1:]
+    if command == "flake" and rest[0] == "lock":
+        flake_lock(pathlib.Path(rest[-1]))
+    elif command == "flake" and rest[0] == "archive":
+        lock = json.loads((pathlib.Path(rest[-1]) / "flake.lock").read_text())
+        original = lock["nodes"]["dotsteward"]["original"]
+        print(json.dumps({"inputs": {"dotsteward": {"path": str(STATE / "framework" / (original.get("ref") or original["rev"]))}}}))
+    elif command == "build":
+        build(pathlib.Path(rest[-1].split("#")[0]), rest[-1])
+    elif command == "eval":
+        root, attribute = rest[-1].split("#", 1)
+        evaluate(pathlib.Path(root), attribute)
+    elif command == "shell":
+        tool = rest[rest.index("-c") + 1 :]
+        os.execvp(tool[0], tool)
+    elif command == "store" and rest[0] == "prefetch-file":
+        url = rest[-1]
+        if url in lines_of("fail-prefetch"):
+            sys.exit(f"error: unable to download '{url}': HTTP error 404")
+        body = f"download:{url}".encode()
+        blob = STATE / f"prefetch-{hashlib.sha256(url.encode()).hexdigest()}"
+        blob.write_bytes(body)
+        digest = "sha256-" + base64.b64encode(hashlib.sha256(body).digest()).decode()
+        print(json.dumps({"hash": digest, "storePath": str(blob)}))
+    elif command == "hash" and rest[0] == "convert":
+        print(base64.b64decode(rest[-1].removeprefix("sha256-")).hex())
+    else:
+        sys.exit(f"fake nix: unknown command {args}")
+
+
+main()
