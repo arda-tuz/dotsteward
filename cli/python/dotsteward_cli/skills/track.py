@@ -165,9 +165,21 @@ def _pinned_source(item: Mapping[str, Any]) -> dict[str, Any]:
     return _pin_from_record(source)
 
 
+def _ended(signum: int, _frame: Any) -> None:
+    raise SystemExit(128 + signum)
+
+
 def _finish(context: Mapping[str, Any], loaded: config.Instance, name: str) -> int:
-    """Carries out the answer now."""
-    summary = capture.run_now(context, capture.tree_paths(loaded), [name], maintain=True)
+    """Carries out the answer now. A terminal that closes or a TERM ends it as an exception,
+    so the capture lock goes and the evaluation it started ends with it; the answer waits."""
+    import signal
+
+    previous = {number: signal.signal(number, _ended) for number in (signal.SIGTERM, signal.SIGHUP)}
+    try:
+        summary = capture.run_now(context, capture.tree_paths(loaded), [name], maintain=True)
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
     return summary.code
 
 
@@ -591,7 +603,10 @@ def retry(loaded: config.Instance, name: str) -> int:
         state_root = str(context["state_root"])
         key = _key(loaded, state_root, name)
         item = state.load_pending(state_root)["items"].get(key)
-        if not isinstance(item, dict) or item.get("state") not in {reconcile.BLOCKED, reconcile.NAME_TAKEN}:
+        answered = isinstance(item, dict) and item.get("state") == reconcile.CAPTURE and bool(item.get("answer"))
+        if not isinstance(item, dict) or not (
+            answered or item.get("state") in {reconcile.BLOCKED, reconcile.NAME_TAKEN}
+        ):
             raise AnswerRefused(f"{name} is not kept back")
         fields = {
             "state": reconcile.CAPTURE,

@@ -37,6 +37,7 @@ remote took the push and then holds neither HEAD nor a commit after it).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import random
@@ -155,6 +156,12 @@ def run(
             os.killpg(process.pid, signal.SIGKILL)
             process.wait()
             code = _TIMED_OUT
+        except BaseException:
+            # The caller ends (a signal, Ctrl-C): what it started in its own group ends too.
+            with contextlib.suppress(OSError):
+                os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            raise
         out.seek(0)
         err.seek(0)
         return GitResult(code, out.read().decode(errors="replace"), err.read().decode(errors="replace"))

@@ -41,6 +41,8 @@ AGENTS = ("claude", "codex")
 MAX_NAMES = 10
 ASK_AGAIN_SECONDS = 24 * 3600
 OFFLINE_NOTICE_SECONDS = 24 * 3600
+# An answer that waits this long was cut off (a closed terminal, a TERM): it is said.
+ANSWER_NOTICE_SECONDS = 3600
 _SESSION_MARK_AGE_SECONDS = 7 * 24 * 3600
 _CLAUDE_FILE_TOOLS = frozenset({"Write", "Edit", "MultiEdit"})
 _CODEX_FILE_TOOLS = frozenset({"apply_patch", "Edit", "Write"})
@@ -198,6 +200,10 @@ def _waiting(document: Mapping[str, Any], now: float) -> list[Mapping[str, Any]]
         status = item.get("state")
         if status in {"ask", "conflict", "blocked", "name-taken", "deleted"}:
             waiting.append(item)
+        elif status == "capture" and item.get("answer") and not item.get("reason"):
+            since = item.get("detected_at")
+            if isinstance(since, (int, float)) and now - since >= ANSWER_NOTICE_SECONDS:
+                waiting.append(item)
         elif status == "capture" and item.get("reason"):
             since = item.get("offline_since")
             if isinstance(since, (int, float)) and now - since >= OFFLINE_NOTICE_SECONDS:
@@ -223,6 +229,8 @@ def _question(items: Sequence[Mapping[str, Any]]) -> str:
         status = str(item.get("state"))
         if status == "conflict" and item.get("reason") == "not-refreshed":
             status = "not-refreshed"
+        if status == "capture" and item.get("answer") and not item.get("reason"):
+            status = "answered"
         groups.setdefault("offline" if status == "capture" else status, []).append(name)
     if not groups and not items:
         return ""
@@ -239,6 +247,11 @@ def _question(items: Sequence[Mapping[str, Any]]) -> str:
         lines.append(
             f"- Changed here and in the repository: {', '.join(groups['conflict'])}. "
             "See dotsteward skills diff <name> --json; then dotsteward skills resolve <name> --ours | --theirs."
+        )
+    if "answered" in groups:
+        lines.append(
+            f"- Answered and not published yet (the command that carried it out was ended): "
+            f"{', '.join(groups['answered'])}. dotsteward skills retry <name> publishes it."
         )
     if "not-refreshed" in groups:
         lines.append(
