@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""A fake compiler of hash-pinned requirements, what a component declares in the
+`regenerate` of its text-guard rule: `example-compiler compile - --generate-hashes ...`
+prints a requirements file for the requirements on standard input and one fixed
+transitive dependency; it fails when FAKE_NIX_STATE/fail-compiler exists."""
+
+import hashlib
+import os
+import pathlib
+import sys
+
+if (pathlib.Path(os.environ["FAKE_NIX_STATE"]) / "fail-compiler").exists():
+    sys.exit("error: no solution found when resolving dependencies")
+assert sys.argv[1] == "compile" and "--generate-hashes" in sys.argv
+for text in [*sys.stdin.read().split(), "example-transitive==1.0.0"]:
+    print(f"{text} \\\n    --hash=sha256:{hashlib.sha256(text.encode()).hexdigest()}")

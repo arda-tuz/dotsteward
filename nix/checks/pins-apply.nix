@@ -1,7 +1,7 @@
 # Pins engine, the writer (tests/engines/pins/apply): `dotsteward pins apply`
 # against the synthetic instance of the pins check tests, run offline in the
 # build sandbox with bare git remotes behind url.insteadOf and the fake nix, npm
-# and sampletool of the test directory. Then shellcheck over the tests.
+# and example-compiler of the test directory. Then shellcheck over the tests.
 {
   pkgs,
   dsLib,

@@ -8,7 +8,7 @@
 #     each, committed;
 #   - bare git remotes under $github behind url.insteadOf, holding the tags and
 #     the upstream skill the rows name;
-#   - the fake nix, npm and sampletool of fake-tools first on PATH;
+#   - the fake nix, npm and example-compiler of fake-tools first on PATH;
 #   - the state root at $state.
 #
 #   apply ARG...             `dotsteward --instance $inst pins apply ARG...`
@@ -168,7 +168,7 @@ data["skills"][1]["source_path"] = "skills/example-vendored"
   printf 'example-tool==1.0.0 \\\n    --hash=sha256:%064d\n' 0 >"$inst/components/example-tool/requirements.txt"
   json_edit "$manifest" '
 data["components"] = [{"name": "example-tool", "install": {"pin": "pypi.example-tool", "python": "/usr/bin/python3"}}]
-data["pins"]["rules"].append({"component": "example-tool", "kind": "text-guard", "file": "components/example-tool/requirements.txt", "template": "example-tool=={pypi.example-tool.version}"})
+data["pins"]["rules"].append({"component": "example-tool", "kind": "text-guard", "regenerate": {"package": "example-compiler", "command": ["example-compiler", "compile", "-", "--generate-hashes", "--python", "/usr/bin/python3"]}, "file": "components/example-tool/requirements.txt", "template": "example-tool=={pypi.example-tool.version}"})
 release = {"component": "example-release", "id": "agent_tools.example-release", "adapter": "github-release", "at": "agent_tools.example-release", "repo": "example/example-release", "tag_prefix": "v"}
 data["pins"]["latest"] = [
     release,
