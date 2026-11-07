@@ -41,6 +41,9 @@ needs code specific to one component.
 | `supportedMethods.linux` | list of methods | Methods on Linux. |
 | `supportedMethods.darwin` | list of methods | Methods on macOS. |
 | `options` | attribute set | `[components.<name>].options` of `workstation.toml`, set by `lib.mkInstance`. The module validates its own options. |
+| `selfUpdate` | null or `{ command; version; }` | The updater of the application itself, which [`dotsteward upgrade`](upgrade.md) may start; null: it has none to start. |
+| `selfUpdate.command` | non-empty list of strings | The argv that makes the application update itself. |
+| `selfUpdate.version` | list of strings | The argv that prints the version it runs; part of the key of E2E. |
 | `docs` | null or path | The component's `README.md`; required for catalog components. |
 
 ## Installation

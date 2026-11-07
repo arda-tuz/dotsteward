@@ -41,6 +41,7 @@ status as a failure.
 | `sync` | as `generate` | the old name of `generate`: a warning on standard error, then the same arguments, output and status |
 | `txn` | 0, 1 | `txn publish` exits 0 when the commit is already published |
 | `update` | as `txn` | the old name of `txn`: a warning on standard error, then the same arguments, output and status |
+| `upgrade` | 0, 1, 2, 3, 4, 6 | a run report, see below and [upgrade.md](upgrade.md); 2: usage error, nothing ran |
 | `version` | 0, 1 | 1: usage error |
 
 `--json` never changes the exit code: a command that prints a failed result

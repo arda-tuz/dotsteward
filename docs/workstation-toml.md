@@ -152,9 +152,9 @@ catalog component (see [catalog.md](catalog.md)) or a private component in
 | `components.<name>.options` | `{}` | Options owned by the component, passed to its module unchanged; its README documents them. |
 | `components.<name>.machines` | none | Reserved for a later release, which scopes a component to named machines. A value is refused until then, because the component would stay active on every other machine. |
 | `components.<name>.tags` | none | Reserved in the same way: the machine tags the component is for. |
-| `components.<name>.updater` | none | The one thing that updates the component: `apt`, `nix`, `dotsteward`, `self`, `none`, `snap` or `flatpak`. A later release acts on it. |
-| `components.<name>.track` | none | The package names an update follows for the `deb` method. A later release acts on it. |
-| `components.<name>.version` | none | A constraint on the version. A later release acts on it. |
+| `components.<name>.updater` | none | The one thing that updates the component: `apt`, `nix`, `dotsteward`, `self`, `none`, `snap` or `flatpak`. `dotsteward upgrade` starts the updater a component declares for `self`, and for no `updater` on a method other than `deb`; the other values follow in a later release. |
+| `components.<name>.track` | none | More package names `dotsteward upgrade` follows for the `deb` method. |
+| `components.<name>.version` | none | A constraint on the version: `dotsteward upgrade` keeps a `deb` server on its major version. |
 | `components.<name>.reason` | none | Why the version is constrained. |
 
 ## `[settings]`

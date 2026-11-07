@@ -96,6 +96,11 @@ installation instead, remove `~/.local/bin/claude` and run `claude update`:
 the launcher symlink that results satisfies `official-binary` as long as it
 is not older than the pin.
 
+`dotsteward upgrade` starts `claude update` when the component is left to its own
+updater: `updater = "self"`, or no `updater` with a method other than `deb` (a package
+manager owns those files). It never starts a second way in, and a marketplace is not
+its business: see [upgrade](../../../docs/upgrade.md).
+
 ## Settings
 
 Claude Code writes both files itself, so Home Manager never links them. The

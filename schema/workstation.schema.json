@@ -778,7 +778,7 @@
             "flatpak"
           ],
           "default": null,
-          "description": "The one thing that updates the component; a later release acts on it."
+          "description": "The one thing that updates the component. `self`, or none on a method a package manager does not own, lets `dotsteward upgrade` start the updater the component declares."
         },
         "track": {
           "type": "array",
@@ -788,12 +788,12 @@
           "minItems": 1,
           "uniqueItems": true,
           "default": null,
-          "description": "The package names an update follows for the deb method; a later release acts on it."
+          "description": "More package names dotsteward upgrade follows for the deb method."
         },
         "version": {
           "$ref": "#/$defs/nonEmptyString",
           "default": null,
-          "description": "A constraint on the version; a later release acts on it."
+          "description": "A constraint on the version: `dotsteward upgrade` keeps a `deb` server on its major version."
         },
         "reason": {
           "$ref": "#/$defs/nonEmptyString",

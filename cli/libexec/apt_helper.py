@@ -1292,6 +1292,7 @@ def action_analysis(session):
     classes = read_classes(pinless)
     del pinless
     cache = session.open_cache(installed_pin(classes) if session.gated else None)
+    autoremovable = sum(1 for pkg in cache if pkg.is_installed and pkg.is_auto_removable)
     candidates = upgradable(cache)
     upgrades = upgrade_all(cache)
     packages = [
@@ -1318,6 +1319,7 @@ def action_analysis(session):
         "count": len(packages),
         "packages": packages,
         "kernels": len(classes["abis"]),
+        "autoremovable": autoremovable,
         "boot_free_mib": boot_free,
         "boot_low": boot_free is not None and boot_free < boot_low_mib,
         "last_update": last_update(),

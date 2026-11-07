@@ -126,6 +126,7 @@ let
         supported_methods = component.supportedMethods;
         install = install component;
       }
+      // lib.optionalAttrs (component.selfUpdate != null) { self_update = component.selfUpdate; }
     ) enabled;
 
     settings_targets = helpers.settingsTargets system dotsteward.lib.platform enabled;

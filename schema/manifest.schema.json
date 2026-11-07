@@ -49,7 +49,17 @@
             "required": ["linux", "darwin"],
             "additionalProperties": false
           },
-          "install": { "type": "object", "description": "The install block of the resolved method (nix: package names)." }
+          "install": { "type": "object", "description": "The install block of the resolved method (nix: package names)." },
+          "self_update": {
+            "type": "object",
+            "description": "The updater of the application itself, which dotsteward upgrade may start.",
+            "properties": {
+              "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+              "version": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["command", "version"],
+            "additionalProperties": false
+          }
         },
         "required": ["name", "source", "method", "profiles", "platforms", "options", "modes", "supported_methods", "install"],
         "additionalProperties": false

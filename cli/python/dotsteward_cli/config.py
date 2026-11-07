@@ -830,6 +830,20 @@ def _pinned_revision(instance_root: Path) -> str | None:
     return revision if isinstance(revision, str) and revision else None
 
 
+def revision_mismatch(
+    instance_root: Path, env: Mapping[str, str] | None = None, root: Path = FRAMEWORK_ROOT
+) -> tuple[str, str] | None:
+    """(running, pinned) when the running CLI is not the revision the tree pins. None without two
+    revisions to compare, or with an explicit choice of the CLI or the framework."""
+    env = os.environ if env is None else env
+    if _env_get(env, "DOTSTEWARD_CLI") is not None or _env_get(env, "DOTSTEWARD_FRAMEWORK_OVERRIDE") is not None:
+        return None
+    running, pinned = _running_revision(root), _pinned_revision(instance_root)
+    if running is None or pinned is None or running == pinned:
+        return None
+    return running, pinned
+
+
 def newer_tree_hint(
     instance_root: Path,
     problems: Sequence[str],
@@ -847,11 +861,10 @@ def newer_tree_hint(
         for problem in problems
     ):
         return None
-    if _env_get(env, "DOTSTEWARD_CLI") is not None or _env_get(env, "DOTSTEWARD_FRAMEWORK_OVERRIDE") is not None:
+    mismatch = revision_mismatch(instance_root, env, root)
+    if mismatch is None:
         return None
-    running, pinned = _running_revision(root), _pinned_revision(instance_root)
-    if running is None or pinned is None or running == pinned:
-        return None
+    running, pinned = mismatch
     return (
         f"this CLI is revision {running[:12]}, while flake.lock pins the framework at {pinned[:12]}, which may "
         f"read it; run the command with the pinned CLI: {instance_root}/.dotsteward/cli.sh <command>"

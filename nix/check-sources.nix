@@ -262,6 +262,19 @@ let
       catalog
       (paths [ "tests/cli/update" ])
     ];
+    cli-upgrade = fs.unions [
+      runner
+      cli
+      catalog
+      (paths [
+        "engines"
+        "privacy"
+        "tests/cli/update/helpers.sh"
+        "tests/engines/pins/apply"
+        "tests/engines/pins/check"
+        "tests/upgrade"
+      ])
+    ];
     component-claude-code = fs.unions [
       componentBase
       (paths [

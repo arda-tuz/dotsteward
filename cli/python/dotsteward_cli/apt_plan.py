@@ -184,7 +184,7 @@ def analysis(request: Request) -> dict[str, Any]:
     return _read_only("analysis", request)
 
 
-def _sudo_prefix() -> list[str]:
+def sudo_prefix() -> list[str]:
     """Root needs no sudo; ``DOTSTEWARD_APT_SUDO`` is the way in for tests of rootless worlds."""
     configured = os.environ.get("DOTSTEWARD_APT_SUDO")
     if configured is not None:
@@ -242,7 +242,7 @@ def _shown_on_stderr(log: Path) -> Iterator[None]:
 def _privileged(action: str, request: Request, state_root: str | os.PathLike[str] | None) -> dict[str, Any]:
     """Runs an action of the helper as a protected child, its answer in one file and what dpkg prints
     in another. Raises AptEngineError; with signals in ``interrupted``."""
-    prefix = _sudo_prefix()
+    prefix = sudo_prefix()
     if prefix[:1] == ["sudo"]:
         check = subprocess.run([*prefix, "true"], capture_output=True, check=False)
         if check.returncode != 0:

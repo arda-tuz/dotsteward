@@ -460,6 +460,15 @@ let
         updatePaths = list types.str "Extended regular expressions for the update-scope allowlist.";
       } "Gate contributions.";
 
+      selfUpdate =
+        nullable
+          (types.submodule {
+            options = {
+              command = option (types.nonEmptyListOf types.str) "The argv that makes the application update itself.";
+              version = list types.str "The argv that prints the version it runs.";
+            };
+          })
+          "The updater of the application itself, which `dotsteward upgrade` may start; null: it has none to start.";
       docs = nullable types.path "README.md of the component (required for catalog components).";
     };
   };

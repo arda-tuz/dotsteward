@@ -229,6 +229,9 @@ in
     agentRulesTargets = [ { path = ".example-term/AGENTS.md"; } ];
     # Extended regular expressions of paths the update scope may change.
     gate.updatePaths = [ ];
+    # The application's own updater, which `dotsteward upgrade` may start:
+    # selfUpdate = { command = [ "example-term" "update" ]; version = [ "example-term" "--version" ]; };
+    selfUpdate = null;
     # A README.md next to this file: docs = ./README.md;
     docs = null;
   };

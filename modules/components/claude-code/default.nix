@@ -518,6 +518,17 @@ in
       inherit (shell) profiles;
     };
 
+    selfUpdate = {
+      command = [
+        "claude"
+        "update"
+      ];
+      version = [
+        "claude"
+        "--version"
+      ];
+    };
+
     docs = ./README.md;
   };
 
