@@ -94,3 +94,40 @@ assert_exit 0 agents laptop2 check
 assert_exit 0 ds laptop2 incoming answer skill:scoped --install
 [[ ! -e $root/scoped ]] || ds_fail "scoped is still here"
 assert_eq '' "$(waiting laptop2)"
+
+# A lock that cannot be read says nothing about any skill: no question, and no copy goes.
+captured laptop1 steady
+up_to_date laptop1
+up_to_date laptop2
+assert_exit 0 ds laptop2 incoming answer skill:steady --install
+lock=$(clone_of laptop2)/agent/skills.lock.json
+cp -- "$lock" "$DS_TEST_ROOT/lock.good"
+printf '{ not json\n' >"$lock"
+assert_eq '' "$(waiting laptop2)"
+agents laptop2 install --skip-validation >/dev/null 2>&1 || true
+[[ -f $root/steady/SKILL.md ]] || ds_fail "a broken lock took a copy away"
+assert_exit 0 ds laptop2 incoming list
+cp -- "$DS_TEST_ROOT/lock.good" "$lock"
+assert_eq "$(remote_entry steady | jq -r .directory_sha256)" "$(base laptop2 steady)"
+
+# This machine scoped a skill away from itself in a commit of its own: no question, and the
+# copy stays until somebody removes it: only a skill the lock no longer holds goes by itself.
+clone=$(clone_of laptop2)
+jq '(.skills[] | select(.name == "steady")).machines = ["laptop1"]' "$clone/agent/skills.lock.json" >"$clone/agent/skills.lock.tmp"
+mv -- "$clone/agent/skills.lock.tmp" "$clone/agent/skills.lock.json"
+git -C "$clone" add -A
+git -C "$clone" commit -q -m $'feat: not here\n\nDotsteward-Machine: laptop2'
+assert_eq '' "$(waiting laptop2)"
+assert_exit 0 agents laptop2 install --skip-validation
+[[ -f $root/steady/SKILL.md ]] || ds_fail "a change of scope took the copy away"
+git -C "$clone" reset -q --hard HEAD~1
+
+# A skill of this machine that cannot be read when another machine changed it is no reason for a
+# command to fail.
+up_to_date laptop1
+edited laptop1 steady 'a new version'
+up_to_date laptop2
+chmod 000 "$root/steady/SKILL.md"
+assert_exit 0 ds laptop2 incoming list
+chmod 644 "$root/steady/SKILL.md"
+assert_eq 'skill:steady' "$(waiting laptop2)"

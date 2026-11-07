@@ -26,6 +26,20 @@ nix_tags() {
   jq -c .nix_tags <<<"$DS_STDOUT"
 }
 
+# A commit of this machine that is not published and touches the same file says nothing about
+# the component of another machine: only a commit that brings the component does.
+clone2=$(clone_of laptop2)
+up_to_date laptop1
+add_component_on early-tool
+up_to_date laptop2
+assert_eq 'component:early-tool' "$(waiting laptop2)"
+printf '\n# a note of this machine\n' >>"$clone2/workstation.toml"
+git -C "$clone2" add -A
+git -C "$clone2" commit -q -m "chore: a note"
+assert_eq 'component:early-tool' "$(waiting laptop2)"
+git -C "$clone2" reset -q --hard HEAD~1
+assert_exit 0 ds laptop2 incoming answer component:early-tool --install
+
 # Ask later: left out of every command and of the generation, nothing stored.
 add_component_on example-tool
 up_to_date laptop2
