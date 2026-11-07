@@ -160,6 +160,12 @@ VERSION=3
 installed fetched-plugin@example-market tracked-plugin@example-market shared-plugin@example-market
 assert_exit 0 ds a skills reconcile
 assert_eq ask "$(plugin_item a shared-plugin@example-market .state)"
+# Another machine has it too, and asks as well.
+new_machine d
+mkdir -p "$(home_of d)/.claude/plugins"
+cp -- "$plugins_dir/known_marketplaces.json" "$plugins_dir/installed_plugins.json" "$(home_of d)/.claude/plugins/"
+assert_exit 0 ds d skills reconcile
+assert_eq ask "$(plugin_item d shared-plugin@example-market .state)"
 start=$(remote_tip)
 ds_code a skills track shared-plugin@example-market --all
 assert_eq "$start" "$(git -C "$remote" rev-parse 'refs/heads/main^')" "one commit"
@@ -178,6 +184,13 @@ git -C "$(clone_of a)" pull -q --ff-only
 assert_exit 0 ds a static
 assert_exit 0 ds a skills reconcile --full
 assert_eq "{}" "$(plugin_item a shared-plugin@example-market .)"
+# The answer reaches the other machine with its checkout: the question there goes, with
+# no further look at the files of Claude Code.
+git -C "$(clone_of d)" pull -q --ff-only
+assert_exit 0 ds d skills reconcile
+assert_eq "{}" "$(plugin_item d shared-plugin@example-market .)"
+assert_exit 0 ds d skills reconcile --full
+assert_eq "{}" "$(plugin_item d shared-plugin@example-market .)"
 
 # --- --here: only on this machine -----------------------------------------------------------
 
