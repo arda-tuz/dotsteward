@@ -55,7 +55,7 @@ in_order "$skill" \
   "overlay" \
   "references/classification.md" \
   "dotsteward maintain begin --json"
-for code in checkout-dirty unpublished-commits settings-local adaptive-route; do
+for code in checkout-dirty unpublished-commits nonconventional-commits settings-local adaptive-route; do
   grep -qF -- "\`$code\`" "$skill" || ds_fail "SKILL.md does not say what to do about $code"
 done
 
@@ -97,6 +97,8 @@ steps_order=$(awk -v text="$steps_line" 'BEGIN {
 assert_eq "ok" "$steps_order" "apply: stage, gate, commit with the trace line, rebuild, E2E, publish"
 grep -qi 'background' "$skill" || ds_fail "SKILL.md does not run apply in the background"
 grep -q 'timeout 60' "$skill" || ds_fail "SKILL.md does not bound network commands with timeout 60"
+grep -qF 'pull --rebase origin' "$skill" ||
+  ds_fail "SKILL.md does not take a moved remote in with a pull that works without an upstream"
 grep -qF 'contribute upgrade --carry' "$skill" ||
   ds_fail "SKILL.md does not carry the unpublished commits across a framework fix"
 
