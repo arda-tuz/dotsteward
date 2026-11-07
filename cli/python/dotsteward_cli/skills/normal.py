@@ -268,19 +268,52 @@ def plain_digest(directory: str) -> str:
     return outer.hexdigest()
 
 
-def _lists(directory: str, excludes_file: str | None) -> tuple[list[bytes], list[bytes]]:
+_PLUGIN_MANIFESTS = (
+    os.path.join(".claude-plugin", "plugin.json"),
+    os.path.join(".codex-plugin", "plugin.json"),
+    "plugin.json",
+)
+_REPOSITORY_VARIABLES = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR")
+
+
+def _repository_list(directory: str) -> set[bytes] | None:
+    """What git itself lists in a plugin that is a repository of the user: tracked files and
+    files no ignore source of git (its .gitignore files, .git/info/exclude, the global excludes
+    file) ignores. None for anything else: a skill keeps the list of the rules above."""
+    if not os.path.exists(os.path.join(directory, ".git")):
+        return None
+    if not any(os.path.isfile(os.path.join(directory, manifest)) for manifest in _PLUGIN_MANIFESTS):
+        return None
+    env = {key: value for key, value in os.environ.items() if key not in _REPOSITORY_VARIABLES}
+    env["LC_ALL"] = "C"
+    argv = ["git", "-C", directory, "ls-files", "-z", "--cached", "--others", "--exclude-standard"]
+    try:
+        result = subprocess.run(argv, env=env, capture_output=True, check=False)
+    except OSError as error:
+        raise NormalFormError(f"cannot run git: {error.strerror}") from error
+    if result.returncode != 0:
+        raise NormalFormError(result.stderr.decode(errors="replace").strip() or f"git exited {result.returncode}")
+    return {name for name in result.stdout.split(b"\0") if name}
+
+
+def _lists(directory: str, excludes_file: str | None, top: bool = True) -> tuple[list[bytes], list[bytes]]:
     """The names of the normal form below DIRECTORY and the names ignore rules drop. A
-    nested clone comes as one entry from git and has ignore rules of its own."""
+    nested clone comes as one entry from git and has ignore rules of its own; a plugin that
+    is a repository also keeps out what git ignores there (``_repository_list``)."""
     listed: list[bytes] = []
     ignored = _git_list(directory, excludes_file, "--ignored")
     for entry in _git_list(directory, excludes_file):
         nested = entry.rstrip(b"/")
         if entry.endswith(b"/") and not _excluded(nested):
-            inner_listed, inner_ignored = _lists(os.path.join(directory, os.fsdecode(nested)), excludes_file)
+            inner_listed, inner_ignored = _lists(os.path.join(directory, os.fsdecode(nested)), excludes_file, False)
             listed += [os.path.join(nested, name) for name in inner_listed]
             ignored += [os.path.join(nested, name) for name in inner_ignored]
         else:
             listed.append(entry)
+    own = _repository_list(directory) if top else None
+    if own is not None:
+        ignored += [name for name in listed if name not in own and not name.endswith(b"/")]
+        listed = [name for name in listed if name in own or name.endswith(b"/")]
     return listed, ignored
 
 

@@ -46,4 +46,6 @@ assert_contains "$DS_STDOUT" "priv: left out by an ignore rule: excluded-by-glob
 git -C "$(clone_of a)" pull -q --ff-only
 assert_exit 0 ds a skills reconcile --full
 assert_eq "{}" "$(plugin_item a priv .)"
+assert_exit 0 ds a agents install --profile workstation --skip-validation
+assert_eq "private" "$(cat "$priv/excluded-by-info.txt")" "the private files stay here"
 assert_exit 0 ds a agents check --profile workstation
