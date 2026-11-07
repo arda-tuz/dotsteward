@@ -35,6 +35,13 @@ profile=${DOTSTEWARD_PROFILE:-$DS_PROFILES_DEFAULT}
 
 methods_check "$component" "$profile" || die "$METHODS_DETAIL"
 
+# An older CLI runs this hook with its own library (docs/component-contract.md,
+# "DOTSTEWARD_LIB"): the method of that library knows no companions either.
+if ! declare -F methods_official_binary_companions >/dev/null; then
+  log "the library of this CLI cannot read the companions of $component; the next upgrade checks them"
+  exit 0
+fi
+
 # on_user_path COMMAND: COMMAND is on the PATH of the user, without the CLI's
 # own toolchain.
 on_user_path() {
