@@ -76,7 +76,8 @@ def classify(name: str, path: str, evidence: Mapping[str, Any] | None) -> tuple[
         return OWN, None
     from dotsteward_cli.skills import plugins
 
-    # `claude plugin init`, or the place the Codex documentation gives a personal plugin.
-    if plugins.is_own_plugin_dir(path):
+    # `claude plugin init`, or the place the Codex documentation gives a personal plugin. A link
+    # there says nothing about whose the plugin is.
+    if plugins.is_own_plugin_dir(path) and not os.path.islink(path):
         return OWN, None
     return UNKNOWN, None

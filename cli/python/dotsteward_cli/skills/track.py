@@ -397,6 +397,24 @@ def _copy_of(context: Mapping[str, Any], kind: str, name: str, item: Mapping[str
     return _own_plugin_copy(name, item) if kind == state.PLUGIN else _local_copy(context, name, item)
 
 
+def _holds_nothing_new(
+    context: Mapping[str, Any], state_root: str, kind: str, name: str, item: Mapping[str, Any]
+) -> bool:
+    """Whether the copy in conflict is the one this machine last had in sync: the conflict is
+    then only a newer copy that could not be installed here."""
+    if item.get("reason") == reconcile.NOT_REFRESHED:
+        return True
+    record = state.base_entry(state.load_base(state_root), name, kind)
+    path = item.get("path")
+    if record is None or not isinstance(path, str) or not os.path.isdir(path):
+        return False
+    try:
+        local = normal.normal_form(os.path.realpath(path), os.path.join(str(context["instance"]), ".gitignore"))
+    except (normal.NormalFormError, OSError):
+        return False
+    return bool(local.digest == record["base_sha256"])
+
+
 def resolve(loaded: config.Instance, name: str, *, ours: bool) -> int:
     try:
         context = _context(loaded)
@@ -407,6 +425,12 @@ def resolve(loaded: config.Instance, name: str, *, ours: bool) -> int:
         if not isinstance(item, dict) or item.get("state") != reconcile.CONFLICT:
             raise AnswerRefused(f"no conflict about {name}")
         if ours:
+            if _holds_nothing_new(context, state_root, kind, name, item):
+                raise AnswerRefused(
+                    f"the copy of {name} here is what this machine last had in sync, and the repository "
+                    f"holds a newer one: --ours would publish the older copy over it; "
+                    f"'dotsteward skills resolve {name} --theirs' installs the newer one"
+                )
             state.set_item(state_root, key, {"state": reconcile.CAPTURE, "answer": {"ours": True}, "reason": None})
             return _finish(context, loaded, name)
         path = item.get("path")

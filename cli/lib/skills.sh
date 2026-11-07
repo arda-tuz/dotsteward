@@ -729,8 +729,8 @@ skills_process_own_plugin() {
     return 0
   fi
   if [[ -L $found ]]; then
-    skills_fail plugin-not-directory "$found" \
-      "own plugin $name: $found is a link; the agent loads an own plugin from a real directory"
+    # A copy linked from elsewhere: compared by its content, never refreshed through the link.
+    _skills_placement_note "own plugin $name: $found is a link to $(readlink -- "$found"); its content is compared, it is never replaced"
   fi
   [[ -f $found/$SKILLS_OWN_MARKER ]] || found=''
   decision=$(_skills_own_decision "$name" "$found" "$digest")

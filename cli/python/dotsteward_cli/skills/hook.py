@@ -221,6 +221,8 @@ def _question(items: Sequence[Mapping[str, Any]]) -> str:
         room -= 1
         said += 1
         status = str(item.get("state"))
+        if status == "conflict" and item.get("reason") == "not-refreshed":
+            status = "not-refreshed"
         groups.setdefault("offline" if status == "capture" else status, []).append(name)
     if not groups and not items:
         return ""
@@ -237,6 +239,12 @@ def _question(items: Sequence[Mapping[str, Any]]) -> str:
         lines.append(
             f"- Changed here and in the repository: {', '.join(groups['conflict'])}. "
             "See dotsteward skills diff <name> --json; then dotsteward skills resolve <name> --ours | --theirs."
+        )
+    if "not-refreshed" in groups:
+        lines.append(
+            f"- The repository has a newer copy that could not be installed here (the copy is a link "
+            f"out of the skill roots): {', '.join(groups['not-refreshed'])}. "
+            "Nothing changed here; dotsteward skills resolve <name> --theirs installs the newer one."
         )
     if "blocked" in groups:
         lines.append(
