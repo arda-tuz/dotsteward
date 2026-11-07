@@ -15,6 +15,9 @@ nothing.
 | skill | a recorded transform is item ``skill-transform``, else group ``skill:<name>`` |
 | any other ``update`` or ``review`` | the group its declarations name, else item ``pins-no-writer`` |
 
+A group can still wait when it runs: ``npm-audit``, and for a skill
+``skill-local-delta``, ``skill-source-missing``, ``skill-scan-finding``.
+
 Constrained (T18-a keeps these for a person): a field ``*_reason`` on the pin, a
 version another rule derives, a ``version`` in ``[components.<name>]`` of the
 configuration, a new major of a security override.

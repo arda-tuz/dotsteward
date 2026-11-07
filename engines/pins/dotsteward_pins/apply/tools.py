@@ -28,6 +28,16 @@ class GroupFailure(Exception):
     """A step of a group failed; the group restores what it touched."""
 
 
+class Waits(Exception):
+    """The group waits for a person or an agent: a review item, and the group restores
+    what it touched."""
+
+    def __init__(self, code: str, **fields: Any) -> None:
+        super().__init__(code)
+        self.code = code
+        self.fields = fields
+
+
 def nix_system() -> str:
     return context.nix_system("darwin" if sys.platform == "darwin" else "linux")
 

@@ -41,8 +41,8 @@ from ..latest.adapters import Planned
 from ..lockfile import Locks, load_json
 from . import plan as routing
 from .plan import Declared, Group, Plan
-from .skills import SkillItem, Upstreams, relative, replace_skill
-from .tools import GroupFailure, Tools
+from .skills import Upstreams, relative, replace_skill
+from .tools import GroupFailure, Tools, Waits
 from .writers import TEMPLATE_FILES, Writer
 
 PREFIX = "[pins]"
@@ -140,17 +140,21 @@ class Run:
             self.error(f"{group.name}: {message}")
             self.run.step(group.name, report.FAILED, ids=ids, error=message)
             self.outcome.groups.append({"group": group.name, "outcome": "failed", "ids": ids, "error": message})
-        except SkillItem as waiting:
+        except Waits as waiting:
             snapshot.restore()
-            move = group.moves[0]
-            fields = {
-                "id": move.id,
-                "current": move.row.get("current"),
-                "latest": move.row.get("latest"),
-                **waiting.fields,
-            }
-            fields["source"] = move.row.get("source")
-            self.plan.items.append({"code": waiting.code, **fields})
+            first = group.moves[0].row
+            single = len(group.moves) == 1
+            self.plan.items.append(
+                {
+                    "code": waiting.code,
+                    "id": ids[0] if single else group.name,
+                    "ids": ids,
+                    "current": first.get("current") if single else None,
+                    "latest": first.get("latest") if single else None,
+                    "source": first.get("source") if single else None,
+                    **waiting.fields,
+                }
+            )
             self.run.step(group.name, report.OK, ids=ids, waits=waiting.code)
             self.outcome.groups.append({"group": group.name, "outcome": "review", "ids": ids})
         except BaseException:

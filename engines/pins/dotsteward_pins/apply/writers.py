@@ -18,7 +18,7 @@ from ..lockfile import LockPath, Locks, dump, parse_path
 from ..syncer import sync_locks, write_changed
 from . import plan as routing
 from .plan import Declared, Group, Move, flake_original, hash_fields, pin_of, version_field
-from .tools import PLACEHOLDER, GroupFailure, Tools, nix_system
+from .tools import PLACEHOLDER, GroupFailure, Tools, Waits, nix_system
 
 TEMPLATE_FILES = ("bootstrap.sh", ".dotsteward/cli.sh")
 # The attribute of a package that builds one fixed-output hash, by the start of the
@@ -246,7 +246,12 @@ class Writer:
         self.tools.nix_tool(
             "nodejs", *prefix, "install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"
         )
-        self.tools.nix_tool("nodejs", *prefix, "audit")
+        try:
+            self.tools.nix_tool("nodejs", *prefix, "audit")
+        except GroupFailure as failure:
+            # The contract of the bundles is an audit without findings; what to do about
+            # one (an override, a holdback) is a decision.
+            raise Waits("npm-audit", reason=str(failure)) from failure
         self.sync()
         for move in group.moves:
             self._mirror_revision(move)

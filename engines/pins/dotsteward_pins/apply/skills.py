@@ -12,7 +12,6 @@ import subprocess
 import tarfile
 import tempfile
 from pathlib import Path
-from typing import Any
 
 from ..digest import directory_sha256
 from ..instance import Instance
@@ -20,16 +19,7 @@ from ..latest.adapters.skill_source import source_tree_path
 from ..latest.upstream import github_repo, github_url
 from ..lockfile import Locks
 from .plan import Move, skill_entry
-from .tools import GroupFailure, Tools
-
-
-class SkillItem(Exception):
-    """The skill waits for a person; nothing was written."""
-
-    def __init__(self, code: str, **fields: Any) -> None:
-        super().__init__(code)
-        self.code = code
-        self.fields = fields
+from .tools import GroupFailure, Tools, Waits
 
 
 class Upstreams:
@@ -84,13 +74,13 @@ def replace_skill(instance: Instance, tools: Tools, upstreams: Upstreams, locks:
         old, new = Path(work) / "old", Path(work) / "new"
         known = upstreams.extract(clone, str(entry["revision"]), source_path, old)
         if not known or not vendored.is_dir() or directory_sha256(old) != directory_sha256(vendored):
-            raise SkillItem("skill-local-delta", reason="the vendored copy is not upstream at the pinned revision")
+            raise Waits("skill-local-delta", reason="the vendored copy is not upstream at the pinned revision")
         if not upstreams.extract(clone, head, source_path, new):
-            raise SkillItem("skill-source-missing", reason=f"the head has no directory {source_path or '.'}")
+            raise Waits("skill-source-missing", reason=f"the head has no directory {source_path or '.'}")
         scan = tools.dotsteward("scan", "--tree", "--redact", cwd=new)
         if scan.returncode != 0:
             found = [line.strip() for line in scan.stderr.splitlines() + scan.stdout.splitlines() if line.strip()]
-            raise SkillItem("skill-scan-finding", findings=found[:20])
+            raise Waits("skill-scan-finding", findings=found[:20])
         shutil.rmtree(vendored)
         shutil.copytree(new, vendored, symlinks=True)
     return vendored

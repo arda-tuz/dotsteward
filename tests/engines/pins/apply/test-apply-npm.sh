@@ -27,7 +27,8 @@ assert_eq "\"$(fake_hash "example-bundle.npmDeps:$(<"$bundle/package-lock.json")
 assert_contains "$(<"$FAKE_NIX_STATE/calls")" "nixpkgs#nodejs"
 assert_exit 0 pins check
 
-# A failed audit restores the whole bundle, and the other groups still move.
+# An audit with findings waits for a decision: the whole bundle is restored, and the
+# other groups still move.
 git -C "$inst" add -A
 git -C "$inst" commit -q -m "first bundle move"
 before_package=$(sha256sum "$bundle/package.json" "$bundle/package-lock.json")
@@ -36,13 +37,13 @@ digest=$(printf '%064d' 7)
 rows \
   "$(row npm.example-cli npm 2.1.0 2.2.0 update '{"git_head":"'"$head"'"}')" \
   "$(row agent_tools.example-release github-release 4.0.0 4.1.0 update '{"tag":"v4.1.0","size":1,"sha256":"'"$digest"'","url":"https://downloads.example.invalid/example-release/v4.1.0/example-release-linux-x64.tar.gz"}')"
-assert_exit 1 apply --latest "$rows"
-assert_contains "$DS_STDERR" "npm:packages/example-bundle"
-assert_contains "$DS_STDERR" "vulnerability"
+assert_exit 3 apply --latest "$rows"
+assert_eq "npm-audit npm.example-cli" "$(item_codes)"
+assert_contains "$(jq -c '.items[0].reason' "$state/review.json")" "vulnerability"
 assert_eq "$before_package" "$(sha256sum "$bundle/package.json" "$bundle/package-lock.json")"
 assert_eq '"2.1.0"' "$(json_get "$versions" '.agent_tools["example-cli"].version')"
 assert_eq '"4.1.0"' "$(json_get "$versions" '.agent_tools["example-release"].minimum_version')"
-assert_eq '[["download:agent_tools.example-release","ok"],["npm:packages/example-bundle","failed"]]' \
+assert_eq '[["download:agent_tools.example-release","ok"],["npm:packages/example-bundle","ok"]]' \
   "$(last_report '[.steps[] | select(.name | test(":")) | [.name, .status]] | sort')"
 assert_exit 0 pins check
 rm -f -- "$FAKE_NIX_STATE/fail-audit"
