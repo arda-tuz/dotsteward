@@ -34,6 +34,7 @@ import re
 import shutil
 import subprocess
 import sys
+import textwrap
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -186,6 +187,11 @@ def _block_end(lines: Sequence[str], headers: Sequence[tuple[int, str]], index: 
     return end
 
 
+def _comment(text: str) -> str:
+    """TEXT as the comment lines at the top of a Nix file."""
+    return "".join(f"# {line}\n" for line in textwrap.wrap(text, width=98, break_on_hyphens=False))
+
+
 def _value(value: Any) -> str:
     if value is True or value is False:
         return "true" if value else "false"
@@ -315,6 +321,8 @@ class _Transaction(runner.Runner):
             if code in _NOTES:
                 self.notes.append(f"{code}: {question.get('message')}")
             elif code in _OWN_QUESTIONS and not foreign:
+                continue
+            elif code == "checkout-dirty" and self.options.with_changes:
                 continue
             else:
                 self.ask.append(question)
@@ -543,10 +551,12 @@ class Add(_Transaction):
         )
         if self.apt is not None:
             listed = " ".join(json.dumps(package) for package in self.apt)
+            about = (
+                f"{self.name}: the APT packages {', '.join(self.apt)} from the sources of the machine, updated with "
+                "plain apt upgrade. Written by dotsteward add; the instance owns it from here."
+            )
             return (
-                f"# {self.name}: the APT packages {', '.join(self.apt)} from the sources of the machine, updated with\n"
-                "# plain apt upgrade. Written by dotsteward add; the instance owns it from here.\n"
-                "{ lib, ... }:\n"
+                _comment(about) + "{ lib, ... }:\n"
                 "{\n"
                 f"  dotsteward.components.{self.name} = {{\n"
                 '    platforms = [ "linux" ];\n'
@@ -560,10 +570,12 @@ class Add(_Transaction):
                 "  };\n"
                 "}\n"
             )
+        about = (
+            f"{self.name}: the nixpkgs package {self.nix}, in the Home Manager profile. Written by dotsteward add; "
+            "the instance owns it from here."
+        )
         return (
-            f"# {self.name}: the nixpkgs package {self.nix}, in the Home Manager profile. Written by dotsteward\n"
-            "# add; the instance owns it from here.\n"
-            "{ lib, pkgs, ... }:\n"
+            _comment(about) + "{ lib, pkgs, ... }:\n"
             "{\n"
             f"  dotsteward.components.{self.name} = {{\n"
             '    method = lib.mkDefault "nix";\n'
@@ -687,6 +699,19 @@ class Remove(_Transaction):
             if isinstance(entry, dict) and entry.get("name") == name:
                 return entry
         return None
+
+    def _tracked_at(self, base: str) -> bool:
+        """Whether the table of the component is in BASE or in the work tree."""
+        try:
+            work = tomllib.loads(self.instance.file.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            work = {}
+        before = self._git("show", f"{base}:{config.CONFIG_FILE}")
+        try:
+            old = tomllib.loads(before.stdout) if before.code == 0 else {}
+        except tomllib.TOMLDecodeError:
+            old = {}
+        return any(self.name in (document.get("components") or {}) for document in (work, old))
 
     def _remove_text(self) -> str:
         """The text without the component; sets self.change and self.kept_comments."""
@@ -825,6 +850,11 @@ class Remove(_Transaction):
         try:
             plan = json.loads(self.plan_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
+            _say(
+                self.command,
+                f"nothing to uninstall: no plan of {self.name} is recorded here (it left the intent without "
+                "--uninstall); remove its software by hand",
+            )
             return
         result: dict[str, Any] = {"status": "done", "method": plan.get("method"), "removed": []}
         for path in [*(plan.get("files") or ()), *(plan.get("directories") or ())]:
@@ -872,6 +902,7 @@ class Remove(_Transaction):
         base = self._begin()
         if base is None:
             return self.finish()
+        tracked = self._tracked_at(base) or self.change == "removed"
         text = self._remove_text()
         definition = self.root / "components" / self.name
         wrote = self.change == "removed"
@@ -883,12 +914,14 @@ class Remove(_Transaction):
             for comment in self.kept_comments:
                 first = comment.splitlines()[0]
                 _say(self.command, f"the comment above [components.{self.name}] stays, it may be about more: {first}")
-        if definition.is_dir():
+        # The directory of a component goes only with a table that was there: one never tracked is
+        # someone's work in progress.
+        if definition.is_dir() and tracked:
             shutil.rmtree(definition)
             wrote = True
             self.change = "removed"
         self.run.step("intent", report.OK, detail=self.change)
-        if not wrote and not self._pending_since(base):
+        if not tracked or (not wrote and not self._pending_since(base)):
             _say(self.command, f"{self.name} is not tracked: nothing to do")
         else:
             if not wrote:
@@ -925,6 +958,11 @@ def _common(parser: argparse.ArgumentParser) -> None:
     publish.add_argument("--publish", dest="publish", action="store_true", default=None, help="publish the commit")
     publish.add_argument("--no-publish", dest="publish", action="store_false", help="keep the commit here")
     parser.add_argument("--profile", help="the profile to activate (default: this machine's)")
+    parser.add_argument(
+        "--with-changes",
+        action="store_true",
+        help="the other changes of the checkout belong to this transaction (the user said so)",
+    )
     parser.add_argument("--json", action="store_true", help="print one JSON document on standard output")
 
 

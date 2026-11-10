@@ -300,6 +300,7 @@ let
         "privacy"
         "tests/apply"
         "tests/cli/update/helpers.sh"
+        "tests/nix/instance/fixtures/example/components"
         "tests/track"
         "tests/upgrade"
       ])

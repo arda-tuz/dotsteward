@@ -19,7 +19,8 @@ dotsteward status                                            # read-only, offlin
 
 `dotsteward add NAME [--apt PACKAGE]... [--nix ATTRIBUTE] [--command COMMAND]... [--method METHOD]
 [--profiles PROFILE,...] [--machines MACHINE,... | --here] [--tags TAG,...] [--updater UPDATER]
-[-m SUBJECT] [--activate | --no-activate] [--publish | --no-publish] [--profile PROFILE] [--json]`
+[--with-changes] [-m SUBJECT] [--activate | --no-activate] [--publish | --no-publish]
+[--profile PROFILE] [--json]`
 
 The channel of NAME decides what it writes:
 
@@ -42,13 +43,15 @@ An official binary, a vendor APT repository, a release download or a Python appl
 pins, hashes, a signing key or other research: that is no guess of a command. `add` writes nothing
 and answers `channel-unknown`; the `dotsteward-maintain` skill researches the channel and writes
 `components/NAME/default.nix` (with its pins: a new component may add its first pins on any machine,
-[machines.md](machines.md#who-writes-what)), then the same `dotsteward add NAME` finishes. A file
+[machines.md](machines.md#who-writes-what)), then the same `dotsteward add NAME` finishes. When
+the component needs changes outside its directory too (its pins in `versions.lock.json`, a flake
+input), `--with-changes` says they belong to this transaction, which then commits them with it. A file
 that is in the way (`components/NAME/default.nix` with other content than `--apt` or `--nix` would
 write) is a refusal.
 
 A catalog component that needs pins the lock does not have yet (an official binary, a release
 download) stops at the pins check of the gate, which names them; nothing is committed. The maintain
-skill adds those first pins, and the same `dotsteward add NAME` finishes.
+skill adds those first pins, and `dotsteward add NAME --with-changes` finishes.
 
 The subject is `feat: track NAME` unless `-m` gives another conventional one. The options of
 `apply` pass through unchanged; without them `[maintain]` of `workstation.toml` decides, as for
@@ -57,12 +60,13 @@ through sudo on a terminal, else with `install-required` (exit 3), exactly as `a
 
 ## remove
 
-`dotsteward remove NAME [--uninstall] [-m SUBJECT] [--activate | --no-activate] [--publish |
+`dotsteward remove NAME [--uninstall] [--with-changes] [-m SUBJECT] [--activate | --no-activate] [--publish |
 --no-publish] [--profile PROFILE] [--json]` removes `[components.NAME]`, NAME from
 `[components] order` and, for a component of the instance, the directory `components/NAME`, under
 the subject `feat: stop tracking NAME`. The comment right above the table goes with it when it
 names the component; one that does not may be about more tables, so it stays as a paragraph of its
-own and remove says so. A component that another enabled component requires stays
+own and remove says so. The directory goes only with a table that was there: one that was never tracked is someone's
+work in progress. A component that another enabled component requires stays
 (exit 1, naming it); remove that one first. A name that is not tracked is nothing to do.
 
 Stopping to track never uninstalls what the person keeps:
@@ -87,7 +91,8 @@ table of NAME and its entry of the order differ, `components/NAME/`, the mirrors
 `.dotsteward/`). Another change of the checkout or a commit the remote lacks is the question of
 `maintain begin` (`checkout-dirty`, `unpublished-commits`): nothing is written, exit 3. What an
 earlier run for the same component left, a red gate, a commit whose push waited for the network, is
-its own, and the same command finishes it. The questions `nonconventional-commits` and
+its own, and the same command finishes it. `--with-changes` answers `checkout-dirty` for the
+uncommitted changes the person agreed belong to it; commits the remote lacks stay a question. The questions `nonconventional-commits` and
 `adaptive-route` stop it the same way; `settings-local` is only a note.
 
 `--json` prints one document: `command`, `component`, `channel` (`add`), `change` (`added`,

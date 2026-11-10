@@ -69,7 +69,7 @@ Read this first, then only the files it points to for the components you change.
 | --- | --- |
 | `dotsteward maintain begin --json` | opens the transaction: checkout guards, fast-forward, preflight, `txn prepare`, settings status, the questions for the user |
 | `dotsteward apply -m SUBJECT [--activate] [--publish]` | finishes it: stage, gate, commit with the trace line, system-level installs of an adopt-mode profile, rebuild, E2E, publish; the same command goes on after a fix |
-| `dotsteward add NAME [--apt P \| --nix A] [--here] [--activate] [--publish]` | tracks one component: begin, the table in `workstation.toml` (and `components/NAME/default.nix` for `--apt` or `--nix`), then the one apply; `channel-unknown` when the channel needs research |
+| `dotsteward add NAME [--apt P \| --nix A] [--here] [--with-changes] [--activate] [--publish]` | tracks one component: begin, the table in `workstation.toml` (and `components/NAME/default.nix` for `--apt` or `--nix`), then the one apply; `channel-unknown` when the channel needs research |
 | `dotsteward remove NAME [--uninstall] [--activate] [--publish]` | stops tracking one component through the one apply; the software stays unless `--uninstall` |
 | `dotsteward status [--json]` | read-only, offline overview: components here or why not, holds, drift, incoming changes, skills, plugins, the state branch |
 | `dotsteward preflight --read-only --json --profile P` | read-only machine check (exit 3: adaptive route), run by `maintain begin` |

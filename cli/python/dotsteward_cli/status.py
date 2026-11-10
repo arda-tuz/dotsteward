@@ -436,6 +436,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="dotsteward status", description=_DESCRIPTION)
     parser.add_argument("--json", action="store_true", help="print one JSON document")
     options = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    # git status refreshes the index when it may; a reader never writes it, so it never meets the
+    # git add of a command that runs at the same time.
+    os.environ["GIT_OPTIONAL_LOCKS"] = "0"
     try:
         instance = config.load_instance()
         document = overview(instance)
