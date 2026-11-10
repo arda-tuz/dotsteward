@@ -148,3 +148,18 @@ for file in "$skill" "$skill_dir"/references/*.md "$skill_dir/agents/openai.yaml
     fi
   done
 done
+
+# Tracking: "track X" goes through dotsteward add, which writes the intent and runs the one
+# apply; channel-unknown sends the agent to write the component and run the same add again.
+# Untracking goes through dotsteward remove, which keeps the software unless the user asks for
+# --uninstall. dotsteward status is the read-only overview.
+in_order "$skill" "dotsteward maintain begin --json" "dotsteward add"
+for command in "dotsteward add" "dotsteward remove" "dotsteward status"; do
+  fenced "$skill" | grep -qF -- "$command" || ds_fail "SKILL.md does not run $command in a fenced block"
+done
+for code in channel-unknown uninstall-required; do
+  grep -qF -- "\`$code\`" "$skill" || ds_fail "SKILL.md does not say what to do about $code"
+done
+grep -qF -- '--uninstall' "$skill" || ds_fail "SKILL.md does not name --uninstall of dotsteward remove"
+grep -q -- 'only when the user asks' <(grep -F -- '--uninstall' "$skill") ||
+  ds_fail "SKILL.md does not keep --uninstall for when the user asks"
