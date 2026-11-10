@@ -197,12 +197,13 @@ git -C "$up_inst" branch -q -D side
 mine=$(head_oid)
 other_machine_during_gate once docs/merge-race.md "a page while a merge waits"
 clear_log
-assert_exit 3 apply --activate --publish
-assert_eq "$mine" "$(head_oid)" "the merge stays as it was"
+assert_exit 3 apply -m "chore: generate the mirrors" --activate --publish
+assert_eq "$mine" "$(git -C "$up_inst" rev-parse HEAD^)" "the merge stays as it was"
 no_replay_left
 review_json '.items[] | select(.code == "replay-merge") | (.commits | length) == 1 and (.run | contains("pull --rebase origin main"))'
-git -C "$up_inst" -c user.name=alice -c user.email=alice@example.invalid pull -q --rebase origin main
-assert_exit 0 apply --activate --publish
+# Only the mirror meets; apply makes it again.
+git -C "$up_inst" -c user.name=alice -c user.email=alice@example.invalid pull -q --rebase -X theirs origin main
+assert_exit 0 apply -m "chore: generate the mirrors" --activate --publish
 assert_eq "$(head_oid)" "$(remote_oid)"
 
 # --- another machine keeps publishing: three pushes, then publish-race -----------------------

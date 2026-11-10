@@ -123,6 +123,12 @@ write_validation '.scope = null'
 refused "the validation was made for the (none) scope, not maintain; run 'dotsteward gate --scope maintain' first" \
   --scope maintain
 
+# The gate proved the tree against another base: the writer classes and the update allowlist
+# were checked against that one.
+write_validation ".base_oid = \"$(head_oid)\""
+refused "the gate proved this tree against $(head_oid), not the base OID $base of this publish; run 'dotsteward gate --scope maintain --expected-base $base' first" \
+  --scope maintain
+
 # The validation used a framework override.
 write_validation '.framework_override = "path:/tmp/dotsteward-candidate"'
 refused "the validation used the framework override path:/tmp/dotsteward-candidate; run 'dotsteward gate --scope maintain' without an override first" \

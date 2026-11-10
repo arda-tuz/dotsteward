@@ -27,7 +27,8 @@
 #   remote_oid                main of the bare repository
 #   write_validation [JQ_FILTER]
 #                             writes a passed validation.json (schema 1.1)
-#                             for the HEAD tree, scope maintain, no
+#                             for the HEAD tree against the base txn
+#                             publish finds by itself, scope maintain, no
 #                             framework override, then applies JQ_FILTER
 #   write_candidate BASE [ROOT]
 #                             writes candidate.json with BASE for ROOT
@@ -134,11 +135,15 @@ remote_oid() {
 }
 
 write_validation() {
-  local filter=${1:-.}
+  local filter=${1:-.} base
   mkdir -p "$up_state"
-  jq -n --arg tree "$(head_tree)" --arg root "$up_inst" --arg log "$up_log" '{
+  # The base the gate proved the tree against, as txn publish finds it without --expected-base:
+  # candidate.json of this instance, else the merge base with origin/main.
+  base=$(jq -r --arg root "$up_inst" 'select(.root == $root) | .base_oid // empty' "$up_candidate" 2>/dev/null || true)
+  [[ -n $base ]] || base=$(git -C "$up_inst" merge-base HEAD refs/remotes/origin/main 2>/dev/null || true)
+  jq -n --arg tree "$(head_tree)" --arg root "$up_inst" --arg log "$up_log" --arg base "${base:-}" '{
     schema_version: "1.1", result: "passed", tree_oid: $tree,
-    base_oid: "0000000000000000000000000000000000000000", scope: "maintain",
+    base_oid: $base, scope: "maintain",
     nix_version: "nix (Nix) 2.31.2", gate_version: "0.0.0", framework_override: null,
     denylist_sha256: null, root: $root, validated_at: "2026-01-01T00:00:00Z",
     total_seconds: 7, step_seconds: {preflight: 1, static: 1, pins: 1, "flake-check": 3, "cli-probes": 1},
