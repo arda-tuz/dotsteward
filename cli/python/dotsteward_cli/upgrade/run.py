@@ -702,9 +702,35 @@ class Upgrade(runner.Runner):
         skips = holds.skip_patterns(self.state_root, latest)
         if not self._week_due():
             skips = [_FLAKE_INPUTS, *skips]
+        skips = [*skips, *self._waiting_floors()]
         # Kept for a lost race: the writer runs again on the new tip with the same rows.
         self.latest, self.skips = latest, skips
         self._write(latest, skips)
+
+    def _waiting_floors(self) -> list[str]:
+        """The floor pins of the deb packages, while no sudo window of this run committed the apt plan:
+        a floor above what dpkg has would turn the E2E of its package red and send the run back."""
+        if not self.linux or self.apt_answer is not None:
+            return []
+        floors = sorted(
+            {
+                str((component.get("install") or {}).get("pin"))
+                for component in self._active()
+                if component.get("method") == "deb" and isinstance((component.get("install") or {}).get("pin"), str)
+            }
+        )
+        if floors:
+            self.run.item(
+                "deb-floors-wait",
+                pending=False,
+                ids=floors,
+                run=self._command_again(),
+                message=(
+                    "the floors of the deb packages wait for a run on a terminal whose sudo window installs what "
+                    "apt has"
+                ),
+            )
+        return floors
 
     def _prepare(self) -> bool:
         prepared = self._ds_output("txn", "prepare", "--official-sources-only", "--scope", "update")

@@ -114,7 +114,10 @@ Update these too? [y/N] n
    file, and nobody when it holds more (the command to name one is said). A machine without a name or
    a profile moves no pins, since nothing could prove them there: the command to run is said. Flake
    inputs move at most once a week, counted from the publish of their last move: a red gate or a red
-   E2E starts no week. Every other pin, such as an official binary of Codex, moves when upstream does. A framework that moved runs the writer once more with its own CLI, and the rest of
+   E2E starts no week. The floor of a deb package moves only when the sudo window of the run committed
+   the apt plan; otherwise it waits as `deb-floors-wait`, since a floor above what dpkg has turns the
+   E2E of the package red. Every other pin, such as an official binary of Codex, moves when upstream
+   does. A framework that moved runs the writer once more with its own CLI, and the rest of
    the run with it too. What fails in one group of the writer is named, and what the others moved
    goes on. Skills with a recorded transform are counted and left to `dotsteward-update` without
    holding the exit status; other items of the writer wait in `review.json` under `pins-apply`.
@@ -233,13 +236,14 @@ The heaviest one of a run is the status, in the order 4, 1, 3, 6, 0 ([exit-codes
 | `apt-logs/` | what dpkg printed, the newest 20 |
 
 Review codes of this command: `sudo-required`, `machine-name-required`, `profile-required`,
-`remote-refused`, `gate-failed`, `e2e-no-result`, `checkout-behind` (a dirty checkout behind what was
-published), `publish-waits`, `publish-race`, `publish-refused`, `red-held`,
-`e2e-red`, `firmware-available`, `firmware-needs-ac`, the codes of the apt engine that wait
-(`apt-denied`, `dpkg-lock-busy`, `module-missing`, `python3-apt-missing`), and of the skills
-(`origin-unknown`, `skill-conflict`, `capture-blocked`). Notes that wait for nothing: `analysis`,
-`boot-space-low`, `reboot-required`, `checkout-dirty`, `checkout-behind`, `held`, `pins-group-failed`,
-`series-available`, `phased-waiting`, `module-loss`, `producer-unset`, `producer-stale`,
-`plugin-scan-finding`, `plugin-scan-failed`, `firmware-locked`, `firmware-needs-reboot`.
+`remote-refused`, `gate-failed`, `e2e-no-result`, `checkout-behind` (a dirty checkout behind what
+was published), `publish-waits`, `publish-race`, `publish-refused`, `red-held`, `e2e-red`,
+`firmware-available`, `firmware-needs-ac`, the codes of the apt engine that wait (`apt-denied`,
+`dpkg-lock-busy`, `module-missing`, `python3-apt-missing`), and of the skills (`origin-unknown`,
+`skill-conflict`, `capture-blocked`). Notes that wait for nothing: `analysis`, `boot-space-low`,
+`reboot-required`, `checkout-dirty`, `checkout-behind`, `held`, `deb-floors-wait`,
+`pins-group-failed`, `series-available`, `phased-waiting`, `module-loss`, `producer-unset`,
+`producer-stale`, `plugin-scan-finding`, `plugin-scan-failed`, `firmware-locked`,
+`firmware-needs-reboot`.
 
 macOS has no apt, snap or firmware step; the rest runs the same.
