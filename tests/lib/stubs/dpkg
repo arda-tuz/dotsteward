@@ -3,6 +3,8 @@
 #   --compare-versions A OP B   Debian version ordering (exit 0, 1; 2 for an
 #                               unknown relation)
 #   --print-architecture        the state value "architecture" (default amd64)
+#   -C|--audit                  prints the state value "audit" (default: nothing,
+#                               a clean database); exit 0
 #   -i|--install FILE...        installs fake package files (ds_fake_deb);
 #                               needs root rights (see the sudo stub)
 #   -r|--remove, -P|--purge PACKAGE...   removes packages; needs root rights
@@ -31,6 +33,10 @@ case ${1:-} in
     ;;
   --print-architecture)
     printf '%s\n' "$(ds_stub_value architecture amd64)"
+    ;;
+  -C | --audit)
+    audit=$(ds_stub_value audit)
+    [[ -z $audit ]] || printf '%s\n' "$audit"
     ;;
   -i | --install)
     require_root

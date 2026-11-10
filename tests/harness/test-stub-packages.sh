@@ -29,6 +29,12 @@ assert_contains "$DS_STDERR" "unknown"
 assert_eq amd64 "$(dpkg --print-architecture)"
 ds_stub_set dpkg architecture arm64
 assert_eq arm64 "$(dpkg --print-architecture)"
+# dpkg --audit: a clean database prints nothing; the state value "audit" is a report.
+assert_eq "" "$(dpkg --audit)"
+ds_stub_set dpkg audit " example-app   half configured"
+assert_eq " example-app   half configured" "$(dpkg --audit)"
+assert_eq " example-app   half configured" "$(dpkg -C)"
+ds_stub_set dpkg audit ""
 
 # --- dpkg-query over the fake database ----------------------------------
 ds_dpkg_installed example-app 1.2.3 amd64 "Files=/usr/bin/example-app /usr/share/doc/example-app"

@@ -7,7 +7,7 @@ stub_dir=$DS_REPO_ROOT/tests/lib/stubs
 
 # Exactly the stub names of the spec exist, all executable; nothing else
 # (no helper file) lives in the stub directory.
-expected_names="apt-cache apt-get chsh claude code codex curl dpkg dpkg-deb dpkg-query dscl example-app example-term getent gh herdr id nix opencode pi sudo sw_vers systemctl xcode-select"
+expected_names="apt-cache apt-get chsh claude code codex curl dpkg dpkg-deb dpkg-query dscl example-app example-term getent gh herdr id nix notify-send opencode pi sudo sw_vers systemctl xcode-select"
 actual_names=$(cd "$stub_dir" && find . -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort | tr '\n' ' ')
 assert_eq "$expected_names" "${actual_names% }" "stub names"
 for name in $expected_names; do

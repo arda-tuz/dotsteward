@@ -1,10 +1,11 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # Application stubs: claude, code, example-app, example-term (version and
-# help), herdr (reload with recorded environment and delay), codex (plugin
-# list and add), opencode (an HTTP /skill server) and pi (RPC on stdin).
+# help), notify-send (recorded, with a status), herdr (reload with recorded
+# environment and delay), codex (plugin list and add), opencode (an HTTP
+# /skill server) and pi (RPC on stdin).
 
-ds_use_stubs claude code example-app example-term herdr codex opencode pi
+ds_use_stubs claude code example-app example-term herdr codex opencode pi notify-send
 
 # --- version and help -------------------------------------------------------
 assert_eq "2.0.0 (Claude Code)" "$(claude --version)"
@@ -23,6 +24,13 @@ assert_eq "2.1.0 (Claude Code)" "$(claude --version)"
 : >"$DS_CALL_LOG"
 example-app open --new-window
 assert_calls "example-app open --new-window"
+
+# --- notify-send ------------------------------------------------------------
+: >"$DS_CALL_LOG"
+notify-send --app-name=dotsteward "a title" "a body"
+assert_calls "notify-send --app-name=dotsteward a\\ title a\\ body"
+ds_stub_set notify-send exit 1
+assert_exit 1 notify-send "a title"
 
 # --- herdr --------------------------------------------------------------------
 : >"$DS_CALL_LOG"

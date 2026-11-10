@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# notify-send stub: a desktop notification that nobody sees. The call is
+# recorded; the state value "exit" (default 0) is its status, as when no
+# notification daemon answers.
+set -euo pipefail
+# shellcheck source=tests/lib/harness.sh
+source "$(dirname "$(readlink -f "$0")")/../harness.sh"
+ds_stub_begin notify-send "$@"
+exit "$(ds_stub_value exit 0)"
