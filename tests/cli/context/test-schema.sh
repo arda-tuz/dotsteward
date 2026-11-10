@@ -25,7 +25,7 @@ assert_eq '["bootstrap","check","current","default","modes","names"]' "$(require
 assert_eq '["cache_url","min_free_gib","nix_cores","nix_max_jobs","step_keys"]' "$(required .properties.gate)"
 assert_eq '["conventional_types","settings_subject","update_subject","upgrade_subject"]' "$(required .properties.commit)"
 assert_eq '["dotsteward-contribute","dotsteward-maintain","dotsteward-update"]' "$(required .properties.overlays)"
-assert_eq '["commands","enable","method","name","profiles","settings_targets","source"]' "$(required .properties.components.items)"
+assert_eq '["commands","enable","method","name","profiles","self_update","settings_targets","source","updater"]' "$(required .properties.components.items)"
 assert_eq '["buffer_dir","entry_ids","published_ref","target_names"]' "$(required .properties.settings)"
 assert_eq '["hm_root","instance_skill_names"]' "$(required .properties.skills)"
 assert_eq '["narHash","rev","track","upstream","version"]' "$(required .properties.framework)"
