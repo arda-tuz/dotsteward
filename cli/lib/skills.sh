@@ -100,7 +100,10 @@
 #       removes (install) or reports (check) every directory of the scoped
 #       store that no scoped entry of the lock names (a skill that left the
 #       lock, or is no longer scoped; the store holds only what dotsteward
-#       put there), then every dangling link directly
+#       put there): a copy that is what the lock or the vendored source says
+#       goes; an own skill of the lock with an uncaptured edit stays (a note
+#       in both modes); any other copy with changes is moved to the backups
+#       of the state root; then every dangling link directly
 #       in the canonical root, the link roots and the agent roots whose
 #       literal target is in a managed root or the scoped store (relative ../../<root>/... or $HOME/<root>/...,
 #       or a link-root target prefix); other links stay; check only notes the
@@ -1159,6 +1162,67 @@ _skills_names_own() {
       and (.revision == "same-as-instance-checkout" or .revision == $compat))' "$SKILLS_LOCK" >/dev/null 2>&1
 }
 
+# _skills_last_entry DIRECTORY: the newest entry naming DIRECTORY in the history of the skills lock
+# in the git repository of the instance (the last 50 commits that changed it); nothing without one.
+_skills_last_entry() {
+  local directory=$1 relative commit entry
+  relative=${SKILLS_LOCK#"$DS_INSTANCE_ROOT"/}
+  [[ $relative != "$SKILLS_LOCK" ]] || return 0
+  git -C "$DS_INSTANCE_ROOT" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  while IFS= read -r commit; do
+    entry=$(git -C "$DS_INSTANCE_ROOT" show "$commit:$relative" 2>/dev/null |
+      jq -c --arg directory "$directory" 'first(.skills[]? | select(.directory == $directory)) // empty' 2>/dev/null) || continue
+    if [[ -n $entry ]]; then
+      printf '%s\n' "$entry"
+      return 0
+    fi
+  done < <(git -C "$DS_INSTANCE_ROOT" log -n 50 --format=%H -- "$relative" 2>/dev/null)
+}
+
+# _skills_sweep_copy COPY: a directory of the scoped store that no scoped entry of the lock names.
+# Its copy is what the lock, the vendored source or the last lock of the history says: it goes. An own skill of the lock whose
+# copy has an edit that was not captured: it stays (a note). Any other copy with changes: moved to
+# the backups of the state root, never deleted. Check reports and changes nothing. Status 1: a
+# finding of check.
+_skills_sweep_copy() {
+  local copy=$1 directory entry digest reference='' name own=0 backup_root
+  directory=${copy##*/}
+  entry=$(jq -c --arg directory "$directory" 'first(.skills[] | select(.directory == $directory)) // empty' "$SKILLS_LOCK")
+  if [[ -n $entry ]]; then
+    name=$(jq -r '.name' <<<"$entry")
+    reference=$(jq -r '.directory_sha256 // empty' <<<"$entry")
+    _skills_names_own "$name" && own=1
+  fi
+  if [[ -z $reference && -d $SKILLS_VENDOR/$directory ]]; then
+    reference=$(directory_sha256 "$SKILLS_VENDOR/$directory")
+  fi
+  if [[ -z $reference ]]; then
+    reference=$(_skills_last_entry "$directory" | jq -r '.directory_sha256 // empty')
+  fi
+  digest=''
+  [[ ! -d $copy || -L $copy ]] || digest=$(directory_sha256 "$copy")
+  if ((own)) && [[ $digest != "$reference" ]]; then
+    warn "own skill $name has an edit in $copy that was not captured: capture it with 'dotsteward skills capture --name $name'; the copy stays until then"
+    return 0
+  fi
+  if ((SKILLS_CHECK_ONLY)); then
+    skills_finding scoped-skill-stale "$copy" \
+      "scoped skill copy not in the lock: $copy; $(_skills_rebuild_hint) to remove it"
+    ((SKILLS_KEEP_GOING)) || exit 1
+    return 1
+  fi
+  if [[ -n $digest && $digest != "$reference" ]]; then
+    backup_root="$(state_root)/backups/$(timestamp_utc)-skills"
+    ensure_private_dir "$backup_root"
+    backup_file_private "$copy" "$backup_root"
+    rm -rf -- "$copy"
+    warn "scoped skill copy not in the lock had changes: $copy; moved to the backup $backup_root"
+    return 0
+  fi
+  rm -rf -- "$copy"
+  log "removed scoped skill copy not in the lock: $copy"
+}
+
 skills_sweep() {
   local root link copy scoped failed=0
   local -a links=() copies=()
@@ -1167,15 +1231,7 @@ skills_sweep() {
     mapfile -d '' copies < <(find "$SKILLS_SCOPED_STORE" -mindepth 1 -maxdepth 1 -print0 | LC_ALL=C sort -z)
     for copy in "${copies[@]}"; do
       grep -qxF -- "${copy##*/}" <<<"$scoped" && continue
-      if ((SKILLS_CHECK_ONLY)); then
-        skills_finding scoped-skill-stale "$copy" \
-          "scoped skill copy not in the lock: $copy; $(_skills_rebuild_hint) to remove it"
-        ((SKILLS_KEEP_GOING)) || exit 1
-        failed=1
-        continue
-      fi
-      rm -rf -- "$copy"
-      log "removed scoped skill copy not in the lock: $copy"
+      _skills_sweep_copy "$copy" || failed=1
     done
   fi
   for root in "$SKILLS_CANONICAL" "${SKILLS_LINK_ROOTS[@]}" "${SKILLS_AGENT_ROOTS[@]}"; do

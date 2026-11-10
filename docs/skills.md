@@ -65,7 +65,11 @@ deployment only, and a scoped skill must not also be in a shared skill root.
 The store holds only what dotsteward put there: a copy that no scoped entry
 of the lock names any more (the skill left the lock, or is for every agent
 now) is removed by the next `rebuild --switch`, with its agent links, and is
-a finding of `dotsteward e2e` until then.
+a finding of `dotsteward e2e` until then. No edit is lost on the way: the copy
+of an own skill of the lock with an edit that was not captured stays (with a
+note naming `dotsteward skills capture --name SKILL`), and any other copy that
+is not what the lock, its vendored source or the last lock in the history of
+the instance says is moved to the backups of the state root.
 
 ## Structure of a skill
 
