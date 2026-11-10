@@ -115,9 +115,10 @@ class Published:
 
 def clean_env(extra: Mapping[str, str] | None = None) -> dict[str, str]:
     """The environment of git: a hook may run inside another repository's hook, messages
-    are read, and nothing may ask a person."""
+    are read, nothing may ask a person, and a commit has UTC dates (docs/privacy.md)."""
     env = {key: value for key, value in os.environ.items() if key not in _REPOSITORY_VARIABLES}
     env["LC_ALL"] = "C"
+    env["TZ"] = "UTC"
     env.pop("LANGUAGE", None)
     env["GIT_TERMINAL_PROMPT"] = "0"
     env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o ConnectTimeout=15")

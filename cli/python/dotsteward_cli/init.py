@@ -1219,7 +1219,8 @@ def build_and_place(
         for relative, text in files.items():
             (stage / relative).write_text(text, encoding="utf-8")
 
-        dir_env = {key: value for key, value in env.items() if key not in STEP_ENV_REMOVED}
+        # The first commit has UTC dates (docs/privacy.md).
+        dir_env = {key: value for key, value in env.items() if key not in STEP_ENV_REMOVED} | {"TZ": "UTC"}
         # git never looks above the temporary directory for a repository.
         step_env = {**dir_env, "GIT_CEILING_DIRECTORIES": str(temp)}
         is_repository = (stage / ".git").exists()

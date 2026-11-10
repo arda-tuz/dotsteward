@@ -391,7 +391,8 @@ def _git(
         input=text,
         timeout=timeout,
         check=False,
-        env=None if env is None else {**os.environ, **env},
+        # A commit of the framework has UTC dates (docs/privacy.md).
+        env={**os.environ, "TZ": "UTC", **(env or {})},
     )
 
 

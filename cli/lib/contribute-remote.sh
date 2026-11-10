@@ -1823,7 +1823,7 @@ contribute_cmd_upgrade() {
       log "the instance already uses $label"
     else
       subject=${DS_COMMIT_UPGRADE_SUBJECT//\{version\}/$version}
-      git -C "$DS_INSTANCE_ROOT" commit --quiet -m "$subject" </dev/null ||
+      TZ=UTC git -C "$DS_INSTANCE_ROOT" commit --quiet -m "$subject" </dev/null ||
         _contribute_red "upgrade: git commit failed in the instance"
       log "committed: $subject"
     fi
