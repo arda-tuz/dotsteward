@@ -319,9 +319,7 @@ class _Transaction(runner.Runner):
             code = question.get("code")
             if code in _NOTES:
                 self.notes.append(f"{code}: {question.get('message')}")
-            elif code in _OWN_QUESTIONS and not foreign:
-                continue
-            elif code == "checkout-dirty" and self.options.with_changes:
+            elif (code in _OWN_QUESTIONS and not foreign) or (code == "checkout-dirty" and self.options.with_changes):
                 continue
             else:
                 self.ask.append(question)
