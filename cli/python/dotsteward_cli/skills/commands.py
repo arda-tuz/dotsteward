@@ -150,9 +150,9 @@ def _status(args: argparse.Namespace, loaded: config.Instance) -> int:
             if item.get("state") == reconcile.NAME_TAKEN:
                 why = f": {item.get('reason') or 'another copy'}"
                 print(f"[dotsteward] {key}: name-taken{why} ({item.get('path')})")
-                continue
-            why = f": {item['reason']}" if item.get("reason") else ""
-            print(f"[dotsteward] {key}: {item.get('state')} ({item.get('origin')}){why}")
+            else:
+                why = f": {item['reason']}" if item.get("reason") else ""
+                print(f"[dotsteward] {key}: {item.get('state')} ({item.get('origin')}){why}")
             copy = item.get("path")
             if item.get("state") in reconcile.KEPT_OUT and not (isinstance(copy, str) and os.path.isdir(copy)):
                 print(f"[dotsteward] {key}: no copy is left: dotsteward skills forget --clear {item.get('name')}")
