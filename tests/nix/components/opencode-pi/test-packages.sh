@@ -4,7 +4,7 @@
 # (agent_tools.pi) exactly like the reference derivation (pinned source tag,
 # npm dependency hash, model data from the pi-ai package of the same version,
 # the coding-agent workspace with --ignore-scripts and build:offline, the
-# workspace copy loop, ripgrep and fd on the wrapper's PATH, the version
+# workspace copy loop over the workspaces of the release, ripgrep and fd on the wrapper's PATH, the version
 # check, no PI_* defaults), on Linux and darwin (evaluation); and the module
 # adds it to home.packages wherever the component is active, whatever the
 # OpenCode method is.
@@ -57,11 +57,8 @@ assert_contains "$pre" '--strip-components=4'
 assert_contains "$pre" 'package/dist/providers/data'
 assert_contains "$(jq -r .buildPhase <<<"$phases")" 'npm run build:offline'
 install=$(jq -r .postInstall <<<"$phases")
-for workspace in chord:packages/chord pi-ai:packages/ai pi-agent-core:packages/agent pi-client:packages/client \
-  pi-codemode:packages/codemode pi-durable:packages/durable pi-mcp:packages/mcp pi-protocol:packages/protocol \
-  pi-server:packages/server pi-telemetry:packages/telemetry pi-tui:packages/tui; do
-  assert_contains "$install" "@earendil-works/$workspace" "workspace copy loop"
-done
+# The workspaces come from the release (test-pi-workspaces.sh runs the step).
+assert_contains "$install" 'for manifest in packages/*/package.json; do'
 assert_contains "$install" "find \"\$nm\" -type l -lname '*/packages/*' -delete"
 assert_contains "$install" "find \"\$nm/.bin\" -xtype l -delete"
 fixup=$(jq -r .postFixup <<<"$phases")

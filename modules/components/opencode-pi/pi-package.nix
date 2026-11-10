@@ -39,7 +39,10 @@ pkgs.buildNpmPackage (finalAttrs: {
 
   npmWorkspace = "packages/coding-agent";
   npmRebuildFlags = [ "--ignore-scripts" ];
-  nativeBuildInputs = [ pkgs.makeBinaryWrapper ];
+  nativeBuildInputs = [
+    pkgs.makeBinaryWrapper
+    pkgs.jq
+  ];
 
   buildPhase = ''
     runHook preBuild
@@ -48,23 +51,27 @@ pkgs.buildNpmPackage (finalAttrs: {
   '';
 
   # The workspace packages are symlinks into the build tree: replace each
-  # with a copy, then drop the links that would dangle in the output.
+  # with a copy, then drop the links that would dangle in the output. The
+  # workspaces are those of the release: every package.json below packages/
+  # that is published (not "private", such as the evals); the coding agent
+  # is the package itself. A release that drops or adds one builds as it is.
   postInstall = ''
-    local nm="$out/lib/node_modules/pi-monorepo/node_modules"
-    for ws in @earendil-works/chord:packages/chord \
-              @earendil-works/pi-ai:packages/ai \
-              @earendil-works/pi-agent-core:packages/agent \
-              @earendil-works/pi-client:packages/client \
-              @earendil-works/pi-codemode:packages/codemode \
-              @earendil-works/pi-durable:packages/durable \
-              @earendil-works/pi-mcp:packages/mcp \
-              @earendil-works/pi-protocol:packages/protocol \
-              @earendil-works/pi-server:packages/server \
-              @earendil-works/pi-telemetry:packages/telemetry \
-              @earendil-works/pi-tui:packages/tui; do
-      IFS=: read -r pkg src <<< "$ws"
-      rm "$nm/$pkg"
-      cp -r "$src" "$nm/$pkg"
+    local nm="$out/lib/node_modules/pi-monorepo/node_modules" manifest dir name
+    for manifest in packages/*/package.json; do
+      dir=''${manifest%/package.json}
+      [[ $dir != "$npmWorkspace" ]] || continue
+      [[ $(jq -r '.private // false' "$manifest") != true ]] || continue
+      name=$(jq -r '.name // empty' "$manifest")
+      if [[ -z $name ]]; then
+        echo "pi-package.nix: $manifest has no name; the workspaces of this Pi release are not what the package expects" >&2
+        exit 1
+      fi
+      if [[ ! -L $nm/$name ]]; then
+        echo "pi-package.nix: $name ($dir) is not linked in node_modules; the npm layout of this Pi release is not what the package expects" >&2
+        exit 1
+      fi
+      rm "$nm/$name"
+      cp -r "$dir" "$nm/$name"
     done
     find "$nm" -type l -lname '*/packages/*' -delete
     find "$nm/.bin" -xtype l -delete
