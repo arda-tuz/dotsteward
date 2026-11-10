@@ -4,6 +4,7 @@
 # links a unit into the wants directory of its WantedBy= below the fixture
 # root, a missing unit file and missing root rights are refused, and what
 # needs a running systemd fails without DS_SYSTEM_ROOT/run/systemd/system.
+# --user talks to the user manager of HOME, reachable when the test says so.
 
 ds_use_stubs sudo systemctl
 
@@ -48,3 +49,19 @@ assert_exit 3 systemctl is-active example-app.timer
 assert_exit 1 systemctl reticulate
 assert_contains "$DS_STDERR" "Unknown command verb reticulate."
 assert_eq "3" "$(ds_call_count systemctl 'is-active *')"
+
+# --user: the user manager of HOME, reachable only when the test says so.
+assert_exit 1 systemctl --user is-active example-app.path
+assert_contains "$DS_STDERR" "Failed to connect to bus"
+ds_stub_set systemctl user-manager running
+user_units=$HOME/.config/systemd/user
+mkdir -p "$user_units"
+printf '[Path]\nPathChanged=/tmp/example\n' >"$user_units/example-app.path"
+assert_eq "not-found" "$(systemctl --user show -p LoadState --value example-app.path)"
+assert_exit 3 systemctl --user is-active example-app.path
+assert_exit 0 systemctl --user daemon-reload
+assert_eq "loaded" "$(systemctl --user show -p LoadState --value example-app.path)"
+assert_exit 0 systemctl --user start example-app.path
+assert_exit 0 systemctl --user is-active example-app.path
+assert_exit 3 systemctl is-active example-app.path
+assert_exit 5 systemctl --user start no-such.path

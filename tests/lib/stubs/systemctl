@@ -15,6 +15,13 @@
 #   is-enabled UNIT           prints enabled or disabled; exit 0 or 1
 #   is-active UNIT            prints active or inactive; exit 0 or 3
 # A started unit is remembered in the state of the stub.
+# --user talks to the user manager of HOME instead: its units are
+# $HOME/.config/systemd/user, no root rights are needed, and it is reachable
+# only when the state value "user-manager" is "running" (else, as in a
+# container: "Failed to connect to bus", exit 1). There
+#   daemon-reload             loads every unit file of the directory
+#   start UNIT...             needs the unit file; also loads it
+#   show -p LoadState --value UNIT   loaded or not-found
 set -euo pipefail
 # shellcheck source=tests/lib/harness.sh
 source "$(dirname "$(readlink -f "$0")")/../harness.sh"
@@ -24,16 +31,54 @@ units_dir=$DS_SYSTEM_ROOT/etc/systemd/system
 active_dir=$DS_STUB_DIR/active
 
 now=0
+user=0
 words=()
 for arg in "$@"; do
   case $arg in
     --now) now=1 ;;
+    --user) user=1 ;;
     -*) ;;
     *) words+=("$arg") ;;
   esac
 done
 operation=${words[0]:-}
 units=("${words[@]:1}")
+
+if ((user)); then
+  if [[ $(ds_stub_value user-manager) != running ]]; then
+    printf 'Failed to connect to bus: No medium found\n' >&2
+    exit 1
+  fi
+  units_dir=$HOME/.config/systemd/user
+  active_dir=$DS_STUB_DIR/user-active
+  loaded_dir=$DS_STUB_DIR/user-loaded
+  mkdir -p "$loaded_dir"
+  case $operation in
+    daemon-reload)
+      for file in "$units_dir"/*.path "$units_dir"/*.service "$units_dir"/*.timer; do
+        [[ -f $file ]] && : >"$loaded_dir/$(basename "$file")"
+      done
+      exit 0
+      ;;
+    start)
+      for unit in "${units[@]}"; do
+        [[ -f $units_dir/$unit ]] || {
+          printf 'Failed to start %s: Unit %s not found.\n' "$unit" "$unit" >&2
+          exit 5
+        }
+        : >"$loaded_dir/$unit"
+        mkdir -p "$active_dir"
+        : >"$active_dir/$unit"
+      done
+      exit 0
+      ;;
+    show)
+      unit=${words[-1]}
+      if [[ -f $loaded_dir/$unit ]]; then printf 'loaded\n'; else printf 'not-found\n'; fi
+      exit 0
+      ;;
+  esac
+fi
 
 require_root() {
   ds_stub_as_root && return 0
