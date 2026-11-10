@@ -97,7 +97,10 @@
 #       local change is never overwritten, a deleted one is not installed
 #       again. Without the root of its agent it is a note.
 #   skills_sweep
-#       removes (install) or reports (check) every dangling link directly
+#       removes (install) or reports (check) every directory of the scoped
+#       store that no scoped entry of the lock names (a skill that left the
+#       lock, or is no longer scoped; the store holds only what dotsteward
+#       put there), then every dangling link directly
 #       in the canonical root, the link roots and the agent roots whose
 #       literal target is in a managed root or the scoped store (relative ../../<root>/... or $HOME/<root>/...,
 #       or a link-root target prefix); other links stay; check only notes the
@@ -134,7 +137,7 @@
 #   entries and links (both skill steps): entry-broken, entry-foreign,
 #     entry-shadowed, entry-missing, link-broken, link-foreign,
 #     link-not-symlink, link-missing
-#   sweep: dangling-link
+#   sweep: scoped-skill-stale, dangling-link
 # Messages that ask for a change name 'dotsteward rebuild --profile
 # <profile> --switch', which runs `agents install` after activation.
 
@@ -1157,8 +1160,24 @@ _skills_names_own() {
 }
 
 skills_sweep() {
-  local root link failed=0
-  local -a links=()
+  local root link copy scoped failed=0
+  local -a links=() copies=()
+  # A lock that cannot be read removes nothing.
+  if [[ -d $SKILLS_SCOPED_STORE ]] && scoped=$(jq -r '.skills[] | select(has("agents")) | .directory' "$SKILLS_LOCK"); then
+    mapfile -d '' copies < <(find "$SKILLS_SCOPED_STORE" -mindepth 1 -maxdepth 1 -print0 | LC_ALL=C sort -z)
+    for copy in "${copies[@]}"; do
+      grep -qxF -- "${copy##*/}" <<<"$scoped" && continue
+      if ((SKILLS_CHECK_ONLY)); then
+        skills_finding scoped-skill-stale "$copy" \
+          "scoped skill copy not in the lock: $copy; $(_skills_rebuild_hint) to remove it"
+        ((SKILLS_KEEP_GOING)) || exit 1
+        failed=1
+        continue
+      fi
+      rm -rf -- "$copy"
+      log "removed scoped skill copy not in the lock: $copy"
+    done
+  fi
   for root in "$SKILLS_CANONICAL" "${SKILLS_LINK_ROOTS[@]}" "${SKILLS_AGENT_ROOTS[@]}"; do
     [[ -d $root ]] || continue
     mapfile -d '' links < <(find "$root" -mindepth 1 -maxdepth 1 -xtype l -print0 | LC_ALL=C sort -z)

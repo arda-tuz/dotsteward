@@ -12,7 +12,8 @@
 #                        legacy roots and the excluded subtrees
 #   3. skills            the framework skills of the manifest first, then the
 #                        instance skills lock entries in file order
-#   4. sweep             dangling links into the managed skill roots
+#   4. sweep             scoped store copies the lock no longer names, then
+#                        dangling links into the managed skill roots
 #   5. agentsMigrate hooks, 6. agentsPost hooks
 #   7. validation        checks.commands, checks.floors, the probe registry,
 #                        then the checks.agents hooks; install
