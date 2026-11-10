@@ -656,7 +656,7 @@ def _build(
     given_order = c["components"].get("order", [])
     order = [*given_order, *(n for n in catalog_names + instance_names if n not in given_order)]
 
-    raw_tables = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+    raw_tables: dict[str, Any] = raw["components"] if isinstance(raw.get("components"), dict) else {}
     systems = c["nix"]["systems"]
 
     def component_for(component: str) -> dict[str, Any]:
@@ -664,7 +664,8 @@ def _build(
         default_source = "catalog" if component in catalog_names else "instance"
         resolved_table = {**table, "source": table.get("source", default_source)}
         platform = DEFAULT_ENABLED.get(component)
-        explicit = isinstance(raw_tables.get(component), dict) and "enable" in raw_tables[component]
+        entry = raw_tables.get(component)
+        explicit = isinstance(entry, dict) and "enable" in entry
         if platform is not None and resolved_table["source"] == "catalog" and not explicit:
             resolved_table["enable"] = any(system.endswith(f"-{platform}") for system in systems)
         return resolved_table
