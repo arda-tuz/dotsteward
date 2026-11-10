@@ -27,8 +27,8 @@ assert_core_eq 'true' \
 # Home Manager writes both units and their links into default.target.wants into the
 # generation, and they are managed links of core: E2E checks that they resolve, rollback
 # removes them.
-assert_core_eq '[true,true]' \
-  "map (name: builtins.hasAttr name (homeOf $linux).xdg.configFile) [ \"systemd/user/dotsteward-observe.path\" \"systemd/user/dotsteward-observe.service\" ]"
+assert_core_eq '[true,true,true,true]' \
+  "map (name: builtins.hasAttr name (homeOf $linux).xdg.configFile) [ \"systemd/user/dotsteward-observe.path\" \"systemd/user/dotsteward-observe.service\" \"systemd/user/default.target.wants/dotsteward-observe.path\" \"systemd/user/default.target.wants/dotsteward-observe.service\" ]"
 assert_core_eq '["~/.config/systemd/user/dotsteward-observe.path","~/.config/systemd/user/dotsteward-observe.service","~/.config/systemd/user/default.target.wants/dotsteward-observe.path","~/.config/systemd/user/default.target.wants/dotsteward-observe.service"]' \
   "lib.filter (lib.hasInfix \"systemd\") (homeOf $linux).dotsteward.manifest.managed_links"
 

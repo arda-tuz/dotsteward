@@ -8,9 +8,10 @@
 #                               wanted by default.target: the user manager watches
 #                               nothing while nobody is logged in, so a login catches up
 #
-# Both unit files are managed links of core (E2E checks them, rollback removes them). The
-# service is Type=exec, so a login or an activation never waits for it. A pending mark
-# (exit 3) and a record that waits for the network (exit 6) are no failures. Linux only:
+# Both unit files and their default.target.wants links are managed links of core (E2E
+# checks them, rollback removes them). The service is Type=exec, so a login or an
+# activation never waits for it. A pending mark (exit 3) and a record that waits for the
+# network (exit 6) are no failures. Linux only:
 # macOS has neither dpkg nor systemd. Without an instance checkout (no instance.name)
 # there is no instance to observe, and no units.
 {
@@ -69,6 +70,8 @@ in
     dotsteward.core.managedLinks = [
       "~/.config/systemd/user/dotsteward-observe.path"
       "~/.config/systemd/user/dotsteward-observe.service"
+      "~/.config/systemd/user/default.target.wants/dotsteward-observe.path"
+      "~/.config/systemd/user/default.target.wants/dotsteward-observe.service"
     ];
 
     systemd.user.paths.dotsteward-observe = {

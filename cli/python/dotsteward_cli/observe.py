@@ -307,14 +307,35 @@ def _component_versions(packages: Mapping[str, Mapping[str, Any]], wanted: Seque
     return dict(sorted(found.items()))
 
 
+def _e2e(
+    instance: config.Instance, profile: str, names: Sequence[str], *flags: str
+) -> subprocess.CompletedProcess[str]:
+    argv = [str(config.FRAMEWORK_ROOT / "cli" / "dotsteward"), "--instance", str(instance.root), "e2e"]
+    argv += ["--profile", profile, "--json", *flags]
+    for name in names:
+        argv += ["--component", name]
+    return subprocess.run(argv, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL)
+
+
+def _no_result(names: Sequence[str], done: subprocess.CompletedProcess[str]) -> CheckError:
+    detail = (done.stderr.strip().splitlines() or [f"exit {done.returncode}"])[-1]
+    return CheckError(f"the E2E checks of {', '.join(names)} gave no result: {detail}")
+
+
+def _with_checks(instance: config.Instance, profile: str, names: Sequence[str]) -> set[str]:
+    """Those of NAMES that have E2E checks. Raises CheckError."""
+    done = _e2e(instance, profile, names, "--list")
+    try:
+        checks = json.loads(done.stdout)["checks"]
+    except (ValueError, KeyError, TypeError):
+        raise _no_result(names, done) from None
+    return {str(check).partition(":")[0] for check in checks if isinstance(check, str)} & set(names)
+
+
 def _check(instance: config.Instance, profile: str, names: Sequence[str]) -> tuple[set[str], list[str]]:
     """Runs the E2E checks of NAMES alone: (the names whose checks failed, the messages of
     their findings). Raises CheckError when no result came."""
-    argv = [str(config.FRAMEWORK_ROOT / "cli" / "dotsteward"), "--instance", str(instance.root), "e2e"]
-    argv += ["--profile", profile, "--keep-going", "--json"]
-    for name in names:
-        argv += ["--component", name]
-    done = subprocess.run(argv, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL)
+    done = _e2e(instance, profile, names, "--keep-going")
     try:
         result = json.loads(done.stdout)
         findings = result.get("findings") or []
@@ -331,8 +352,7 @@ def _check(instance: config.Instance, profile: str, names: Sequence[str]) -> tup
             failed.add(component)
             messages.append(f"{step}: {finding.get('message')}")
     if not failed:
-        detail = (done.stderr.strip().splitlines() or [f"exit {done.returncode}"])[-1]
-        raise CheckError(f"the E2E checks of {', '.join(names)} gave no result: {detail}")
+        raise _no_result(names, done)
     return failed, messages
 
 
@@ -380,6 +400,14 @@ def _verify(
     profile = machine.machine_profile(instance, state, machine.current_name(machine.read_machine(state), env), env)
     if profile is None:
         raise CheckError("this machine has no profile to check its components with")
+    # Nothing verifies a component without checks: it stays as it was.
+    with_checks = _with_checks(instance, profile, checking)
+    for name in [name for name in checking if name not in with_checks]:
+        version = states.main_version(tracked[name]["installs"], versions[name])
+        _say(f"{name}: no E2E checks at {version} (changed: {', '.join(reached[name])})")
+    checking = [name for name in checking if name in with_checks]
+    if not checking:
+        return
     failed, messages = _check(instance, profile, checking)
     checks = states.read_checks(state)
     for name in checking:
@@ -429,15 +457,14 @@ def _observe_once(instance: config.Instance, env: Mapping[str, str], state: str,
         return _send_queued(instance, env, name)
     count = len({key for key in {*before, *versions} if before.get(key) != versions.get(key)})
     _say(f"{count} package{'' if count == 1 else 's'} changed since the last observation")
-    problem = None
     try:
         _verify(instance, env, state, packages, changed)
-    except CheckError as error:
-        problem = error
+    except CheckError:
+        # What is known is recorded; the change stays unobserved, so the next run checks it.
+        states.record(instance, env, by="observe")
+        raise
     code = states.record(instance, env, by="observe")
     write_snapshot(state, versions)
-    if problem is not None:
-        raise problem
     return code
 
 

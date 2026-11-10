@@ -225,7 +225,9 @@ whose packages changed, or whose dependency closure (the `Pre-Depends` and `Depe
 installed packages, every alternative, the providers of a virtual package) holds a changed
 package, get their E2E checks alone (`dotsteward e2e --component NAME`, a run that writes no
 record of E2E); the full set stays with `upgrade` and `apply`. Each such component is named with
-its result, and a red one gets a desktop notification (`notify-send`). The state writer records
+its result, and a red one gets a desktop notification (`notify-send`). A component without E2E
+checks is named and stays unverified. When the checks give no result (exit 1), the state is
+recorded but the change stays unobserved, so the next run checks it again. The state writer records
 the state with `recorded_by: observe`: a checked component is `verified` or `red` while its
 packages are the ones checked and `unverified` once they changed, with `version` (installed) and
 `last_verified` apart; `<state>/state/checks.json` keeps the last check of each component, so a
