@@ -117,6 +117,12 @@ assert_eq unknown "$(item a plotting .origin)"
 assert_contains "$(item a plotting .origin_detail)" "no remote"
 EXPECT_STATUS=1 ds_code a skills track plotting --all
 assert_contains "$DS_STDERR" "no remote"
+# Given a remote, the next full look knows where it comes from.
+git -C "$sources/local-only" remote add origin https://example.com/example-org/plotting.git
+assert_exit 0 ds a skills reconcile --full
+assert_eq downloaded "$(item a plotting .origin)"
+assert_eq https://example.com/example-org/plotting.git "$(item a plotting .source.url)"
+assert_eq plotting "$(item a plotting .source.path)"
 
 # Once the clone is clean again, the answer looks again.
 rm -f "$clone/chart-making/NOTES.md"
@@ -208,3 +214,59 @@ assert_eq "{}" "$(item a table-making .)"
 assert_exit 0 ds a "${install[@]}"
 assert_exit 0 ds a agents check --profile workstation
 assert_eq "" "$(git -C "$clone" status --porcelain)"
+
+# --- the pin moves ahead of the clone (an update of pins before the next pull): still green -------
+
+inst=$(clone_of a)
+printf -- '---\nname: figure-making\ndescription: Synthetic skill.\n---\n\nversion three\n' \
+  >"$upstream_work/figure-making/SKILL.md"
+git -C "$upstream_work" commit -q -am "chore: version three"
+git -C "$upstream_work" push -q "$upstream" main
+ahead=$(git -C "$upstream_work" rev-parse HEAD)
+rm -rf "$inst/agent/skills/figure-making"
+git -C "$upstream_work" archive HEAD figure-making | tar -x -C "$inst/agent/skills"
+lock=$inst/agent/skills.lock.json
+jq --arg revision "$ahead" --arg dsha "$(local_digest "$inst/agent/skills/figure-making")" \
+  --arg sha "$(sha256sum "$inst/agent/skills/figure-making/SKILL.md" | cut -d' ' -f1)" \
+  '(.skills[] | select(.name == "figure-making")) += {revision: $revision, directory_sha256: $dsha, skill_sha256: $sha}' \
+  "$lock" >"$lock.tmp"
+mv -- "$lock.tmp" "$lock"
+assert_exit 0 ds a agents check --profile workstation
+assert_contains "$DS_STDERR" "skill figure-making follows its clone"
+assert_not_contains "$(cat "$clone/figure-making/SKILL.md")" "version three"
+git -C "$inst" checkout -q -- agent
+
+# --- a file tool edits a linked download that waits for its answer: still a question -------------
+
+graphs=$world/graphs
+git init -q -b main "$graphs"
+mkdir -p "$graphs/graph-making"
+printf -- '---\nname: graph-making\ndescription: Synthetic skill.\n---\n' >"$graphs/graph-making/SKILL.md"
+printf 'Synthetic license\n' >"$graphs/LICENSE"
+git -C "$graphs" add -A
+git -C "$graphs" commit -q -m "chore: a skill"
+git clone -q "$graphs" "$sources/graphs"
+ln -s "$sources/graphs/graph-making" "$agents_skills/graph-making"
+assert_exit 0 ds a skills reconcile
+assert_eq downloaded "$(item a graph-making .origin)"
+printf 'an edit through the link\n' >>"$agents_skills/graph-making/SKILL.md"
+tool_wrote a "$agents_skills/graph-making/SKILL.md" post-tool-use-edit
+assert_eq ask "$(item a graph-making .state)"
+assert_eq unknown "$(item a graph-making .origin)"
+assert_contains "$(item a graph-making .origin_detail)" "uncommitted"
+find "$sources/graphs" -exec touch -h -d '2001-01-01' {} +
+tip=$(remote_tip)
+ds_code a skills capture --now
+assert_eq "$tip" "$(remote_tip)" "nothing is published without an answer"
+
+# --- forget takes the license beside the copy along -------------------------------------------------
+
+ds_code a skills forget figure-making
+if git -C "$remote" cat-file -e refs/heads/main:agent/skill-licenses/figure-making 2>/dev/null; then
+  ds_fail "the license goes with the skill"
+fi
+if git -C "$remote" cat-file -e refs/heads/main:agent/skills/figure-making 2>/dev/null; then
+  ds_fail "the skill is gone from the repository"
+fi
+git -C "$(clone_of a)" pull -q --ff-only
+assert_exit 0 ds a static --only skills
