@@ -39,15 +39,17 @@ assert_eq '["example-app"]' \
   "supported platform"
 
 # Managed links: core first, then the enabled components in [components]
-# order; the same list in every profile.
-expected='["~/.config/nix/nix.conf","~/.example-term/RULES.md","~/.example-app/AGENTS.md"]'
+# order; the same list in every profile. Core's links include the units of the observer.
+core='"~/.config/nix/nix.conf","~/.config/systemd/user/dotsteward-observe.path","~/.config/systemd/user/dotsteward-observe.service","~/.config/systemd/user/default.target.wants/dotsteward-observe.path","~/.config/systemd/user/default.target.wants/dotsteward-observe.service"'
+expected="[$core,\"~/.example-term/RULES.md\",\"~/.example-app/AGENTS.md\"]"
 assert_core_eq "$expected" '(homeOf { config = "workstation"; modules = componentModules; }).dotsteward.managedLinks'
 assert_core_eq "$expected" '(homeOf { config = "workstation"; profile = "fresh"; modules = componentModules; }).dotsteward.managedLinks'
-assert_core_eq '["~/.config/nix/nix.conf"]' '(homeOf { modules = componentModules; }).dotsteward.managedLinks'
+assert_core_eq "[$core]" '(homeOf { modules = componentModules; }).dotsteward.managedLinks'
 
 # An instance module adds its own managed links.
-assert_core_eq '["~/.codex/skills/example-skill","~/.config/nix/nix.conf","~/.example-app/AGENTS.md","~/.example-term/RULES.md"]' \
-  'lib.sort lib.lessThan (homeOf { config = "workstation"; modules = componentModules ++ [ { dotsteward.managedLinks = [ "~/.codex/skills/example-skill" ]; } ]; }).dotsteward.managedLinks'
+assert_core_eq 'true' \
+  'lib.sort lib.lessThan (homeOf { config = "workstation"; modules = componentModules ++ [ { dotsteward.managedLinks = [ "~/.codex/skills/example-skill" ]; } ]; }).dotsteward.managedLinks
+    == lib.sort lib.lessThan ([ "~/.codex/skills/example-skill" ] ++ (homeOf { config = "workstation"; modules = componentModules; }).dotsteward.managedLinks)'
 assert_core_fails '(homeOf { modules = [ { dotsteward.managedLinks = [ "relative/link" ]; } ]; }).dotsteward.managedLinks' \
   "dotsteward.managedLinks"
 
