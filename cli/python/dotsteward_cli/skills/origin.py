@@ -18,9 +18,12 @@ A clone is where the skill comes from only when it can say so for another machin
 remote named origin, a commit that holds the directory, and no change to the directory
 the commit does not have (an untracked file counts). The source is then that remote
 (without any credentials in it), the HEAD and the directory within the clone. A clone
-that falls short of that leaves the skill unknown, and the detail says why. Only the
-directory itself and the target of a link are looked at, never the directories above a
-real one: a home that is a work tree would make every skill in it downloaded.
+that falls short of that leaves the skill unknown, and the detail says why; a directory
+with a .git of its own stays so even when a file tool wrote into it. Only the directory
+itself and the target of a link are looked at, never the directories above a real one: a
+home that is a work tree would make every skill in it downloaded. A link into a work tree
+that cannot say where it comes from is judged like any other directory, so a skill an
+agent writes through a link into a repository of the user stays the user's.
 """
 
 from __future__ import annotations
@@ -129,7 +132,11 @@ def classify(name: str, path: str, evidence: Mapping[str, Any] | None) -> Origin
             },
         )
     detail = None
-    if os.path.islink(path) or os.path.exists(os.path.join(path, ".git")):
+    if os.path.exists(os.path.join(path, ".git")):
+        # A clone of its own is somebody's download, whatever an agent wrote into it since.
+        source, detail = git_source(path)
+        return Origin(DOWNLOADED, source) if source is not None else Origin(UNKNOWN, None, detail)
+    if os.path.islink(path):
         source, detail = git_source(path)
         if source is not None:
             return Origin(DOWNLOADED, source)
