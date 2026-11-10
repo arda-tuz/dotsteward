@@ -677,18 +677,19 @@ _skills_refresh() {
 # _skills_refresh_third_party NAME PATH SOURCE DIGEST [REVISION [UPSTREAM]]: _skills_refresh,
 # unless this machine has a named copy that never was a pin of the lock: something of the user's
 # under a name another machine brought. It stays, and `dotsteward incoming` asks. A clean clone of
-# the pinned upstream (see _skills_follows_upstream) is not such a copy: _skills_refresh says so.
+# the pinned upstream (dotsteward_cli.skills.origin follows) is not such a copy: _skills_refresh
+# says so.
 _skills_refresh_third_party() {
-  local name=$1 path=$2 expected=$4 revision=${5:-} upstream=${6:-} real digest mode=install answer follows=1
+  local name=$1 path=$2 expected=$4 revision=${5:-} upstream=${6:-} real digest mode=install answer follows=''
   if [[ -n ${DS_MACHINE_NAME:-} ]] && real=$(realpath -e -- "$path" 2>/dev/null); then
     digest=$(directory_sha256 "$real")
-    if [[ $digest != "$expected" && -n $revision ]]; then
-      follows=0
-      _skills_follows_upstream "$real" "$revision" "$upstream" || follows=$?
+    if [[ $digest != "$expected" && $revision =~ ^[0-9a-f]{40}$ ]]; then
+      follows=$(ds_python dotsteward_cli.skills.origin follows "$real" "$revision" "$upstream" 2>/dev/null) || follows=''
     fi
-    if [[ $digest != "$expected" ]] && ((follows != 0 && follows != 3)); then
+    if [[ $digest != "$expected" && $follows != ahead && $follows != other ]]; then
       ((SKILLS_CHECK_ONLY)) && mode=check
-      answer=$(ds_python dotsteward_cli.incoming clash --name "$name" --digest "$digest" --path "$real" --mode "$mode") ||
+      answer=$(ds_python dotsteward_cli.incoming clash --name "$name" --digest "$digest" --path "$real" --mode "$mode" \
+        --machine "$DS_MACHINE_NAME") ||
         skills_fail skill-unresolvable "$real" "cannot read the skill $name ($real)"
       if [[ $answer == clash ]]; then
         log "skill $name: a copy here has this name and never was in the lock; it stays until 'dotsteward incoming' has an answer"

@@ -495,10 +495,11 @@ def settle(instance: config.Instance, env: Mapping[str, str] | None = None) -> N
             _remove_copy(instance, state_root, name, record)
 
 
-def clash(instance: config.Instance, name: str, digest: str, path: str, *, record: bool) -> bool:
+def clash(instance: config.Instance, name: str, digest: str, path: str, *, record: bool, this: str = "") -> bool:
     """Whether the copy at PATH of a third party skill, with DIGEST, is something else than an older
     pin of the lock: a name another machine brought and this machine already used. Only a machine
-    that has a base can tell; the history of the lock says what the name ever was."""
+    that has a base can tell; the history of the lock says what the name ever was. A skill that
+    THIS machine brought into the lock is no such name: its copy that differs is drift."""
     from dotsteward_cli.skills import state as skill_state
 
     state_root = config.state_root(instance)
@@ -510,6 +511,8 @@ def clash(instance: config.Instance, name: str, digest: str, path: str, *, recor
     lock_file = str(instance.config["skills"]["lock"])
     if _git(root, "log", "-1", "--format=%H", f"-S{digest}", "--", lock_file).strip():
         return False
+    if this and _brought_here(instance, name, this):
+        return False
     if record:
         skill_state.set_item(
             state_root,
@@ -517,6 +520,18 @@ def clash(instance: config.Instance, name: str, digest: str, path: str, *, recor
             {"kind": "skill", "name": name, "path": path, "state": CLASH, "origin": "unknown", "digest": digest},
         )
     return True
+
+
+def _brought_here(instance: config.Instance, name: str, this: str) -> bool:
+    """Whether the commit that vendored the skill NAME is this machine's: its trace line names THIS,
+    or no remote has it yet."""
+    for entry in machine.entries_of(machine.read_lock(instance), "skills"):
+        directory = entry.get("directory")
+        if entry.get("name") != name or not isinstance(directory, str):
+            continue
+        where, pick = [f"{_vendor_path(instance, directory)}/SKILL.md"], ["--diff-filter=A"]
+        return _unpublished(instance.root, where, pick) or _source(instance.root, where, pick)["by"] == this
+    return False
 
 
 # --- doing what the answer says ---------------------------------------------------------
@@ -1058,7 +1073,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments[:1] == ["clash"]:
         # For `agents install` and `agents check`, not for a person.
         name, digest, path, mode = arguments[2], arguments[4], arguments[6], arguments[8]
-        print("clash" if clash(config.load_instance(), name, digest, path, record=mode == "install") else "no")
+        this = arguments[10] if arguments[9:10] == ["--machine"] and len(arguments) > 10 else ""
+        found = clash(config.load_instance(), name, digest, path, record=mode == "install", this=this)
+        print("clash" if found else "no")
         return report.OK
     parser = _parser()
     try:
