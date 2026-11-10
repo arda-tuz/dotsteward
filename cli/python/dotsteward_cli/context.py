@@ -364,6 +364,14 @@ def _build_context(instance: config.Instance, env: Mapping[str, str]) -> dict[st
             ]
         )
 
+    def updater_of(name: str) -> str | None:
+        updater = c["components"][name].get("updater")
+        return updater if isinstance(updater, str) else None
+
+    def self_update_of(name: str) -> dict[str, Any] | None:
+        declared = mirror_components.get(name, {}).get("self_update")
+        return declared if isinstance(declared, dict) else None
+
     def method_of(name: str) -> str | None:
         method = config.method_for(c, name, platform_name)
         if method is None:
@@ -380,6 +388,8 @@ def _build_context(instance: config.Instance, env: Mapping[str, str]) -> dict[st
             "profiles": c["components"][name]["profiles"],
             "settings_targets": targets_of(name),
             "commands": commands_of(name),
+            "updater": updater_of(name),
+            "self_update": self_update_of(name),
         }
         for name in c["components"]["order"]
     ]

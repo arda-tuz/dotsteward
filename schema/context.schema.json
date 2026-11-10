@@ -202,7 +202,7 @@
     },
     "components": {
       "type": "array",
-      "description": "Every component of the configuration, in components.order (hook and check order). settings_targets and commands come from the .dotsteward manifest mirror of the running system and are empty without it.",
+      "description": "Every component of the configuration, in components.order (hook and check order). settings_targets, commands and self_update come from the .dotsteward manifest mirror of the running system and are empty without it.",
       "items": {
         "type": "object",
         "properties": {
@@ -234,9 +234,28 @@
           "commands": {
             "description": "Commands the component's checks require on PATH.",
             "$ref": "#/$defs/names"
+          },
+          "updater": {
+            "$ref": "#/$defs/optionalString",
+            "description": "The updater the instance names for the component (components.<name>.updater); null when it names none."
+          },
+          "self_update": {
+            "description": "The update command the component declares (self_update of the mirror of the running system), which dotsteward upgrade starts with updater = \"self\"; null when it declares none or there is no mirror.",
+            "oneOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "properties": {
+                  "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                  "version": { "type": "array", "items": { "type": "string" } }
+                },
+                "required": ["command", "version"],
+                "additionalProperties": false
+              }
+            ]
           }
         },
-        "required": ["name", "enable", "source", "method", "profiles", "settings_targets", "commands"],
+        "required": ["name", "enable", "source", "method", "profiles", "settings_targets", "commands", "updater", "self_update"],
         "additionalProperties": false
       }
     },

@@ -65,13 +65,13 @@ expect overlays '{"dotsteward-maintain":"agent/overlays/maintain.md","dotsteward
 # instance names); method from the configuration for the running platform,
 # else from the mirror; settings targets and commands from the mirror.
 expect components '[
-  {"name":"shell","enable":true,"source":"catalog","method":"nix","profiles":null,"settings_targets":[],"commands":["zsh","starship"]},
-  {"name":"herdr","enable":true,"source":"catalog","method":"official-binary","profiles":["workstation"],"settings_targets":[],"commands":["herdr"]},
-  {"name":"claude-code","enable":false,"source":"catalog","method":null,"profiles":null,"settings_targets":[],"commands":[]},
-  {"name":"codex","enable":true,"source":"catalog","method":"external","profiles":null,"settings_targets":["codex-config"],"commands":["codex"]},
-  {"name":"opencode-pi","enable":false,"source":"catalog","method":null,"profiles":null,"settings_targets":[],"commands":[]},
-  {"name":"vscode","enable":true,"source":"catalog","method":"deb","profiles":null,"settings_targets":["vscode-settings"],"commands":["code"]},
-  {"name":"example-term","enable":true,"source":"instance","method":"official-binary","profiles":null,"settings_targets":["example-term-config"],"commands":["example-term"]}
+  {"name":"shell","enable":true,"source":"catalog","method":"nix","profiles":null,"settings_targets":[],"commands":["zsh","starship"],"updater":null,"self_update":null},
+  {"name":"herdr","enable":true,"source":"catalog","method":"official-binary","profiles":["workstation"],"settings_targets":[],"commands":["herdr"],"updater":null,"self_update":null},
+  {"name":"claude-code","enable":false,"source":"catalog","method":null,"profiles":null,"settings_targets":[],"commands":[],"updater":null,"self_update":null},
+  {"name":"codex","enable":true,"source":"catalog","method":"external","profiles":null,"settings_targets":["codex-config"],"commands":["codex"],"updater":null,"self_update":null},
+  {"name":"opencode-pi","enable":false,"source":"catalog","method":null,"profiles":null,"settings_targets":[],"commands":[],"updater":null,"self_update":null},
+  {"name":"vscode","enable":true,"source":"catalog","method":"deb","profiles":null,"settings_targets":["vscode-settings"],"commands":["code"],"updater":null,"self_update":null},
+  {"name":"example-term","enable":true,"source":"instance","method":"official-binary","profiles":null,"settings_targets":["example-term-config"],"commands":["example-term"],"updater":null,"self_update":null}
 ]'
 
 # Target names: the mirror's component targets and the buffer's own

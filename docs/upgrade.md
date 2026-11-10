@@ -126,6 +126,7 @@ Update these too? [y/N] n
    `pushurl`, credentials) and runs its hooks: `.git/hooks` or its `core.hooksPath`, as an absolute path.
 5. **Own updaters.** A component that declares its updater (`claude update`) is asked to update
    when it has `updater = "self"`, or no `updater` and a method other than `deb`. Nothing else.
+   `dotsteward context --json` shows both for each component: `updater` and `self_update`.
 6. **Plugins are not updated here.** Marketplaces update themselves; `upgrade` starts no agent and
    changes no `autoUpdate`. It compares the installed trees with `<state>/plugins/scan.json`, scans
    what changed with `dotsteward scan --tree --secrets-only --redact`, and says so. A finding is a
