@@ -19,9 +19,10 @@
 #   apply_report FILTER       jq FILTER over the newest report of apply is true
 #   apply_step NAME           the status of step NAME in the newest report of apply, "none" without
 #   machine_trailer COMMIT    the Dotsteward-Machine value in the message of COMMIT
-#   add_system_component NAME MODE
-#                             a deb component NAME in the mirror for the profile workstation in
-#                             MODE (adopt or fresh), not committed
+#   add_system_component NAME MODE [METHOD]
+#                             a system-level component NAME (METHOD deb, the default, or system)
+#                             in the mirror for the profile workstation in MODE (adopt or fresh),
+#                             not committed
 #   other_machine_during_gate once|always FILE TEXT
 #                             another machine, other-host, publishes while the gate of this one
 #                             runs: a clone of the remote appends TEXT to FILE (a path in the tree),
@@ -93,10 +94,10 @@ machine_trailer() {
 }
 
 add_system_component() {
-  local name=$1 mode=$2 file
+  local name=$1 mode=$2 method=${3:-deb} file
   file=$up_inst/.dotsteward/manifest.$system.json
-  jq --arg name "$name" --arg mode "$mode" '.components += [{
-    name: $name, method: "deb", profiles: null, platforms: ["linux"], modes: {workstation: $mode},
+  jq --arg name "$name" --arg mode "$mode" --arg method "$method" '.components += [{
+    name: $name, method: $method, profiles: null, platforms: ["linux"], modes: {workstation: $mode},
     install: {packageNames: [$name]}}]' "$file" >"$file.new"
   mv -- "$file.new" "$file"
 }
