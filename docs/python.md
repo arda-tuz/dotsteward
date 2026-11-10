@@ -244,6 +244,14 @@ document=None, by=..., push_after=True)` holds a document to `schema/state.schem
 the intent, scans it and commits it on `refs/heads/state/<name>`, `push` and `read` send and
 read it. A command that records the state calls `record` with its own `by` (`upgrade`,
 `observe`, `apply`, `bootstrap`).
+`tracked_debs` names the deb components that apt updates and their packages, and `write_check`
+remembers the result of a check of one of them in `<state>/state/checks.json`, which `observe`
+merges: `verified`, `red` or `unverified`, with `version` and `last_verified`.
+
+`dotsteward_cli.observe` is `dotsteward observe` ([machines.md](machines.md)): `settle` waits
+for dpkg and apt, `installed` reads the packages with `dpkg-query`, `closure` follows their
+`Pre-Depends` and `Depends`, and `refresh_snapshot` makes the installed packages the last
+observation, for a command that changed and checked them itself.
 
 ### Incoming
 

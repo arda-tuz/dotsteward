@@ -200,6 +200,39 @@ fails too), and a state branch checked out in a work tree is never moved under i
 this machine (its local branch, and whether it waits) or of another (what the last fetch
 brought, held to the schema).
 
+## The observer
+
+The owner changes system packages outside dotsteward: `sudo apt-get upgrade` in a terminal,
+unattended-upgrades, a software center. The generation has a systemd user path unit,
+`dotsteward-observe.path`, on `/var/lib/dpkg/status`, which dpkg writes at the end of every
+run whatever program drove it; it starts `dotsteward observe` for the instance checkout. The
+service also runs at login, since the user manager watches nothing while nobody is logged in.
+Linux only; `dotsteward.observer.enable = false` in a module of the instance leaves the units
+out.
+
+The observer first waits until dpkg settled, without holding any lock, so that `upgrade` is not
+kept waiting meanwhile: no process holds a lock of `/var/lib/dpkg/lock-frontend`,
+`/var/lib/dpkg/lock`, `/var/lib/apt/lists/lock` or `/var/cache/apt/archives/lock` (as
+`/proc/locks` lists them, which reaches every program that drives dpkg), `/var/lib/dpkg/updates`
+is empty, `dpkg --audit` is clean and the status file stayed the same for `--settle-seconds`
+(15). After `--wait-limit` (1800) seconds it observes nothing; the next change of the status file
+starts it again. Then it takes the instance lock without waiting; when another command holds it,
+a pending mark makes the holder start the observer when it lets go.
+
+It compares the installed packages with the last observation, `<state>/observe/dpkg-snapshot.json`.
+The first run takes them as the baseline. When something changed, the tracked deb components
+whose packages changed, or whose dependency closure (the `Pre-Depends` and `Depends` of the
+installed packages, every alternative, the providers of a virtual package) holds a changed
+package, get their E2E checks alone (`dotsteward e2e --component NAME`, a run that writes no
+record of E2E); the full set stays with `upgrade` and `apply`. Each such component is named with
+its result, and a red one gets a desktop notification (`notify-send`). The state writer records
+the state with `recorded_by: observe`: a checked component is `verified` or `red` while its
+packages are the ones checked and `unverified` once they changed, with `version` (installed) and
+`last_verified` apart; `<state>/state/checks.json` keeps the last check of each component, so a
+later `state record` says the same. The observer never installs, removes, holds or downgrades a
+package: what the owner installed stays installed. A record that waits for the network goes out
+with the next run.
+
 ## The producer
 
 `[hosts] producer` names the machine that moves the values that come from upstream:

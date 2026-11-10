@@ -32,6 +32,7 @@ status as a failure.
 | `install` | 0, 1, 3 | 3: the preflight took the adaptive route and stopped the phase |
 | `login-shell` | 0, 1, child | |
 | `maintain` | 0, 1, 2, 3, 6 | `maintain begin`: 3 the transaction is open with questions for the user, or the adaptive route opened nothing; 6 no network, nothing opened ([apply.md](apply.md)) |
+| `observe` | 0, 1, 2, 3, 4, 6 | 0 also for a red component (it is named and notified), for a machine without a name or dpkg, and when dpkg did not settle within the wait limit; 1: a refusal or E2E checks that gave no result (the state is recorded all the same); 2: usage error; 3: the instance lock is busy, the holder starts the observer when it lets go; 4: the record breaks its schema or the privacy scan found something; 6: no network or no login, the record waits and the next run sends it |
 | `pins` | 0, 1, 2, 3, 6 | 1: inconsistencies or a refusal; 2: usage error or broken input (no instance, invalid configuration, invalid manifest mirror or rule, unreadable lock file, failed Nix evaluation); 3 and 6 from `pins apply` as a run report: review items wait, an upstream could not be read |
 | `preflight` | 0, 1, 3 | 0: fast route; 3: adaptive route (after a warning) |
 | `probes` | 0, 1 | |

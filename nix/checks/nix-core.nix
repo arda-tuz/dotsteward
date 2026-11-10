@@ -1,10 +1,10 @@
 # Core Home Manager modules (tests/nix/core): identity, profiles, nix.conf,
 # agent rules, skills, the CLI and its local-maintained-files alias, files,
-# components, the login shell, .zshrc blocks and the manifest; plus the
-# evaluation of mkNpmBundle. The tests evaluate Home Manager configurations
-# with nix-instantiate against an isolated store, so the sandbox needs Nix
-# itself and the nixpkgs and home-manager sources; a setup hook exports
-# their paths.
+# components, the login shell, .zshrc blocks, the manifest and the observer
+# units; plus the evaluation of mkNpmBundle. The tests evaluate Home Manager
+# configurations with nix-instantiate against an isolated store, so the
+# sandbox needs Nix itself and the nixpkgs and home-manager sources; a setup
+# hook exports their paths.
 {
   self,
   pkgs,

@@ -25,6 +25,7 @@
     ./files.nix
     ./login-shell.nix
     ./zshrc.nix
+    ./observer.nix
     ./manifest.nix
   ];
 }

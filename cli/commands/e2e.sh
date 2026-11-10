@@ -61,7 +61,11 @@
 # git work tree), generation (null without one), profile,
 # framework_override, repo_checks (false with --skip-repo-checks), findings
 # (their number), root, recorded_at. `dotsteward txn publish` requires
-# a passed record of an activated tree.
+# a passed record of an activated tree. --component NAME (repeatable) keeps
+# only the checks whose id starts with NAME: (hooks of every phase, agent
+# rules) of active components; such a run of some components records
+# nothing, so it is never taken for a run of the machine (`dotsteward
+# observe` checks the components a package change reached this way).
 # Hooks run for the components active in the profile, in [components]
 # order, then declaration order, when their profiles include the profile,
 # with the hook environment and DOTSTEWARD_CHECK_ONLY=1. A check
@@ -133,7 +137,7 @@ usage() {
 Usage: dotsteward e2e --profile PROFILE [--expected-remote-base OID]
                       [--framework-override REF] [--generation PATH]
                       [--jobs N] [--keep-going] [--json] [--list]
-                      [--skip-repo-checks]
+                      [--skip-repo-checks] [--component NAME]...
 
 Verifies that this machine matches the instance for PROFILE after a
 rebuild: commands, component E2E hooks, managed links, agent rules, files,
@@ -141,6 +145,9 @@ the agents check, tracked settings, the login shell, the instance checkout
 and its remote, and the framework skills of the generation.
 
   --profile PROFILE          a profile of the instance (required)
+  --component NAME           only the checks of the active component NAME
+                             (repeatable): its hooks and agent rules; such a
+                             run writes no E2E record
   --expected-remote-base OID before a publish: the remote branch must still
                              be OID (40 hex digits) and OID an ancestor of
                              HEAD, instead of HEAD itself
@@ -180,6 +187,9 @@ keep_going=0
 json=0
 list=0
 skip_repo=0
+# The components of a run of some components (--component): such a run is no
+# run of the machine and writes no record.
+scope=()
 
 # _e2e_value OPTION ARGC VALUE: a non-empty option value.
 _e2e_value() {
@@ -190,10 +200,11 @@ _e2e_value() {
 
 while (($#)); do
   case $1 in
-    --profile | --expected-remote-base | --framework-override | --generation | --jobs)
+    --profile | --expected-remote-base | --framework-override | --generation | --jobs | --component)
       _e2e_value "$1" "$#" "${2:-}"
       case $1 in
         --profile) profile=$2 ;;
+        --component) scope+=("$2") ;;
         --expected-remote-base) expected_base=$2 ;;
         --framework-override) framework_override=$2 ;;
         --generation) generation=$2 ;;
@@ -201,10 +212,11 @@ while (($#)); do
       esac
       shift 2
       ;;
-    --profile=* | --expected-remote-base=* | --framework-override=* | --generation=* | --jobs=*)
+    --profile=* | --expected-remote-base=* | --framework-override=* | --generation=* | --jobs=* | --component=*)
       _e2e_value "${1%%=*}" 2 "${1#*=}"
       case $1 in
         --profile=*) profile=${1#*=} ;;
+        --component=*) scope+=("${1#*=}") ;;
         --expected-remote-base=*) expected_base=${1#*=} ;;
         --framework-override=*) framework_override=${1#*=} ;;
         --generation=*) generation=${1#*=} ;;
@@ -322,7 +334,7 @@ _e2e_exit() {
   if ((status == 0 && !finished && !list)); then
     status=1
   fi
-  if ((record_ready && !list)); then
+  if ((record_ready && !list && ${#scope[@]} == 0)); then
     (_e2e_write_result "$status") || status=1
   fi
   if ((json && !list)); then
@@ -565,8 +577,27 @@ _e2e_commands_list() {
     | .[]' <<<"$DS_MANIFEST_JSON"
 }
 
+# _e2e_in_scope ID: true when the check ID belongs to the run, which is every
+# check unless --component names some components.
+_e2e_in_scope() {
+  local name
+  ((${#scope[@]})) || return 0
+  for name in "${scope[@]}"; do
+    [[ $1 == "$name:"* ]] && return 0
+  done
+  return 1
+}
+
+for name in "${scope[@]}"; do
+  [[ " ${active[*]} " == *" $name "* ]] ||
+    die "e2e: --component $name: not an active component of profile $profile"
+done
+
 plan_text=$(_e2e_plan)
-mapfile -t plan < <(grep -v '^$' <<<"$plan_text" || true)
+plan=()
+while IFS= read -r row; do
+  [[ -n $row ]] && _e2e_in_scope "${row%%$'\t'*}" && plan+=("$row")
+done <<<"$plan_text"
 
 if ((list)); then
   ids=()
@@ -1185,4 +1216,8 @@ if ((failed)); then
   printf '[dotsteward] ERROR: e2e failed: %s findings\n' "$(_e2e_findings_count)" >&2
   exit 1
 fi
-log "e2e checks passed (profile $profile)"
+if ((${#scope[@]})); then
+  log "e2e checks of ${scope[*]} passed (profile $profile)"
+else
+  log "e2e checks passed (profile $profile)"
+fi

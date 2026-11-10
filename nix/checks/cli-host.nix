@@ -1,5 +1,5 @@
-# Machine names, scopes and state (tests/cli/host): `dotsteward host`, `dotsteward state` and `dotsteward
-# skills effective` against a synthetic instance whose remote is a local bare
+# Machine names, scopes and state (tests/cli/host): `dotsteward host`, `dotsteward state`, `dotsteward
+# observe` and `dotsteward skills effective` against a synthetic instance whose remote is a local bare
 # repository reached through the fake SSH transport, and what the commands make of
 # the answer: what `agents` installs and misses, what `e2e` lists, the message of a
 # tree newer than the CLI. Then shellcheck over the commands and the tests.
@@ -16,6 +16,7 @@ cli.mkTestCheck {
   paths = [ "tests/cli/host" ];
   nativeBuildInputs = [ pkgs.shellcheck ];
   postCheck = ''
-    shellcheck -x cli/commands/host.sh cli/commands/skills.sh cli/commands/state.sh tests/cli/host/*.sh
+    shellcheck -x cli/commands/host.sh cli/commands/skills.sh cli/commands/state.sh cli/commands/observe.sh \
+      tests/cli/host/*.sh
   '';
 }

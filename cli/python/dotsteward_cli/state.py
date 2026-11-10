@@ -29,8 +29,14 @@ Exit status: 0 done, 1 refusal, 2 usage error, 4 the record breaks its schema or
 privacy scan found something (nothing was recorded), 6 no network or no login (what was
 recorded waits; run it again).
 
+The status of a deb component is ``installed`` or ``missing`` until a command checked it.
+Then ``<state>/state/checks.json`` (written with ``write_check``) holds the result of its last
+check and its last verified version: ``verified`` or ``red`` while its packages are still the
+ones checked, ``unverified`` once they changed, and ``last_verified`` apart from the installed
+``version``.
+
 Python API for the commands that record a state: ``observe``, ``record``, ``push``,
-``read``.
+``read``, ``this_machine``, ``tracked_debs``, ``main_version``, ``read_checks``, ``write_check``.
 """
 
 from __future__ import annotations
@@ -49,7 +55,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from dotsteward_cli import config, host, locks, machine, platforms, report
+from dotsteward_cli import atomic, config, host, locks, machine, platforms, report
 from dotsteward_cli import publish as publishing
 from dotsteward_cli.upgrade import facts
 
@@ -73,6 +79,7 @@ _HEX40 = re.compile(r"[0-9a-f]{40}", re.ASCII)
 _MISSING_REF = re.compile(r"couldn't find remote ref", re.IGNORECASE)
 _UPDATERS = ("apt", "nix", "dotsteward", "self", "none")
 _DEB = "deb"
+CHECKS_FILE = "checks.json"
 
 
 class Refusal(Exception):
@@ -153,6 +160,64 @@ def _active(instance: config.Instance, env: Mapping[str, str]) -> list[dict[str,
     name = machine.current_name(machine.read_machine(state), env)
     profile = machine.machine_profile(instance, state, name, env)
     return facts.active_components(instance, profile, env)
+
+
+def tracked_debs(instance: config.Instance, env: Mapping[str, str]) -> dict[str, dict[str, list[str]]]:
+    """The enabled deb components that apply here and that apt updates, by name: the
+    packages each installs (``installs``) and the packages it follows too (``packages``,
+    sorted)."""
+    found = {}
+    for component in _active(instance, env):
+        if _apt_driven(instance, component):
+            installs = _installs(component)
+            found[str(component["name"])] = {
+                "installs": installs,
+                "packages": sorted({*installs, *_followed(instance, component)}),
+            }
+    return found
+
+
+def main_version(installs: Sequence[str], versions: Mapping[str, str]) -> str | None:
+    """The version of a deb component: the one of the first package it installs that is
+    installed."""
+    return next((versions[package] for package in installs if package in versions), None)
+
+
+def _checks_path(state: str) -> Path:
+    return Path(state) / "state" / CHECKS_FILE
+
+
+def read_checks(state: str) -> dict[str, dict[str, Any]]:
+    """The last check of each component that a command checked, by name."""
+    document = _read_json(_checks_path(state))
+    components = document.get("components") if document.get("schema_version") == 1 else None
+    return {
+        str(name): entry
+        for name, entry in (components if isinstance(components, dict) else {}).items()
+        if isinstance(entry, dict) and entry.get("result") in ("pass", "fail")
+    }
+
+
+def write_check(state: str, name: str, *, passed: bool, packages: Mapping[str, str], version: str | None) -> None:
+    """Remembers the check of the component NAME with its installed PACKAGES: passed or
+    failed now; a pass also makes VERSION its last verified version."""
+    checks = read_checks(state)
+    at = _now()
+    entry: dict[str, Any] = {
+        "result": "pass" if passed else "fail",
+        "packages": dict(sorted(packages.items())),
+        "at": at,
+    }
+    last = checks.get(name, {}).get("last_verified")
+    if passed and version is not None:
+        last = {"version": version, "at": at}
+    if isinstance(last, dict):
+        entry["last_verified"] = last
+    checks[name] = entry
+    atomic.make_private_dirs(Path(state) / "state")
+    atomic.atomic_write_json(
+        _checks_path(state), {"schema_version": 1, "components": dict(sorted(checks.items()))}, mode=0o600
+    )
 
 
 def intent_problems(instance: config.Instance, document: Mapping[str, Any], env: Mapping[str, str]) -> list[str]:
@@ -267,8 +332,25 @@ def _installed_versions(packages: Sequence[str]) -> dict[str, str] | None:
     return found
 
 
+def _with_check(entry: dict[str, Any], installs: Sequence[str], check: Mapping[str, Any] | None) -> None:
+    """ENTRY of a deb component with what its last check said, if a command checked it."""
+    if check is None:
+        return
+    versions = entry.get("packages") or {}
+    version = main_version(installs, versions)
+    if version is not None:
+        entry["version"] = version
+    if entry.get("status") == "installed":
+        same = check.get("packages") == versions
+        entry["status"] = ("verified" if check["result"] == "pass" else "red") if same else "unverified"
+    last = check.get("last_verified")
+    if isinstance(last, dict) and isinstance(last.get("version"), str) and isinstance(last.get("at"), str):
+        entry["last_verified"] = {"version": last["version"], "at": last["at"]}
+
+
 def _components(instance: config.Instance, env: Mapping[str, str]) -> dict[str, dict[str, Any]]:
     found: dict[str, dict[str, Any]] = {}
+    checks = read_checks(config.state_root(instance, env))
     for component in _active(instance, env):
         name = str(component["name"])
         entry: dict[str, Any] = {}
@@ -282,6 +364,7 @@ def _components(instance: config.Instance, env: Mapping[str, str]) -> dict[str, 
             if versions is not None:
                 entry["status"] = "installed" if all(package in versions for package in installs) else "missing"
                 entry["packages"] = dict(sorted(versions.items()))
+                _with_check(entry, installs, checks.get(name))
         found[name] = entry
     return dict(sorted(found.items()))
 
@@ -298,7 +381,7 @@ def _framework_version() -> str | None:
         return None
 
 
-def _this_machine(instance: config.Instance, env: Mapping[str, str]) -> tuple[str, str]:
+def this_machine(instance: config.Instance, env: Mapping[str, str]) -> tuple[str, str]:
     """The name and the machine key of this machine."""
     record = machine.read_machine(config.state_root(instance, env))
     name = machine.current_name(record, env)
@@ -314,7 +397,7 @@ def observe(instance: config.Instance, env: Mapping[str, str] | None = None, *, 
     env = os.environ if env is None else env
     if by not in RECORDERS:
         raise ValueError(f"unknown recorder {by!r}")
-    name, key = _this_machine(instance, env)
+    name, key = this_machine(instance, env)
     state = config.state_root(instance, env)
     document: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -539,7 +622,7 @@ def record(
     """Records DOCUMENT (default: what ``observe`` sees) on the state branch of this machine
     and pushes it: the exit status of ``state record``. Raises Finding, Refusal, Busy."""
     env = os.environ if env is None else env
-    name, key = _this_machine(instance, env)
+    name, key = this_machine(instance, env)
     document = dict(document) if document is not None else observe(instance, env, by=by)
     if document.get("host") != name:
         raise Refusal(f"a record of {document.get('host')} is no record of this machine, {name}")
@@ -581,7 +664,7 @@ def push(instance: config.Instance, env: Mapping[str, str] | None = None, *, tak
     """Sends what this machine recorded and the remote does not have: the exit status of
     ``state push``. Raises Refusal, Busy."""
     env = os.environ if env is None else env
-    name, key = _this_machine(instance, env)
+    name, key = this_machine(instance, env)
     shown = branch(name)
     if not _push_allowed(instance):
         _log(f"[policy] observed_state_push = false: {shown} stays on this machine")
@@ -732,7 +815,7 @@ def cmd_fetch(args: argparse.Namespace, instance: config.Instance, env: Mapping[
 def cmd_show(args: argparse.Namespace, instance: config.Instance, env: Mapping[str, str]) -> int:
     if args.name is not None and not machine.valid_name(args.name):
         raise UsageError(f"invalid machine name {args.name!r}: expected ^[a-z0-9][a-z0-9-]{{0,31}}$")
-    name = args.name or _this_machine(instance, env)[0]
+    name = args.name or this_machine(instance, env)[0]
     shown = read(instance, name, env)
     if args.json:
         print(json.dumps(shown, indent=2, ensure_ascii=False))

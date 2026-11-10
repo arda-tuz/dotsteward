@@ -21,6 +21,9 @@ cosign
 # systemd: the timer of the local APT bridge.
 systemctl
 
+# Desktop notifications: a red component after a package change, a skill that was not published.
+notify-send
+
 # Toolchain and linters.
 install mktemp flock jq python3 bash shellcheck actionlint nixfmt
 
