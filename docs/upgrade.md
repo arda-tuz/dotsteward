@@ -108,11 +108,11 @@ Update these too? [y/N] n
    apt plan and its commit in one depcache, snap and flatpak with `--all`, then `sudo -k`. Sudo runs
    out during a long step: a terminal asks once more; if that fails too, the rest of the window waits
    in `review.json` and everything else still runs. The pin file of the gated classes
-   (`/etc/apt/preferences.d/60dotsteward`) and the unattended-upgrades drop-in
-   (`/etc/apt/apt.conf.d/52dotsteward-unattended-upgrades`) come from this window only.
-   `dotsteward e2e` holds them to what the apt engine writes from what dpkg has now
-   (`core:apt-files`): other bytes are a finding; a file that is not there yet, before the first
-   run on a terminal, is a warning.
+   (`/etc/apt/preferences.d/60dotsteward`) comes from this window only, and its dpkg hook keeps its
+   pairs at what dpkg has after every dpkg run. `dotsteward e2e` holds it to what the apt engine
+   writes from what dpkg has now (`core:apt-files`): a header or pairs that are not that is a
+   finding; what the owner's own apt can bring (another rule after a purge or an install of a
+   driver, a file the machine no longer wants) and a file not there yet are warnings.
 4. **The pins, on the producer only, in a clone.** A clone of the fetched tip below
    `<state>/upgrade/work` takes `pins latest`, `pins apply`, the gate in the update scope and a commit.
    The producer is `[hosts] producer`; without one it is this machine when `hosts/` holds at most one

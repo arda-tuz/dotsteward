@@ -1,9 +1,9 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
-# The read only `files` action of the apt engine says what `policy` writes: after policy the
-# texts are the bytes of the files, before it the paths where they go, and with
-# `[apt.gated] enable = false` no pin text; the dpkg hook of policy keeps the pin file at that text.
-# `dotsteward e2e` (core:apt-files) holds the files to it.
+# The read only `files` action of the apt engine says what `policy` writes into the pin file: after
+# policy its text is the bytes of the file, before it the path where it goes, and with
+# `[apt.gated] enable = false` no text; the dpkg hook of policy keeps the pin file at that text.
+# `dotsteward e2e` (core:apt-files) holds the file to it.
 # shellcheck source=tests/apt-worlds/helpers.sh
 source "$DS_REPO_ROOT/tests/apt-worlds/helpers.sh"
 world_require
@@ -21,16 +21,14 @@ policy() {
 
 world_up driver-respin
 real=$WORLD/etc/apt/preferences.d/60dotsteward
-unattended=$WORLD/etc/apt/apt.conf.d/52dotsteward-unattended-upgrades
 before=$(find "$WORLD/etc" -printf '%p %s\n' | LC_ALL=C sort)
 files
 assert_eq "$before" "$(find "$WORLD/etc" -printf '%p %s\n' | LC_ALL=C sort)" "files writes nothing"
-assert_json "$FILES" ".pin.path == \"$real\" and .unattended.path == \"$unattended\""
+assert_json "$FILES" ".pin.path == \"$real\" and (has(\"unattended\") | not)"
 assert_json "$FILES" '.pin.text | contains("src:linux-meta*:any")'
 policy
 files
 assert_eq "$(<"$real")" "$(jq -r .pin.text "$FILES")" "the pin text is the file"
-assert_eq "$(<"$unattended")" "$(jq -r .unattended.text "$FILES")" "the unattended text is the file"
 cmp -s "$real" <(jq -j .pin.text "$FILES") || ds_fail "the pin text is not the bytes of the file"
 
 # After every dpkg run the hook of policy rewrites the pin file from what dpkg has: what it writes

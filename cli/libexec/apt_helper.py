@@ -11,13 +11,13 @@ nothing of the framework. dotsteward_cli.apt_plan calls it:
               the changes of the depcache and what the refusal list says about them;
               it needs no privileges and changes nothing
     analysis  the upgradable packages outside the tracked set, read only
-    files     the pin file and the unattended-upgrades drop-in as policy would write them now
-              (paths and texts; no pin text when no pin file belongs there), read only
     policy    (root) under the lock of dpkg: the pin file and the unattended-upgrades drop-in, from
               what dpkg has, and the hook that keeps the pin file there whoever calls dpkg
     recover   (root) `dpkg --configure -a` when dpkg was left half way
     commit    (root) the plan, under the lock of dpkg, and when nothing refuses it the
               same depcache applied
+    files     the pin file as policy would write it now (its path and text; no text when no
+              pin file belongs there), read only
 
 The answer is one JSON document on standard output or in FILE. Exit status 0: the
 action ran, whatever the plan says; 1: it could not, and the document holds `error`
@@ -1447,40 +1447,21 @@ def apply_pin_hook(pin_path, wanted):
     return {"config": config, "script": script, "present": wanted, "changed": changed}
 
 
-def wanted_files(session, classes):
-    """The pin file and the unattended-upgrades file as policy writes them from what dpkg has now:
-    (pin path, pin text or None when no pin file belongs there, unattended path)."""
-    pin_path = os.path.join(session.real_parts, PIN_FILE)
-    text = None
-    if session.gated and (classes["kernel"] is not None or classes["nvidia"] is not None):
-        # Half a transaction may hide the driver; the class stays until dpkg is whole again.
-        keep_nvidia = classes["nvidia"] is None and bool(dpkg_audit()) and NVIDIA_GLOB in read_text(pin_path)
-        text = installed_pin(classes, keep_nvidia=keep_nvidia)
-    return pin_path, text, os.path.join(apt_pkg.config.find_dir("Dir::Etc::Parts"), UNATTENDED_FILE)
-
-
-def action_files(session):
-    """What `policy` would write, read only: `dotsteward e2e` holds the files there to it."""
-    pin_path, pin, unattended_path = wanted_files(session, read_classes(session.open_pinless()))
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "pin": {"path": pin_path, "text": pin},
-        "unattended": {"path": unattended_path, "text": UNATTENDED_TEXT},
-    }
-
-
 def apply_policy(session, classes):
     """The files of this action from what dpkg has now, whatever they said before."""
-    pin_path, pin, unattended_path = wanted_files(session, classes)
-    wanted_pin = pin is not None
+    pin_path = os.path.join(session.real_parts, PIN_FILE)
+    wanted_pin = session.gated and (classes["kernel"] is not None or classes["nvidia"] is not None)
     if wanted_pin:
-        pin_changed = write_file(pin_path, pin)
+        # Half a transaction may hide the driver; the class stays until dpkg is whole again.
+        keep_nvidia = classes["nvidia"] is None and bool(dpkg_audit()) and NVIDIA_GLOB in read_text(pin_path)
+        pin_changed = write_file(pin_path, installed_pin(classes, keep_nvidia=keep_nvidia))
     else:
         pin_changed = False
         if os.path.exists(pin_path):
             os.unlink(pin_path)
             pin_changed = True
     hook = apply_pin_hook(pin_path, wanted_pin)
+    unattended_path = os.path.join(apt_pkg.config.find_dir("Dir::Etc::Parts"), UNATTENDED_FILE)
     unattended_changed = write_file(unattended_path, UNATTENDED_TEXT)
     return {
         "pin": {"path": pin_path, "present": wanted_pin, "changed": pin_changed},
@@ -1512,6 +1493,18 @@ def action_policy(session):
         }
     finally:
         apt_pkg.pkgsystem_unlock()
+
+
+def action_files(session):
+    """The pin file as `policy` would write it from what dpkg has now, read only: `dotsteward e2e`
+    holds the file there to it. The same decision as apply_policy."""
+    classes = read_classes(session.open_pinless())
+    pin_path = os.path.join(session.real_parts, PIN_FILE)
+    text = None
+    if session.gated and (classes["kernel"] is not None or classes["nvidia"] is not None):
+        keep_nvidia = classes["nvidia"] is None and bool(dpkg_audit()) and NVIDIA_GLOB in read_text(pin_path)
+        text = installed_pin(classes, keep_nvidia=keep_nvidia)
+    return {"schema_version": SCHEMA_VERSION, "pin": {"path": pin_path, "text": text, "header": PIN_HEADER}}
 
 
 def dpkg_environment():

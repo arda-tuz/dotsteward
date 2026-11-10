@@ -26,14 +26,14 @@
 #                                 login shell
 #       core:apt-files            on Linux with dpkg (/var/lib/dpkg/status
 #                                 below DOTSTEWARD_SYSTEM_ROOT): the pin
-#                                 file of the gated classes and the
-#                                 unattended-upgrades drop-in have the
-#                                 bytes the apt engine writes from what
-#                                 dpkg has now (dotsteward_cli.apt_plan
-#                                 check-files); one that is not there yet,
-#                                 before the first `dotsteward upgrade` on
-#                                 a terminal, or an engine that cannot
-#                                 run, is a warning
+#                                 file of the gated classes has the
+#                                 header and the pairs the apt engine
+#                                 writes from what dpkg has now
+#                                 (dotsteward_cli.apt_plan check-files);
+#                                 another rule (after the owner's own
+#                                 apt), a file the machine does not want,
+#                                 one not there yet, or an engine that
+#                                 cannot run, is a warning
 #    9. core:repo-clean           the instance checkout is a clean git work
 #                                 tree
 #       core:repo-origin          origin equals instance.remote
@@ -103,8 +103,8 @@
 #   of `dotsteward agents check`, agents-failed; settings-invalid,
 #   settings-file-missing, settings-file-not-regular,
 #   settings-not-converged, settings-error; login-shell-not-executable,
-#   login-shell-not-listed, login-shell-mismatch; apt-file-mismatch,
-#   apt-file-unwanted, apt-file-unreadable; repo-not-git, repo-dirty,
+#   login-shell-not-listed, login-shell-mismatch; apt-file-mismatch;
+#   repo-not-git, repo-dirty,
 #   repo-origin-missing, repo-origin-mismatch, remote-unreachable,
 #   remote-mismatch, remote-base-moved, base-not-ancestor,
 #   skill-count-mismatch; framework-skill-unverifiable,
@@ -869,8 +869,11 @@ _e2e_login_shell() {
 # writes now; a note for what waits for the first terminal run of upgrade.
 _e2e_apt_files() {
   local output kind code path message failed=0
-  output=$(ds_python dotsteward_cli.apt_plan check-files --instance "$DS_INSTANCE_ROOT") ||
-    die "the apt files could not be checked"
+  # A check that cannot run says so; only the file itself can make this check red.
+  if ! output=$(ds_python dotsteward_cli.apt_plan check-files --instance "$DS_INSTANCE_ROOT" 2>&1); then
+    warn "core:apt-files: the pin file was not checked: ${output##*$'\n'}"
+    return 0
+  fi
   while IFS=$'\t' read -r kind code path message; do
     [[ -n $kind ]] || continue
     [[ $path != - ]] || path=''

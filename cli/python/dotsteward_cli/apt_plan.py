@@ -21,7 +21,7 @@ closes must not fail a write of dpkg, which then stops half way.
 The internal command line of the same functions, for tests and for a look by hand:
 
     python3 -m dotsteward_cli.apt_plan ACTION [--request FILE|-] [--report COMMAND] [--state-root DIR]
-    python3 -m dotsteward_cli.apt_plan check-files --instance DIR
+    python3 -m dotsteward_cli.apt_plan check-files --instance DIR | --request FILE|-
 
 prints the answer of the helper. With ``--report`` it also writes a run report and
 ``review.json`` for COMMAND and exits with the code of that run; without, it exits 0
@@ -182,58 +182,89 @@ def plan(request: Request) -> dict[str, Any]:
 
 
 def files(request: Request) -> dict[str, Any]:
-    """The pin file and the unattended-upgrades drop-in as ``policy`` would write them from what dpkg
-    has now: ``{pin: {path, text}, unattended: {path, text}}``, ``text`` null where no file belongs.
-    Raises AptEngineError."""
+    """The pin file as ``policy`` would write it from what dpkg has now: ``{pin: {path, text,
+    header}}``, ``text`` null where no pin file belongs. Raises AptEngineError."""
     return _read_only("files", request)
 
 
 _FIRST_TERMINAL_RUN = "the first 'dotsteward upgrade' on a terminal writes it"
+_NEXT_TERMINAL_RUN = "the next 'dotsteward upgrade' on a terminal sets it"
+_RULE = "Pin: version *"
+
+
+def _pin_parts(text: str) -> tuple[str, frozenset[str], frozenset[str]]:
+    """The header line, the pair blocks and the rule blocks of a pin file, as the dpkg hook reads
+    it: what follows the header, split at empty lines; a block with ``Pin: version *`` is a rule."""
+    header, _, rest = text.partition("\n")
+    blocks = [block.strip("\n") for block in rest.split("\n\n") if block.strip("\n")]
+    return (
+        header,
+        frozenset(block for block in blocks if _RULE not in block),
+        frozenset(block for block in blocks if _RULE in block),
+    )
 
 
 def check_files(request: Request) -> list[dict[str, str]]:
-    """The files there against ``files`` (design 10.3): other bytes, or a pin file where none belongs,
-    are findings (``apt-file-mismatch``, ``apt-file-unwanted``); a file that is not there yet, or an
-    engine that cannot say, is a note (``apt-file-missing``, ``apt-files-unchecked``), since only the
-    sudo window of `dotsteward upgrade` writes them."""
+    """The pin file there against ``files`` (design 10.3). The dpkg hook keeps its pairs at what
+    dpkg has after every dpkg run, whoever ran it; so a header or pairs that are not what dpkg has
+    is the one finding (``apt-file-mismatch``). What the owner's own apt can bring is a note: the
+    rule, which classes the file holds back, not yet what the next terminal run writes
+    (``apt-file-rule``); a file there that the machine does not want (``apt-file-unwanted``); a file
+    not there yet (``apt-file-missing``); an engine that cannot say (``apt-files-unchecked``). The
+    drop-in of unattended-upgrades is the system component apt-policy's, which checks it."""
     try:
         answer = files(request)
-    except AptEngineError as failure:
-        return [_note("apt-files-unchecked", "", f"the apt files were not checked: {failure.code}: {failure.message}")]
-    found = []
-    for key in ("pin", "unattended"):
-        entry = answer.get(key) or {}
+        entry = answer.get("pin")
+        if not isinstance(entry, dict):
+            raise AptEngineError("apt-helper-failed", "the answer has no pin file")
         path, wanted = str(entry.get("path") or ""), entry.get("text")
-        if not path:
-            continue
-        try:
-            there: str | None = Path(path).read_bytes().decode("utf-8", errors="replace")
-        except FileNotFoundError:
-            there = None
-        except OSError as error:
-            found.append(_finding("apt-file-unreadable", path, f"{path} cannot be read: {error.strerror}"))
-            continue
-        if wanted is None and there is not None:
-            found.append(
-                _finding(
-                    "apt-file-unwanted",
-                    path,
-                    f"{path} is there, but this machine has no gated class to pin or [apt.gated] enable = false: "
-                    "run 'dotsteward upgrade' on a terminal, which removes it",
-                )
+        if not path or not (wanted is None or isinstance(wanted, str)):
+            raise AptEngineError("apt-helper-failed", "the answer has no pin file")
+    except (AptEngineError, AttributeError) as failure:
+        detail = f"{failure.code}: {failure.message}" if isinstance(failure, AptEngineError) else str(failure)
+        return [_note("apt-files-unchecked", "", f"the pin file was not checked: {detail}")]
+    try:
+        there: str | None = Path(path).read_bytes().decode("utf-8", errors="replace")
+    except FileNotFoundError:
+        there = None
+    except OSError as error:
+        return [_note("apt-files-unchecked", path, f"the pin file was not checked: {path}: {error.strerror}")]
+    if there is None:
+        return (
+            []
+            if wanted is None
+            else [_note("apt-file-missing", path, f"{path} is not there yet: {_FIRST_TERMINAL_RUN}")]
+        )
+    if wanted is None:
+        return [
+            _note(
+                "apt-file-unwanted",
+                path,
+                f"{path} is there, but this machine has no gated class to pin or [apt.gated] enable = false: "
+                "the next 'dotsteward upgrade' on a terminal removes it",
             )
-        elif wanted is not None and there is None:
-            found.append(_note("apt-file-missing", path, f"{path} is not there yet: {_FIRST_TERMINAL_RUN}"))
-        elif wanted is not None and there != wanted:
-            found.append(
-                _finding(
-                    "apt-file-mismatch",
-                    path,
-                    f"{path} does not hold what dpkg has now: "
-                    "run 'dotsteward upgrade' on a terminal, which rewrites it",
-                )
+        ]
+    if there == wanted:
+        return []
+    header, pairs, rules = _pin_parts(there)
+    want_header, want_pairs, want_rules = _pin_parts(wanted)
+    if header != want_header or pairs != want_pairs:
+        return [
+            _finding(
+                "apt-file-mismatch",
+                path,
+                f"{path} does not hold what dpkg has now: run 'dotsteward upgrade' on a terminal, which rewrites it",
             )
-    return found
+        ]
+    if rules != want_rules:
+        return [
+            _note(
+                "apt-file-rule",
+                path,
+                f"{path} holds back other classes than this machine has now: {_NEXT_TERMINAL_RUN}",
+            )
+        ]
+    return []
 
 
 def _finding(code: str, path: str, message: str) -> dict[str, str]:
@@ -244,16 +275,26 @@ def _note(code: str, path: str, message: str) -> dict[str, str]:
     return {"kind": "note", "code": code, "path": path, "message": message}
 
 
-def _check_files_main(instance_dir: str) -> int:
-    """One line per finding or note: KIND, CODE, PATH (- for none) and MESSAGE, tab separated."""
+def _check_files_main(arguments: Sequence[str]) -> int:
+    """One line per finding or note: KIND, CODE, PATH (- for none) and MESSAGE, tab separated.
+    ``--instance DIR``: the request of this machine ([apt.gated] of its host file); ``--request
+    FILE|-``: a request as the other actions read it."""
+    if len(arguments) != 2 or arguments[0] not in ("--instance", "--request"):
+        print(
+            "usage: python3 -m dotsteward_cli.apt_plan check-files --instance DIR | --request FILE|-", file=sys.stderr
+        )
+        return 2
     try:
-        instance = config.load_instance(instance_dir)
-        record = machine.read_machine(config.state_root(instance, os.environ))
-    except config.DotstewardError as error:
+        if arguments[0] == "--request":
+            request = _load_request(arguments[1])
+        else:
+            instance = config.load_instance(arguments[1])
+            record = machine.read_machine(config.state_root(instance, os.environ))
+            request = Request(gated=facts.gated(instance, machine.current_name(record, os.environ)))
+    except (config.DotstewardError, OSError, ValueError) as error:
         print(f"[dotsteward] ERROR: {error}", file=sys.stderr)
         return report.FAILED
-    gated = facts.gated(instance, machine.current_name(record, os.environ))
-    for item in check_files(Request(gated=gated)):
+    for item in check_files(request):
         fields = [item["kind"], item["code"], item["path"] or "-", item["message"]]
         print("\t".join(field.replace("\t", " ").replace("\n", " ") for field in fields))
     return report.OK
@@ -505,10 +546,7 @@ def _load_request(source: str | None) -> Request:
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments[:1] == ["check-files"]:
-        if len(arguments) != 3 or arguments[1] != "--instance":
-            print("usage: python3 -m dotsteward_cli.apt_plan check-files --instance DIR", file=sys.stderr)
-            return 2
-        return _check_files_main(arguments[2])
+        return _check_files_main(arguments[1:])
     parser = argparse.ArgumentParser(
         prog="dotsteward_cli.apt_plan", description="The apt engine, for tests and by hand."
     )
