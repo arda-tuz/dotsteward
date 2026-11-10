@@ -612,61 +612,28 @@ _skills_install() {
   mv -- "$staging" "$destination"
 }
 
-# _skills_plain_url URL: URL as the lock writes an upstream: no credentials, no
-# trailing / or .git, a GitHub ssh remote as https.
-_skills_plain_url() {
-  local url=$1
-  case $url in
-    git@github.com:*) url=https://github.com/${url#git@github.com:} ;;
-    ssh://git@github.com/*) url=https://github.com/${url#ssh://git@github.com/} ;;
-  esac
-  if [[ $url =~ ^(https?://)[^/@]*@(.*)$ ]]; then
-    url=${BASH_REMATCH[1]}${BASH_REMATCH[2]}
-  fi
-  url=${url%/}
-  printf '%s\n' "${url%.git}"
-}
-
-# _skills_follows_upstream REAL REVISION [UPSTREAM]: whether the skill at REAL
-# is a directory of a git clone that holds no change of its own and is the
-# upstream the lock pins: its HEAD descends from REVISION (the clone moved on by
-# itself, a pull), or its origin is UPSTREAM (the pin moved on first, an update
-# of pins before the next pull). A downloaded skill linked into its clone is so.
-# Status 0: ahead of the pin; 3: another commit of the upstream; 1: neither.
-_skills_follows_upstream() (
-  local real=$1 revision=$2 upstream=${3:-} changes remote
-  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_PREFIX
-  [[ $revision =~ ^[0-9a-f]{40}$ ]] || return 1
-  [[ $(git -C "$real" rev-parse --is-inside-work-tree 2>/dev/null) == true ]] || return 1
-  changes=$(git -C "$real" status --porcelain --untracked-files=all -- . 2>/dev/null) || return 1
-  [[ -z $changes ]] || return 1
-  git -C "$real" merge-base --is-ancestor "$revision" HEAD 2>/dev/null && return 0
-  [[ -n $upstream ]] || return 1
-  remote=$(git -C "$real" config --get remote.origin.url 2>/dev/null) || return 1
-  [[ $(_skills_plain_url "$remote") == "$(_skills_plain_url "$upstream")" ]] || return 1
-  return 3
-)
-
 # _skills_refresh NAME PATH SOURCE DIGEST [REVISION [UPSTREAM]]: replaces a
 # drifted copy-deployed skill with the vendored copy, after a backup. A copy
-# that is a clean clone of the pinned upstream at another commit (see
-# _skills_follows_upstream) is neither drift nor replaced (that would write
-# into the clone); a note says so.
+# that is a clean clone of the pinned upstream at another commit is neither
+# drift nor replaced (that would write into the clone); a note says so.
 _skills_refresh() {
   local name=$1 path=$2 source=$3 expected=$4 revision=${5:-} upstream=${6:-} real root root_real managed=0
   local backup_root staging
   real=$(realpath -e -- "$path" 2>/dev/null) ||
     skills_fail skill-unresolvable "$path" "cannot resolve the skill path: $path"
   [[ $(directory_sha256 "$real") != "$expected" ]] || return 0
-  if [[ -n $revision ]]; then
-    local follows=0
-    _skills_follows_upstream "$real" "$revision" "$upstream" || follows=$?
+  if [[ $revision =~ ^[0-9a-f]{40}$ ]]; then
+    # A clean clone of the pinned upstream at another commit (dotsteward_cli.skills.origin
+    # follows): exactly the tree of its HEAD, every commit of it on the remote. Anything
+    # else that differs from the lock is drift.
+    local follows
+    follows=$(ds_python dotsteward_cli.skills.origin follows "$real" "$revision" "$upstream" 2>/dev/null) || follows=''
     case $follows in
-      0)
+      ahead)
         warn "skill $name follows its clone, ahead of the pinned ${revision:0:12} ($real); the update of pins moves the pin"
         return 0
         ;;
-      3)
+      other)
         warn "skill $name follows its clone, not at the pinned ${revision:0:12} ($real); a pull in the clone brings it there"
         return 0
         ;;
