@@ -42,7 +42,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from dotsteward_cli import apt_plan, atomic, config, firmware, incoming, machine, procs, report, runner
+from dotsteward_cli import apt_plan, atomic, config, firmware, incoming, machine, procs, report, runner, versions
 from dotsteward_cli import publish as publishing
 from dotsteward_cli.host import commit_identity, commit_message
 from dotsteward_cli.skills import commands as skills_commands
@@ -116,6 +116,24 @@ _WRITER_ITEMS = {
 
 def _say(text: str) -> None:
     print(f"[upgrade] {text}", flush=True)
+
+
+def _installed_version(package: str) -> str | None:
+    """The version dpkg has installed of PACKAGE, None when it has none."""
+    try:
+        done = subprocess.run(
+            ["dpkg-query", "-W", "-f=${db:Status-Abbrev}\t${Version}", package],
+            capture_output=True,
+            text=True,
+            timeout=_VERSION_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    status, _, version = done.stdout.partition("\t")
+    if done.returncode != 0 or not status.startswith("ii"):
+        return None
+    return version.strip() or None
 
 
 def _session_unit(name: str) -> bool:
@@ -742,35 +760,54 @@ class Upgrade(runner.Runner):
         skips = holds.skip_patterns(self.state_root, latest)
         if not self._week_due():
             skips = [_FLAKE_INPUTS, *skips]
-        skips = [*skips, *self._waiting_floors()]
+        skips = [*skips, *self._waiting_floors(latest)]
         # Kept for a lost race: the writer runs again on the new tip with the same rows.
         self.latest, self.skips = latest, skips
         self._write(latest, skips)
 
-    def _waiting_floors(self) -> list[str]:
-        """The floor pins of the deb packages, while no sudo window of this run committed the apt plan:
-        a floor above what dpkg has would turn the E2E of its package red and send the run back."""
-        if not self.linux or self.apt_answer is not None:
+    def _waiting_floors(self, latest: Path) -> list[str]:
+        """The floor pins of the deb packages that would move above what dpkg has: a floor moves only
+        to a version every package of its component has installed, whatever a sudo window did (dpkg's
+        lock busy, the bridge paused, the vendor repository behind), since a floor above the installed
+        version turns the E2E of the package red and sends the run back."""
+        if not self.linux:
             return []
-        floors = sorted(
-            {
-                str((component.get("install") or {}).get("pin"))
-                for component in self._active()
-                if component.get("method") == "deb" and isinstance((component.get("install") or {}).get("pin"), str)
-            }
-        )
-        if floors:
+        try:
+            document = json.loads(latest.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            document = {}
+        rows = {
+            str(row.get("id")): str(row.get("latest"))
+            for row in (document.get("items") or () if isinstance(document, dict) else ())
+            if isinstance(row, dict) and row.get("status") == "update" and row.get("latest")
+        }
+        waiting: list[dict[str, Any]] = []
+        for component in self._active():
+            install = component.get("install") or {}
+            pin = install.get("pin")
+            if component.get("method") != "deb" or not isinstance(pin, str) or pin not in rows:
+                continue
+            installed = {str(name): _installed_version(str(name)) for name in install.get("packageNames") or ()}
+            wanted = rows[pin]
+            if installed and all(version and versions.at_least(version, wanted) for version in installed.values()):
+                continue
+            waiting.append({"id": pin, "wanted": wanted, "installed": installed})
+        if waiting:
+            said = "; ".join(
+                f"{floor['id']} {floor['wanted']} ("
+                + ", ".join(f"{name} {version or 'not installed'}" for name, version in floor["installed"].items())
+                + ")"
+                for floor in waiting
+            )
             self.run.item(
                 "deb-floors-wait",
                 pending=False,
-                ids=floors,
+                floors=waiting,
+                ids=[floor["id"] for floor in waiting],
                 run=self._command_again(),
-                message=(
-                    "the floors of the deb packages wait for a run on a terminal whose sudo window installs what "
-                    "apt has"
-                ),
+                message=f"floors wait until dpkg has their version: {said}; a run on a terminal installs it",
             )
-        return floors
+        return [floor["id"] for floor in waiting]
 
     def _prepare(self) -> bool:
         prepared = self._ds_output("txn", "prepare", "--official-sources-only", "--scope", "update")
