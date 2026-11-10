@@ -87,16 +87,20 @@ moves its commits onto the new tip, never in the checkout:
 
 1. A clone of the checkout under `<state>/apply/replay`, on the tip, with the settings and hooks of
    the checkout, picks the commits after the base one by one (`git cherry-pick`, author, dates and
-   trace line kept; a commit whose change the tip has already goes).
-2. A path both sides changed: a mirror under `.dotsteward/` is taken from the tip, `flake.lock` too,
-   and `nix flake lock` then adds the inputs this tree adds and the tip lacks. Any other path stops
+   trace line kept). No commit goes: one whose change the tip has already stays, empty. A merge
+   commit among them is not moved (`replay-merge`, with the command that lines them up).
+2. A path both sides changed: a mirror under `.dotsteward/` is taken from the tip. `flake.lock` is
+   taken from the tip only when this commit added to its parent's lock and moved no value of it;
+   `nix flake lock` then adds the inputs this tree adds and the tip lacks. A moved pin of the lock,
+   and any other path, stops
    the replay (`publish-conflict`, with the `paths`): no text is merged, the clone goes, the
    checkout keeps its commits as they were, with no cherry-pick or rebase in it, and the run waits
    (exit 3) for a person to settle it (`run`) and run the same command.
 3. `generate` in the clone, and what it changes goes into the top commit, which keeps its message.
 4. The checkout moves to the result with `git reset --keep`, and the new tip is the base.
 5. The gate proves the new tree, and with `--activate` the rebuild and E2E against the new base run
-   again, before the next push.
+   again, before the next push. A red step from here on says that the commits moved onto the tip
+   and wait here.
 
 A run pushes at most three times. When the remote moved each time, the commits stay here
 (`publish-race`) and the same command later moves them onto the tip and publishes them.
@@ -131,6 +135,7 @@ in `data` the `base`, the `commit`, the `profile`, the `machine`, `activate`, `p
 | `e2e-no-result` | E2E ended without a result |
 | `publish-conflict` | another machine changed the same lines (`paths`) on the tip (`tip`); `run` takes the remote in with `git pull --rebase origin <branch>`, also without an upstream branch, for a person to settle, and runs the same apply (pending) |
 | `publish-race` | the remote moved before each of three pushes (another machine, or a skill capture of this one); the same command (`run`) moves the commits onto the new tip (pending) |
+| `replay-merge` | a merge commit among the commits (`commits`); `run` lines them up on the tip and runs the same apply (pending) |
 | `replay-failed` | the commits could not move onto the tip for another reason (the message says which) |
 | `publish-refused` | `txn publish` or the remote refused |
 

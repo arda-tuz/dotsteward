@@ -179,9 +179,12 @@ capture` its commit; a finding is a `writer-class` line and exit 1:
 | the skill lock | its tool tables (`release_tools`, `nix_tools`, `npm_tools`, `npm_overrides`, `skills_cli`, `layout`) as above; a third-party entry keeps every field but `machines`, unless it becomes the instance's own (`skills track --own`) or goes (`skills forget`); a new entry is free |
 | the files of a third-party skill | do not change while it is one |
 | `packages/*/package-lock.json`, a hashed `requirements*.txt`, `bootstrap.sh`, `.dotsteward/cli.sh` | do not change if the base has them |
-| `hosts/<other>.toml` | never written, on the producer either; `host rename` removes the old file of this machine |
+| `hosts/<other>.toml` | never written, on the producer either; `host rename` removes the old file of this machine, which `machine.json` names (`renamed_from`) |
+| `[hosts] producer` | not removed: that would end the guard; `host producer NAME` names another producer |
 
-The producer of the base decides, so a commit that names another producer moves no pin. Without
+The producer of the base decides, so a commit that names another producer moves no pin. `txn
+publish` takes a proof of the gate only for its own base, so a gate against another base proves
+nothing about the commits it pushes. Without
 a name for this machine or a `[hosts] producer` nothing is guarded: one machine, as before.
 `flake.nix` is not compared: a moved input reference shows in `flake.lock`, and the gate never
 writes the lock.

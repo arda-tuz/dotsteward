@@ -33,8 +33,8 @@
 #   origin/<branch>, a new instance before its first push, is refused with
 #   the `git push -u` to run); at least one commit after
 #   the base, which must be an ancestor of HEAD; the HEAD tree is the tree
-#   of a passed validation.json, made for the same scope and without a
-#   framework override; when the transaction activated a tree on this
+#   of a passed validation.json, made for the same scope and the same base
+#   and without a framework override; when the transaction activated a tree on this
 #   machine (<state>/current/activation.json of rebuild --switch: its tree
 #   is the HEAD tree, or its revision a commit after the base), that tree
 #   is the HEAD tree and <state>/update/e2e.json records a passed E2E run
@@ -264,7 +264,7 @@ sync_canonical_checkout() {
 }
 
 cmd_publish() {
-  local scope=update expected_base="" root branch base head record recorded_scope override
+  local scope=update expected_base="" root branch base head record recorded_scope recorded_base override
   local subject bad remote answer outcome detail
   while (($#)); do
     case $1 in
@@ -308,6 +308,10 @@ cmd_publish() {
   # again for the same tree and records that scope.
   [[ $recorded_scope == "$scope" ]] ||
     die "the validation was made for the ${recorded_scope:-(none)} scope, not $scope; run 'dotsteward gate --scope $scope' first"
+  # The writer classes and the update allowlist were checked against the base of the proof.
+  recorded_base=$(jq -r '.base_oid // empty | strings' <<<"$record")
+  [[ $recorded_base == "$base" ]] ||
+    die "the gate proved this tree against ${recorded_base:-no base}, not the base OID $base of this publish; run 'dotsteward gate --scope $scope --expected-base $base' first"
   override=$(jq -r '.framework_override // empty | tostring' <<<"$record")
   [[ -z $override ]] ||
     die "the validation used the framework override $override; run 'dotsteward gate --scope $scope' without an override first"

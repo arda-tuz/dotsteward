@@ -767,7 +767,8 @@ def cmd_rename(args: argparse.Namespace, instance: config.Instance, env: Mapping
             except (Refusal, config.DotstewardError):
                 _restore_checkout(instance.root)
                 raise
-        machine.write_machine(state, {**record, "name": new})
+        # The old name lets the gate take the removal of its host file from this machine alone.
+        machine.write_machine(state, {**record, "name": new, "renamed_from": old})
     _log(f"this machine is {new}")
     return 0
 

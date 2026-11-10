@@ -13,7 +13,9 @@ the producer (``[hosts] producer``). ``check`` holds a candidate tree to that ag
 - the files only the producer writes (``package-lock.json`` of ``packages/``, hashed requirements,
   ``bootstrap.sh``, ``.dotsteward/cli.sh``) do not change if the base has them;
 - on every named machine, ``hosts/<other>.toml`` does not change, except that the rename of this
-  machine removes its old file.
+  machine removes its old file (the old name is ``renamed_from`` of ``machine.json``);
+- a machine that is not the producer does not remove ``[hosts] producer``, which would end the
+  guard; naming another producer is intent.
 
 Nothing is guarded on a machine without a name or when the base names no producer: one machine,
 as every instance was before. The producer of the base decides, so a commit that names another
@@ -118,6 +120,11 @@ def _at(document: Any, keys: Sequence[str]) -> tuple[bool, Any]:
     return True, document
 
 
+def moved_values(before: Any, after: Any) -> list[str]:
+    """The paths of the values of BEFORE that AFTER changes or drops; a new key is no change."""
+    return _kept_values(before, after, set())
+
+
 def _kept_values(before: Any, after: Any, skip: set[str]) -> list[str]:
     """The paths of the values of BEFORE that AFTER changes or drops; top-level keys in SKIP are
     free. A new key is no change."""
@@ -182,15 +189,16 @@ def _skill_lock(trees: _Trees, changed: Sequence[str], lock: str, vendor: str, o
     return findings
 
 
-def _hosts(trees: _Trees, changed: Sequence[tuple[str, str]], name: str) -> list[Finding]:
+def _hosts(trees: _Trees, changed: Sequence[tuple[str, str]], name: str, renamed_from: str | None) -> list[Finding]:
     own = f"{machine.HOSTS_DIR}/{name}.toml"
-    renamed = trees.before(own) is None and trees.after(own) is not None
+    old = f"{machine.HOSTS_DIR}/{renamed_from}.toml" if renamed_from else None
+    renamed = old is not None and trees.before(own) is None and trees.after(own) is not None
     findings = []
     for status, path in changed:
         if not path.startswith(f"{machine.HOSTS_DIR}/") or path == own:
             continue
-        if status == "D" and renamed:
-            # host rename: the old file of this machine goes as its new one comes.
+        if status == "D" and renamed and path == old:
+            # host rename: the old file of this machine, and only that one, goes as its new one comes.
             continue
         findings.append(Finding(path, "only the machine of a host file writes it"))
     return findings
@@ -212,7 +220,7 @@ def _producer_files(trees: _Trees, changed: Sequence[tuple[str, str]]) -> list[F
 
 
 def producer_of(root: Path, base: str) -> str | None:
-    """``[hosts] producer`` of the tree of BASE."""
+    """``[hosts] producer`` of the tree of the commit or tree BASE."""
     shown = publishing.git(root, "show", f"{base}:{config.CONFIG_FILE}")
     if shown.code != 0:
         return None
@@ -226,7 +234,14 @@ def producer_of(root: Path, base: str) -> str | None:
 
 
 def check(
-    instance: config.Instance, base: str, tree: str, name: str | None, producer: str | None, scope: str
+    instance: config.Instance,
+    base: str,
+    tree: str,
+    name: str | None,
+    producer: str | None,
+    scope: str,
+    *,
+    renamed_from: str | None = None,
 ) -> list[Finding]:
     """What TREE changes against BASE that the machine NAME does not write, in SCOPE (every scope
     has the same classes). Nothing without a name or a producer."""
@@ -235,6 +250,7 @@ def check(
         base,
         tree,
         name=name,
+        renamed_from=renamed_from,
         producer=producer,
         scope=scope,
         lock=str(instance.config["skills"]["lock"]),
@@ -259,6 +275,7 @@ def check_tree(
     tree: str,
     *,
     name: str | None,
+    renamed_from: str | None = None,
     producer: str | None,
     scope: str,
     lock: str,
@@ -273,9 +290,17 @@ def check_tree(
         return []
     trees = _Trees(root, base, tree)
     changed = trees.changed()
-    findings = _hosts(trees, changed, name)
+    findings = _hosts(trees, changed, name, renamed_from)
     if name == producer:
         return findings
+    if producer_of(root, tree) is None:
+        findings.append(
+            Finding(
+                config.CONFIG_FILE,
+                f"only the producer {producer} removes [hosts] producer, which ends the guard; "
+                "'dotsteward host producer NAME' names another one",
+            )
+        )
     paths = {path for _, path in changed}
     for path in ("versions.lock.json", "flake.lock"):
         if path in paths:
@@ -306,9 +331,19 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
     except config.DotstewardError as error:
         print("\n".join(error.lines()), file=sys.stderr)
         return 1
-    name = machine.current_name(machine.read_machine(state_root), environment)
+    record = machine.read_machine(state_root)
+    name = machine.current_name(record, environment)
+    renamed = record.get("renamed_from") if record is not None else None
     producer = producer_of(instance.root, options.base)
-    findings = check(instance, options.base, options.tree, name, producer, options.scope)
+    findings = check(
+        instance,
+        options.base,
+        options.tree,
+        name,
+        producer,
+        options.scope,
+        renamed_from=renamed if isinstance(renamed, str) and machine.valid_name(renamed) else None,
+    )
     for finding in findings:
         print(f"[dotsteward] ERROR: {finding.line()}", file=sys.stderr)
     if not findings:

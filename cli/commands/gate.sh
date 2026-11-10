@@ -61,7 +61,10 @@
 # `nix --version`, the gate version (the framework VERSION), the framework
 # override, the sha256 of the configured privacy denylist and the scope all
 # equal the record's (txn publish takes a record of its own scope only); the
-# root is not part of the key. A failed run keeps the previous record.
+# root is not part of the key. A memo answer for another base records that
+# base, which the writer classes and the update allowlist were checked
+# against first; txn publish takes a record of its own base only. A failed
+# run keeps the previous record.
 #
 # validation.json (schema_version "1.1"): result, tree_oid, base_oid, scope,
 # nix_version, gate_version, framework_override (or null), denylist_sha256
@@ -201,6 +204,10 @@ if ((!force)); then
     . as $record | .schema_version == "1.1" and .result == "passed"
     and all($key | keys[]; $record[.] == $key[.])' <<<"$record" >/dev/null 2>&1; then
     log "this tree already passed the gate; skipped (use --force to rerun)"
+    # The writer classes and the allowlist above held for this base: the record says so.
+    if [[ $(jq -r '.base_oid // ""' <<<"$record") != "$base" ]]; then
+      jq --arg base "$base" '.base_oid = $base' <<<"$record" | txn_write_private "$validation_file"
+    fi
     jq -c '{result, tree_oid, scope, validated_at, total_seconds, memo: true}' <<<"$record"
     exit 0
   fi

@@ -386,6 +386,7 @@ class Apply(_Checkout):
         self.base = ""
         self.commit: str | None = None
         self.published = False
+        self.replayed = False
         self.interrupted = False
         self.paths: report.ReportPaths | None = None
         self.run.data.update(machine=self.name, profile=self.profile, activate=activate, publish=publish)
@@ -553,7 +554,7 @@ class Apply(_Checkout):
                 log=log,
                 environment=environment,
                 run=self._again(self.subject),
-                message=f"the gate could not judge the tree: {environment}; nothing was committed",
+                message=f"the gate could not judge the tree: {environment}; {self._nothing_new()}",
             )
             return False
         self._step("gate", status, started)
@@ -561,9 +562,15 @@ class Apply(_Checkout):
             "gate-failed",
             log=log,
             run=self._again(self.subject),
-            message="the gate refused the tree: nothing was committed; fix it and run the same command again",
+            message=f"the gate refused the tree: {self._nothing_new()}; fix it and run the same command again",
         )
         return False
+
+    def _nothing_new(self) -> str:
+        """What a red gate left: nothing new, or the commits a replay moved, which wait here."""
+        if self.replayed:
+            return f"the commits moved onto {self.base[:12]} and wait here, nothing was pushed"
+        return "nothing was committed"
 
     def _writer_class(self, started: float) -> bool:
         """The tree changes what another machine writes: nothing is committed."""
@@ -571,7 +578,7 @@ class Apply(_Checkout):
         producer = writers.producer_of(self.root, self.base)
         pins = [path for path in paths if not path.startswith(f"{machine.HOSTS_DIR}/")]
         self._step("gate", report.FAILED, started, detail=writers.CODE)
-        _error(f"{writers.CODE}: this machine does not write {', '.join(paths)}: nothing was committed")
+        _error(f"{writers.CODE}: this machine does not write {', '.join(paths)}: {self._nothing_new()}")
         if pins:
             self.run.item(
                 writers.CODE,
@@ -850,8 +857,10 @@ class Apply(_Checkout):
                 self._step("publish", report.PARTIAL, started, detail="offline: the same command publishes later")
                 return
             if status != _TXN_RACE:
-                self._step("publish", status, started)
-                self.run.item("publish-refused", message="txn publish or the remote refused the commits: see above")
+                said = [line for line in self.quiet_output.splitlines() if line.startswith("[dotsteward] ERROR: ")]
+                reason = said[-1].removeprefix("[dotsteward] ERROR: ") if said else "see above"
+                self._step("publish", status, started, detail=reason)
+                self.run.item("publish-refused", message=f"txn publish or the remote refused the commits: {reason}")
                 return
             if attempt == publishing.ATTEMPTS:
                 break
@@ -902,11 +911,10 @@ class Apply(_Checkout):
             fetched = self._git("fetch", "--quiet", "--no-tags", "--refmap=", str(work), f"+HEAD:{_REPLAYED_REF}")
             if fetched.code != 0:
                 return self._replay_failed(started, f"git fetch from the replay failed: {fetched.stderr.strip()}")
+            return self._land(replayed, started, detail=f"onto {tip[:12]}")
         finally:
             shutil.rmtree(work, ignore_errors=True)
-        landed = self._land(replayed, started, detail=f"onto {tip[:12]}")
-        self._git("update-ref", "-d", _REPLAYED_REF)
-        return landed
+            self._git("update-ref", "-d", _REPLAYED_REF)
 
     def _land(self, commit: str, started: float, *, detail: str) -> bool:
         moved = self._git("reset", "--quiet", "--keep", commit)
@@ -914,6 +922,7 @@ class Apply(_Checkout):
             return self._replay_failed(started, f"git reset --keep in the checkout failed: {moved.stderr.strip()}")
         self.base = self.tip
         self.commit = commit
+        self.replayed = True
         self.run.data.update(base=self.base, commit=commit)
         self._step("replay", report.OK, started, detail=detail)
         _say("apply", f"the commits are on {self.tip[:12]} now: {commit[:12]}")
@@ -929,6 +938,10 @@ class Apply(_Checkout):
         shutil.rmtree(work, ignore_errors=True)
         atomic.make_private_dirs(work.parent)
         commits = self._git("rev-list", "--reverse", "--topo-order", f"{self.base}..HEAD").stdout.split()
+        merges = self._git("rev-list", "--merges", f"{self.base}..HEAD").stdout.split()
+        if merges:
+            self._merge_waits(merges, started)
+            return None
         made = self._git("clone", "--quiet", "--shared", "--no-checkout", str(self.root), str(work))
         if made.code != 0:
             self._replay_failed(started, f"git clone failed: {made.stderr.strip()}")
@@ -941,14 +954,19 @@ class Apply(_Checkout):
         identity = commit_identity(self.root, "HEAD")
         lock_taken = False
         for commit in commits:
-            picked = publishing.git(work, *identity, "cherry-pick", "--allow-empty", commit, env={"TZ": "UTC"})
+            # A commit whose change the tip has already stays, empty: no commit of the person goes.
+            picked = publishing.git(
+                work, *identity, "cherry-pick", "--allow-empty", "--keep-redundant-commits", commit, env={"TZ": "UTC"}
+            )
             if picked.code == 0:
                 continue
             unmerged = publishing.git(work, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0")[:-1]
-            if not unmerged and self._empty_pick(work):
-                # The tip has the change already.
+            if not unmerged and self._keep_empty(work, identity):
                 continue
             others = [path for path in unmerged if not (path.startswith(_DERIVED) or path == _FLAKE_LOCK)]
+            if _FLAKE_LOCK in unmerged and not self._lock_added_to(commit):
+                # This commit moved a pin of its parent's lock: taking the tip's lock would drop it.
+                others.append(_FLAKE_LOCK)
             if not unmerged or others:
                 publishing.git(work, "cherry-pick", "--abort")
                 if not unmerged:
@@ -970,7 +988,7 @@ class Apply(_Checkout):
             done = publishing.git(
                 work, *identity, "-c", "core.editor=true", "cherry-pick", "--continue", env={"TZ": "UTC"}
             )
-            if done.code != 0 and not self._empty_pick(work):
+            if done.code != 0 and not self._keep_empty(work, identity):
                 publishing.git(work, "cherry-pick", "--abort")
                 self._replay_failed(started, f"git cherry-pick {commit[:12]} failed: {done.stderr.strip()[-400:]}")
                 return None
@@ -979,11 +997,43 @@ class Apply(_Checkout):
         return self._fold(work, started)
 
     @staticmethod
-    def _empty_pick(work: Path) -> bool:
-        """A pick that stopped because its change is on the tip already goes; True when it went."""
+    def _keep_empty(work: Path, identity: Sequence[str]) -> bool:
+        """A pick that stopped because nothing of it is left is committed empty, with its message and
+        author; True when it was."""
         if publishing.git(work, "diff", "--cached", "--quiet", "HEAD").code != 0:
             return False
-        return publishing.git(work, "cherry-pick", "--skip").code == 0
+        made = publishing.git(
+            work, *identity, "commit", "--quiet", "--allow-empty", "-C", "CHERRY_PICK_HEAD", env={"TZ": "UTC"}
+        )
+        return made.code == 0
+
+    def _lock_added_to(self, commit: str) -> bool:
+        """COMMIT only added to the flake.lock of its parent: no value the parent had moved or went."""
+
+        def lock_at(revision: str) -> Any:
+            shown = self._git("show", f"{revision}:{_FLAKE_LOCK}")
+            if shown.code != 0:
+                return {}
+            try:
+                return json.loads(shown.stdout)
+            except ValueError:
+                return None
+
+        before, after = lock_at(f"{commit}^"), lock_at(commit)
+        return before is not None and after is not None and not writers.moved_values(before, after)
+
+    def _merge_waits(self, merges: Sequence[str], started: float) -> None:
+        self._step("replay", report.PENDING, started, detail="a merge commit among the commits")
+        self.run.item(
+            "replay-merge",
+            commits=list(merges),
+            tip=self.tip,
+            run=f"git -C {self.root} pull --rebase origin {self.branch} && {self._again()}",
+            message=(
+                "a merge commit cannot move onto the tip by itself: nothing was pushed and the checkout is as it was; "
+                "the command takes the remote in and lines the commits up, then the same apply publishes them"
+            ),
+        )
 
     def _conflict(self, paths: Sequence[str], started: float) -> None:
         self._step("replay", report.PENDING, started, detail=f"the same lines changed on {self.tip[:12]}")

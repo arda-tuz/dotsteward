@@ -135,9 +135,9 @@ refused "the validation used the framework override path:/tmp/dotsteward-candida
   --scope maintain
 
 # A record without the override field (schema 1.0, written by an older gate)
-# has no override; root, base, nix and gate versions are not compared.
+# has no override; root, nix and gate versions are not compared.
 write_validation 'del(.framework_override, .gate_version, .denylist_sha256) | .schema_version = "1.0"
-  | .root = "/elsewhere" | .nix_version = "nix (Nix) 1.0" | .base_oid = "1111111111111111111111111111111111111111"'
+  | .root = "/elsewhere" | .nix_version = "nix (Nix) 1.0"'
 reset_logs
 assert_exit 0 run_update publish --scope maintain
 assert_eq "$(head_oid)" "$(remote_oid)"

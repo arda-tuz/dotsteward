@@ -120,6 +120,8 @@ class Upgrade(runner.Runner):
         self.apt_answer: dict[str, Any] | None = None
         self.red = False
         self.verified = False
+        # The tree that green E2E checked: what is published must be that tree and no other.
+        self.verified_tree: str | None = None
         self.interrupted = False
         self.work: Path | None = None
         self.waiting: str | None = None
@@ -141,6 +143,15 @@ class Upgrade(runner.Runner):
     def _work_git(self, *arguments: str, stdin: str | None = None) -> publishing.GitResult:
         assert self.work is not None
         return publishing.git(self.work, *arguments, stdin=stdin)
+
+    def _verify(self, green: bool) -> None:
+        """E2E is green for the tree of this run, or nothing is."""
+        self.verified = green
+        self.verified_tree = self._tree_of(self._target()) if green else None
+
+    def _verified_work(self) -> bool:
+        """The waiting commit of the clone is the tree that E2E checked."""
+        return self.verified and self.work is not None and self.verified_tree == self._tree_of(self.work)
 
     def _command_again(self) -> str:
         """The command that does what waits."""
@@ -844,6 +855,7 @@ class Upgrade(runner.Runner):
             self.run.step("rebuild", report.OK, detail="skipped: this tree is active")
             return
         if self.offline and self.work is not None:
+            self._verify(False)
             self.run.step("rebuild", report.PARTIAL, detail="offline: the commit waits for the next run")
             return
         _say(f"rebuild of profile {self.profile}")
@@ -851,7 +863,9 @@ class Upgrade(runner.Runner):
             self._save_binaries()
         status = self._ds("rebuild", "--profile", self.profile, "--switch")
         if self.work is not None and (status == _KILLED or status < 0):
-            # Out of memory, or stopped from outside: it says nothing about the pins.
+            # Out of memory, or stopped from outside: it says nothing about the pins, and this tree is
+            # not built.
+            self._verify(False)
             self.run.step(
                 "rebuild",
                 report.FAILED,
@@ -863,6 +877,7 @@ class Upgrade(runner.Runner):
             if outcome != publishing.OK:
                 # Nix without a network says nothing about the pins.
                 self.offline = True
+                self._verify(False)
                 self.run.step("rebuild", report.PARTIAL, detail="offline: the commit waits for the next run")
                 return
         self.run.step("rebuild", status)
@@ -963,9 +978,9 @@ class Upgrade(runner.Runner):
             key = self._e2e_key(repo_checks)
             atomic.atomic_write_json(self.upgrade_dir / "e2e-key.json", {"key": key}, mode=0o600)
             self._forget_binaries()
-            self.verified = True
+            self._verify(True)
             return None
-        self.verified = False
+        self._verify(False)
         try:
             findings = json.loads(done.stdout).get("findings") or []
         except (ValueError, AttributeError):
@@ -979,12 +994,13 @@ class Upgrade(runner.Runner):
             return
         if self.work is not None and not self._is_active(self.work):
             # Without a network its rebuild waits; this generation says nothing about the commit.
+            self._verify(False)
             self.run.step("e2e", report.PARTIAL, detail="the commit that waits is not active yet")
             return
         if self.work is None and self.dirty and self._behind():
             # The generation is of what was published, the lock of the checkout is older: its E2E would
             # say red about a lock nobody runs.
-            self.verified = False
+            self._verify(False)
             self.run.step("e2e", report.PENDING, detail="the checkout has changes and is behind what is published")
             self.run.item(
                 "checkout-behind",
@@ -996,7 +1012,7 @@ class Upgrade(runner.Runner):
             )
             return
         if not force and not self.apt_changed and self._e2e_green_for(self._e2e_key(self._repo_checks())):
-            self.verified = True
+            self._verify(True)
             self.run.step("e2e", report.OK, detail="skipped: nothing changed since the last green run")
             return
         _say(f"E2E of profile {self.profile}")
@@ -1014,7 +1030,7 @@ class Upgrade(runner.Runner):
     def _no_result(self) -> None:
         """E2E ended without naming a check: killed, out of memory, or a crash of its own. Nothing went
         red, so nothing goes back and nothing is held; a waiting commit waits for the next run."""
-        self.verified = False
+        self._verify(False)
         self.run.step("e2e", report.FAILED, detail=f"no result (exit {self.e2e_status})")
         self.run.item(
             "e2e-no-result",
@@ -1065,7 +1081,7 @@ class Upgrade(runner.Runner):
         self.run.step("go-back", status, detail=reason)
         again = self._run_e2e() if status == 0 else ["rebuild"]
         self.red = True
-        self.verified = False
+        self._verify(False)
         if again is None:
             self._hold_moved(moved, red, reason)
             self.run.step("e2e", report.PENDING, detail=f"went back: {reason}")
@@ -1126,7 +1142,7 @@ class Upgrade(runner.Runner):
             return
         if self.work is None:
             return
-        if not self.verified:
+        if not self._verified_work():
             self.run.step("publish", report.PENDING, detail="no green E2E of this tree")
             self.run.item(
                 "publish-waits",
@@ -1140,6 +1156,16 @@ class Upgrade(runner.Runner):
             self._back_to_checkout()
             return
         for attempt in range(1, publishing.ATTEMPTS + 1):
+            if not self._verified_work():
+                # The tree of a replay that was not built, or not checked by E2E, goes nowhere.
+                self.run.step("publish", report.PENDING, detail="no green E2E of this tree")
+                self.run.item(
+                    "publish-waits",
+                    run=self._command_again(),
+                    message="the commit on the new tip goes out after its rebuild and a green E2E, which this run "
+                    "could not do",
+                )
+                return
             status = self._ds_quiet("txn", "publish", "--scope", "update", "--expected-base", self.tip)
             if status == 0:
                 self.run.step("publish", report.OK)
@@ -1182,9 +1208,21 @@ class Upgrade(runner.Runner):
         """The lost race of the producer: no text is merged; the writer runs again on the new tip with
         the rows this run researched, then the gate, the rebuild and E2E, as the first time. False:
         nothing to publish (recorded)."""
-        outcome, tip, _ = publishing.fetch_tip(self.root, self.branch, _PUBLISH_SCOPE)
+        # What E2E checked is the tree of the lost push; the new one starts unproven.
+        self._verify(False)
+        outcome, tip, detail = publishing.fetch_tip(self.root, self.branch, _PUBLISH_SCOPE)
+        if outcome == publishing.REFUSED:
+            self.run.step("publish", report.FAILED, detail="the remote refused the fetch of the new tip")
+            self.run.item(
+                "publish-refused",
+                moved=[row.get("id") for row in self.moved],
+                message=f"the remote refused the fetch of the new tip: {detail}; the next run tries again",
+            )
+            self._drop_waiting()
+            self._back_to_checkout()
+            return False
         if outcome != publishing.OK:
-            self.offline = outcome == publishing.NETWORK
+            self.offline = True
             self.run.step("publish", report.PARTIAL, detail="offline: the commit waits for the next run")
             return False
         self.tip = tip
@@ -1203,7 +1241,8 @@ class Upgrade(runner.Runner):
             return False
         self._rebuild()
         self._e2e()
-        return self.waiting is not None and self.verified
+        # Not built or not green: the loop says so and publishes nothing.
+        return self.waiting is not None and not self.red
 
     def _behind(self) -> bool:
         """The checkout is behind what the remote has, or had at the last fetch."""
@@ -1264,7 +1303,7 @@ class Upgrade(runner.Runner):
         status = self._ds("rebuild", "--profile", self.profile, "--switch")
         self.run.step("checkout-rebuild", status)
         if status != 0:
-            self.verified = False
+            self._verify(False)
 
     def _back_to_checkout(self) -> None:
         """A commit that goes nowhere leaves the generation of the checkout active."""

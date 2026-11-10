@@ -194,7 +194,9 @@ left to the vendor. Without a terminal it is never applied.
   was rejected as no fast-forward): no text is merged. After a random pause the writer runs again in
   a new clone of the new tip, with the rows this run researched (`pins latest` does not run again),
   then the gate, the rebuild and E2E against the new base, and the push again; a `replay` step says
-  so. When the remote moved before each of three pushes, `publish-race`, exit 3: the commit goes and
+  so. Only the tree that E2E checked goes out: when the rebuild of the new tree is killed or has no
+  network, the commit waits for the next run (`publish-waits`). A refused fetch of the new tip is
+  `publish-refused`. When the remote moved before each of three pushes, `publish-race`, exit 3: the commit goes and
   the next run makes it again.
 - **No network:** network steps are skipped and the checks run, exit 6. A waiting commit stays and
   the next online run publishes it, or makes it again when the remote moved. A rebuild that fails

@@ -66,6 +66,8 @@ reset_logs
 # The recorded base is an ancestor, but the remote is not at it: the race of another machine.
 assert_exit 3 run_update publish --scope maintain
 assert_contains "$DS_STDERR" "remote main changed since prepare"
+# The proof is for the base of the publish.
+write_validation ".base_oid = \"$base\""
 assert_exit 0 run_update publish --scope maintain --expected-base "$base"
 assert_eq "$(head_oid)" "$(remote_oid)"
 
