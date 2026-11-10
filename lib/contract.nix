@@ -27,11 +27,11 @@ let
     "system"
   ];
 
-  # System-level methods: skipped in adopt mode.
+  # System-level methods: skipped in adopt mode. The system method is managed on every
+  # profile: its files are the framework's policy for the system.
   systemMethods = [
     "deb"
     "app-archive"
-    "system"
   ];
 
   platforms = [
@@ -246,16 +246,17 @@ let
   systemFileSpec = types.submodule {
     options = {
       path = option (
-        types.strMatching "/[A-Za-z0-9._@+-]+(/[A-Za-z0-9._@+-]+)*"
+        types.addCheck (types.strMatching "/[A-Za-z0-9._@+-]+(/[A-Za-z0-9._@+-]+)*") (
+          path: !(lib.any (segment: segment == "." || segment == "..") (lib.splitString "/" path))
+        )
         // {
-          description = "absolute path";
+          description = "absolute path without . or .. segments";
         }
       ) "Absolute path of the file on the machine.";
       text = option types.str "The whole content of the file.";
+      # Readable by every user: a check run as the user compares the bytes.
       mode = optionDefault (types.enum [
         "0644"
-        "0640"
-        "0600"
         "0755"
       ]) "0644" "File mode.";
     };

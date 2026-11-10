@@ -150,15 +150,21 @@ def _ask_yes(question: str) -> bool:
     return sys.stdin.readline().strip().lower() in {"y", "yes", "e", "evet"}
 
 
-def _system_file_differs(path: str, text: str, mode: str) -> bool:
-    """A system file is missing, or its bytes or its mode are not the component's."""
+def _system_file_differs(path: str, text: str, mode: str, root: str) -> bool:
+    """A system file is missing, or its bytes, its mode or its owner (the owner of the system
+    root, root:root of /) are not the component's."""
     try:
         with open(path, "rb") as handle:
             same = handle.read() == text.encode("utf-8")
-        actual = stat.S_IMODE(os.stat(path).st_mode)
+        actual = os.stat(path)
+        owner = os.stat(root or "/")
     except OSError:
         return True
-    return not same or actual != int(mode, 8)
+    return (
+        not same
+        or stat.S_IMODE(actual.st_mode) != int(mode, 8)
+        or (actual.st_uid, actual.st_gid) != (owner.st_uid, owner.st_gid)
+    )
 
 
 class Upgrade(runner.Runner):
@@ -642,17 +648,21 @@ class Upgrade(runner.Runner):
         return True
 
     def _system_files(self) -> bool:
-        """The files of the active system components that are missing or differ, each through
-        `sudo install` as `dotsteward install` writes them: the component is their one writer.
-        False: the window ended early."""
+        """The files of the active system components that are missing or differ, on every
+        profile, as `dotsteward install` writes them: next to the target under a temporary name,
+        synced, then renamed over it, so apt never reads half a file. The component is their one
+        writer. False: the window ended early."""
         root = self.env.get("DOTSTEWARD_SYSTEM_ROOT") or ""
-        for component in self._active():
+        active = self._active()
+        for component in active:
             if component.get("method") != "system":
                 continue
             step = f"system:{component.get('name')}"
             files = (component.get("install") or {}).get("files") or []
             wanted = [
-                entry for entry in files if _system_file_differs(root + entry["path"], entry["text"], entry["mode"])
+                entry
+                for entry in files
+                if _system_file_differs(root + entry["path"], entry["text"], entry["mode"], root)
             ]
             if not wanted:
                 self.run.step(step, report.OK)
@@ -663,10 +673,20 @@ class Upgrade(runner.Runner):
                     staged.write_text(entry["text"], encoding="utf-8")
                     staged.chmod(0o644)
                     target = root + entry["path"]
-                    if not self._privileged(
-                        step, "install", "-D", "-o", "root", "-g", "root", "-m", entry["mode"], str(staged), target
+                    head, _, tail = target.rpartition("/")
+                    temporary = f"{head}/.dotsteward-{tail}.tmp"
+                    for command in (
+                        ("install", "-D", "-o", "root", "-g", "root", "-m", entry["mode"], str(staged), temporary),
+                        ("sync", "--", temporary),
+                        ("mv", "-f", "--", temporary, target),
                     ):
-                        return False
+                        if not self._privileged(step, *command):
+                            return False
+                        if self.run.steps[-1]["status"] != report.status_name(report.OK):
+                            self._privileged(step + ":cleanup", "rm", "-f", "--", temporary)
+                            break
+        if facts.gated(self.instance, self.name) and not any(c.get("name") == "apt-policy" for c in active):
+            _say("apt-policy is not active here: unattended-upgrades may remove kernels by itself")
         return True
 
     def _system_channels(self) -> None:

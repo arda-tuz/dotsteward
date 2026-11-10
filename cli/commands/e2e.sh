@@ -441,6 +441,7 @@ if [[ -z $generation ]]; then
   generation=$(skills_active_generation)
 fi
 methods_manifest_load "$generation"
+config_unavailable_notes
 
 # The planners and checks read the manifest sections below with jq in
 # command and process substitutions, whose errors bash does not report: a

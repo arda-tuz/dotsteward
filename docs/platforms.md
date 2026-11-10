@@ -84,7 +84,7 @@ dialog.
 | `pypi` | yes | yes | user (a virtual environment, links in `~/.local/bin`) | installed |
 | `deb` | yes | no | system (one APT transaction) | not managed |
 | `app-archive` | no | yes | system (`~/Applications`) | not managed |
-| `system` | yes | no | system (root-owned files through `sudo`) | not managed |
+| `system` | yes | no | system (root-owned files through `sudo`) | installed |
 | `external` | yes | yes | nothing is installed | as in `fresh` |
 
 Each component lists the methods it supports per platform, and its default.
@@ -251,8 +251,9 @@ os-release) or `macos-15` (the major version of `sw_vers`). Its layers, the
 most specific first, are the release, the operating system (`ubuntu`, `macos`)
 and the Nix platform (`linux`, `darwin`), with `workstation.toml` below them
 all; a key of a more specific layer wins over the same key of a more general
-one, and lists do not merge. The template brings `ubuntu-22.04.toml`,
-`ubuntu-26.04.toml` and `macos-15.toml`:
+one, and lists do not merge. The template brings `ubuntu-22.04.toml` (its fast
+path commented out until a whole install on 22.04 runs in CI), `ubuntu-26.04.toml` and
+`macos-15.toml`:
 
 ```toml
 schema_version = 1

@@ -14,6 +14,8 @@ layer calls unavailable is left out on the machine like one for other machines:
 
     platform_id(env)                   the release of this machine
     layers(platform, runtime)          its layers, the most specific first
+    unavailable_on(root, platform, runtime)
+                                       what those layers call unavailable
     resolve(instance, env)             {id, layers, files, fast_path, components}
     check_problems(instance)           the problems of every platform file of the tree
 """
@@ -148,6 +150,18 @@ def resolve(instance: config.Instance, env: Mapping[str, str] | None = None) -> 
         "fast_path": fast_path,
         "components": {name: components[name] for name in sorted(components)},
     }
+
+
+def unavailable_on(root: str | os.PathLike[str], platform: str | None, runtime: str) -> list[str]:
+    """What the layers of the release PLATFORM (None: only the Nix platform RUNTIME) call
+    unavailable, sorted: the rule mkInstance applies to a host file, so a machine's no: tags are
+    the same for gate and for rebuild."""
+    chain = layers(platform, runtime) if platform else [runtime]
+    found: set[str] = set()
+    for layer in chain:
+        document = read_platform(root, layer) or {}
+        found.update(name for name, table in document.get("components", {}).items() if table.get("unavailable"))
+    return sorted(found)
 
 
 def unavailable(document: Mapping[str, Any]) -> list[str]:

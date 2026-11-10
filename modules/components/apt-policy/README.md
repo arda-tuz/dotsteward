@@ -4,11 +4,13 @@ The system files that bind the other drivers of apt (unattended-upgrades, the
 software updaters, a plain `apt upgrade`) to what `dotsteward upgrade` does with the
 kernel and driver classes. Linux only, method `system`.
 
-Enable it in `workstation.toml`:
+It is enabled by default on every instance with a Linux system, without a line in
+`workstation.toml`: the "no removals" rule of the gated classes is the framework's, and the
+apt engine wrote the drop-in itself before the component took it over. The one way out:
 
 ```toml
 [components.apt-policy]
-enable = true
+enable = false
 ```
 
 ## Install
@@ -28,9 +30,9 @@ Unattended-Upgrade::Remove-New-Unused-Dependencies "false";
 ```
 
 These are the bytes that `dotsteward upgrade` wrote before the component took the
-file over, so a machine that has it already needs no write. A fresh install writes it, and so does `dotsteward upgrade` in its sudo window when the
-file is missing or differs; an adopted machine takes it in with `dotsteward install
---profile PROFILE --component apt-policy`. The pin file of the gated classes
+file over, so a machine that has it already needs no write. `dotsteward install` writes it on every profile, adopted ones too, and so does `dotsteward
+upgrade` in its sudo window when the file is missing or differs. Without the component,
+`dotsteward upgrade` says that unattended-upgrades may remove kernels by itself. The pin file of the gated classes
 (`/etc/apt/preferences.d/60dotsteward`) and its dpkg hook are not part of the
 component: they follow what dpkg has, so `dotsteward upgrade` writes them
 ([docs/upgrade.md](../../../docs/upgrade.md)).

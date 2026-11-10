@@ -56,6 +56,7 @@ REASON_TAGS = "tags"
 REASON_REQUIRES = "requires"
 REASON_NOT_ACTIVATED = "not-activated"
 REASON_PLATFORM = "platform"
+REASON_METHOD = "method"
 
 
 def valid_name(name: str) -> bool:
@@ -249,11 +250,16 @@ def tags_digest(tags: Collection[str]) -> str:
     return hashlib.sha256("\n".join(sorted(tags)).encode("utf-8")).hexdigest()
 
 
-def host_tags(name: str, host: Mapping[str, Any]) -> list[str]:
+def host_tags(name: str, host: Mapping[str, Any], root: str | os.PathLike[str], primary: str) -> list[str]:
     """The tags hosts/NAME.toml means, as mkInstance reads them: its tags, machine:NAME and
-    no:<component> for what it declines."""
+    no:<component> for what it declines and for what the platform layer of its release calls
+    unavailable."""
+    from dotsteward_cli import platforms
+
     declined = host.get("declined", {}).get("components", [])
-    return sorted({*host.get("tags", []), f"machine:{name}", *(f"no:{component}" for component in declined)})
+    runtime = str(host.get("system", primary)).rpartition("-")[2]
+    left_out = [*declined, *platforms.unavailable_on(root, host.get("platform"), runtime)]
+    return sorted({*host.get("tags", []), f"machine:{name}", *(f"no:{component}" for component in left_out)})
 
 
 def enabled_components(instance: config.Instance) -> Iterator[tuple[str, Mapping[str, Any]]]:
@@ -274,7 +280,7 @@ def _host_build(instance: config.Instance, name: str | None, host: Mapping[str, 
     return {
         "name": name,
         "profile": str(host.get("profile") or instance.config["profiles"]["check"]),
-        "tags_sha256": tags_digest(host_tags(name, host)),
+        "tags_sha256": tags_digest(host_tags(name, host, instance.root, primary)),
     }
 
 
@@ -288,7 +294,8 @@ def _settle_requires(
     told: dict[str, list[dict[str, str]]] = {"arriving": [], "unmet": []}
     new = {question["name"] for question in questions if question["kind"] == "component"}
     left = {key.removeprefix("component:"): why for key, why in reasons.items() if key.startswith("component:")}
-    if name is None or not (new or left):
+    # Also on a machine without a name: what it leaves out (its platform) takes along what needs it.
+    if not (new or left):
         return questions, told
     from dotsteward_cli.skills import layout
 
@@ -399,9 +406,19 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
     from dotsteward_cli import platforms
 
     unavailable = platforms.unavailable(platforms.resolve(instance, os.environ if env is None else env))
+    # The platform filter of Nix: the manifest of this system leaves a component out.
+    from dotsteward_cli.skills import layout
+
+    filtered = {
+        str(entry.get("name")): str(entry["unavailable"])
+        for entry in layout.manifest(instance).get("components") or []
+        if entry.get("unavailable") in (REASON_PLATFORM, REASON_METHOD)
+    }
     for component, table in enabled_components(instance):
         if component in unavailable:
             reasons[f"component:{component}"] = REASON_PLATFORM
+        elif component in filtered:
+            reasons[f"component:{component}"] = filtered[component]
         elif not _for_this_machine(table, name):
             reasons[f"component:{component}"] = REASON_MACHINES
         elif table.get("tags") is not None and not set(table["tags"]) & set(machine_tags):
@@ -421,8 +438,10 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
 
     profile = host.get("profile") or recorded.get("profile") or recorded_profile(state, instance)
     _note_not_activated(instance, state, reasons)
-    # What the platform layer calls unavailable, also on a machine without a name.
-    nix_tags: list[str] = [f"no:{component}" for component in unavailable]
+    # What the platform layer calls unavailable and what needs it, also on a machine without a name.
+    nix_tags: list[str] = sorted(
+        {f"no:{component}" for component in [*unavailable, *(entry["component"] for entry in requires["unmet"])]}
+    )
     if name is not None:
         # Every declined component, enabled or not, as mkInstance reads the host file.
         left_out = [question["name"] for question in questions if question["kind"] == "component"]
@@ -610,7 +629,8 @@ def _parser() -> argparse.ArgumentParser:
             "other machines; declined: hosts/<name>.toml says never; deleted: an own skill deleted here; "
             "incoming: another machine brought it and this machine did not answer yet; tags: a component for "
             "machine tags this machine does not carry; platform: platforms/ calls the component unavailable on the "
-            "platform of this machine, see dotsteward host platform). "
+            "platform of this machine, see dotsteward host platform, or the manifest of this system leaves it out; "
+            "method: the component has no method for this platform). "
             "incoming lists those questions (dotsteward incoming), "
             "nix_tags what rebuild hands to Nix. "
             "name_taken lists the skills of the lock that are for other machines while this machine has a "

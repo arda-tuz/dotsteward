@@ -163,6 +163,7 @@ phase_hooks() {
 
 components=()
 load_components
+config_unavailable_notes
 report_components=()
 report_hooks=()
 result=passed
@@ -265,12 +266,19 @@ delegated_detail() {
   esac
 }
 
-# --- adopt mode: one line, nothing else -----------------------------------
+# --- adopt mode: the files of system components, nothing else -------------
 if [[ $mode == adopt && $check_only == 0 && ${#selected[@]} == 0 ]]; then
   skipped=()
   for name in "${components[@]}"; do
     method=$(methods_component_method "$name")
-    if methods_is_system_level "$method"; then
+    if [[ $method == system ]]; then
+      # Managed on every profile: the framework's policy for the system (docs/component-contract.md).
+      if methods_system_install "$name"; then
+        report "$name" "$method" "$METHODS_STATUS" "$METHODS_DETAIL"
+      else
+        failure "$name" "$method" "$METHODS_DETAIL"
+      fi
+    elif methods_is_system_level "$method"; then
       skipped+=("$name")
       report_components+=("$(jq -cn --arg name "$name" --arg method "$method" \
         '{ name: $name, method: $method, status: "not-managed", detail: "system-level method in adopt mode" }')")

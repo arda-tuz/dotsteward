@@ -61,8 +61,9 @@ a default; the instance may choose another one per component and platform.
 | `system` | System files with their exact text and mode, written root-owned through `sudo` (Linux). |
 | `external` | Installed by something else; dotsteward only verifies it. |
 
-`deb`, `app-archive` and `system` are system-level methods: they run only in a `fresh`
-profile.
+`deb` and `app-archive` are system-level methods: they run only in a `fresh`
+profile. `system` writes system files too, but on every profile: they are the framework's
+policy for the system.
 
 ## Profiles
 

@@ -73,6 +73,13 @@ let
     "apt-policy"
   ];
 
+  # Catalog components enabled where the instance has a system of the platform, unless their
+  # table says enable = false (config.py DEFAULT_ENABLED): apt-policy keeps the "no removals"
+  # rule of the gated classes on every Linux instance.
+  defaultEnabled = {
+    apt-policy = "linux";
+  };
+
   # Keys of the [profiles] table that are not profile tables.
   profileKeys = [
     "names"
@@ -491,14 +498,21 @@ let
       defaultOrder = catalogNames ++ instanceNames;
       givenOrder = c.components.order or [ ];
       order = givenOrder ++ filter (n: !(elem n givenOrder)) defaultOrder;
+      rawTables = raw.components or { };
       componentFor =
         n:
         let
           table = tables.${n} or (applyDefaults componentSchema { });
+          source = table.source or (if elem n catalogNames then "catalog" else "instance");
+          platform = defaultEnabled.${n} or null;
+          explicit = (rawTables.${n} or { }) ? enable;
         in
         table
         // {
-          source = table.source or (if elem n catalogNames then "catalog" else "instance");
+          inherit source;
+        }
+        // lib.optionalAttrs (platform != null && source == "catalog" && !explicit) {
+          enable = lib.any (system: lib.hasSuffix "-${platform}" system) c.nix.systems;
         };
     in
     c

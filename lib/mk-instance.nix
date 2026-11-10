@@ -230,6 +230,38 @@ let
     else
       { };
 
+  # The platform layer of a machine (dotsteward_cli.platforms): the release its host file
+  # names, its operating system and its Nix platform. What a layer calls unavailable is a no:
+  # tag, the one the CLI of that machine hands rebuild, so gate builds what rebuild activates.
+  platformsDir = at "platforms";
+  platformLayers =
+    host:
+    let
+      release = host.platform or null;
+      parts = if release == null then [ ] else lib.splitString "-" release;
+      version = if parts == [ ] then "" else lib.last parts;
+      system = lib.concatStringsSep "-" (lib.init parts);
+      osLayer = lib.optional (lib.length parts > 1 && builtins.match "[0-9].*" version != null) system;
+    in
+    lib.unique (
+      lib.optional (release != null) release
+      ++ osLayer
+      ++ [ (platform.platformOf (host.system or primary)) ]
+    );
+  platformUnavailable =
+    host:
+    lib.unique (
+      lib.concatMap (
+        layer:
+        let
+          file = platformsDir + "/${layer}.toml";
+          components =
+            if pathExists file then (builtins.fromTOML (builtins.readFile file)).components or { } else { };
+        in
+        lib.attrNames (lib.filterAttrs (_: table: (table.unavailable or null) != null) components)
+      ) (platformLayers host)
+    );
+
   hostFacts = lib.mapAttrs (name: host: {
     inherit name;
     system = host.system or primary;
@@ -238,6 +270,7 @@ let
       host.tags or [ ]
       ++ [ "machine:${name}" ]
       ++ map (component: "no:${component}") (host.declined.components or [ ])
+      ++ map (component: "no:${component}") (platformUnavailable host)
     );
   }) hostFiles;
 

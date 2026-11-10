@@ -25,8 +25,8 @@
 #                                    [components] order
 #   methods_component NAME           the manifest entry of NAME (JSON)
 #   methods_component_method NAME    its resolved method
-#   methods_is_system_level METHOD   deb, app-archive and system: skipped in
-#                                    adopt mode
+#   methods_is_system_level METHOD   deb and app-archive: skipped in adopt
+#                                    mode (system is managed on every profile)
 #   methods_validate NAME            the method is known and available on
 #                                    this platform
 # Lock and versions
@@ -58,7 +58,8 @@
 #   methods_system_install NAME      the files of a system component
 #                                    (install.system.files) that are missing
 #                                    or differ, written root-owned through
-#                                    sudo
+#                                    sudo, each next to its place and renamed
+#                                    over it; on every profile
 #   app-archive dispatches to platform_app_archive_install NAME and
 #   platform_app_archive_check NAME of the platform layer, which set the same
 #   variables; without them the method is not available.
@@ -177,7 +178,7 @@ methods_component_method() {
 }
 
 methods_is_system_level() {
-  [[ $1 == deb || $1 == app-archive || $1 == system ]]
+  [[ $1 == deb || $1 == app-archive ]]
 }
 
 methods_validate() {
@@ -520,14 +521,22 @@ _methods_system_files() {
   _methods_install_field "$1" '.files[]'
 }
 
+# _methods_system_owner: the owner every system file has, uid:gid of the system root
+# (0:0 of /; the owner of DOTSTEWARD_SYSTEM_ROOT where tests set one).
+_methods_system_owner() {
+  stat -c %u:%g -- "${DOTSTEWARD_SYSTEM_ROOT:-/}"
+}
+
 # _methods_system_state FILE_JSON: sets _sys_path (the path the component
-# names), _sys_target (below DOTSTEWARD_SYSTEM_ROOT), _sys_mode and _sys_problem
-# (empty, "missing", "differs" or "mode <actual>").
+# names), _sys_target (below DOTSTEWARD_SYSTEM_ROOT), _sys_mode, _sys_owner and
+# _sys_problem (empty, "missing", "differs", "mode <actual>" or "owner <actual>").
+# Every mode of the contract is readable by all, so the user compares the bytes.
 _methods_system_state() {
-  local actual
+  local actual owner
   _sys_path=$(jq -r '.path' <<<"$1")
   _sys_mode=$(jq -r '.mode' <<<"$1")
   _sys_target=${DOTSTEWARD_SYSTEM_ROOT:-}$_sys_path
+  _sys_owner=$(_methods_system_owner)
   _sys_problem=''
   if [[ ! -f $_sys_target ]]; then
     _sys_problem=missing
@@ -536,7 +545,12 @@ _methods_system_state() {
   else
     actual=$(stat -c %a -- "$_sys_target")
     actual=$(printf '%04o' "$((8#$actual))")
-    [[ $actual == "$_sys_mode" ]] || _sys_problem="mode $actual"
+    owner=$(stat -c %u:%g -- "$_sys_target")
+    if [[ $actual != "$_sys_mode" ]]; then
+      _sys_problem="mode $actual"
+    elif [[ $owner != "$_sys_owner" ]]; then
+      _sys_problem="owner $owner"
+    fi
   fi
 }
 
@@ -564,6 +578,10 @@ _methods_system_check() {
         _methods_set failed "system file $_sys_path differs from the component"
         return 1
         ;;
+      owner\ *)
+        _methods_set failed "system file $_sys_path is owned by ${_sys_problem#owner }, not $_sys_owner"
+        return 1
+        ;;
       *)
         _methods_set failed "system file $_sys_path has ${_sys_problem}, the component $_sys_mode"
         return 1
@@ -584,8 +602,12 @@ methods_system_install() {
     [[ -n $_sys_problem ]] || continue
     staged=$tmp_dir/file
     jq -j '.text' <<<"$file" >"$staged"
-    # install(1) writes a new file and renames it over the old one: a reader sees one or the other.
-    if ! sudo install -D -o root -g root -m "$_sys_mode" "$staged" "$_sys_target"; then
+    # install(1) truncates in place, so it writes a temporary file next to the target, which is
+    # synced and then renamed over it: a reader, apt included, sees the old file or the new one.
+    next=${_sys_target%/*}/.dotsteward-${_sys_target##*/}.tmp
+    if ! sudo install -D -o root -g root -m "$_sys_mode" "$staged" "$next" || ! sudo sync -- "$next" ||
+      ! sudo mv -f -- "$next" "$_sys_target"; then
+      sudo rm -f -- "$next" 2>/dev/null || true
       rm -rf -- "$tmp_dir"
       _methods_set failed "cannot write $_sys_path"
       return 1

@@ -107,9 +107,9 @@ needs code specific to one component.
 | `install.app-archive.dest` | home path, default `~/Applications` | The destination directory. |
 | `install.system` | block | Method `system` (Linux, system level): the component is system files. |
 | `install.system.files` | list of records | The files, each written root-owned with its exact text and mode. |
-| `install.system.files.*.path` | absolute path | The file on the machine. |
+| `install.system.files.*.path` | absolute path without `.` or `..` segments | The file on the machine. |
 | `install.system.files.*.text` | string | The whole content of the file. |
-| `install.system.files.*.mode` | `0644`, `0640`, `0600` or `0755`, default `0644` | The file mode. |
+| `install.system.files.*.mode` | `0644` or `0755`, default `0644` | The file mode; readable by every user, so a check run as the user compares the bytes. |
 | `install.external` | block | Method `external`: installed by something else. |
 | `install.external.command` | null or string | A command expected on `PATH`. |
 | `install.external.versionArgv` | null or list of strings | Arguments that print the version. |
@@ -124,7 +124,7 @@ needs code specific to one component.
 | `pypi` | the virtual environment created when missing, the requirements installed with `pip install --require-hashes`, the exact version re-checked, the console scripts linked | same (user level) | exact version and links, else exit 1 with a rebuild hint |
 | `deb` | one APT transaction: verified DEBs only where the installed version is below the floor, never a downgrade, then the floors re-checked | `not-managed`, unless named with `install --component` | `dpkg --compare-versions` against the floor |
 | `app-archive` | verified zip or disk image into `dest`; an existing bundle is backed up first | `not-managed` | `CFBundleShortVersionString` of the bundle |
-| `system` | every file that is missing or differs, written root-owned through `sudo install` (a new file renamed over the old one) | `not-managed`, unless named with `install --component` | the bytes and the mode of every file |
+| `system` | every file that is missing or differs, written root-owned through `sudo`: a temporary file next to it, synced, then renamed over it | the same as `fresh`: the files are the framework's policy for the system, which `dotsteward upgrade` also writes on every profile | the bytes, the mode and the owner (`root:root`) of every file |
 | `external` | nothing | nothing | optional presence and floor |
 
 The system-install transaction installs the `deb` components in the order
@@ -136,9 +136,13 @@ the files go through no package manager: the install writes each file that is
 missing or differs, and a second run writes nothing. What a file makes the
 system do is the component's own E2E hook, which reads the effective value
 (`apt-config dump`, `systemd-analyze cat-config`, ...); a hook on a machine
-that has not run the install yet (an adopted machine before `install
---component NAME`) reports that step and passes, and fails when a file is in
-place and differs. Removing the component leaves the files in place.
+that has not run the install yet reports that step and passes, and fails when
+a file is in place and differs. One rule on every profile: `dotsteward
+install` (also on an adopted machine, without `--component`), `install
+--check-only` and the sudo window of `dotsteward upgrade` treat a system
+component alike, because its files are the framework's policy for the system
+and not a package the machine chose. Removing the component leaves the files
+in place.
 
 A vendor APT source (`install.deb.aptSources`) is written in `fresh` mode
 only, before the transaction: the signing key is downloaded over HTTPS

@@ -75,6 +75,11 @@ CATALOG_ORDER = (
     "apt-policy",
 )
 
+# Catalog components enabled where the instance has a system of the platform, unless their
+# table says enable = false: apt-policy keeps the "no removals" rule of the gated classes on
+# every Linux instance, as the apt engine did before the component took the drop-in over.
+DEFAULT_ENABLED = {"apt-policy": "linux"}
+
 # Keys of the [profiles] table that are not profile tables.
 PROFILE_KEYS = ("names", "default", "check", "bootstrap")
 SYSTEM_CHANNELS = ("apt", "snap", "flatpak")
@@ -651,10 +656,18 @@ def _build(
     given_order = c["components"].get("order", [])
     order = [*given_order, *(n for n in catalog_names + instance_names if n not in given_order)]
 
+    raw_tables = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+    systems = c["nix"]["systems"]
+
     def component_for(component: str) -> dict[str, Any]:
         table = tables[component] if component in tables else validator.apply_defaults(component_schema, {})
         default_source = "catalog" if component in catalog_names else "instance"
-        return {**table, "source": table.get("source", default_source)}
+        resolved_table = {**table, "source": table.get("source", default_source)}
+        platform = DEFAULT_ENABLED.get(component)
+        explicit = isinstance(raw_tables.get(component), dict) and "enable" in raw_tables[component]
+        if platform is not None and resolved_table["source"] == "catalog" and not explicit:
+            resolved_table["enable"] = any(system.endswith(f"-{platform}") for system in systems)
+        return resolved_table
 
     resolved = dict(c)
     resolved["identity"] = {
@@ -1261,6 +1274,7 @@ def export_variables(instance: Instance, env: Mapping[str, str] | None = None) -
         ("DS_SKIP_SKILLS_JSON", to_json(scope["skip"]["skills"])),
         ("DS_DELETED_SKILLS_JSON", to_json(_deleted_skills(scope))),
         ("DS_SKIP_PLUGINS_JSON", to_json(scope["skip"]["plugins"])),
+        ("DS_SKIP_REASONS_JSON", to_json(scope["reasons"])),
         ("DS_INCOMING_SKILLS_JSON", to_json(_changed_skills(scope))),
         ("DS_NIX_TAGS_JSON", to_json(scope["nix_tags"])),
         ("DS_NIX_TAGS_SHA256", scope["nix_tags_sha256"]),
