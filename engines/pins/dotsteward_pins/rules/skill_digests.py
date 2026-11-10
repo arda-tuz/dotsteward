@@ -18,8 +18,10 @@ without a skills lock. The own plugins of the lock
 ``agent/plugins``) are the user's by definition and always follow their files.
 
 Sync: rewrites the digests of repo-owned entries and of the entries named
-with ``--skill``; ``directory_sha256`` only where the entry has one; the
-directory digest of every own plugin.
+with ``--skill``; ``directory_sha256`` of a repo-owned entry only where it
+has one, of an entry named with ``--skill`` always (a new vendored entry
+gets it, so every machine refreshes its copy); the directory digest of
+every own plugin.
 """
 
 from __future__ import annotations
@@ -88,11 +90,12 @@ class SkillDigests(Rule):
 
     def sync_scope(self, ctx: Context, scope: Scope) -> None:
         for item in self._entries(ctx):
-            if item.get("revision") not in self.values["sentinels"] and item["name"] not in ctx.extra_skills:
+            named = item["name"] in ctx.extra_skills
+            if item.get("revision") not in self.values["sentinels"] and not named:
                 continue
             directory = self._directory(ctx, item)
             item["skill_sha256"] = file_sha256(directory / "SKILL.md")
-            if "directory_sha256" in item:
+            if named or "directory_sha256" in item:
                 item["directory_sha256"] = directory_sha256(directory)
         for item in self._plugins(ctx):
             item["directory_sha256"] = directory_sha256(ctx.instance.path(OWN_PLUGINS_DIR) / item["directory"])
