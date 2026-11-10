@@ -22,7 +22,7 @@ assert_eq "$head" "$(head_oid)" "no commit"
 assert_eq "" "$(git -C "$up_inst" status --porcelain)" "nothing written"
 assert_no_step '^static '
 assert_exit 3 add example-notes
-assert_contains "$DS_STDERR" "channel-unknown"
+assert_contains "$DS_STDOUT" "channel-unknown"
 
 # An APT package that no source offers and that is not installed: refused, nothing written.
 assert_exit 1 add example-notes --apt example-notes

@@ -22,7 +22,7 @@ git -C "$up_inst" checkout -q -- docs/guide.md
 edit "an unpublished change"
 git -C "$up_inst" commit -q -am "docs: an unpublished change"
 assert_exit 3 add example-viewer --publish
-assert_contains "$DS_STDERR" "unpublished-commits"
+assert_contains "$DS_STDOUT" "unpublished-commits"
 toml_at work '.components["example-viewer"] == null'
 git -C "$up_inst" reset -q --hard "$head"
 

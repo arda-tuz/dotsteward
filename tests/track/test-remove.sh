@@ -29,13 +29,13 @@ toml_at HEAD '.components.codex.enable == true'
 assert_order '^static ' '^rebuild ' '^e2e '
 assert_no_step '^sudo '
 assert_no_step 'apt-get'
-assert_contains "$DS_STDERR" "stays installed"
-assert_contains "$DS_STDERR" "example-tracked"
+assert_contains "$DS_STDOUT" "stays installed"
+assert_contains "$DS_STDOUT" "example-tracked"
 
 # Not tracked any more: nothing to do.
 clear_log
 assert_exit 0 remove example-app --publish
-assert_contains "$DS_STDERR" "example-app is not tracked"
+assert_contains "$DS_STDOUT" "example-app is not tracked"
 assert_no_step '^static '
 
 # A component another one requires stays.

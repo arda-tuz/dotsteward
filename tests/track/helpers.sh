@@ -29,6 +29,8 @@
 source "$DS_REPO_ROOT/tests/apply/helpers.sh"
 
 ds_use_stubs apt-cache
+# The stubs went first on PATH: the wrapper that logs each sudo call goes before them again.
+export PATH=$DS_TEST_ROOT/up-bin:$PATH
 mkdir -p "$fw/modules/components/example-viewer"
 
 add() {

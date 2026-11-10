@@ -128,6 +128,7 @@ See [docs/platforms.md](docs/platforms.md).
 | [Pins engine](docs/pins-engine.md) and [update policy](docs/update-policy.md) | lock files, rule kinds, latest adapters; how an instance moves to newer releases |
 | [Skills](docs/skills.md) and [overlays](docs/overlays.md) | the agent skills and how an instance adds its own guidance |
 | [Maintain transactions](docs/apply.md) | `dotsteward maintain begin` and `dotsteward apply`: a change of the instance gated, committed, activated, checked and published in one command |
+| [Tracking](docs/track.md) | `dotsteward add`, `dotsteward remove` and `dotsteward status`: "track this" and "stop tracking that" as one maintain transaction each, and one read-only overview of the machine |
 | [Upgrade](docs/upgrade.md) | `dotsteward upgrade`: one command for this machine and the shared lock, what it does, what it never does |
 | [Skill tracking](docs/skill-tracking.md) | the skills you make reach your other machines, a downloaded one gets a question |
 | [Privacy](docs/privacy.md) | the layers and the scanner that keep personal data out of public repositories |

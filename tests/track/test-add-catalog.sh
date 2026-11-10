@@ -13,7 +13,7 @@ source "$DS_REPO_ROOT/tests/track/helpers.sh"
 base=$(remote_oid)
 clear_log
 assert_exit 0 add example-viewer --activate --publish
-assert_contains "$DS_STDERR" "published"
+assert_contains "$DS_STDOUT" "published"
 assert_order "^generate  root=$up_inst\$" '^static ' "^rebuild --profile workstation --switch root=$up_inst\$" \
   "^e2e --profile workstation .*--expected-remote-base $base( |.*)root=$up_inst\$"
 head=$(head_oid)
@@ -35,7 +35,7 @@ assert_eq "$(git -C "$up_inst" show HEAD^:workstation.toml)" \
 # Again: the component is tracked already, nothing is opened, gated or committed.
 clear_log
 assert_exit 0 add example-viewer --activate --publish
-assert_contains "$DS_STDERR" "example-viewer is tracked already"
+assert_contains "$DS_STDOUT" "example-viewer is tracked already"
 assert_no_step '^static '
 assert_no_step '^rebuild '
 assert_eq "$head" "$(head_oid)" "no second commit"

@@ -12,12 +12,12 @@
 # shellcheck source=tests/track/helpers.sh
 source "$DS_REPO_ROOT/tests/track/helpers.sh"
 
-ds_use_stubs dpkg-query
 os_release=$DS_TEST_ROOT/os-release
 printf 'ID=ubuntu\nVERSION_ID="24.04"\nVERSION_CODENAME=noble\nPRETTY_NAME="Ubuntu 24.04 LTS"\n' >"$os_release"
 export DOTSTEWARD_OS_RELEASE=$os_release
 ds_dpkg_installed example-tracked 1.0-1
 ds_dpkg_installed example-tracked-too 1.1-1
+ds_dpkg_installed example-tracked-lib 1.0-2
 
 # The intent: a constrained deb component, one for another machine, one for a tag this machine
 # lacks.
@@ -28,8 +28,10 @@ text = open(path, encoding="utf-8").read()
 text = text.replace('track = ["example-tracked-too"]', 'track = ["example-tracked-too"]\nversion = "1.*"\nreason = "the plugins need 1.x"')
 open(path, "w", encoding="utf-8").write(text)
 EOF
-printf '\n[components.example-viewer]\nenable = true\nmachines = ["other-host"]\n' >>"$up_inst/workstation.toml"
-printf '\n[components.example-gpu]\nenable = true\ntags = ["gpu"]\n' >>"$up_inst/workstation.toml"
+{
+  printf '\n[components.example-viewer]\nenable = true\nmachines = ["other-host"]\n'
+  printf '\n[components.example-gpu]\nenable = true\ntags = ["gpu"]\n'
+} >>"$up_inst/workstation.toml"
 mkdir -p "$up_inst/components/example-gpu"
 printf '{ ... }:\n{\n  dotsteward.components.example-gpu = { };\n}\n' >"$up_inst/components/example-gpu/default.nix"
 git -C "$up_inst" add -A
@@ -86,7 +88,7 @@ assert_stdout_json '.checkout.ahead == 0 and .checkout.behind == 1 and .checkout
 assert_stdout_json '.activation.active == true and .activation.e2e == "pass"'
 assert_stdout_json '[.components[].name] == ["codex", "example-app", "example-gpu", "example-viewer"]'
 assert_stdout_json '.components[] | select(.name == "example-app") | .method == "deb" and .here == true
-  and .installed == "installed" and .packages == {"example-tracked": "1.0-1", "example-tracked-too": "1.1-1"}
+  and .installed == "installed" and .packages == {"example-tracked": "1.0-1", "example-tracked-lib": "1.0-2", "example-tracked-too": "1.1-1"}
   and .constraint == {version: "1.*", reason: "the plugins need 1.x"}'
 assert_stdout_json '.components[] | select(.name == "example-viewer") | .here == false and .reason == "machines"'
 assert_stdout_json '.components[] | select(.name == "example-gpu") | .here == false and .reason == "tags"'
@@ -105,6 +107,7 @@ for word in example-host ubuntu-24.04 workstation "1 behind" example-app install
 done
 
 # What another machine brought waits for an answer here.
+mkdir -p "$DOTSTEWARD_STATE_ROOT/machine"
 jq -n '{schema_version: 1, components: ["codex", "example-app"], plugins: []}' \
   >"$DOTSTEWARD_STATE_ROOT/machine/known.json.new"
 mv -- "$DOTSTEWARD_STATE_ROOT/machine/known.json.new" "$DOTSTEWARD_STATE_ROOT/machine/known.json"

@@ -16,6 +16,7 @@ status as a failure.
 
 | Command | Exit codes | Additions to the convention |
 | --- | --- | --- |
+| `add` | 0, 1, 2, 3, 6, 130 | the status of the `apply` it runs ([track.md](track.md)); 1 also a refusal before anything was written (an APT package no source offers, a file in the way); 2: usage error, nothing ran; 3 also a question before anything was written (`channel-unknown`, or a question of `maintain begin` about another change) |
 | `agents` | 0, 1, child | |
 | `apply` | 0, 1, 2, 3, 6, 130 | a run report, see [apply.md](apply.md); 1 also when another command holds the instance lock; 2: usage error, nothing ran; 3: a sudo step waits for a terminal, or another machine's commits conflict with these or kept the remote moving (`publish-conflict`, `publish-race`); 6: no network, the push waits; 130: interrupted, the same command goes on |
 | `bootstrap` | 0, 1, 3, child | 1 also when another command holds the instance lock; 3: the preflight took the adaptive route; nothing was written |
@@ -37,11 +38,13 @@ status as a failure.
 | `preflight` | 0, 1, 3 | 0: fast route; 3: adaptive route (after a warning) |
 | `probes` | 0, 1 | |
 | `rebuild` | 0, 1, child | |
+| `remove` | 0, 1, 2, 3, 6, 130 | as `add`; 1 also when another component requires it; 3 also `uninstall-required`: with `--uninstall` and without a terminal, the command that removes the packages waits for a person |
 | `rollback` | 0, 1, child | |
 | `scan` | 0, 1 | 1: at least one finding (all are collected first) or an error |
 | `settings` | 0, 1, 2, 3 | 1: `verify` found a difference; 2: error; 3: a decision is pending (a conflict or a local deletion; resolve it with `settings resolve`) |
 | `skills` | 0, 1, 2, 3, 4, 6 | 2: usage error; 3: a conflict or a question waits for an answer; 4: a privacy stop, nothing was published; 6: no network, the skill waits and nothing was committed; `skills hook` always exits 0 |
 | `state` | 0, 1, 2, 4, 6 | 2: usage error; 4: the record breaks its schema or the privacy scan found something, nothing was recorded; 6: no network or no login, the record waits on this machine and the next `state record` or `state push` sends it |
+| `status` | 0, 1 | 1: the instance cannot be read; anything it reports is exit 0 |
 | `static` | 0, 1, script | otherwise the status of the failing instance script of `gate.static` |
 | `sync` | as `generate` | the old name of `generate`: a warning on standard error, then the same arguments, output and status |
 | `txn` | 0, 1, 3, 6 | `txn publish` exits 0 when the commit is already published, 3 when the remote moved since the base (another machine came first; nothing was pushed), 6 without a network |
