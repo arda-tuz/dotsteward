@@ -73,10 +73,13 @@ publish_instance
 assert_eq '["example","needer"]' "$(effective .skip.components)"
 assert_eq '"requires"' "$(effective '.reasons["component:needer"]')"
 assert_contains "$(effective .nix_tags)" '"no:needer"'
+# (requires is the CLI's alone: Nix never fails for it, so it goes before the tags of gate.)
+manifest_edit '(.components[] | select(.name == "needer")) |= del(.requires)'
+publish_instance
 write_host laptop
 publish_instance
 name_machine laptop
-assert_eq '["machine:laptop","no:example","no:needer"]' "$(effective .nix_tags)"
+assert_eq '["machine:laptop","no:example"]' "$(effective .nix_tags)"
 # The host file names the release: gate builds the generation rebuild activates.
 write_host laptop 'platform = "ubuntu-22.04"'
 publish_instance

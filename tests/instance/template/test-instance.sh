@@ -2,7 +2,7 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # bash -c scripts take their arguments as $1, $2
 # The template as an instance: what `nix flake init -t` leaves, locked and
-# synced, is a valid instance with no component. lib.mkInstance evaluates it
+# synced, is a valid instance with only apt-policy, the component enabled by default on Linux. lib.mkInstance evaluates it
 # (outputs, checks, the manifest and its current mirrors, home.nix), and it
 # passes every step of the instance contract: static (shell hygiene with
 # ShellCheck, the launcher and bootstrap copies, the empty skills lock, the
@@ -26,7 +26,8 @@ assert_inst_eq '["user"]' "builtins.attrNames ($expr).homeConfigurations" "homeC
 assert_inst_eq '["dotsteward","local-maintained-files"]' "builtins.attrNames ($expr).packages.x86_64-linux" \
   "packages"
 assert_inst_eq '["x86_64-linux"]' "builtins.attrNames ($expr).dotstewardManifest" "systems"
-assert_inst_eq '[]' "($expr).dotstewardManifest.x86_64-linux.components" "no component"
+assert_inst_eq '[{"name":"apt-policy","method":"system"}]' "map (c: { inherit (c) name method; }) ($expr).dotstewardManifest.x86_64-linux.components" \
+  "only apt-policy, enabled by default on Linux"
 # The mirrors written above are current (checks.dotsteward-manifest), and
 # the manifest is the same in both profiles (checks.manifest-consistent):
 # both checks throw at evaluation otherwise.

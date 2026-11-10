@@ -15,7 +15,7 @@ enabled() {
   cli=$(PYTHONPATH=$DS_REPO_ROOT/cli/python PYTHONDONTWRITEBYTECODE=1 \
     python3 -s -P -m dotsteward_cli.config --file "$file" resolve)
   nix=$(inst_json "dsLib.config.resolve { catalog = builtins.attrNames dsLib.catalog; }
-    (builtins.fromTOML (builtins.readFile /. + \"$file\"))")
+    (builtins.fromTOML (builtins.readFile (/. + \"$file\")))")
   assert_eq "$(jq -S . <<<"$nix")" "$(jq -S . <<<"$cli")" "both readers agree"
   jq -c '[.components | to_entries[] | select(.key != "order" and .value.enable) | .key]' <<<"$cli"
 }
@@ -27,18 +27,23 @@ username = "user"
 remote = "git@github.com:user/workstation.git"
 [profiles]
 names = ["workstation"]'
+nix='[nix]
+state_version = "25.11"'
 
-assert_eq '["apt-policy"]' "$(enabled "$base")" "Linux by default"
 assert_eq '["apt-policy"]' "$(enabled "$base
-[nix]
+$nix")" "Linux by default"
+assert_eq '["apt-policy"]' "$(enabled "$base
+$nix
 systems = [\"x86_64-linux\", \"aarch64-darwin\"]")" "Linux and darwin"
 assert_eq '[]' "$(enabled "$base
-[nix]
+$nix
 systems = [\"aarch64-darwin\"]")" "no Linux system"
 assert_eq '[]' "$(enabled "$base
+$nix
 [components.apt-policy]
 enable = false")" "the opt-out"
 assert_eq '["apt-policy"]' "$(enabled "$base
+$nix
 [components.apt-policy]
 tags = [\"nvidia\"]")" "a table without enable keeps the default"
 

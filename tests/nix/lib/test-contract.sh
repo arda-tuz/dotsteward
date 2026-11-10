@@ -5,7 +5,7 @@
 source "$DS_REPO_ROOT/tests/nix/lib/helpers.sh"
 
 assert_nix_eq '["nix","official-binary","pypi","deb","app-archive","external","system"]' 'dsLib.contract.methods'
-assert_nix_eq '["deb","app-archive","system"]' 'dsLib.contract.systemMethods'
+assert_nix_eq '["deb","app-archive"]' 'dsLib.contract.systemMethods'
 assert_nix_eq '["linux","darwin"]' 'dsLib.contract.platforms'
 assert_nix_eq '["early","main","late"]' 'dsLib.contract.hookPhases'
 assert_nix_eq '["flake-inputs","nix-package-format","derive","download-pin","text-guard","no-literal","npm-bundle","skills-lock-mirror","minimum-version","asset-digest","nix-resolved","skill-digests"]' \
@@ -137,7 +137,7 @@ assert_nix_eq '["~/a","~/b"]' \
 
 # A system file: an absolute path without . or .. segments, and a mode every user can read,
 # so a check run as the user compares it.
-sysfile='p: m: (builtins.head (evalComponents [ { dotsteward.components.example-app = { method = "system"; install.system.files = [ { path = p; text = "x\n"; mode = m; } ]; }; } ]).example-app.install.system.files).path'
+sysfile='p: m: let files = (evalComponents [ { dotsteward.components.example-app = { method = "system"; install.system.files = [ { path = p; text = "x\n"; mode = m; } ]; }; } ]).example-app.install.system.files; in builtins.deepSeq files (builtins.head files).path'
 assert_nix_eq '"/etc/example/50-example.conf"' "($sysfile) \"/etc/example/50-example.conf\" \"0644\""
 assert_nix_eq '"/usr/local/lib/example/run"' "($sysfile) \"/usr/local/lib/example/run\" \"0755\""
 for bad in /etc/../root/x /etc/./x etc/x /etc//x; do

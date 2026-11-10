@@ -100,9 +100,10 @@ assert_json - '.installed == ([.supported.linux[], .supported.darwin[]] | unique
 
 for system in x86_64-linux aarch64-darwin; do
   manifest=$(inst_json "($expr).dotstewardManifest.$system")
-  assert_json - '[.components[] | {name, source, method}] == [{name: "example-term", source: "instance", method: "official-binary"}]' \
+  # apt-policy comes by default (left out on darwin, not available there).
+  assert_json - '[.components[] | {name, source, method}] == [{name: "apt-policy", source: "catalog", method: "system"}, {name: "example-term", source: "instance", method: "official-binary"}]' \
     "manifest components on $system" <<<"$manifest"
-  assert_json - '.components[0].install.pin | startswith("agent_tools.example-term.")' \
+  assert_json - '(.components[] | select(.name == "example-term")).install.pin | startswith("agent_tools.example-term.")' \
     "the official-binary pin on $system" <<<"$manifest"
   assert_json - '.managed_links | index("~/.example-term/AGENTS.md") != null' "managed link on $system" <<<"$manifest"
 done
