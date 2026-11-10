@@ -642,14 +642,21 @@ class Upgrade(runner.Runner):
 
     def _hold_moved(self, rows: Sequence[Mapping[str, Any]], red: Sequence[str], reason: str) -> None:
         """A local hold for each pin that went red: the writer leaves it until upstream has something
-        newer. The pins of a component the red checks name, all of them when they name none."""
+        newer. The pins of each component the red checks name, by the pin of its binary or by its name
+        in the pin id, all of them when they name none."""
         components = {check.split(":", 1)[0] for check in red} - _NOT_COMPONENTS
         owners = facts.pin_owners(self._active())
-        guilty = [row for row in rows if owners.get(str(row.get("id"))) in components]
-        guilty = guilty or [row for row in rows if components & set(str(row.get("id")).split("."))]
+
+        def owner(row: Mapping[str, Any]) -> str | None:
+            identifier = str(row.get("id"))
+            if owners.get(identifier) in components:
+                return owners[identifier]
+            return next((part for part in identifier.split(".") if part in components), None)
+
+        guilty = [row for row in rows if owner(row) is not None]
         for row in guilty or rows:
             identifier = str(row.get("id"))
-            component = owners.get(identifier) or next(iter(sorted(components)), identifier)
+            component = owner(row) or owners.get(identifier) or next(iter(sorted(components)), identifier)
             holds.add(self.state_root, component, identifier, str(row.get("to")), reason)
             self.run.item(
                 "red-held",
