@@ -144,7 +144,15 @@ assert_eq "[pins] Synced files: agent/skills.lock.json" "$DS_STDOUT"
 assert_eq "\"$(sha256sum "$vendored/SKILL.md" | awk '{print $1}')\"" "$(json_get "$skills" '.skills[1].skill_sha256')"
 assert_eq "\"$(lib_directory_sha256 "$vendored")\"" "$(json_get "$skills" '.skills[1].directory_sha256')"
 
-# directory_sha256 is written only where the entry has it.
+# A new vendored entry named with --skill gets its directory digest too, so the copy of every
+# machine is refreshed when the vendored files change; nothing has to be put there first.
+pins_fresh
+json_edit "$skills" 'del data["skills"][1]["directory_sha256"]'
+assert_exit 0 pins sync --skill example-vendored
+assert_eq "\"$(lib_directory_sha256 "$inst/agent/skills/example-vendored")\"" "$(json_get "$skills" '.skills[1].directory_sha256')"
+assert_exit 0 pins check
+
+# Without --skill, directory_sha256 is written only where the entry has it.
 pins_fresh
 json_edit "$skills" 'del data["skills"][0]["directory_sha256"]'
 printf '\nLocal change.\n' >>"$inst/agent/skills/example-skill/SKILL.md"
