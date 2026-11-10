@@ -60,12 +60,11 @@ _BISECT_GATES = 12
 # What a user service in one of these states runs.
 _RUNNING_STATES = {"active", "activating", "reloading", "deactivating"}
 # Session units the way back never stops or restarts, even when a generation names them: a restart
-# of one of them ends the desktop session of the owner.
+# of one of them ends the desktop session of the owner. The units of the desktop that runs are
+# added by its names in the environment (_desktop_units).
 _SESSION_UNITS = (
     "dbus*",
     "dbus-broker*",
-    "exampledesk-*",
-    "org.exampledesk.*",
     "*session*",
     "pipewire*",
     "wireplumber*",
@@ -141,8 +140,25 @@ def _installed_version(package: str) -> str | None:
     return version.strip() or None
 
 
-def _session_unit(name: str) -> bool:
-    return any(fnmatch.fnmatchcase(name, pattern) for pattern in _SESSION_UNITS)
+# The names of the desktop that runs: each part of these variables, colon separated.
+_DESKTOP_VARIABLES = ("XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION")
+
+
+def _desktop_units(env: Mapping[str, str]) -> tuple[str, ...]:
+    """The unit patterns of the desktop that runs: <name>-* and org.<name>.* for each of its names
+    (lower case, letters, digits, dots, dashes and underscores only), as desktops name their user
+    services."""
+    names = {
+        part
+        for variable in _DESKTOP_VARIABLES
+        for part in (piece.strip().lower() for piece in env.get(variable, "").split(":"))
+        if part and all(char.isalnum() or char in "._-" for char in part)
+    }
+    return tuple(pattern for name in sorted(names) for pattern in (f"{name}-*", f"org.{name}.*"))
+
+
+def _session_unit(name: str, env: Mapping[str, str]) -> bool:
+    return any(fnmatch.fnmatchcase(name, pattern) for pattern in (*_SESSION_UNITS, *_desktop_units(env)))
 
 
 def _ask_yes(question: str) -> bool:
@@ -1241,14 +1257,14 @@ class Upgrade(runner.Runner):
         moved generation; RUNNING: the invocations of its active units before the rebuild back. A
         unit only the moved generation has is stopped while it runs; a unit whose file it changed is
         restarted while it runs, unless the rebuild back restarted it already. A unit no generation
-        has is the owner's and never touched, nor is a session unit (_SESSION_UNITS), whatever a
-        generation says."""
+        has is the owner's and never touched, nor is a session unit (_SESSION_UNITS and the units of
+        the desktop that runs), whatever a generation says."""
         if running is None:
             return
         back = self._generation_units()
-        added = sorted(name for name in moved if name not in back and not _session_unit(name))
+        added = sorted(name for name in moved if name not in back and not _session_unit(name, self.env))
         changed = sorted(
-            name for name in moved if name in back and back[name] != moved[name] and not _session_unit(name)
+            name for name in moved if name in back and back[name] != moved[name] and not _session_unit(name, self.env)
         )
         states = self._unit_states([*added, *changed])
         if states is None:
@@ -1516,7 +1532,7 @@ class Upgrade(runner.Runner):
         # The units of the active generation, the moved one when its rebuild activated it, and how
         # they run, before the rebuild back activates the other one.
         units = self._generation_units()
-        running = self._unit_states(sorted(name for name in units if not _session_unit(name)))
+        running = self._unit_states(sorted(name for name in units if not _session_unit(name, self.env)))
         status = self._ds("rebuild", "--profile", self.profile, "--switch")
         self._restore_binaries(saved)
         if status == 0:
