@@ -311,6 +311,7 @@ _darwin_app_archive_fetch() {
   asset=${url%%[?#]*}
   asset=${asset##*/}
   [[ -n $asset && $asset != mount && $asset != extracted ]] || asset=download
+  _methods_signature_expected "$name" app-archive "$_aa_pin" "$_aa_entry"
   log "$name (app-archive): downloading $url"
   download_verified "$url" "$tmp_dir/$asset" "$size" "$sha256" || status=$?
   ((status == 0)) || die "$name (app-archive): download failed (curl exit $status): $url"

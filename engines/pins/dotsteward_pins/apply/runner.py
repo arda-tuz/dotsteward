@@ -41,7 +41,7 @@ from ..latest.adapters import Planned
 from ..lockfile import Locks, load_json
 from . import plan as routing
 from .plan import Declared, Group, Plan
-from .authenticity import Authenticity
+from .authenticity import Authenticity, DiscoveryIncomplete
 from .skills import Upstreams, relative, replace_skill
 from .tools import GroupFailure, Tools, Waits
 from .writers import TEMPLATE_FILES, Writer
@@ -141,6 +141,14 @@ class Run:
         try:
             self.write(group, snapshot)
             self.plan.items.extend(self.writer_notes)
+        except DiscoveryIncomplete as unanswered:
+            # No verdict on the signature: the group waits for the next run, as a group
+            # whose upstream could not be read does.
+            snapshot.restore()
+            message = str(unanswered)
+            self.say(f"{group.name}: {message}")
+            self.run.step(group.name, report.PARTIAL, ids=ids, skipped=message)
+            self.outcome.groups.append({"group": group.name, "outcome": "skipped", "ids": ids, "error": message})
         except (GroupFailure, Refusal, EngineError, OSError, KeyError, TypeError, ValueError) as failure:
             snapshot.restore()
             message = _message(failure)

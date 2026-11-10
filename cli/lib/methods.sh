@@ -282,28 +282,80 @@ _methods_signature_unsigned() {
   log "$1 ($2): $4 is unsigned: ${DS_PINS_VERSIONS_LOCK##*/} $3 records no signature"
 }
 
-# _methods_signature_verify NAME METHOD PATH ENTRY URL FILE [ROOT]: verifies
-# the signature the entry ENTRY at PATH records for the download of URL,
-# saved as FILE; ROOT is the directory an archive was extracted into, for the
-# signature of a member. The bundle, the trusted root and the signer come
-# from the lock, so cosign needs no network. Returns 1 when the entry records
-# no signature; dies when the signature does not verify.
+# _methods_signer PATH: the sigstore signer trust.signers records for the pin
+# at PATH (JSON), or nothing.
+_methods_signer() {
+  local lock
+  lock=$(config_instance_path "$DS_PINS_VERSIONS_LOCK") || exit 1
+  jq -c --arg pin "$1" '.trust.signers[$pin]? // empty | select(type == "object" and .kind == "sigstore")' "$lock" ||
+    die "cannot read $lock"
+}
+
+# _methods_signature_expected NAME METHOD PATH ENTRY: dies when the lock knows
+# the source of PATH as signed and the entry records no signature: such a pin
+# never installs unsigned, whatever verify says.
+_methods_signature_expected() {
+  _methods_pin_signed "$4" && return 0
+  [[ -z $(_methods_signer "$3") ]] ||
+    die "$1 ($2): trust.signers of ${DS_PINS_VERSIONS_LOCK##*/} knows $3 as signed, and its entry records no signature; run 'dotsteward pins apply'"
+}
+
+# _methods_regexp_pins_one REGEXP: REGEXP names one identity up to the parts a
+# release changes: anchored at both ends, no alternation, no wildcard.
+_methods_regexp_pins_one() {
+  local regexp=$1
+  [[ $regexp == ^?* && $regexp == *?\$ ]] || return 1
+  case $regexp in
+    *'|'* | *'.*'* | *'.+'* | *'.?'* | *'[^'* | *'(?'* | *'\S'* | *'\w'* | *'\D'* | *'\W'*) return 1 ;;
+  esac
+}
+
+# _methods_tag_names_version IDENTITY VERSION: an identity of a tag
+# (...@refs/tags/<tag>) names VERSION when the tag, without what precedes its
+# first digit (v, rust-v, ...), is that version; an identity of a branch names
+# no version and passes.
+_methods_tag_names_version() {
+  local tag order
+  [[ $1 == *@refs/tags/* ]] || return 0
+  tag=${1##*@refs/tags/}
+  tag=${tag#"${tag%%[0-9]*}"}
+  [[ -n $tag ]] || return 1
+  order=$(methods_version_compare "$tag" "${2%%+*}") || exit 1
+  [[ $order == 0 ]]
+}
+
+# _methods_signature_verify NAME METHOD PATH ENTRY URL FILE [STAGED MEMBER]:
+# verifies the signature the entry ENTRY at PATH records for the download of
+# URL, saved as FILE; STAGED is the archive member MEMBER the method installs,
+# extracted, for the signature of a member, which must be of that very member.
+# The bundle, the trusted root and the signer come from the lock, so cosign
+# needs no network; the identity verified is the recorded one, which the
+# signer's identity_regexp must match and whose tag must name the version of
+# the pin. Returns 1 when the entry records no signature and the source is not
+# known as signed; dies when the signature does not verify.
 _methods_signature_verify() {
-  local name=$1 method=$2 pin=$3 entry=$4 url=$5 file=$6 root=${7:-}
-  local lock lock_name signature signer regexp issuer kind subject member subject_file label what work output status=0
+  local name=$1 method=$2 pin=$3 entry=$4 url=$5 file=$6 staged=${7:-} installed=${8:-}
+  local lock lock_name signature signer regexp issuer identity version kind subject member subject_file label what work output status=0
   local -a command=()
+  _methods_signature_expected "$name" "$method" "$pin" "$entry"
   _methods_pin_signed "$entry" || return 1
   lock_name=${DS_PINS_VERSIONS_LOCK##*/}
   lock=$(config_instance_path "$DS_PINS_VERSIONS_LOCK") || exit 1
   signature=$(jq -c '.signature' <<<"$entry")
-  signer=$(jq -c --arg pin "$pin" '.trust.signers[$pin]? // empty | select(type == "object" and .kind == "sigstore")' "$lock") ||
-    die "cannot read $lock"
+  signer=$(_methods_signer "$pin")
   [[ -n $signer ]] || die "$name ($method): $lock_name $pin records a signature, but trust.signers has no sigstore signer for it"
   regexp=$(jq -r '.identity_regexp | strings' <<<"$signer")
   issuer=$(jq -r '.issuer | strings' <<<"$signer")
   [[ -n $regexp && -n $issuer ]] || die "$name ($method): the signer of $pin in $lock_name lacks identity_regexp or issuer"
+  _methods_regexp_pins_one "$regexp" ||
+    die "$name ($method): the signer of $pin in $lock_name has an identity_regexp that does not pin one identity: $regexp"
   [[ $(jq -r '.trust.sigstore_root | type' "$lock") == object ]] ||
     die "$name ($method): $lock_name records a signature for $pin but no trust.sigstore_root"
+  identity=$(jq -r '.identity // empty | strings' <<<"$signature")
+  [[ -n $identity ]] || die "$name ($method): the signature in $lock_name $pin names no identity"
+  version=$(_methods_pin_version "$name" "$method" "$pin" "$entry") || exit 1
+  _methods_tag_names_version "$identity" "$version" ||
+    die "$name ($method): the signature in $lock_name $pin is of $identity, which does not name version $version of the pin"
   kind=$(jq -r '.kind // empty | strings' <<<"$signature")
   subject=$(jq -r '.subject // "asset" | strings' <<<"$signature")
   case $kind in
@@ -328,16 +380,19 @@ _methods_signature_verify() {
       ;;
     member)
       member=$(jq -r '.member // empty | strings' <<<"$signature")
-      [[ -n $member && $member != /* && /$member/ != */../* && /$member/ != */./* ]] ||
-        die "$name ($method): invalid signed member in $lock_name $pin: ${member:-none}"
-      [[ -n $root ]] || die "$name ($method): $lock_name $pin records the signature of an archive member, and $method does not extract archives"
-      subject_file=$root/$member
-      [[ -f $subject_file && ! -L $subject_file ]] ||
-        die "$name ($method): the signed member $member is not a regular file in $url"
+      [[ -n $installed ]] ||
+        die "$name ($method): $lock_name $pin records the signature of an archive member, and $method installs no archive member of $url"
+      [[ $member == "$installed" ]] ||
+        die "$name ($method): the signature in $lock_name $pin covers ${member:-no member}, and the component installs $installed"
+      subject_file=$staged
       label=$member
       ;;
     *) die "$name ($method): unknown signature subject in $lock_name $pin: $subject" ;;
   esac
+  # Before cosign runs: in bash's own regular expressions (RE2 and ERE agree on
+  # what _methods_regexp_pins_one lets through).
+  [[ $identity =~ $regexp ]] ||
+    die "$name ($method): the $what of $label does not verify: the signer's identity_regexp does not match $identity"
   require_command cosign
   work=$(mktemp -d "${TMPDIR:-/tmp}/dotsteward-signature.XXXXXX") ||
     die "$name ($method): cannot create a temporary directory"
@@ -345,7 +400,7 @@ _methods_signature_verify() {
     # A home of its own: cosign keeps no state between runs and never reads
     # a TUF cache; the trusted root of the lock is the only trust.
     output=$(HOME=$work timeout 120 cosign "${command[@]}" --trusted-root "$work/root.json" --bundle "$work/bundle.json" \
-      --certificate-identity-regexp "$regexp" --certificate-oidc-issuer "$issuer" "$subject_file" 2>&1 </dev/null) || status=$?
+      --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" "$subject_file" 2>&1 </dev/null) || status=$?
   else
     output="cannot write the bundle or the trusted root"
     status=1
@@ -358,7 +413,7 @@ _methods_signature_verify() {
     ((status != 124)) || detail="cosign did not finish within 120 seconds"
     die "$name ($method): the $what of $label does not verify: ${detail:-cosign exit $status}"
   fi
-  log "$name ($method): $what of $label verified: $(jq -r '.identity // empty | strings' <<<"$signature")"
+  log "$name ($method): $what of $label verified: $identity"
 }
 
 # methods_version_compare A B: the one version order of the framework
@@ -688,6 +743,7 @@ methods_official_binary_install() {
     read -r url size sha256 <<<"$download"
     [[ $url == https://* ]] || die "$name (official-binary): refusing a non-HTTPS download URL: $url"
     [[ $_ob_verify != sha256+sigstore ]] || _methods_signature_required "$name" official-binary "$pin" "$entry"
+    _methods_signature_expected "$name" official-binary "$pin" "$entry"
     sources+=("$url"$'\t'"$size"$'\t'"$sha256"$'\t'"$companion_member"$'\t'"$target"$'\t'"$pin")
   done
   if ((replace)); then
@@ -695,6 +751,7 @@ methods_official_binary_install() {
     read -r url size sha256 <<<"$download"
     [[ $url == https://* ]] || die "$name (official-binary): refusing a non-HTTPS download URL: $url"
     [[ $_ob_verify != sha256+sigstore ]] || _methods_signature_required "$name" official-binary "$_ob_pin" "$_ob_entry"
+    _methods_signature_expected "$name" official-binary "$_ob_pin" "$_ob_entry"
     sources+=("$url"$'\t'"$size"$'\t'"$sha256"$'\t'"$member"$'\t'"$_ob_dest"$'\t'"$_ob_pin")
   fi
 
@@ -777,16 +834,25 @@ _methods_official_binary_stage() {
     *) member='' ;;
   esac
   ((status == 0)) || die "$name (official-binary): cannot extract $asset (exit $status)"
-  entry=$(_methods_pin_entry "$name" official-binary "$pin") || exit 1
-  _methods_signature_verify "$name" official-binary "$pin" "$entry" "$url" "$dir/$asset" "$dir/extracted" ||
-    _methods_signature_unsigned "$name" official-binary "$pin" "$url"
   if [[ -n $member ]]; then
     _ob_staged=$dir/extracted/$member
     [[ -f $_ob_staged && ! -L $_ob_staged && -x $_ob_staged ]] ||
       die "$name (official-binary): archive member $member is not an executable regular file in $url"
+    # A directory link of the archive could lead the member anywhere.
+    local root resolved
+    root=$(cd -P -- "$dir/extracted" && pwd) || die "$name (official-binary): cannot read $dir/extracted"
+    resolved=$(cd -P -- "$(dirname -- "$_ob_staged")" && pwd) ||
+      die "$name (official-binary): cannot read the directory of archive member $member"
+    [[ $resolved/${_ob_staged##*/} == "$root/$member" ]] ||
+      die "$name (official-binary): archive member $member leads out of the archive through a link: $url"
   else
     _ob_staged=$dir/$asset
   fi
+  # The signature covers the very file that is installed.
+  entry=$(_methods_pin_entry "$name" official-binary "$pin") || exit 1
+  _methods_signature_verify "$name" official-binary "$pin" "$entry" "$url" "$dir/$asset" \
+    "${member:+$_ob_staged}" "$member" ||
+    _methods_signature_unsigned "$name" official-binary "$pin" "$url"
 }
 
 # _methods_official_binary_place NAME SOURCE DEST: backs up the file at DEST
@@ -1384,6 +1450,7 @@ methods_deb_transaction() {
     if [[ -n $_deb_pin ]] && ! _methods_deb_floor_met >/dev/null; then
       download=$(_methods_pin_download "$name" deb "$_deb_pin" "$_deb_entry") || exit 1
       read -r url size sha256 <<<"$download"
+      _methods_signature_expected "$name" deb "$_deb_pin" "$_deb_entry"
       deb_names+=("$name")
       deb_pins+=("$_deb_pin")
       deb_urls+=("$url")
@@ -1416,6 +1483,9 @@ methods_deb_transaction() {
     done
     if [[ -n $_deb_release ]]; then
       _methods_bridge_plan "$name"
+      # Design 9: the bridge verifies no attestation (it runs as root, without
+      # the GitHub CLI), so what it serves past the pin is unsigned.
+      log "$name (deb): the local APT bridge serves releases of $(jq -r .repository <<<"$_deb_release") newer than the pin unsigned (no attestation is verified, only the SHA256SUMS of the same release)"
       if ((!bridged)) && _methods_bridge_differs "$_bridge_script" -; then
         bridge_components+=("$name")
         bridge_targets+=("$_bridge_script")

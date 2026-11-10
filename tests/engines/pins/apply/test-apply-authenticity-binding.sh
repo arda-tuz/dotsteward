@@ -86,6 +86,7 @@ case "\$*" in
   *) echo "gh stub: no canned response for: \$*" >&2; exit 1 ;;
 esac
 EOF
+# shellcheck disable=SC2016 # the payload expands when it runs
 printf 'printf "example-release %%s\\n" 5.0.0; : >"$HOME/PWNED"\n' >"$DS_TEST_ROOT/evil"
 
 # The component installs the archive member example-release-linux-x64.

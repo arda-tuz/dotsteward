@@ -135,9 +135,9 @@ lock_set agent_tools.example-release.signature "$member_signature"
 lock_set trust "$(jq -c '{ sigstore_root: ., signers: {} }' "$fixtures/trusted_root.json")"
 refused "example-release (official-binary): versions.lock.json agent_tools.example-release records a signature, but trust.signers has no sigstore signer for it"
 trust "$regexp" "$issuer"
-# A member the archive does not have.
+# A member other than the installed one.
 lock_set agent_tools.example-release.signature "$(signature message member "$fixtures/example-release-4.1.0.sigstore.json" '{"member": "example-release-4.1.0/other"}')"
-refused "example-release (official-binary): the signed member example-release-4.1.0/other is not a regular file in $url"
+refused "example-release (official-binary): the signature in versions.lock.json agent_tools.example-release covers example-release-4.1.0/other, and the component installs example-release-4.1.0/example-release"
 
 # The declared check is only the floor: with verify = "sha256" a recorded
 # signature is still verified, and an unsigned download is installed and

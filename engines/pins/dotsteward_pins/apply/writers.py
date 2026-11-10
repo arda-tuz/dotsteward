@@ -3,6 +3,7 @@ bytes and restores them when it raises."""
 
 from __future__ import annotations
 
+import datetime
 import json
 import re
 from dataclasses import dataclass, field
@@ -17,7 +18,7 @@ from ..latest.upstream import github_repo
 from ..lockfile import VERSIONS, LockPath, Locks, dump, parse_path
 from ..syncer import sync_locks, write_changed
 from . import plan as routing
-from .authenticity import Authenticity, Finding
+from .authenticity import Authenticity, Finding, Release
 from .plan import Declared, Group, Move, flake_original, hash_fields, pin_of, version_field
 from .tools import PLACEHOLDER, GroupFailure, Tools, Waits, nix_system
 
@@ -201,12 +202,22 @@ class Writer:
             fetched, fetched_size = self.tools.prefetch(str(url))
             digest, size = digest or fetched, size or fetched_size
         pin_text = path.text().removeprefix("versions:")
+        members, bridge = self._installs(pin_text, move.latest)
         finding = Finding("unsigned")
         if self.authenticity is not None:
             versions_document = self.instance.load_locks().documents[VERSIONS]
-            finding = self.authenticity.examine(
-                versions_document, pin_text, str(url), str(digest), _repository(move.request)
+            tag = move.details.get("tag")
+            release = Release(
+                pin=pin_text,
+                url=str(url),
+                digest=str(digest),
+                version=move.latest,
+                tag=tag if isinstance(tag, str) and tag else None,
+                repository=_repository(move.request) or github_repo(pin.get("source")),
+                members=members,
             )
+            finding = self.authenticity.examine(versions_document, release)
+        finding.bridge = bridge
         self.findings[move.id] = finding
 
         def change(locks: Locks) -> None:
@@ -221,6 +232,31 @@ class Writer:
             record_trust(locks.documents[VERSIONS], pin_text, finding)
 
         self.edit(change)
+
+    def _installs(self, pin: str, version: str) -> tuple[tuple[str, ...], str | None]:
+        """What the components install from PIN, as their manifest mirrors declare it: the
+        archive members (install.member, {version} filled in, and those of companions),
+        and the repository whose later releases the local APT bridge serves, if any."""
+        members: list[str] = []
+        bridge: str | None = None
+        for system in self.instance.systems:
+            for component in self.instance.manifest(system).get("components") or []:
+                install = component.get("install") if isinstance(component, dict) else None
+                if not isinstance(install, dict):
+                    continue
+                entries = [install, *[c for c in install.get("companions") or [] if isinstance(c, dict)]]
+                for entry in entries:
+                    member = entry.get("member")
+                    if entry.get("pin") == pin and isinstance(member, str) and member:
+                        members.append(member.replace("{version}", version))
+                release = install.get("githubRelease")
+                if (
+                    install.get("pin") == pin
+                    and isinstance(release, dict)
+                    and isinstance(release.get("repository"), str)
+                ):
+                    bridge = release["repository"]
+        return tuple(dict.fromkeys(members)), bridge
 
     def nix_package(self, group: Group) -> None:
         for move in group.moves:
@@ -372,6 +408,18 @@ def record_trust(versions: dict[str, Any], pin: str, finding: Finding) -> None:
     if finding.root is not None:
         trust["sigstore_root"] = finding.root
     trust.setdefault("signers", {})[pin] = finding.signer
+    if finding.bridge is not None:
+        bridges = trust.setdefault("apt_bridge", {})
+        recorded = bridges.get(pin) if isinstance(bridges.get(pin), dict) else {}
+        bridges[pin] = {
+            "kind": "unsigned",
+            "repository": finding.bridge,
+            "first_seen": recorded.get("first_seen") or _today(),
+        }
+
+
+def _today() -> str:
+    return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
 
 
 def _path(move: Move) -> LockPath:

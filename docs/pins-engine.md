@@ -205,24 +205,38 @@ file catches corruption, not a compromised release. So when the writer moves a
    that address is no bundle and is ignored): `<url>.sigstore.json`,
    `<url>.sigstore`, `<url>.bundle`, and for an archive (`.tar.gz`, `.tgz`,
    `.tar.xz`, `.txz`, `.tar.bz2`, `.tbz2`, `.tar`, `.zip`) the same names after the
-   archive without its extension: the signature of the member of that name (the
-   layout of release workflows that sign the binary inside the archive).
+   archive without its extension: the signature of the member a component
+   installs (`install.member` of the components whose pin it is, `{version}`
+   filled in; the layout of release workflows that sign the binary inside the
+   archive). That member is checked by its full path, in the archive whose digest
+   the pin records; an archive that holds it twice, or reaches it through a link,
+   fails.
 2. Otherwise, when the declaration names a GitHub repository, a GitHub artifact
    attestation of the digest (`gh api repos/<repo>/attestations/sha256:<digest>`,
    then `gh attestation download`): build provenance
    (`https://slsa.dev/provenance/v1`) logged in the public transparency log.
 
-Every lookup has a timeout (60 seconds each, 180 for one pin), and a lookup that
-fails counts as nothing found, so discovery never holds a run. The trusted root
-comes from `gh attestation trusted-root` (the GitHub CLI checks it with TUF), else
-the one the lock recorded. cosign verifies the bundle against it with the
-signer's identity regular expression and OIDC issuer; it needs no network.
+The addresses are probed at once, each with a timeout (60 seconds, 180 for one
+pin). Only an answer that the file is not there (HTTP 403, 404 or 410) counts as
+"not published"; a lookup without an answer (no network, a server error, a
+timeout) is no verdict: a signed source then waits for the next run (the group is
+skipped, exit 6) with no review item, and an unsigned source moves, labelled
+`unsigned, signature discovery incomplete`. The trusted root comes from
+`gh attestation trusted-root` (the GitHub CLI checks it with TUF; a new TUF root
+rewrites the recorded one), else the one the lock recorded. cosign verifies the
+bundle against it with the exact identity of the certificate and the OIDC issuer;
+it needs no network. The identity's tag must be the tag of the release the pin
+moves to (or name its version), so the signature of an older release does not
+pass for a newer one (`authenticity-identity-version`).
 
 The first verified signer of a pin is trusted on first use: the lock records its
 certificate identity as a regular expression, escaped, with every run of digits after
 `@refs/tags/` generalized (so the next release of the same workflow matches and no
 other workflow, repository or branch does), and its OIDC issuer. The report says
-`trusted on first use`. From then on:
+`trusted on first use`. When the pin's repository is known (its declaration or its
+`source`), the first signer must be a workflow of that repository: a fork or
+another repository is `authenticity-first-use-foreign`, and nothing is pinned.
+From then on:
 
 | Found | Result |
 | --- | --- |
@@ -265,8 +279,24 @@ cosign bundle (`base64Signature`, `cert`, `rekorBundle`) is converted to a v0.1
 Sigstore bundle first, since cosign reads a trusted root only with Sigstore
 bundles. The install methods verify a recorded signature again after the
 download and before anything is replaced (`official-binary`, `deb`,
-`app-archive`), from the lock alone; `verify = "sha256+sigstore"` makes the
+`app-archive`), from the lock alone: the identity cosign verifies is the recorded
+one, which the signer's `identity_regexp` must match and whose tag must name the
+version of the pin; the signature of a member must be of the member the method
+installs, checked on the extracted file it installs (reached through no link of
+the archive). A pin whose signer is `sigstore` never installs without a recorded
+signature, whatever `verify` says; `verify = "sha256+sigstore"` makes the
 signature of an `official-binary` pin mandatory
-([component-contract.md](component-contract.md)). Attestations GitHub issues for
+([component-contract.md](component-contract.md)). `pins check` refuses the same
+holes before a gate passes: a sigstore signer whose pin records no signature, and
+an `identity_regexp` that does not pin one identity (anchored with `^` and `$`,
+without `|`, `.*`, `.+`, `[^` and the like, and starting with
+`^https://github\.com/<owner>/<repo>/` when the pin's `source` is on GitHub).
+
+The local APT bridge serves releases of a `githubRelease` repository newer than
+the pin as root, checked only by the `SHA256SUMS` of the same release; it reads
+no attestation (it runs without the GitHub CLI). The writer records this in
+`trust.apt_bridge.<pin>` (`{"kind": "unsigned", "repository": ..., "first_seen":
+...}`) when it moves the pin, its line says `the local APT bridge serves later
+releases of <repo> unsigned`, and the deb method says the same at install time. Attestations GitHub issues for
 private repositories (its own certificate authority and timestamps, no
 transparency log entry) are not read.

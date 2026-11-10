@@ -27,7 +27,10 @@ digest 64 hex digits. A recorded ``signature`` (written by ``pins apply``,
 docs/pins-engine.md) has a kind, a subject and a bundle, and the versions
 lock has its signer (``trust.signers.<at>``, kind sigstore, with an identity
 regular expression and an issuer) and ``trust.sigstore_root``: what the
-install methods need to verify it. Check-only.
+install methods need to verify it. A pin with a sigstore signer records a
+signature, and the signer's identity regular expression pins one identity
+(anchored, no wildcard or alternation; of the pin's repository when its
+``source`` is on GitHub). Check-only.
 """
 
 from __future__ import annotations
@@ -35,6 +38,8 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from ..checker import Checker
+from .. import trust
+from ..latest.upstream import github_repo
 from ..lockfile import VERSIONS, LockPath, Scope, parse_path, parse_template
 from . import Context, FieldSpec, Rule, string
 
@@ -74,15 +79,40 @@ class DownloadPin(Rule):
         c.contains(f"{prefix}.{url_field}", url, needle)
         c.fmt(f"{prefix}.{self.values['size_field']}", "positive-int", pin.get(self.values["size_field"]))
         c.fmt(f"{prefix}.{self.values['sha256_field']}", "hex64", pin.get(self.values["sha256_field"]))
+        versions = locks.documents.get(VERSIONS)
         if "signature" in pin:
-            _check_signature(c, locks.documents.get(VERSIONS), prefix, pin["signature"])
+            _check_signature(c, versions, prefix, pin["signature"])
+        _check_signer(c, versions, prefix, pin)
+
+
+def _signer_of(versions: Any, pin: str) -> Any:
+    trust = versions.get("trust") if isinstance(versions, dict) else None
+    signers = trust.get("signers") if isinstance(trust, dict) else None
+    return signers.get(pin) if isinstance(signers, dict) else None
+
+
+def _check_signer(c: Checker, versions: Any, pin: str, entry: dict[str, Any]) -> None:
+    """A sigstore signer pins one identity (of the pin's repository, when its source
+    is on GitHub), and its pin always records a signature: a signed source never
+    installs unsigned."""
+    signer = _signer_of(versions, pin)
+    if not isinstance(signer, dict) or signer.get("kind") != "sigstore":
+        return
+    c.ok(f"trust.signers.{pin}", "signature" in entry, f"a signed source, and {pin} records no signature")
+    regexp = signer.get("identity_regexp")
+    repository = github_repo(entry.get("source"))
+    whose = f" of {repository}" if repository else ""
+    c.ok(
+        f"trust.signers.{pin}",
+        isinstance(regexp, str) and trust.pins_one_identity(regexp, repository),
+        f"the identity_regexp does not pin one identity{whose} (anchored with ^ and $, no wildcard or alternation)",
+    )
 
 
 def _check_signature(c: Checker, versions: Any, pin: str, signature: Any) -> None:
-    trust = versions.get("trust") if isinstance(versions, dict) else None
-    trust = trust if isinstance(trust, dict) else {}
-    signers = trust.get("signers")
-    signer = signers.get(pin) if isinstance(signers, dict) else None
+    section = versions.get("trust") if isinstance(versions, dict) else None
+    section = section if isinstance(section, dict) else {}
+    signer = _signer_of(versions, pin)
     c.ok(
         f"{pin}.signature",
         isinstance(signature, dict)
@@ -103,6 +133,6 @@ def _check_signature(c: Checker, versions: Any, pin: str, signature: Any) -> Non
     )
     c.ok(
         "trust.sigstore_root",
-        isinstance(trust.get("sigstore_root"), dict),
+        isinstance(section.get("sigstore_root"), dict),
         "a recorded signature needs the trusted root",
     )
