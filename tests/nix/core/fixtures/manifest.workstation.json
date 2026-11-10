@@ -171,7 +171,13 @@
     { "component": "example-term", "name": "example-term-state", "argv": ["example-term", "dump"], "require_command": null }
   ],
   "prerequisites": { "apt": ["example-term-deps"] },
-  "managed_links": ["~/.config/nix/nix.conf", "~/.example-term/RULES.md", "~/.example-app/AGENTS.md"],
+  "managed_links": [
+    "~/.config/nix/nix.conf",
+    "~/.config/systemd/user/dotsteward-observe.path",
+    "~/.config/systemd/user/dotsteward-observe.service",
+    "~/.example-term/RULES.md",
+    "~/.example-app/AGENTS.md"
+  ],
   "component_managed_links": { "example-term": ["~/.example-term/RULES.md"], "example-app": ["~/.example-app/AGENTS.md"] },
   "force_linked_restore": [
     { "component": "example-term", "path": "~/.example-term/RULES.md", "mode": "0664" }

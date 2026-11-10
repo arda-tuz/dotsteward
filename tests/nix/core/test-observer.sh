@@ -23,10 +23,13 @@ assert_core_eq '["default.target"]' "(homeOf $linux).systemd.user.services.dotst
 assert_core_eq '"exec"' "(homeOf $linux).systemd.user.services.dotsteward-observe.Service.Type"
 assert_core_eq '"3 6"' "(homeOf $linux).systemd.user.services.dotsteward-observe.Service.SuccessExitStatus"
 assert_core_eq 'true' \
-  "(homeOf $linux).systemd.user.services.dotsteward-observe.Service.ExecStart == \"\${(homeOf $linux).dotsteward.observer.script}\""
-# Home Manager writes both units into the generation.
+  "(homeOf $linux).systemd.user.services.dotsteward-observe.Service.ExecStart == [ \"\${(homeOf $linux).dotsteward.observer.script}\" ]"
+# Home Manager writes both units into the generation, and they are managed links of core:
+# E2E checks that they resolve, rollback removes them.
 assert_core_eq '[true,true]' \
   "map (name: builtins.hasAttr name (homeOf $linux).xdg.configFile) [ \"systemd/user/dotsteward-observe.path\" \"systemd/user/dotsteward-observe.service\" ]"
+assert_core_eq '["~/.config/systemd/user/dotsteward-observe.path","~/.config/systemd/user/dotsteward-observe.service"]' \
+  "lib.filter (lib.hasInfix \"systemd\") (homeOf $linux).dotsteward.manifest.managed_links"
 
 # The service runs the CLI of the generation for the instance checkout, with the commands
 # of the profile first on PATH.
@@ -40,7 +43,9 @@ assert_contains "$(core_raw "builtins.concatStringsSep \" \" (homeOf $linux).sys
 assert_core_eq 'false' "(homeOf $darwin).dotsteward.observer.enable"
 assert_core_eq '{}' "(homeOf $darwin).systemd.user.paths"
 assert_core_eq '{}' "(homeOf $darwin).systemd.user.services"
+assert_core_eq '[]' "lib.filter (lib.hasInfix \"systemd\") (homeOf $darwin).dotsteward.manifest.managed_links"
 
 # Switched off.
 assert_core_eq '{}' "(homeOf $off).systemd.user.paths"
 assert_core_eq '{}' "(homeOf $off).systemd.user.services"
+assert_core_eq '[]' "lib.filter (lib.hasInfix \"systemd\") (homeOf $off).dotsteward.manifest.managed_links"

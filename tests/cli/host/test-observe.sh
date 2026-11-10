@@ -104,8 +104,8 @@ assert_exit 0 run_observe
 assert_contains "$DS_STDOUT" "example-editor: verified at 1.2.3-1 (changed: libexample-core)"
 assert_not_contains "$DS_STDOUT" "example-viewer:"
 assert_eq "editor-opens" "$(hooks_ran)"
-assert_eq '{"status":"verified","version":"1.2.3-1","packages":{"example-editor":"1.2.3-1"}}' \
-  "$(shown '.state.components["example-editor"] | del(.last_verified)')"
+assert_json - '. == {status: "verified", version: "1.2.3-1", packages: {"example-editor": "1.2.3-1"}}' \
+  <<<"$(shown '.state.components["example-editor"] | del(.last_verified)')"
 assert_eq '"1.2.3-1"' "$(shown '.state.components["example-editor"].last_verified.version')"
 assert_eq '"installed"' "$(shown '.state.components["example-viewer"].status')"
 assert_eq '"observe"' "$(shown '.state.recorded_by')"
@@ -125,6 +125,7 @@ assert_eq "viewer-opens" "$(hooks_ran)"
 pkg libtool-example 1.1-1
 assert_exit 0 run_observe
 assert_contains "$DS_STDOUT" "example-viewer: verified at 5.0-1 (changed: libtool-example)"
+assert_eq "viewer-opens" "$(hooks_ran)"
 
 # --- the owner upgrades a tracked package to a broken version: red, and it stays ---------
 
@@ -154,6 +155,7 @@ assert_eq '"unverified"' "$(shown '.state.components["example-editor"].status')"
 pkg example-editor 2.0.1-1 "Depends=libexample1 (>= 1.0), libc-example"
 assert_exit 0 run_observe
 assert_contains "$DS_STDOUT" "example-editor: verified at 2.0.1-1 (changed: example-editor)"
+assert_eq "editor-opens" "$(hooks_ran)"
 assert_json - '.status == "verified" and .version == "2.0.1-1" and .last_verified.version == "2.0.1-1"' \
   <<<"$(shown '.state.components["example-editor"]')"
 assert_call_count 1 notify-send
@@ -170,7 +172,7 @@ nothing_installed
 pkg example-viewer 5.0-1 "Pre-Depends=libtool-example:any" "Depends=libmissing-example | example-render (>= 2)"
 assert_exit 0 run_observe
 assert_contains "$DS_STDOUT" "example-viewer: verified at 5.0-1 (changed: example-viewer)"
-hooks_ran >/dev/null
+assert_eq "viewer-opens" "$(hooks_ran)"
 
 # --- no network: the record waits, and the next run sends it ----------------------------
 
