@@ -62,6 +62,10 @@ gets one link per named agent in that agent's own skill root (component
 `~/.config/opencode/skills`, and `pi`, `~/.pi/agent/skills`). `agents` is a
 non-empty list of unique agent names with a declared root, for copy
 deployment only, and a scoped skill must not also be in a shared skill root.
+The store holds only what dotsteward put there: a copy that no scoped entry
+of the lock names any more (the skill left the lock, or is for every agent
+now) is removed by the next `rebuild --switch`, with its agent links, and is
+a finding of `dotsteward e2e` until then.
 
 ## Structure of a skill
 
