@@ -82,5 +82,5 @@ assert_inst_eq '[{"method":"nix","packages":["ripgrep"]},{"method":"nix","packag
   "map (system: let c = lib.findFirst (c: c.name == \"example-grep\") null ($scaffold).dotstewardManifest.\${system}.components;
    in { inherit (c) method; inherit (c.install) packages; }) [ \"x86_64-linux\" \"aarch64-darwin\" ]" "the nix component of add --nix"
 assert_inst_eq '["example-notes","rg"]' \
-  "map (c: c.command) (lib.filter (c: c.component or null != \"core\") ($scaffold).dotstewardManifest.x86_64-linux.checks.commands)" \
+  "lib.sort lib.lessThan (map (c: c.command) (lib.filter (c: c.component or null != \"core\") ($scaffold).dotstewardManifest.x86_64-linux.checks.commands))" \
   "the commands of both"
