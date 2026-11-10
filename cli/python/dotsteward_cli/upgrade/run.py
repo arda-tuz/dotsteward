@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import collections
 import contextlib
+import fnmatch
 import hashlib
 import json
 import shutil
@@ -52,8 +53,37 @@ WAITING_REF = "refs/dotsteward/upgrade/waiting"
 _WORK = "work"
 # What the waiting commit moved, next to it: {schema_version, commit, moved}.
 _WAITING_FILE = "waiting.json"
-# The running user services before a move, below <state>/rollback: {services: {unit: invocation}}.
-_SERVICES_FILE = "services.json"
+# What a user service in one of these states runs.
+_RUNNING_STATES = {"active", "activating", "reloading", "deactivating"}
+# Session units the way back never stops or restarts, even when a generation names them: a restart
+# of one of them ends the desktop session of the owner.
+_SESSION_UNITS = (
+    "dbus*",
+    "dbus-broker*",
+    "exampledesk-*",
+    "org.exampledesk.*",
+    "*session*",
+    "pipewire*",
+    "wireplumber*",
+    "pulseaudio*",
+    "xdg-*",
+    "gvfs*",
+    "at-spi*",
+    "plasma*",
+    "kde*",
+    "org.kde.*",
+    "systemd-*",
+    "snap.*",
+    "app-*",
+    "gpg-agent*",
+    "ssh-agent*",
+    "graphical-*",
+    "xorg*",
+    "wayland*",
+    "mutter*",
+    "evolution-*",
+    "tracker-*",
+)
 _PUBLISH_SCOPE = "upgrade"
 _WEEK_SECONDS = 7 * 24 * 60 * 60
 _STALE_PRODUCER_SECONDS = 14 * 24 * 60 * 60
@@ -86,6 +116,10 @@ _WRITER_ITEMS = {
 
 def _say(text: str) -> None:
     print(f"[upgrade] {text}", flush=True)
+
+
+def _session_unit(name: str) -> bool:
+    return any(fnmatch.fnmatchcase(name, pattern) for pattern in _SESSION_UNITS)
 
 
 def _ask_yes(question: str) -> bool:
@@ -954,27 +988,38 @@ class Upgrade(runner.Runner):
             saved += [(file, directory / file.name) for file in files]
         return saved
 
-    def _services_file(self) -> Path:
-        return Path(self.state_root) / "rollback" / _SERVICES_FILE
+    def _generation_units(self) -> dict[str, bytes]:
+        """The user service units of the active generation, by name, with the bytes of each: what
+        Home Manager manages (home-files/.config/systemd/user), nothing else."""
+        generation = self._activation().get("generation")
+        if not isinstance(generation, str) or not generation:
+            return {}
+        directory = Path(generation) / "home-files" / ".config" / "systemd" / "user"
+        units: dict[str, bytes] = {}
+        try:
+            entries = sorted(directory.iterdir())
+        except OSError:
+            return {}
+        for entry in entries:
+            if entry.name.endswith(".service"):
+                with contextlib.suppress(OSError):
+                    units[entry.name] = entry.read_bytes()
+        return units
 
-    def _user_services(self) -> dict[str, str] | None:
-        """The running user services and the invocation of each; None when the user manager does not
+    def _unit_states(self, names: Sequence[str]) -> dict[str, str] | None:
+        """The invocation of each of NAMES that is active; None when the user manager does not
         answer (no systemd, no session)."""
-        if not self.linux or shutil.which("systemctl") is None:
-            return None
-        listed = self._systemctl("list-units", "--type=service", "--state=running", "--plain", "--no-legend")
-        if listed is None:
-            return None
-        names = [line.split()[0] for line in listed.splitlines() if line.strip()]
         if not names:
             return {}
-        shown = self._systemctl("show", "--property=Id,InvocationID", "--", *names)
+        if not self.linux or shutil.which("systemctl") is None:
+            return None
+        shown = self._systemctl("show", "--property=Id,ActiveState,InvocationID", "--", *names)
         if shown is None:
             return None
         found: dict[str, str] = {}
         for block in shown.split("\n\n"):
             fields = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
-            if fields.get("Id"):
+            if fields.get("Id") and fields.get("ActiveState") in _RUNNING_STATES:
                 found[fields["Id"]] = fields.get("InvocationID", "")
         return found
 
@@ -991,43 +1036,30 @@ class Upgrade(runner.Runner):
             return None
         return done.stdout if done.returncode == 0 else None
 
-    def _save_services(self) -> None:
-        """The user services before the move, once: a file that is there came from before it."""
-        path = self._services_file()
-        if path.exists():
+    def _take_back_services(self, moved: Mapping[str, bytes], running: Mapping[str, str] | None) -> None:
+        """What the moved generation brought goes with it, and nothing else. MOVED: the units of the
+        moved generation; RUNNING: the invocations of its active units before the rebuild back. A
+        unit only the moved generation has is stopped while it runs; a unit whose file it changed is
+        restarted while it runs, unless the rebuild back restarted it already. A unit no generation
+        has is the owner's and never touched, nor is a session unit (_SESSION_UNITS), whatever a
+        generation says."""
+        if running is None:
             return
-        services = self._user_services()
-        if services is not None:
-            atomic.make_private_dirs(path.parent)
-            atomic.atomic_write_json(path, {"services": services}, mode=0o600)
-
-    def _saved_services(self) -> dict[str, str] | None:
-        try:
-            services = json.loads(self._services_file().read_text(encoding="utf-8"))["services"]
-        except (OSError, ValueError, KeyError, TypeError):
-            return None
-        return (
-            {str(name): str(invocation) for name, invocation in services.items()}
-            if isinstance(services, dict)
-            else None
+        back = self._generation_units()
+        added = sorted(name for name in moved if name not in back and not _session_unit(name))
+        changed = sorted(
+            name for name in moved if name in back and back[name] != moved[name] and not _session_unit(name)
         )
-
-    def _take_back_services(self, before: Mapping[str, str] | None, moved: Mapping[str, str] | None) -> None:
-        """What the moved generation started goes with it. BEFORE: the services before the move;
-        MOVED: those before the rebuild back. A service the rebuild back did not start again still runs
-        what the move started: stopped when it did not run before, else restarted."""
-        after = self._user_services()
-        if before is None or moved is None or after is None:
+        states = self._unit_states([*added, *changed])
+        if states is None:
             return
-        started = {name for name, invocation in moved.items() if before.get(name) != invocation}
-        left = sorted(name for name in started if after.get(name) == moved[name])
-        stop = [name for name in left if name not in before]
-        restart = [name for name in left if name in before]
+        stop = [name for name in added if name in states]
+        restart = [name for name in changed if name in running and states.get(name) == running[name]]
         if stop:
-            _say(f"stopping what the moved generation started: {', '.join(stop)}")
+            _say(f"stopping what the moved generation added: {', '.join(stop)}")
             self._systemctl("stop", "--", *stop)
         if restart:
-            _say(f"restarting what the moved generation restarted: {', '.join(restart)}")
+            _say(f"restarting what the moved generation changed: {', '.join(restart)}")
             self._systemctl("restart", "--", *restart)
         if stop or restart:
             self.run.step("go-back-services", report.OK, stopped=stop, restarted=restart)
@@ -1066,7 +1098,6 @@ class Upgrade(runner.Runner):
         _say(f"rebuild of profile {self.profile}")
         if self.work is not None:
             self._save_binaries()
-            self._save_services()
         status = self._ds("rebuild", "--profile", self.profile, "--switch")
         if self.work is not None and (status == _KILLED or status < 0):
             # Out of memory, or stopped from outside: it says nothing about the pins, and this tree is
@@ -1272,7 +1303,6 @@ class Upgrade(runner.Runner):
         clone; the checkout never had it. A hold comes only when the way back is green, since otherwise
         the move is not what broke the machine. The next run leaves held pins and moves the others."""
         saved = self._saved_binaries()
-        services = self._saved_services()
         moved = self.moved
         base = self._git("rev-parse", f"{self.waiting}^").stdout.strip()
         self._drop_waiting(forget_binaries=False)
@@ -1283,10 +1313,14 @@ class Upgrade(runner.Runner):
             return
         assert self.profile is not None
         # The rebuild first: an installer keeps a binary newer than its pin, so the copy goes last.
-        running = self._user_services()
+        # The units of the active generation, the moved one when its rebuild activated it, and how
+        # they run, before the rebuild back activates the other one.
+        units = self._generation_units()
+        running = self._unit_states(sorted(name for name in units if not _session_unit(name)))
         status = self._ds("rebuild", "--profile", self.profile, "--switch")
         self._restore_binaries(saved)
-        self._take_back_services(services, running)
+        if status == 0:
+            self._take_back_services(units, running)
         self.run.step("go-back", status, detail=reason)
         again = self._run_e2e() if status == 0 else ["rebuild"]
         self.red = True

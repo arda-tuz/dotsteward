@@ -196,15 +196,18 @@ left to the vendor. Without a terminal it is never applied.
   back first, so those pins move again; the hold of a version that went red again comes back.
 - **E2E or the rebuild is red after a move of this run:** the commit goes with its clone, the checkout
   never had it. A rebuild from the checkout returns the tree from before (from a clone of that tree
-  when the checkout is dirty), official binaries that moved get their saved copy back, a user service
-  the moved generation started is stopped and one it restarted is restarted (`systemctl --user`, when
-  the rebuild back did not start it again), and E2E checks the way back. When that is green, the pins
-  of each red component, named by the pin of its binary or by its name in the pin id, get a local hold
-  in `<state>/holds.json`, or all that moved when the checks name none; the writer leaves those pins
-  until upstream calls something newer the latest, and each run says what is held. Item `red-held`,
-  exit 3. If the way back is red too, the move is not what broke the machine: no hold, `e2e-red`,
-  exit 1. A daemon that a command starts outside the user manager is not known here; its component stops it
-  in an `agentsPost` hook, which the rebuild back runs.
+  when the checkout is dirty), official binaries that moved get their saved copy back, of the user
+  services whose unit files are in a generation (`home-files/.config/systemd/user`, what Home Manager
+  manages) one that only the moved generation has is stopped and one whose file it changed is
+  restarted, unless the rebuild back restarted it (`systemctl --user`); a unit no generation has, and
+  a session unit (D-Bus, the session manager, the audio server and the like), is never touched, and
+  E2E checks the way back. When that is green, the pins of each red component, named by the pin of its
+  binary or by its name in the pin id, get a local hold in `<state>/holds.json`, or all that moved
+  when the checks name none; the writer leaves those pins until upstream calls something newer the
+  latest, and each run says what is held. Item `red-held`, exit 3. If the way back is red too, the
+  move is not what broke the machine: no hold, `e2e-red`, exit 1. A daemon that a command starts
+  outside the user manager is not known here; its component stops it in an `agentsPost` hook, which
+  the rebuild back runs.
 - **E2E is red with nothing of this run to go back to:** `e2e-red` names the checks, exit 1, no offer
   and no firmware. A red `deb` component gets the `sudo apt-mark hold` command to run if you want it.
   Nothing is written to the TOML; later releases carry holds in the machine layer.
@@ -249,7 +252,7 @@ The heaviest one of a run is the status, in the order 4, 1, 3, 6, 0 ([exit-codes
 | `upgrade/waiting.json` | what the waiting commit moved |
 | `plugins/scan.json` | the digests of the installed plugin trees and the open findings |
 | `holds.json` | the local holds |
-| `rollback/` | the official binaries and the running user services saved while a move is not green yet |
+| `rollback/` | the official binaries saved while a move is not green yet |
 | `apt-logs/` | what dpkg printed, the newest 20 |
 
 Review codes of this command: `sudo-required`, `machine-name-required`, `profile-required`,
