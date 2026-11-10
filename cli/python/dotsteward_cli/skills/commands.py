@@ -5,7 +5,7 @@
                                   compares the skill roots with what is known, no network
     skills capture [--now|--wait] [--name SKILL]... [--json]
                                   publishes what waits; --wait sleeps until the deadline
-    skills track SKILL --all|--here|--never|--own [--no-capture]
+    skills track SKILL --all|--here|--never|--later|--own [--no-capture]
     skills resolve SKILL --ours|--theirs
     skills diff SKILL [--json]
     skills forget SKILL [--clear]
@@ -27,6 +27,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections.abc import Sequence
 from typing import Any
 
@@ -152,9 +153,20 @@ def _status(args: argparse.Namespace, loaded: config.Instance) -> int:
                 print(f"[dotsteward] {key}: name-taken{why} ({item.get('path')})")
             else:
                 why = f": {item['reason']}" if item.get("reason") else ""
-                print(f"[dotsteward] {key}: {item.get('state')} ({item.get('origin')}){why}")
+                shown = "later" if state.put_off(item) else item.get("state")
+                print(f"[dotsteward] {key}: {shown} ({item.get('origin')}){why}")
             if item.get("origin") == "unknown" and item.get("origin_detail"):
                 print(f"[dotsteward] {key}: origin unknown: {item['origin_detail']}")
+            answered = item.get("answered")
+            if state.put_off(item):
+                print(
+                    f"[dotsteward] {key}: put off; dotsteward skills track {item.get('name')} "
+                    "--all, --here or --never answers it"
+                )
+            elif item.get("state") == reconcile.DECLINED and isinstance(answered, dict) and answered.get("answer"):
+                at = answered.get("at")
+                when = time.strftime(" %Y-%m-%d %H:%M UTC", time.gmtime(at)) if isinstance(at, (int, float)) else ""
+                print(f"[dotsteward] {key}: answered --{answered['answer']}{when}")
             copy = item.get("path")
             if item.get("state") in reconcile.KEPT_OUT and not (isinstance(copy, str) and os.path.isdir(copy)):
                 print(f"[dotsteward] {key}: no copy is left: dotsteward skills forget --clear {item.get('name')}")
@@ -207,6 +219,8 @@ def _capture(args: argparse.Namespace, loaded: config.Instance) -> int:
 
 
 def _track(args: argparse.Namespace, loaded: config.Instance) -> int:
+    if args.later:
+        return track.put_off(loaded, args.name)
     return track.track(
         loaded, args.name, here=args.here, never=args.never, own=args.own, capture_now=not args.no_capture
     )
@@ -373,11 +387,13 @@ def _parser() -> argparse.ArgumentParser:
     publish.add_argument("--json", action="store_true", help="print the result as one JSON document")
     answer = commands.add_parser(
         "track",
-        help="answer the question about a skill: --all, --here or --never",
+        help="answer the question about a skill: --all, --here, --never or --later",
         description=(
             "--all puts the skill into the lock for every machine, --here for this machine only, --never remembers "
-            "in the host file of this machine that it stays out. A downloaded skill keeps its upstream pinned; "
-            "--own tracks your own copy without one, which also turns a pinned skill into yours."
+            "in the host file of this machine that it stays out. --later declines nothing: the sessions stop asking, "
+            "and skills status keeps listing it. A downloaded skill keeps its upstream pinned; "
+            "--own tracks your own copy without one, which also turns a pinned skill into yours. "
+            "--all or --here takes an earlier --never back."
         ),
     )
     answer.add_argument("name", metavar="SKILL")
@@ -385,6 +401,7 @@ def _parser() -> argparse.ArgumentParser:
     scope.add_argument("--all", action="store_true", help="for all machines")
     scope.add_argument("--here", action="store_true", help="for this machine only")
     scope.add_argument("--never", action="store_true", help="never on this machine")
+    scope.add_argument("--later", action="store_true", help="not now: declines nothing, the sessions stop asking")
     answer.add_argument("--own", action="store_true", help="your own copy, without an upstream")
     answer.add_argument("--no-capture", action="store_true", help="record the answer; the next capture takes it")
     conflict = commands.add_parser(
@@ -468,11 +485,16 @@ def main(argv: Sequence[str]) -> int:
         if args.command == "capture":
             return _capture(args, loaded)
         if args.command == "track":
-            if not (args.all or args.here or args.never or args.own):
-                print("dotsteward skills track: one of --all, --here, --never or --own is required", file=sys.stderr)
+            if not (args.all or args.here or args.never or args.later or args.own):
+                print(
+                    "dotsteward skills track: one of --all, --here, --never, --later or --own is required",
+                    file=sys.stderr,
+                )
                 return 2
-            if args.never and args.own:
-                print("dotsteward skills track: --never takes no --own", file=sys.stderr)
+            if (args.never or args.later) and args.own:
+                print(
+                    f"dotsteward skills track: {'--never' if args.never else '--later'} takes no --own", file=sys.stderr
+                )
                 return 2
             return _track(args, loaded)
         if args.command == "resolve":

@@ -203,6 +203,15 @@ def change_pending(state_root: str, change: Callable[[dict[str, Any]], bool]) ->
     return True
 
 
+def put_off(item: Mapping[str, Any]) -> bool:
+    """Whether the user put the question of ITEM off (``track --later``) and it is still the
+    same question."""
+    answered = item.get("answered")
+    return (
+        isinstance(answered, dict) and answered.get("answer") == "later" and answered.get("state") == item.get("state")
+    )
+
+
 def set_item(state_root: str, key: str, fields: Mapping[str, Any]) -> bool:
     """Merges FIELDS into the item KEY of pending.json, creating it."""
 

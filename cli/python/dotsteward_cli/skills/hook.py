@@ -12,7 +12,8 @@ what it does not know, and the text in the agent's configuration outlives any CL
 
 ``DOTSTEWARD_HOOKS_OFF=1`` ends it first. In a subagent PostToolUse records its evidence,
 so a skill it wrote asks no question, and everything else ends at once. An item is said
-at most once in 24 hours, with at most 10 names, and never any content of a skill.
+at most once in 24 hours, with at most 10 names, and never any content of a skill; one
+the user put off (``track --later``) is not said again while its question stays the same.
 
 A question needs somebody to answer it, and every ``claude -p`` is a session of its own,
 so the default is silence: ``CLAUDE_CODE_SESSION_ATTENDED=0`` never speaks, ``1`` or an
@@ -190,12 +191,17 @@ def _locate(paths: Iterable[str], context: Mapping[str, Any]) -> list[tuple[str,
 
 def _waiting(document: Mapping[str, Any], now: float) -> list[Mapping[str, Any]]:
     """The items to say now: they wait for a person and were not said in 24 hours."""
+    from dotsteward_cli.skills import state
+
     waiting = []
     for item in document["items"].values():
         if not isinstance(item, dict):
             continue
         asked = item.get("last_asked")
         if isinstance(asked, (int, float)) and now - asked < ASK_AGAIN_SECONDS:
+            continue
+        if state.put_off(item):
+            # Put off by the user (track --later): status lists it, no session asks again.
             continue
         status = item.get("state")
         if status in {"ask", "conflict", "blocked", "name-taken", "deleted"}:
@@ -236,12 +242,15 @@ def _question(items: Sequence[Mapping[str, Any]]) -> str:
         return ""
     lines = [
         "Skill tracking (dotsteward) has something the user should decide. "
-        "Ask in the language of the user, then run what the answer names."
+        "Ask in the language of the user, then run what the answer names. Run --never only when the user "
+        "says never; when the user puts it off, is unsure or does not choose, run "
+        "dotsteward skills track <name> --later, which declines nothing and stops this question."
     ]
     if "ask" in groups:
         lines.append(
             f"- Not tracked yet: {', '.join(groups['ask'])}. Ask for each whether to track it on all machines, "
-            "only on this machine, or never: dotsteward skills track <name> --all | --here | --never."
+            "only on this machine, never, or to decide later: "
+            "dotsteward skills track <name> --all | --here | --never | --later."
         )
     if "conflict" in groups:
         lines.append(

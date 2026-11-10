@@ -9,7 +9,10 @@ the answer is refused and offers ``--own``, a copy of your own without an upstre
 third-party skill also needs a license, which ``static`` holds it to.
 
 ``--never`` lands in ``hosts/<machine>.toml``, so a reinstall under the same name remembers
-it, and stays in pending.json for the checkout that is behind.
+it, and stays in pending.json for the checkout that is behind. Only ``--never`` declines:
+``--later`` puts the question off, declines nothing and publishes nothing. Every answer stays
+on the item as ``answered`` (which one, and when), so a decline can always be told from a
+question nobody answered. ``--all`` or ``--here`` takes a decline back.
 
 A plugin answers the same way (``plugins``). A plugin of a marketplace goes by its spec,
 ``NAME@MARKETPLACE``: ``--all`` and ``--here`` add it to options.plugins, and ``--own`` does
@@ -227,12 +230,46 @@ def _plugin_answer(
     return {**fields, "path": path, "origin": where, "answer": {"here": here, "own": True}}
 
 
+# The questions an answer can put off; the others have commands of their own.
+_PUT_OFF = frozenset({reconcile.ASK, reconcile.DELETED, reconcile.NAME_TAKEN})
+
+
+def _answered(answer: Mapping[str, Any]) -> dict[str, Any]:
+    """What the user answered and when. It stays on the item, so a decline keeps its reason."""
+    word = "never" if answer.get("never") else "here" if answer.get("here") else "all"
+    return {"answer": word, "own": bool(answer.get("own")), "at": time.time()}
+
+
+def put_off(loaded: config.Instance, name: str) -> int:
+    """--later: nothing is decided and nothing published; no session asks about it again
+    while the question stays the same, and ``skills status`` keeps listing it."""
+    try:
+        context = _context(loaded)
+        state_root = str(context["state_root"])
+        key = _key(loaded, state_root, name)
+        item = state.load_pending(state_root)["items"].get(key)
+        if not isinstance(item, dict) or item.get("state") not in _PUT_OFF:
+            raise AnswerRefused(f"nothing asks about {name} now")
+        answered = {"answer": "later", "at": time.time(), "state": item["state"]}
+        state.set_item(state_root, key, {"answered": answered})
+        _say(
+            f"{name}: put off, nothing declined; no session asks about it again. "
+            f"dotsteward skills status lists it, and dotsteward skills track {name} --all, --here or --never "
+            "answers it"
+        )
+        return report.OK
+    except AnswerRefused as refused:
+        _say(f"ERROR: {refused}")
+        return report.FAILED
+
+
 def track(loaded: config.Instance, name: str, *, here: bool, never: bool, own: bool, capture_now: bool) -> int:
     try:
         context = _context(loaded)
         state_root = str(context["state_root"])
         if _is_plugin(loaded, state_root, name):
             fields = _plugin_answer(loaded, context, name, here=here, never=never, own=own)
+            fields["answered"] = _answered(fields["answer"])
             state.set_item(state_root, state.plugin_key(name), fields)
             return _finish(context, loaded, name) if capture_now else 0
         key = state.skill_key(name)
@@ -276,6 +313,7 @@ def track(loaded: config.Instance, name: str, *, here: bool, never: bool, own: b
             "origin": (item or {}).get("origin", origin.OWN),
             "origin_detail": (item or {}).get("origin_detail"),
             "answer": answer,
+            "answered": _answered(answer),
             "reason": None,
             "detected_at": time.time(),
             "blocked_digest": None,

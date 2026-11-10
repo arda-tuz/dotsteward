@@ -20,8 +20,12 @@ sentinel (`same-as-instance-checkout` or `[compat] repo_owned_revision`).
 | anything else: a tree no file tool touched | a question |
 
 The answer is one of `dotsteward skills track <name> --all`, `--here` (this machine
-only) or `--never` (this machine, asked no more). `--own` tracks your own copy of it
-without an upstream.
+only), `--never` (this machine, asked no more) or `--later` (nothing is declined or
+published; no session asks about it again, and `skills status` keeps listing it). Only
+`--never` declines, and the session text tells the agent so: an answer that puts the
+question off is `--later`. Every answer stays on the pending item as `answered` (which one,
+and when), and `skills status` shows it for a declined skill. `--all` or `--here` given
+later takes a `--never` back. `--own` tracks your own copy of it without an upstream.
 
 A downloaded skill pins its upstream. From a clone that is the remote `origin` (without any
 credentials it may carry), the commit HEAD and the directory of the skill within the clone
