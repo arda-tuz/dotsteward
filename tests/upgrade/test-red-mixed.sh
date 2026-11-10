@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from the harness and the helpers
+# shellcheck disable=SC2016 # the scripts of tool_stub run later and are single-quoted on purpose
 # A red E2E that names two components, one by the pin of its official binary and one only by
 # its name, holds the pins of both after a green way back, and only those: the next run would
 # otherwise move the pin of the second again and go red the same way.

@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from the harness and the helpers
+# shellcheck disable=SC2016 # the scripts of tool_stub run later and are single-quoted on purpose
 # The floor of a deb package moves only in a run whose sudo window installed what apt has: without
 # a terminal the window waits, and a floor above the installed version would turn the E2E of the
 # package red and send the whole run back. The writer leaves those pins, the run says so, and every

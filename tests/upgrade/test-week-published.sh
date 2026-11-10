@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from the harness and the helpers
+# shellcheck disable=SC2016 # the scripts of tool_stub run later and are single-quoted on purpose
 # The week of the flake inputs (N14) starts when a move of a flake input is published, not when the
 # writer moves one: after a red gate or a red E2E nothing went out, so the next run may move the
 # flake inputs again at once (here with --retry-held, as a person would after a fix).

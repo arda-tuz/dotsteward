@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from the harness and the helpers
+# shellcheck disable=SC2016 # the scripts of tool_stub run later and are single-quoted on purpose
 # Every commit `dotsteward upgrade` makes in the instance has UTC dates (docs/privacy.md), whatever
 # time zone the shell of the person has: the commit that publishes the host file and the commit of
 # the writer.
