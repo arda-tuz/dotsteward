@@ -127,7 +127,9 @@ mkdir -p "$world/plugin-upstream/.claude-plugin"
 printf '{"name": "cloned-plugin", "version": "1.0.0"}\n' >"$world/plugin-upstream/.claude-plugin/plugin.json"
 git -C "$world/plugin-upstream" add -A
 git -C "$world/plugin-upstream" commit -q -m "chore: a plugin"
-git clone -q "$world/plugin-upstream" "$(home_of a)/.claude/skills/cloned-plugin"
+# The remote is https; the repository above stands in for it.
+git -c "url.file://$world/plugin-upstream.insteadOf=https://github.com/example-org/cloned-plugin" \
+  clone -q https://github.com/example-org/cloned-plugin "$(home_of a)/.claude/skills/cloned-plugin"
 settle_plugin a cloned-plugin
 assert_exit 0 ds a skills reconcile
 assert_eq ask "$(plugin_item a cloned-plugin .state)"

@@ -106,7 +106,9 @@ git init -q -b main "$world/skill-upstream"
 printf -- '---\nname: cloned\n---\n' >"$world/skill-upstream/SKILL.md"
 git -C "$world/skill-upstream" add -A
 git -C "$world/skill-upstream" commit -q -m "chore: a skill at the top"
-git clone -q "$world/skill-upstream" "$agents_skills/cloned"
+# The remote is https; the repository above stands in for it.
+redirect=("-c" "url.file://$world/skill-upstream.insteadOf=https://github.com/example-org/cloned")
+git "${redirect[@]}" clone -q https://github.com/example-org/cloned "$agents_skills/cloned"
 find "$agents_skills/cloned" -exec touch -h -d '2001-01-01' {} +
 assert_exit 0 ds a skills reconcile
 assert_eq ask "$(item a cloned .state)"
@@ -116,13 +118,15 @@ EXPECT_STATUS=1 ds_code a skills track cloned --all
 assert_eq "$tip" "$(remote_tip)"
 assert_eq blocked "$(item a cloned .state)"
 assert_contains "$(cat "$(state_of a)/skills/last-capture.json")" "no license file"
-printf 'MIT\n' >"$agents_skills/cloned/LICENSE"
-git -C "$agents_skills/cloned" add -A
-git -C "$agents_skills/cloned" commit -q -m "chore: a license"
+# The upstream adds one, and the clone pulls it: a commit of the clone alone is no upstream.
+printf 'MIT\n' >"$world/skill-upstream/LICENSE"
+git -C "$world/skill-upstream" add -A
+git -C "$world/skill-upstream" commit -q -m "chore: a license"
+git -C "$agents_skills/cloned" "${redirect[@]}" pull -q --ff-only
 find "$agents_skills/cloned" -exec touch -h -d '2001-01-01' {} +
 ds_code a skills track cloned --all
 entry=$(remote_entry cloned)
-assert_eq "$world/skill-upstream" "$(jq -r .source <<<"$entry")"
+assert_eq https://github.com/example-org/cloned "$(jq -r .source <<<"$entry")"
 assert_eq "$(git -C "$agents_skills/cloned" rev-parse HEAD)" "$(jq -r .revision <<<"$entry")"
 # .git itself stays out of the repository.
 if git -C "$remote" cat-file -e refs/heads/main:agent/skills/cloned/.git/HEAD 2>/dev/null; then

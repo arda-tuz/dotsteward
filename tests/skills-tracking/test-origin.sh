@@ -48,10 +48,12 @@ git init -q "$DS_TEST_ROOT/upstream"
 new_skill "$DS_TEST_ROOT/upstream"
 git -C "$DS_TEST_ROOT/upstream" add -A
 git -C "$DS_TEST_ROOT/upstream" commit -q -m "chore: a skill"
-git clone -q "$DS_TEST_ROOT/upstream" "$HOME/.agents/skills/cloned"
+# The remote is https; the repository above stands in for it.
+git -c "url.file://$DS_TEST_ROOT/upstream.insteadOf=https://github.com/example-org/cloned" \
+  clone -q https://github.com/example-org/cloned "$HOME/.agents/skills/cloned"
 reconcile_json
 assert_eq "$(git -C "$DS_TEST_ROOT/upstream" rev-parse HEAD)" "$(jq -r '.items["skill:cloned"].source.revision' <<<"$DS_STDOUT")"
-assert_eq "$DS_TEST_ROOT/upstream" "$(jq -r '.items["skill:cloned"].source.url' <<<"$DS_STDOUT")"
+assert_eq https://github.com/example-org/cloned "$(jq -r '.items["skill:cloned"].source.url' <<<"$DS_STDOUT")"
 assert_eq ask "$(pending_state cloned)"
 # A file tool writing into a downloaded skill does not make it the user's.
 agent_event claude PostToolUse post-tool-use-edit "$HOME/.agents/skills/cloned/SKILL.md"

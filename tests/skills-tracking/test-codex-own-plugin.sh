@@ -62,7 +62,8 @@ mkdir -p "$world/codex-upstream/.codex-plugin"
 printf '{"name": "cloned-tool", "version": "1.0.0"}\n' >"$world/codex-upstream/.codex-plugin/plugin.json"
 git -C "$world/codex-upstream" add -A
 git -C "$world/codex-upstream" commit -q -m "chore: a plugin"
-git clone -q "$world/codex-upstream" "$(home_of a)/.codex/plugins/cloned-tool"
+git -c "url.file://$world/codex-upstream.insteadOf=https://github.com/example-org/cloned-tool" \
+  clone -q https://github.com/example-org/cloned-tool "$(home_of a)/.codex/plugins/cloned-tool"
 assert_exit 0 ds a skills reconcile
 assert_eq ask "$(plugin_item a cloned-tool .state)"
 assert_eq downloaded "$(plugin_item a cloned-tool .origin)"

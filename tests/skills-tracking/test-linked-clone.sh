@@ -119,6 +119,8 @@ EXPECT_STATUS=1 ds_code a skills track plotting --all
 assert_contains "$DS_STDERR" "no remote"
 # Given a remote, the next full look knows where it comes from.
 git -C "$sources/local-only" remote add origin https://example.com/example-org/plotting.git
+# What a fetch of it would leave: a remote branch at the commit.
+git -C "$sources/local-only" update-ref refs/remotes/origin/main HEAD
 assert_exit 0 ds a skills reconcile --full
 assert_eq downloaded "$(item a plotting .origin)"
 assert_eq https://example.com/example-org/plotting.git "$(item a plotting .source.url)"
@@ -140,7 +142,8 @@ printf -- '---\nname: solo\ndescription: Synthetic skill.\n---\n' >"$solo/SKILL.
 printf 'Synthetic license\n' >"$solo/LICENSE"
 git -C "$solo" add -A
 git -C "$solo" commit -q -m "chore: a skill at the top"
-git clone -q "$solo" "$(home_of a)/.claude/skills/solo"
+git -c "url.file://$solo.insteadOf=https://github.com/example-org/solo" \
+  clone -q https://github.com/example-org/solo "$(home_of a)/.claude/skills/solo"
 printf 'an edit\n' >>"$(home_of a)/.claude/skills/solo/SKILL.md"
 wrote a solo
 assert_exit 0 ds a skills reconcile
@@ -153,7 +156,8 @@ mv "$(plugin_dir a plugin-upstream)" "$plugin_upstream"
 git -C "$plugin_upstream" init -q -b main
 git -C "$plugin_upstream" add -A
 git -C "$plugin_upstream" commit -q -m "chore: a plugin"
-git clone -q "$plugin_upstream" "$(plugin_dir a cloned-plugin)"
+git -c "url.file://$plugin_upstream.insteadOf=https://github.com/example-org/cloned-plugin" \
+  clone -q https://github.com/example-org/cloned-plugin "$(plugin_dir a cloned-plugin)"
 printf '\n' >>"$(plugin_dir a cloned-plugin)/.claude-plugin/plugin.json"
 tool_wrote a "$(plugin_dir a cloned-plugin)/.claude-plugin/plugin.json"
 assert_exit 0 ds a skills reconcile
@@ -245,7 +249,8 @@ printf -- '---\nname: graph-making\ndescription: Synthetic skill.\n---\n' >"$gra
 printf 'Synthetic license\n' >"$graphs/LICENSE"
 git -C "$graphs" add -A
 git -C "$graphs" commit -q -m "chore: a skill"
-git clone -q "$graphs" "$sources/graphs"
+git -c "url.file://$graphs.insteadOf=https://github.com/example-org/graphs" \
+  clone -q https://github.com/example-org/graphs "$sources/graphs"
 ln -s "$sources/graphs/graph-making" "$agents_skills/graph-making"
 assert_exit 0 ds a skills reconcile
 assert_eq downloaded "$(item a graph-making .origin)"

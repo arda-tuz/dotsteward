@@ -68,6 +68,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -75,7 +76,7 @@ from pathlib import Path
 from typing import Any
 
 from dotsteward_cli import atomic, config, host, locks, publish, report, writers
-from dotsteward_cli.skills import normal, plugins, reconcile, sleeper, state
+from dotsteward_cli.skills import normal, origin, plugins, reconcile, sleeper, state
 
 CAPTURE_LOCK = "capture.lock"
 # The licenses of pinned skills whose upstream keeps its license above the skill directory.
@@ -467,7 +468,48 @@ def _apply_copy(
     base: Mapping[str, Any],
     attempt: _Attempt,
 ) -> list[str]:
-    """Replays one skill onto the tree; the paths the commit may touch."""
+    """Replays one skill onto the tree; the paths the commit may touch. A skill pinned to the
+    commit of a clone goes as the tree of that commit, written beside the worktree."""
+    scratch = tempfile.mkdtemp(prefix="upstream.", dir=os.path.dirname(worktree))
+    try:
+        return _apply_copy_from(context, work, worktree, tip, tree, document, base, attempt, scratch)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _upstream_form(
+    path: str, answer: Mapping[str, Any], scratch: str, excludes: str, limit: int
+) -> tuple[normal.NormalForm | None, str | None]:
+    """For an answer that pins the commit of the clone holding PATH: the normal form of the
+    tree of that commit, and why there is none; (None, None) for any other answer."""
+    source = answer.get("source")
+    if answer.get("own") or not isinstance(source, Mapping) or not source.get("revision"):
+        return None, None
+    clone, _ = origin.clone_of(path)
+    if clone is None or clone.head != source["revision"]:
+        return None, None
+    destination = os.path.join(scratch, "tree")
+    try:
+        origin.write_tree(clone, str(source["revision"]), destination)
+    except (ValueError, OSError) as error:
+        return None, f"the tree of the pinned commit cannot be written: {error}"
+    try:
+        return normal.normal_form(destination, excludes, limit), None
+    except (normal.TooLarge, normal.NormalFormError) as error:
+        return None, f"the tree of the pinned commit cannot be read: {error}"
+
+
+def _apply_copy_from(
+    context: Mapping[str, Any],
+    work: Work,
+    worktree: str,
+    tip: str,
+    tree: Mapping[str, str],
+    document: dict[str, Any],
+    base: Mapping[str, Any],
+    attempt: _Attempt,
+    scratch: str,
+) -> list[str]:
     machine = reconcile.machine_name(context)
     declined_here = reconcile.declined_in(worktree, machine)
     path = work.path if work.path and os.path.isdir(work.path) else None
@@ -486,6 +528,16 @@ def _apply_copy(
         else:
             attempt.rejected.append((work, "too-large", digest))
         return []
+    if form is not None and path is not None:
+        upstream, why = _upstream_form(path, work.answer, scratch, excludes, reconcile.limit_bytes(context))
+        if why is not None or (upstream is not None and upstream.digest != form.digest):
+            # Only the tree of the commit goes: a file of this clone alone (ignored, untracked,
+            # changed) is never published as the upstream.
+            work.item["detail"] = why or "the copy is not the tree of the pinned commit of its clone"
+            attempt.rejected.append((work, "not-upstream", form.digest))
+            return []
+        if upstream is not None:
+            form = upstream
     declared = _frontmatter_name(path) if path else None
     if form is not None and _kept_back_as_before(work.item, form.digest, tip):
         attempt.repeated.append(work)
@@ -590,17 +642,18 @@ def _license_beside(worktree: str, directory: str, path: str, source: Mapping[st
     if not (isinstance(revision, str) and isinstance(within, str) and within not in ("", ".")):
         return []
     real = os.path.realpath(path)
-    top = publish.git(real, "rev-parse", "--show-toplevel").stdout.strip()
-    if not top:
+    clone, _ = origin.clone_of(real)
+    if clone is None:
         return []
+    top = clone.top
     parts = within.strip("/").split("/")
     for depth in range(len(parts) - 1, -1, -1):
         parent = "/".join(parts[:depth])
-        listed = publish.git(top, "ls-tree", "-z", f"{revision}:{parent}")
-        if listed.code != 0:
+        listed = origin.git(top, "ls-tree", "-z", f"{revision}:{parent}")
+        if listed is None or listed.returncode != 0:
             continue
         found = []
-        for line in listed.stdout.split("\0"):
+        for line in listed.stdout.decode(errors="replace").split("\0"):
             meta, _, name = line.partition("\t")
             fields = meta.split()
             if len(fields) == 3 and fields[1] == "blob" and name.lower().startswith("license"):
@@ -608,14 +661,14 @@ def _license_beside(worktree: str, directory: str, path: str, source: Mapping[st
         if not found:
             continue
         name, blob = sorted(found)[0]
-        content = publish.git(top, "cat-file", "blob", blob)
-        if content.code != 0:
+        content = origin.git(top, "cat-file", "blob", blob)
+        if content is None or content.returncode != 0:
             return []
         relative = os.path.join(LICENSES_DIR, directory)
         target = os.path.join(worktree, relative)
         shutil.rmtree(target, ignore_errors=True)
         os.makedirs(target)
-        with open(os.path.join(target, name), "w", encoding="utf-8") as handle:
+        with open(os.path.join(target, name), "wb") as handle:
             handle.write(content.stdout)
         return [relative]
     return []

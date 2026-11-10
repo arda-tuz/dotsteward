@@ -284,9 +284,23 @@ def _repository_list(directory: str) -> set[bytes] | None:
         return None
     if not any(os.path.isfile(os.path.join(directory, manifest)) for manifest in _PLUGIN_MANIFESTS):
         return None
+    from dotsteward_cli.skills import origin
+
     env = {key: value for key, value in os.environ.items() if key not in _REPOSITORY_VARIABLES}
     env["LC_ALL"] = "C"
-    argv = ["git", "-C", directory, "ls-files", "-z", "--cached", "--others", "--exclude-standard"]
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    # Nothing the repository configures runs (fsmonitor, hooks).
+    argv = [
+        "git",
+        *origin.SAFE_OPTIONS,
+        "-C",
+        directory,
+        "ls-files",
+        "-z",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+    ]
     try:
         result = subprocess.run(argv, env=env, capture_output=True, check=False)
     except OSError as error:

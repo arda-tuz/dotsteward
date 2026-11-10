@@ -28,23 +28,29 @@ and when), and `skills status` shows it for a declined skill. `--all` or `--here
 later takes a `--never` back. `--own` tracks your own copy of it without an upstream.
 
 A downloaded skill pins its upstream. From a clone that is the remote `origin` (without any
-credentials it may carry), the commit HEAD and the directory of the skill within the clone
-(`source`, `revision` and `source_path` of its lock entry). The clone counts only when another
-machine could fetch the same tree: a remote, a commit that holds the directory, and no change
-of the directory that the commit does not have (an untracked file counts). Otherwise the skill
-is unknown, and `skills status` and the refusal of `--all` say why; a directory with a `.git`
-of its own, or a link into a clone whose HEAD holds the directory, stays so even after a file
-tool wrote into it. Only the directory and the target
-of a link are looked at, never the directories above a real one. The vendored copy is the
-directory of the upstream as it is; when the upstream keeps its license above that directory,
-as most repositories do, the nearest `LICENSE*` above it at the pinned commit goes to
-`agent/skill-licenses/<directory>/`, where the license rule of `static` finds it. The answer looks
-at the clone again, so a clone cleaned up meanwhile is fine, and `skills reconcile --full`
-does the same for every unknown question. A clone that pulls by itself afterwards is newer
-than the pin, not drift: `agents install` leaves it alone and `agents check` passes with a
-note, as long as it holds no change of its own and its HEAD descends from the pinned commit
-(the update of pins moves the pin) or its remote is the pinned upstream (a pin moved first;
-a pull in the clone catches up). Never tracked: `~/.claude/skills/synced/`, `dotsteward-*`,
+credentials it may carry, in its user part, query or fragment), the commit HEAD and the
+directory of the skill within the clone (`source`, `revision` and `source_path` of its lock
+entry). The clone counts only when another machine could fetch the same tree: a remote that
+is https or ssh (a path of this machine is not), a commit HEAD that holds the directory and
+that a remote branch of the clone holds too (a commit of the clone alone is not upstream),
+and files that are exactly the tree of that commit (an uncommitted change, an untracked file
+or one git ignores, such as an `.env`, counts). Otherwise the skill is unknown, and `skills
+status` and the refusal of `--all` say why, naming the files; a directory with a `.git` of its
+own, or a link into a clone whose upstream has the directory, stays so even after a file tool
+wrote into it. Only the directory and the target of a link are looked at, never the
+directories above a real one. What goes to the repository is the tree of the pinned commit,
+read from the objects of the clone, never the files of the directory. When the upstream
+keeps its license above that directory, as most repositories do, the nearest `LICENSE*` above
+it at the pinned commit goes to `agent/skill-licenses/<directory>/`, where the license rule of
+`static` finds it; `pins apply` moves it with the pin. Nothing the clone configures runs: git
+reads it with fsmonitor, the untracked cache and hooks off. The answer looks at the clone
+again, so a clone cleaned up meanwhile is fine, and `skills reconcile --full` does the same
+for every unknown question. A clone that pulls by itself afterwards is newer than the pin,
+not drift: `agents install` leaves it alone and `agents check` passes with a note, as long as
+the copy is exactly the tree of HEAD, every commit of HEAD is on the remote, and HEAD
+descends from the pinned commit (the update of pins moves the pin) or the remote is the
+pinned upstream (a pin moved first; a pull in the clone catches up). Anything else that
+differs from the lock, a commit of the clone alone included, is drift, red as before. Never tracked: `~/.claude/skills/synced/`, `dotsteward-*`,
 `~/.codex/skills/.system`, plugin and project skills.
 
 ## Plugins of Claude Code
