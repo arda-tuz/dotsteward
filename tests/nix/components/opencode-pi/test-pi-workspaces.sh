@@ -1,10 +1,11 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # The install step of the Pi package follows the workspaces of the release it builds: each package
-# below packages/ that is linked into node_modules becomes a copy there (the coding-agent workspace
-# itself is the package), then the links that would dangle go. A release that drops or adds a
-# workspace builds without an edit of the derivation; a workspace without a name stops the build
-# and names its package.json. The step runs here as the builder runs it, against a synthetic tree.
+# below packages/ that is published (not "private", such as the evals of the release) becomes a
+# copy of itself in node_modules in place of its link (the coding-agent workspace itself is the
+# package), then the links that would dangle go. A release that drops or adds a workspace builds
+# without an edit of the derivation; a workspace without a name, or one npm did not link, stops the
+# build and says so. The step runs here as the builder runs it, against a synthetic tree.
 # shellcheck source=tests/nix/components/opencode-pi/helpers.sh
 source "$DS_REPO_ROOT/tests/nix/components/opencode-pi/helpers.sh"
 
@@ -43,8 +44,10 @@ postInstall")
 # A release whose workspaces are not those of an older one: client, protocol and server are
 # gone, env and schema are new, and one has no scope.
 tree=$DS_TEST_ROOT/release
+mkdir -p "$tree/build/packages/evals"
+printf '{"name": "@earendil-works/pi-evals", "private": true}\n' >"$tree/build/packages/evals/package.json"
 synthetic_tree "$tree" @earendil-works/pi-ai:ai @earendil-works/pi-agent-core:agent @earendil-works/pi-tui:tui \
-  @earendil-works/pi-env:env @earendil-works/pi-schema:schema example-plain:plain
+  @earendil-works/pi-env:env @earendil-works/pi-schema:schema example-plain:plain @earendil-works/pi-evals:evals
 assert_exit 0 run_install "$tree"
 nm=$tree/out/lib/node_modules/pi-monorepo/node_modules
 for name in @earendil-works/pi-ai @earendil-works/pi-agent-core @earendil-works/pi-tui @earendil-works/pi-env \
@@ -52,8 +55,9 @@ for name in @earendil-works/pi-ai @earendil-works/pi-agent-core @earendil-works/
   [[ -d $nm/$name && ! -L $nm/$name ]] || ds_fail "$name is not a copy in node_modules"
   assert_eq "code of $name" "$(<"$nm/$name/dist/index.js")" "the copy of $name"
 done
-[[ ! -e $nm/@earendil-works/pi-coding-agent && ! -L $nm/@earendil-works/pi-coding-agent ]] ||
-  ds_fail "the coding agent itself is no copy in node_modules"
+for name in @earendil-works/pi-coding-agent @earendil-works/pi-evals; do
+  [[ ! -e $nm/$name && ! -L $nm/$name ]] || ds_fail "$name is no copy in node_modules"
+done
 assert_eq "" "$(find "$nm" -type l -lname '*/packages/*' -print)" "no link into the build tree is left"
 assert_eq "" "$(find "$nm/.bin" -xtype l -print)" "no command link dangles"
 
@@ -64,3 +68,11 @@ printf '{"version": "1.0.0"}\n' >"$tree/build/packages/broken/package.json"
 synthetic_tree "$tree" @earendil-works/pi-ai:ai
 assert_exit 1 run_install "$tree"
 assert_contains "$DS_STDERR" "packages/broken/package.json has no name"
+
+# A published workspace that npm did not link: the layout is not what the package expects.
+tree=$DS_TEST_ROOT/unlinked
+mkdir -p "$tree/build/packages/loose"
+printf '{"name": "@earendil-works/pi-loose"}\n' >"$tree/build/packages/loose/package.json"
+synthetic_tree "$tree" @earendil-works/pi-ai:ai
+assert_exit 1 run_install "$tree"
+assert_contains "$DS_STDERR" "@earendil-works/pi-loose (packages/loose) is not linked in node_modules"
