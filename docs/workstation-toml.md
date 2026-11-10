@@ -215,8 +215,8 @@ The rules of the updates. A later release reads them here; until then the
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `policy.official_sources_only` | `true` | Versions come from official sources only. |
-| `policy.persistent_agentic_updates` | `false` | Whether an update may start an agent on its own. |
-| `policy.native_application_updates` | `true` | An application with its own updater keeps it. |
+| `policy.persistent_agentic_updates` | `false` | Whether an update may start an agent on its own. Must be `false`: `dotsteward static` refuses any other value. |
+| `policy.native_application_updates` | `true` | An application with its own updater keeps it. Must be `true`: `dotsteward static` refuses any other value. |
 | `policy.scheduled_repository_updates` | `false` | Whether the intent and the shared locks change on a schedule. |
 | `policy.major_version_review_required` | `true` | A constrained component, a series change or a framework major waits for a review. |
 | `policy.observed_state_push` | `true` | Whether a machine publishes the state it observes to its own state branch. |

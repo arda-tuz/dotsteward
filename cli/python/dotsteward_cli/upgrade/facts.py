@@ -120,15 +120,15 @@ class SelfUpdate:
 
 def self_updates(active: list[dict[str, Any]], instance: config.Instance) -> list[SelfUpdate]:
     """The components that declare their update command and leave updating to it: ``updater = "self"``,
-    or no updater where the policy keeps native updaters and no package manager owns the files."""
-    native = instance.config.get("policy", {}).get("native_application_updates", True) is True
+    or no updater where no package manager owns the files. The policy keeps native updaters: its
+    native_application_updates is true by rule (`dotsteward static` refuses false)."""
     found = []
     for component in active:
         declared = component.get("self_update")
         if not isinstance(declared, Mapping) or not declared.get("command"):
             continue
         updater = _component_settings(instance, component["name"]).get("updater")
-        if updater == _SELF or (updater is None and native and component.get("method") != _DEB):
+        if updater == _SELF or (updater is None and component.get("method") != _DEB):
             found.append(
                 SelfUpdate(component["name"], tuple(declared["command"]), tuple(declared.get("version") or ()))
             )

@@ -567,9 +567,9 @@ check_policy() {
   # shellcheck disable=SC2016 # jq program
   json_lines problems - '
     (if .policy.persistent_agentic_updates != false then
-      "workstation.toml: policy.persistent_agentic_updates must be false" else empty end),
+      "workstation.toml: policy.persistent_agentic_updates must be false; remove the key, its default is false" else empty end),
     (if .policy.native_application_updates != true then
-      "workstation.toml: policy.native_application_updates must be true" else empty end)' <<<"$DS_CONFIG_JSON" ||
+      "workstation.toml: policy.native_application_updates must be true; remove the key, its default is true" else empty end)' <<<"$DS_CONFIG_JSON" ||
     die "cannot read the configuration"
   for entry in "${problems[@]}"; do
     fail "$entry"

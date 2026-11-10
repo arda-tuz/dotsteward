@@ -378,12 +378,49 @@ def _ancestor(instance: config.Instance, commit: str, of: str) -> bool:
     return publishing.is_ancestor(instance.root, commit, of)
 
 
-def _move(instance: config.Instance, name: str, new: str, old: str | None, why: str) -> None:
-    """refs/heads/state/NAME from OLD (None: no branch yet) to NEW, or a refusal when another
-    run moved it in between."""
+class Busy(Exception):
+    """Another run moved the branch at the same time, twice: exit status 6, run it again."""
+
+
+def _checked_out_in(instance: config.Instance, name: str) -> str | None:
+    """The work tree where refs/heads/state/NAME is checked out, None when it is nowhere."""
+    listing = _git(instance, "worktree", "list", "--porcelain").stdout
+    path = None
+    for line in listing.splitlines():
+        if line.startswith("worktree "):
+            path = line.removeprefix("worktree ")
+        elif line == f"branch {local_ref(name)}":
+            return path
+    return None
+
+
+def _move(instance: config.Instance, name: str, new: str, old: str | None, why: str) -> bool:
+    """refs/heads/state/NAME from OLD (None: no branch yet) to NEW; False when another run
+    moved it in between. A branch checked out in a work tree is never moved under it."""
+    where = _checked_out_in(instance, name)
+    if where is not None:
+        raise Refusal(f"{branch(name)} is checked out in {where}; 'git worktree remove' it first")
     moved = _git(instance, "update-ref", "-m", f"dotsteward: {why}", local_ref(name), new, old or _ZERO)
-    if moved.code != 0:
-        raise Refusal(f"another run moved {branch(name)} at the same time; run it again ({moved.stderr.strip()})")
+    return moved.code == 0
+
+
+def _move_or_busy(instance: config.Instance, name: str, new: str, old: str | None, why: str) -> None:
+    if not _move(instance, name, new, old, why):
+        raise Busy(f"another run moved {branch(name)} at the same time; run it again")
+
+
+def _commit_parents(instance: config.Instance, name: str, tree: str, parents: Sequence[str]) -> str:
+    arguments = [part for parent in parents for part in ("-p", parent)]
+    return _out(
+        instance,
+        *host.commit_identity(instance.root, "HEAD"),
+        "commit-tree",
+        tree,
+        *arguments,
+        "-F",
+        "-",
+        stdin=host.commit_message(f"chore(state): record {name}", name),
+    )
 
 
 def _commit(instance: config.Instance, name: str, text: str, parent: str | None) -> str:
@@ -393,16 +430,7 @@ def _commit(instance: config.Instance, name: str, text: str, parent: str | None)
 
 
 def _commit_tree(instance: config.Instance, name: str, tree: str, parent: str | None) -> str:
-    return _out(
-        instance,
-        *host.commit_identity(instance.root, "HEAD"),
-        "commit-tree",
-        tree,
-        *(["-p", parent] if parent else []),
-        "-F",
-        "-",
-        stdin=host.commit_message(f"chore(state): record {name}", name),
-    )
+    return _commit_parents(instance, name, tree, [parent] if parent else [])
 
 
 def _fetch_remote(instance: config.Instance, name: str) -> tuple[str, str | None, str]:
@@ -446,6 +474,60 @@ def _push_allowed(instance: config.Instance) -> bool:
     return instance.config.get("policy", {}).get("observed_state_push", True) is not False
 
 
+# A record whose machine key is not the one of the branch takes the branch over only on the
+# reinstall of the machine (`host init --reuse` writes reused into machine.json).
+def _may_take_over(instance: config.Instance, env: Mapping[str, str], name: str) -> None:
+    record_ = machine.read_machine(config.state_root(instance, env)) or {}
+    if record_.get("reused") is not True:
+        raise Refusal(
+            f"only the reinstall of {name} takes over {branch(name)}: this machine was not named with "
+            f"'dotsteward host init --reuse'; 'dotsteward host rename NEW' gives it a name of its own"
+        )
+
+
+def _key_at(instance: config.Instance, commit: str) -> str | None:
+    document = _document_at(instance, commit)
+    key = document.get("machine_key") if document is not None else None
+    return key if isinstance(key, str) else None
+
+
+def _when(instance: config.Instance, commit: str) -> str:
+    document = _document_at(instance, commit) or {}
+    return str(document.get("recorded_at") or "")
+
+
+def _integrate(
+    instance: config.Instance, name: str, key: str, mine: str | None, theirs: str | None, *, take_over: bool
+) -> str | None:
+    """The local branch once it holds THEIRS, the tip of the remote: the newest record is the
+    tip, and every record of both stays in the history (a merge when they diverged). Records of
+    another machine key are two machines with one name, unless this one takes over."""
+    shown = branch(name)
+    if theirs is None or theirs == mine:
+        return mine
+    if mine is not None and _key_at(instance, mine) != key:
+        raise _two_machines(name)
+    if _key_at(instance, theirs) != key:
+        if not take_over:
+            raise _two_machines(name)
+        if mine is None:
+            raise Refusal(f"nothing recorded for {name} yet; 'dotsteward state record --no-push' records it first")
+        taken = _commit_tree(instance, name, _out(instance, "rev-parse", f"{mine}^{{tree}}"), theirs)
+        _move_or_busy(instance, name, taken, mine, f"take over {shown}")
+        return taken
+    if mine is None or _ancestor(instance, mine, theirs):
+        _move_or_busy(instance, name, theirs, mine, f"take {shown} of the remote")
+        return theirs
+    if _ancestor(instance, theirs, mine):
+        return mine
+    # Two checkouts of this machine recorded apart: the newer record is the tip (the remote one
+    # on a tie), and both histories stay, so no record that waited is lost.
+    newest = mine if _when(instance, mine) > _when(instance, theirs) else theirs
+    merged = _commit_parents(instance, name, _out(instance, "rev-parse", f"{newest}^{{tree}}"), [theirs, mine])
+    _move_or_busy(instance, name, merged, mine, f"join the records of {shown}")
+    return merged
+
+
 def record(
     instance: config.Instance,
     env: Mapping[str, str] | None = None,
@@ -455,39 +537,57 @@ def record(
     push_after: bool = True,
 ) -> int:
     """Records DOCUMENT (default: what ``observe`` sees) on the state branch of this machine
-    and pushes it: the exit status of ``state record``. Raises Finding, Refusal."""
+    and pushes it: the exit status of ``state record``. Raises Finding, Refusal, Busy."""
     env = os.environ if env is None else env
-    name, _ = _this_machine(instance, env)
+    name, key = _this_machine(instance, env)
     document = dict(document) if document is not None else observe(instance, env, by=by)
     if document.get("host") != name:
         raise Refusal(f"a record of {document.get('host')} is no record of this machine, {name}")
     text = _check(instance, document, env)
-    tip = _tip(instance, local_ref(name))
-    if tip is not None and _same(_document_at(instance, tip), document):
-        _log(f"the state of {name} is as recorded on {branch(name)}")
-    else:
-        _move(instance, name, _commit(instance, name, text, tip), tip, f"record the state of {name}")
-        _log(f"recorded the state of {name} on {branch(name)}")
-    return push(instance, env) if push_after else 0
+    pushing = push_after and _push_allowed(instance)
+    if pushing:
+        # What the other checkouts of this machine published comes first: a record is the
+        # newest, and the same state as the last record anywhere is no new commit.
+        outcome, theirs, _ = _fetch_remote(instance, name)
+        if outcome == publishing.OK and theirs is not None and _key_at(instance, theirs) == key:
+            _integrate(instance, name, key, _tip(instance, local_ref(name)), theirs, take_over=False)
+    for attempt in (1, 2):
+        tip = _tip(instance, local_ref(name))
+        if tip is not None and _key_at(instance, tip) != key:
+            raise _two_machines(name)
+        if tip is not None and _same(_document_at(instance, tip), document):
+            _log(f"the state of {name} is as recorded on {branch(name)}")
+            break
+        if _move(instance, name, _commit(instance, name, text, tip), tip, f"record the state of {name}"):
+            _log(f"recorded the state of {name} on {branch(name)}")
+            break
+        if attempt == 2:
+            raise Busy(f"other runs kept recording on {branch(name)} at the same time; run it again")
+    if not push_after:
+        return 0
+    return push(instance, env)
 
 
 def _two_machines(name: str) -> Refusal:
     return Refusal(
         f"{branch(name)} on the remote belongs to another machine (another machine key): two machines use the "
         f"name {name}. 'dotsteward host rename NEW' gives this machine a name of its own; when this machine is the "
-        f"reinstall of {name}, 'dotsteward state push --take-over' continues its records"
+        f"reinstall of {name} (named with 'dotsteward host init --reuse'), 'dotsteward state push --take-over' "
+        f"continues its records"
     )
 
 
 def push(instance: config.Instance, env: Mapping[str, str] | None = None, *, take_over: bool = False) -> int:
     """Sends what this machine recorded and the remote does not have: the exit status of
-    ``state push``. Raises Refusal."""
+    ``state push``. Raises Refusal, Busy."""
     env = os.environ if env is None else env
     name, key = _this_machine(instance, env)
     shown = branch(name)
     if not _push_allowed(instance):
         _log(f"[policy] observed_state_push = false: {shown} stays on this machine")
         return 0
+    if take_over:
+        _may_take_over(instance, env, name)
     for attempt in range(1, publishing.SKILL_ATTEMPTS + 1):
         mine = _tip(instance, local_ref(name))
         if mine is None:
@@ -499,27 +599,12 @@ def push(instance: config.Instance, env: Mapping[str, str] | None = None, *, tak
                 raise Refusal(f"the remote refused the fetch of {shown}: {detail}")
             _wait(f"{shown} waits: no network or no login ({detail or 'timeout'})")
             return EXIT_OFFLINE
-        if theirs is not None and (theirs == mine or _ancestor(instance, mine, theirs)):
-            if theirs != mine:
-                _move(instance, name, theirs, mine, f"take {shown} of the remote")
+        sending = _integrate(instance, name, key, mine, theirs, take_over=take_over)
+        assert sending is not None
+        if sending == theirs:
             _git(instance, "update-ref", remote_ref(name), theirs)
             _log(f"{shown} is on the remote; nothing to publish")
             return 0
-        sending = mine
-        if theirs is not None and not _ancestor(instance, theirs, mine):
-            remote_document = _document_at(instance, theirs)
-            ours = remote_document is not None and remote_document.get("machine_key") == key
-            if not ours and not take_over:
-                raise _two_machines(name)
-            mine_document = _document_at(instance, mine)
-            if ours and _same(remote_document, mine_document):
-                _move(instance, name, theirs, mine, f"take {shown} of the remote")
-                _git(instance, "update-ref", remote_ref(name), theirs)
-                _log(f"{shown} is on the remote; nothing to publish")
-                return 0
-            tree = _out(instance, "rev-parse", f"{mine}^{{tree}}")
-            sending = _commit_tree(instance, name, tree, theirs)
-            _move(instance, name, sending, mine, f"record the state of {name} on the remote tip")
         pushed = publishing.git(
             instance.root, "push", "--quiet", "origin", f"{sending}:{local_ref(name)}", seconds=publishing.PUSH_SECONDS
         )
@@ -731,6 +816,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Finding as finding:
         _error(str(finding))
         return EXIT_PRIVACY
+    except Busy as busy:
+        _wait(str(busy))
+        return EXIT_OFFLINE
     except (Refusal, host.Refusal, locks.LockBusy) as refusal:
         _error(str(refusal))
         return EXIT_REFUSAL

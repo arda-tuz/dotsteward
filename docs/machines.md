@@ -180,13 +180,19 @@ reads it. A finding records nothing and exits 4. A record equal to the last one,
 time, is no commit. `host` is the name the owner chose, `machine_key` the key of
 `<state>/machine.json`.
 
-Every push is a plain fast-forward. When the remote branch moved on and its records carry this
-machine key, another checkout of this machine recorded too, and the record becomes one commit on
-the tip of the remote. Records with another machine key are another machine with the same name:
-the push stops until `dotsteward host rename NEW` gives this machine a name of its own, or, when
-this machine is the reinstall of that one, `dotsteward state push --take-over` continues its
-records. Without a network the record waits on this machine (exit 6): the local branch ahead of
-the remote one is the queue, and the next `state record` or `state push` sends it.
+Every push is a plain fast-forward, and the newest record is the tip. A record first takes in
+what the other checkouts of this machine published, so the same state as the last record anywhere
+is no new commit. When two checkouts of this machine (the same machine key) recorded apart, a
+merge commit joins both histories: no record that waited is lost, and the tree of the tip is the
+newer record by `recorded_at` (the remote one on a tie). Records with another machine key are
+another machine with the same name: neither `record` nor `push` lands on them, and the local
+branch never takes them as its own. `dotsteward host rename NEW` gives this machine a name of its
+own; only the reinstall of that machine (named with `dotsteward host init --reuse`, which writes
+`reused` into `<state>/machine.json`) continues its records with `dotsteward state push
+--take-over`. Without a network the record waits on this machine (exit 6): the local branch ahead
+of the remote one is the queue, and the next `state record` or `state push` sends it. Two records
+at the same time in one checkout both land (the second one again on the new tip, exit 6 when that
+fails too), and a state branch checked out in a work tree is never moved under it.
 `[policy] observed_state_push = false` keeps the branch on this machine.
 
 `dotsteward state fetch` brings the branches of every machine to

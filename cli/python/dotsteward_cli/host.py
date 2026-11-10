@@ -255,6 +255,9 @@ def cmd_init(args: argparse.Namespace, instance: config.Instance, env: Mapping[s
     profile = (
         args.profile or machine.recorded_profile(state, instance) or kept.get("profile") or host_file.get("profile")
     )
+    # A name another machine registered is the reinstall of that machine (a terminal answer or
+    # --reuse said so): only such a machine takes over the state branch of the name.
+    reused = (record or {}).get("reused") is True or (record is None and name in registered)
     machine.write_machine(
         state,
         {
@@ -269,6 +272,7 @@ def cmd_init(args: argparse.Namespace, instance: config.Instance, env: Mapping[s
                 "platform": platforms.platform_id(env),
                 "tags": tags if tags is not None else kept.get("tags", host_file.get("tags", [])),
             },
+            **({"reused": True} if reused else {}),
         },
     )
     if record is None:

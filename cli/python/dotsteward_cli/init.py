@@ -601,7 +601,10 @@ def load_seeds(components: Sequence[str]) -> list[Seed]:
         if not messages and document["component"] != name:
             messages.append(f"component {document['component']!r} does not match its directory {name}")
         if not messages and "policy" in document["versions_lock"]:
-            messages.append("versions_lock.policy: the policy is workstation.toml [policy], not a lock value")
+            messages.append(
+                "versions_lock.policy: the policy is workstation.toml [policy], not a lock value; "
+                "remove it from the seed"
+            )
         if messages:
             raise Refusal(f"invalid seed {relative}: {'; '.join(messages)}")
         inputs = document["flake_inputs"]

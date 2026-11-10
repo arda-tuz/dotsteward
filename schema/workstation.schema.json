@@ -474,12 +474,12 @@
         "persistent_agentic_updates": {
           "type": "boolean",
           "default": false,
-          "description": "Whether an update may start an agent on its own."
+          "description": "Whether an update may start an agent on its own. Must be false: dotsteward static refuses any other value."
         },
         "native_application_updates": {
           "type": "boolean",
           "default": true,
-          "description": "An application with its own updater keeps it."
+          "description": "An application with its own updater keeps it. Must be true: dotsteward static refuses any other value."
         },
         "scheduled_repository_updates": {
           "type": "boolean",
