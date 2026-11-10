@@ -46,6 +46,8 @@ cat >"$catalog/package.nix" <<'EOF'
 EOF
 
 root=$(instance_copy "$nix_instance_fixtures/example")
+# A catalog of one: the opt-out of apt-policy in the fixture names a component it lacks.
+sed -i '/^\[components.apt-policy\]$/,+1d' "$root/workstation.toml"
 cat >>"$root/workstation.toml" <<'EOF'
 
 [components.example-cat]

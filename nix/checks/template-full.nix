@@ -150,7 +150,8 @@ pkgs.runCommand "dotsteward-check-template-full"
         {name: "opencode-pi", method: "official-binary"},
         {name: "vscode", method: "deb"},
         {name: "example-app", method: "nix"},
-        {name: "example-term", method: "official-binary"}
+        {name: "example-term", method: "official-binary"},
+        {name: "apt-policy", method: "system"}
       ]' "$manifest" >/dev/null || fail "manifest components: $(jq -c '[.components[] | {name, method}]' "$manifest")"
     jq -e '.login_shell == "$HOME/.nix-profile/bin/zsh"' "$manifest" >/dev/null ||
       fail "login shell: $(jq -c .login_shell "$manifest")"

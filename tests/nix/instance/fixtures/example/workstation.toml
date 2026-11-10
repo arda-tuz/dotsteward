@@ -39,6 +39,10 @@ static = ["tests/static.sh"]
 [components]
 order = ["example-term", "example-app"]
 
+# The components under test alone: apt-policy is on by default on Linux.
+[components.apt-policy]
+enable = false
+
 [components.example-app]
 enable = true
 

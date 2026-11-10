@@ -70,6 +70,10 @@ state_version = "25.11"
 [profiles]
 names = ["workstation"]
 
+# Codex alone: apt-policy, on by default on Linux, would need its system file in place.
+[components.apt-policy]
+enable = false
+
 [components.codex]
 enable = true
 $extra

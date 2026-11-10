@@ -132,7 +132,7 @@ assert_jq "$dir/agent/skills.lock.json" \
   --slurpfile lock "$dir/versions.lock.json"
 assert_json "$dir/flake.lock" '.nodes.root.inputs | keys == ["dotsteward", "herdr", "home-manager", "nixpkgs"]'
 assert_json "$dir/.dotsteward/manifest.x86_64-linux.json" \
-  '[.components[].name] == ["shell", "herdr", "claude-code", "codex", "opencode-pi", "vscode"]'
+  '[.components[].name] == ["shell", "herdr", "claude-code", "codex", "opencode-pi", "vscode", "apt-policy"]'
 assert_committed "$dir"
 instance_contract "$dir" x86_64-linux
 assert_eq "" "$(init_temp_dirs)" "no temporary directory is left"

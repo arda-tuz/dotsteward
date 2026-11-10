@@ -18,8 +18,10 @@ methods() {
       set -Eeuo pipefail
       source /framework/cli/lib/lib.sh
       source /framework/cli/lib/methods.sh
-      '"$1"'
-      printf "%s: %s\n" "$METHODS_STATUS" "$METHODS_DETAIL"'
+      code=0
+      '"$1"' || code=$?
+      printf "%s: %s\n" "$METHODS_STATUS" "$METHODS_DETAIL"
+      exit "$code"'
 }
 
 assert_exit 1 methods '_methods_system_check apt-policy'
