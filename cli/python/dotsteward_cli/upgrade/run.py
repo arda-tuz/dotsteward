@@ -53,6 +53,8 @@ WAITING_REF = "refs/dotsteward/upgrade/waiting"
 _WORK = "work"
 # What the waiting commit moved, next to it: {schema_version, commit, moved}.
 _WAITING_FILE = "waiting.json"
+# The most gates a red gate may cost to find what it is about.
+_BISECT_GATES = 12
 # What a user service in one of these states runs.
 _RUNNING_STATES = {"active", "activating", "reloading", "deactivating"}
 # Session units the way back never stops or restarts, even when a generation names them: a restart
@@ -888,17 +890,19 @@ class Upgrade(runner.Runner):
         self, latest: Path, skips: Sequence[str], moved: Sequence[Mapping[str, Any]], rows: Sequence[Mapping[str, Any]]
     ) -> int | None:
         """The gate of the tip with only ROWS of MOVED moved: its status, None when the writer did not
-        move exactly those or the gate could not judge the tree."""
-        # A new clone of the tip: the writer starts from what the first one started from.
-        if not self._open_work(self.tip) or not self._prepare():
+        move exactly those or the gate could not judge the tree. Each try is a new clone of the tip
+        (the writer starts from what the first one started from) and a gate against the tip, so a
+        publish of another machine meanwhile changes nothing: the publish runs again on its tip."""
+        if not self._open_work(self.tip):
             return None
         wanted = {str(row.get("id")) for row in rows}
         others = [str(row.get("id")) for row in moved if str(row.get("id")) not in wanted]
-        answer = self._apply(latest, [*skips, *others], record=False)
-        if answer is None or {str(row.get("id")) for row in answer.get("moved") or ()} != wanted:
-            return None
+        if wanted:
+            answer = self._apply(latest, [*skips, *others], record=False)
+            if answer is None or {str(row.get("id")) for row in answer.get("moved") or ()} != wanted:
+                return None
         started = time.time()
-        status = self._ds_quiet("gate", "--scope", "update")
+        status = self._ds_quiet("gate", "--scope", "update", "--expected-base", self.tip)
         if status != 0 and self._gate_environment(started) is not None:
             return None
         return status
@@ -906,79 +910,172 @@ class Upgrade(runner.Runner):
     def _red_gate(
         self, latest: Path, skips: Sequence[str], moved: list[dict[str, Any]], status: int
     ) -> list[dict[str, Any]]:
-        """The gate refused the moved pins. Held is only what the red can be put on: the run bisects by
-        the groups of the writer, the gate again on the tip with some groups moved, until one group is
-        red by itself. When the gate is green with every other group, those are what the clone holds
-        now and what this run goes on with (the return value); else nothing goes on and nothing else is
-        held, so the next run tries the rest. When no group is red by itself, every moved pin is held."""
+        """The gate refused the moved pins. Held is only what the red can be put on, never an innocent
+        group. First the gate of the tip itself: red, the base is red and nothing is held. Then the
+        groups of the writer the red needs (delta debugging on complements): the gate of all moves but
+        a part; a part without which it is green narrows the search, in halves and then finer. One
+        group left: it is held, and the others, which the gate just passed, go on in this run (the
+        return value). Several left: the whole set is gated once more; green, everything goes on (the
+        red was not there again); red, the others go on and the several wait, or, when every group is
+        among them, every moved pin is held: the red cannot be attributed. A gate that cannot judge
+        its tree ends the search with nothing held."""
         reason = f"the gate said no ({status})"
         log = str(Path(self.state_root) / "update" / "validate.log")
         groups = list(dict.fromkeys(str(row.get("group")) for row in moved))
+        tried: dict[frozenset[str], int | None] = {}
+        budget = [_BISECT_GATES]
+        # What the clone holds now: the moves without these groups, after their gate.
+        last: list[frozenset[str] | None] = [None]
 
-        def rows_of(names: Sequence[str]) -> list[dict[str, Any]]:
-            return [row for row in moved if str(row.get("group")) in names]
+        def rows_without(names: Sequence[str]) -> list[dict[str, Any]]:
+            return [row for row in moved if str(row.get("group")) not in names]
 
-        culprit: str | None = None
-        judged = True
-        if len(groups) == 1:
-            culprit = groups[0]
-        elif not self.framework_moved:
-            _say(f"the gate said no: looking for the group it is about, among {len(groups)}")
-            candidates = groups
-            while len(candidates) > 1 and judged:
-                half = candidates[: len(candidates) // 2]
-                found = self._gate_with(latest, skips, moved, rows_of(half))
-                judged = found is not None
-                candidates = half if found else candidates[len(half) :]
-            if judged:
-                alone = self._gate_with(latest, skips, moved, rows_of(candidates))
-                judged = alone is not None
-                culprit = candidates[0] if alone else None
-        if not judged:
-            # A bisection the gate could not judge says nothing: nothing is held, the next run tries again.
+        def gate_without(names: Sequence[str], *, again: bool = False) -> int | None:
+            key = frozenset(names)
+            if key in tried and not again:
+                return tried[key]
+            if budget[0] <= 0:
+                return None
+            budget[0] -= 1
+            tried[key] = self._gate_with(latest, skips, moved, rows_without(names))
+            last[0] = key
+            return tried[key]
+
+        def clone_without(names: Sequence[str]) -> bool:
+            """The clone holds the moves without NAMES, which the gate passed."""
+            return last[0] == frozenset(names) or gate_without(names, again=True) == 0
+
+        def item(
+            held: Sequence[Mapping[str, Any]],
+            attribution: str | None,
+            message: str,
+            *,
+            pending: bool = True,
+            **fields: Any,
+        ) -> None:
             self.run.item(
                 "gate-failed",
+                pending=pending,
                 log=log,
                 moved=[row.get("id") for row in moved],
-                held=[],
-                attribution=None,
+                held=[row.get("id") for row in held],
+                attribution=attribution,
+                message=message,
+                **fields,
+            )
+
+        def hold(rows: Sequence[dict[str, Any]], why: str) -> None:
+            self._hold_moved(rows, [], why)
+            # A publish that runs again leaves them too.
+            self.skips = [*self.skips, *(str(row.get("id")) for row in rows)]
+
+        def could_not_judge() -> list[dict[str, Any]]:
+            self.run.step("gate", report.PARTIAL if self.offline else status, detail="could not judge a part")
+            item(
+                [],
+                None,
+                "the gate refused the new pins and could not judge a part of them: nothing was "
+                "committed and nothing is held, the next run tries again",
                 run=self._command_again(),
-                message="the gate refused the new pins and could not judge a part of them: nothing was committed "
-                "and nothing is held, the next run tries again",
-            )
-            self.run.step("gate", status)
-            return []
-        if culprit is None:
-            self.run.step("gate", status)
-            self._hold_moved(moved, [], reason)
-            self.run.item(
-                "gate-failed",
-                log=log,
-                moved=[row.get("id") for row in moved],
-                held=[row.get("id") for row in moved],
-                attribution=None,
-                message="the gate refused the new pins and the red could not be attributed to one group of them: "
-                "every moved pin is held, nothing was committed",
             )
             return []
-        guilty = rows_of([culprit])
-        rest = [row for row in moved if row not in guilty]
-        self._hold_moved(guilty, [], f"{reason}, about group {culprit}")
-        green = bool(rest) and self._gate_with(latest, skips, moved, rest) == 0
-        self.run.item(
-            "gate-failed",
-            pending=not green,
-            log=log,
-            moved=[row.get("id") for row in moved],
-            held=[row.get("id") for row in guilty],
-            attribution=culprit,
-            message=f"the gate refused group {culprit}: its pins are held"
-            + ("; the other pins passed the gate and go on" if green else "; nothing was committed"),
-        )
-        if green:
+
+        if self.framework_moved:
+            self.run.step("gate", status)
+            hold(moved, f"{reason}; not tried: the framework moved")
+            item(
+                moved,
+                None,
+                "the gate refused the new pins and the framework moved, so no group was tried "
+                "alone: every moved pin is held, nothing was committed",
+            )
+            return []
+        _say(f"the gate said no: looking for what it is about, among {len(groups)} group(s)")
+        base = gate_without(groups)
+        if base is None:
+            return could_not_judge()
+        if base != 0:
+            self.run.step("gate", status, detail="the base is red")
+            item(
+                [],
+                None,
+                "the gate refuses the tip itself, without any new pin: the base is red, so nothing "
+                "is held and nothing was committed; see the log",
+                base_red=True,
+                run=self._command_again(),
+            )
+            return []
+        suspects = groups
+        parts = 2
+        while len(suspects) > 1:
+            size = -(-len(suspects) // parts)
+            chunks = [suspects[index : index + size] for index in range(0, len(suspects), size)]
+            found = None
+            for chunk in chunks:
+                result = gate_without(chunk)
+                if result is None:
+                    return could_not_judge()
+                if result == 0:
+                    found = chunk
+                    break
+            if found is not None:
+                suspects, parts = found, 2
+            elif parts >= len(suspects):
+                break
+            else:
+                parts = min(len(suspects), parts * 2)
+        rest = rows_without(suspects)
+        if len(suspects) == 1:
+            culprit = suspects[0]
+            guilty = [row for row in moved if str(row.get("group")) == culprit]
+            hold(guilty, f"{reason}, about group {culprit}")
+            if not rest:
+                self.run.step("gate", status, detail=f"refused group {culprit}")
+                item(guilty, culprit, f"the gate refused group {culprit}: its pins are held; nothing else moved")
+                return []
+            # The clone must hold what the gate passed: the tree of the moves without the group.
+            if not clone_without([culprit]):
+                return could_not_judge()
             self.run.step("gate", report.OK, detail=f"without group {culprit}, which it refused")
+            item(
+                guilty,
+                culprit,
+                f"the gate refused group {culprit}: its pins are held; the other pins passed the gate and go on",
+                pending=False,
+            )
             return rest
-        self.run.step("gate", status, detail=f"refused group {culprit}")
+        whole = gate_without([], again=True)
+        if whole is None:
+            return could_not_judge()
+        if whole == 0:
+            self.run.step("gate", report.OK, detail="green when gated again")
+            item(
+                [],
+                None,
+                "the gate refused the new pins once and passed them when gated again: everything goes on",
+                pending=False,
+            )
+            return list(moved)
+        if len(suspects) < len(groups):
+            if not clone_without(suspects):
+                return could_not_judge()
+            self.run.step("gate", report.OK, detail=f"without groups {', '.join(suspects)}")
+            item(
+                [],
+                None,
+                f"the gate refused groups {', '.join(suspects)} together and none of them alone: "
+                "none is held, the other pins go on, the next run tries them again",
+                pending=False,
+            )
+            return rest
+        self.run.step("gate", status)
+        hold(moved, reason)
+        item(
+            moved,
+            None,
+            "the gate refused the new pins and the red could not be attributed to one group of "
+            "them: every moved pin is held, nothing was committed",
+        )
         return []
 
     def _self_updates(self) -> None:

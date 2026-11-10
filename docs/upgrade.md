@@ -178,15 +178,19 @@ left to the vendor. Without a terminal it is never applied.
 
 ## When something goes red
 
-- **The gate says no:** only what the red can be put on is held. With more than one group of the
-  writer moved, the run bisects: the gate runs again on the tip with half of the groups moved, then
-  half of that, until one group is red by itself (about log2 of the groups, plus two gates). That
-  group gets a hold; when the gate is green with every other group, those are committed and go on in
-  the same run, else nothing is committed and the next run tries the rest. `gate-failed` names the
-  group in `attribution` and the pins in `held`. When no group is red by itself (the red needs two of
-  them), or the framework moved, the red cannot be attributed: every moved pin is held, `attribution`
-  is null and the item says so; nothing is committed, exit 1. A bisection gate that cannot judge its
-  tree holds nothing.
+- **The gate says no:** only what the red can be put on is held, never an innocent group. The run
+  first gates the tip itself: red, the base is red, the item says so (`base_red`) and nothing is
+  held. Else it gates the tip with all moves but a part of the groups of the writer, halves first,
+  then finer: a part without which the gate is green narrows the search. One group left: it gets a
+  hold, and the other groups, which the gate just passed, are committed and go on in the same run.
+  Several left: the whole set is gated once more; green, everything goes on (the red was not there
+  again); red, the others go on and those wait unheld, or, when every group is among them, the red
+  cannot be attributed and every moved pin is held, exit 1. `gate-failed` names the group in
+  `attribution` and the pins in `held`. At most 12 gates go into the search; each runs in a new
+  clone of the tip against the tip, so another machine that publishes meanwhile changes nothing
+  (the publish runs again on its tip, without what is held). When the framework moved, nothing is
+  tried: every moved pin is held and the item says why. A gate that cannot judge its tree holds
+  nothing.
 - **The gate could not judge the tree:** another gate holds its lock, its preflight failed, its log
   says the disk is full or the memory ran out, or the network went away during it. `gate-failed`
   names it in `environment`; nothing is committed and nothing is held, and the next run tries again.
