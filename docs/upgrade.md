@@ -113,8 +113,8 @@ Update these too? [y/N] n
    The producer is `[hosts] producer`; without one it is this machine when `hosts/` holds at most one
    file, and nobody when it holds more (the command to name one is said). A machine without a name or
    a profile moves no pins, since nothing could prove them there: the command to run is said. Flake
-   inputs move at most once a week; every other pin, such as an official binary of Codex, moves when
-   upstream does. A framework that moved runs the writer once more with its own CLI, and the rest of
+   inputs move at most once a week, counted from the publish of their last move: a red gate or a red
+   E2E starts no week. Every other pin, such as an official binary of Codex, moves when upstream does. A framework that moved runs the writer once more with its own CLI, and the rest of
    the run with it too. What fails in one group of the writer is named, and what the others moved
    goes on. Skills with a recorded transform are counted and left to `dotsteward-update` without
    holding the exit status; other items of the writer wait in `review.json` under `pins-apply`.
@@ -224,7 +224,7 @@ The heaviest one of a run is the status, in the order 4, 1, 3, 6, 0 ([exit-codes
 | `review.json` | what needs a person or an agent |
 | `upgrade/analysis.json` | the read only analysis of the last tracked run |
 | `upgrade/latest.json` | the rows of the last `pins latest` |
-| `upgrade/nix-week.json` | when flake inputs last moved |
+| `upgrade/nix-week.json` | when a move of the flake inputs was last published |
 | `upgrade/e2e-key.json` | the key of the last green E2E |
 | `upgrade/waiting.json` | what the waiting commit moved |
 | `plugins/scan.json` | the digests of the installed plugin trees and the open findings |

@@ -721,7 +721,6 @@ class Upgrade(runner.Runner):
             self._remove_work()
             return
         moved = list(answer.get("moved") or ())
-        flake_moved = bool(answer.get("flake_inputs_moved"))
         if answer.get("framework_moved"):
             # The new framework writes the rest, with its own manifest and its own engine.
             self.framework_moved = True
@@ -730,9 +729,6 @@ class Upgrade(runner.Runner):
                 self._remove_work()
                 return
             moved += answer.get("moved") or ()
-            flake_moved = flake_moved or bool(answer.get("flake_inputs_moved"))
-        if flake_moved:
-            self._start_week()
         if not self._work_git("status", "--porcelain").stdout.strip():
             self.framework_moved = False
             self._remove_work()
@@ -1176,6 +1172,9 @@ class Upgrade(runner.Runner):
             status = self._ds_quiet("txn", "publish", "--scope", "update", "--expected-base", self.tip)
             if status == 0:
                 self.run.step("publish", report.OK)
+                if any(str(row.get("id")).startswith(_FLAKE_INPUTS[:-1]) for row in self.moved):
+                    # The week starts with what went out: a red gate or E2E moved nothing.
+                    self._start_week()
                 # `txn publish` named the machine in it: what the remote has is what the clone has now.
                 self._keep_waiting(self.moved)
                 commit = str(self.waiting)
