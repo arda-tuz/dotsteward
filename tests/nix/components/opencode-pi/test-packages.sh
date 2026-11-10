@@ -58,7 +58,7 @@ assert_contains "$pre" 'package/dist/providers/data'
 assert_contains "$(jq -r .buildPhase <<<"$phases")" 'npm run build:offline'
 install=$(jq -r .postInstall <<<"$phases")
 # The workspaces come from the release (test-pi-workspaces.sh runs the step).
-assert_contains "$install" 'for manifest in packages/*/package.json; do'
+assert_contains "$install" "jq -r '.workspaces // [] | if type == \"object\" then .packages // [] else . end | .[]' package.json"
 assert_contains "$install" "find \"\$nm\" -type l -lname '*/packages/*' -delete"
 assert_contains "$install" "find \"\$nm/.bin\" -xtype l -delete"
 fixup=$(jq -r .postFixup <<<"$phases")

@@ -52,27 +52,33 @@ pkgs.buildNpmPackage (finalAttrs: {
 
   # The workspace packages are symlinks into the build tree: replace each
   # with a copy, then drop the links that would dangle in the output. The
-  # workspaces are those of the release: every package.json below packages/
-  # that is published (not "private", such as the evals); the coding agent
-  # is the package itself. A release that drops or adds one builds as it is.
+  # workspaces are those the root package.json of the release declares
+  # (packages/*, apps/*, ...); one that is "private" (the evals, the example
+  # extensions) loses its link, and the coding agent is the package itself.
+  # A release that drops or adds one builds as it is.
   postInstall = ''
-    local nm="$out/lib/node_modules/pi-monorepo/node_modules" manifest dir name
-    for manifest in packages/*/package.json; do
-      dir=''${manifest%/package.json}
-      [[ $dir != "$npmWorkspace" ]] || continue
-      [[ $(jq -r '.private // false' "$manifest") != true ]] || continue
-      name=$(jq -r '.name // empty' "$manifest")
-      if [[ -z $name ]]; then
-        echo "pi-package.nix: $manifest has no name; the workspaces of this Pi release are not what the package expects" >&2
-        exit 1
-      fi
-      if [[ ! -L $nm/$name ]]; then
-        echo "pi-package.nix: $name ($dir) is not linked in node_modules; the npm layout of this Pi release is not what the package expects" >&2
-        exit 1
-      fi
-      rm "$nm/$name"
-      cp -r "$dir" "$nm/$name"
-    done
+    local nm="$out/lib/node_modules/pi-monorepo/node_modules" pattern dir manifest name
+    while IFS= read -r pattern; do
+      for dir in $pattern; do
+        manifest=$dir/package.json
+        [[ -f $manifest && $dir != "$npmWorkspace" ]] || continue
+        name=$(jq -r '.name // empty' "$manifest")
+        if [[ $(jq -r '.private // false' "$manifest") == true ]]; then
+          [[ -z $name || ! -L $nm/$name ]] || rm "$nm/$name"
+          continue
+        fi
+        if [[ -z $name ]]; then
+          echo "pi-package.nix: $manifest has no name; the workspaces of this Pi release are not what the package expects" >&2
+          exit 1
+        fi
+        if [[ ! -L $nm/$name ]]; then
+          echo "pi-package.nix: $name ($dir) is not linked in node_modules; the npm layout of this Pi release is not what the package expects" >&2
+          exit 1
+        fi
+        rm "$nm/$name"
+        cp -r "$dir" "$nm/$name"
+      done
+    done < <(jq -r '.workspaces // [] | if type == "object" then .packages // [] else . end | .[]' package.json)
     find "$nm" -type l -lname '*/packages/*' -delete
     find "$nm/.bin" -xtype l -delete
   '';
