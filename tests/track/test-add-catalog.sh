@@ -27,6 +27,10 @@ toml_at HEAD '.components["example-viewer"] == {enable: true}'
 toml_at HEAD '.components["example-app"].enable == true and .components["example-app"].track == ["example-tracked-too"]'
 assert_eq "" "$(git -C "$up_inst" status --porcelain)" "the checkout is clean"
 apply_report '.command == "apply" and .status == "ok" and .data.published == true'
+# The state of this machine follows the intent: apply records it after the publish.
+git -C "$up_bare" cat-file blob refs/heads/state/example-host:state.json >"$DS_TEST_ROOT/state.json" ||
+  ds_fail "add left no record of the state of this machine on the remote"
+assert_json "$DS_TEST_ROOT/state.json" ".recorded_by == \"apply\" and .intent_commit == \"$head\""
 # The comments and the layout of the file stay as they were.
 assert_eq "$(git -C "$up_inst" show HEAD^:workstation.toml)" \
   "$(git -C "$up_inst" show HEAD:workstation.toml | head -n "$(git -C "$up_inst" show HEAD^:workstation.toml | wc -l)")" \

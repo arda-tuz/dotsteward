@@ -41,8 +41,8 @@ assert_contains "$output" "published"
 apply_report '.command == "apply" and .status == "ok" and .exit_code == 0'
 apply_report ".data.commit == \"$head\" and .data.base == \"$base\""
 apply_report '.data.profile == "workstation" and .data.activate == true and .data.publish == true'
-apply_report '[.steps[].name] == ["stage", "generate", "gate", "commit", "rebuild", "e2e", "publish"]'
-apply_report '[.steps[] | select(.status == "ok" and (.seconds | type) == "number")] | length == 7'
+apply_report '[.steps[].name] == ["stage", "generate", "gate", "commit", "rebuild", "e2e", "publish", "state"]'
+apply_report '[.steps[] | select(.status == "ok" and (.seconds | type) == "number")] | length == 8'
 
 # Again: nothing to apply. --json prints the report, and nothing else, on standard output.
 clear_log

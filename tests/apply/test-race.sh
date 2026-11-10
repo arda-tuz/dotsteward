@@ -43,7 +43,7 @@ assert_order "^generate  root=$up_inst\$" '^static ' "^rebuild --profile worksta
   "^e2e .*--expected-remote-base $other( |.*)root=$up_inst\$"
 apply_report '.status == "ok" and .exit_code == 0 and .data.published == true'
 apply_report ".data.base == \"$other\" and .data.commit == \"$head\""
-apply_report '[.steps[].name] == ["stage", "generate", "gate", "commit", "rebuild", "e2e", "replay", "gate", "rebuild", "e2e", "publish"]'
+apply_report '[.steps[].name] == ["stage", "generate", "gate", "commit", "rebuild", "e2e", "replay", "gate", "rebuild", "e2e", "publish", "state"]'
 apply_report '[.steps[] | select(.status != "ok")] == []'
 
 # --- the push is rejected as no fast-forward: a race as well ---------------------------------
