@@ -10,6 +10,7 @@ written against the same contract (see [concepts.md](concepts.md)).
 
 | Component | What it provides |
 | --- | --- |
+| [`apt-policy`](components/apt-policy.md) | The system files that bind the other drivers of apt (unattended-upgrades, the software updaters, a plain `apt upgrade`) to what `dotsteward upgrade` does with the kernel and driver classes. Linux only, method `system`. |
 | [`claude-code`](components/claude-code.md) | Claude Code, the coding agent CLI (`claude`), on Linux and darwin, with its agent rules file, skill link root, settings targets and, optionally, Claude Code plugins and a launch environment. |
 | [`codex`](components/codex.md) | The Codex CLI (`codex`), its agent rules link, its configuration file as a settings target, its legacy skill root and, optionally, Codex plugins. |
 | [`craft-anything`](components/craft-anything.md) | Craft Anything, an application that explains how software works and helps build your own, from the official DEB that each GitHub release of [storytold/craft-anything](https://github.com/storytold/craft-anything) carries, kept up to date through the local APT bridge with plain `apt update && apt upgrade`. |

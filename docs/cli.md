@@ -60,6 +60,7 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | Command | Summary |
 | --- | --- |
 | [`agents`](#agents) | Install or check the agent tools, the skill layout and the agents checks of a profile |
+| [`apply`](#apply) | Finish a maintain transaction in one command: gate, commit, activate, E2E, publish |
 | [`bootstrap`](#bootstrap) | Bootstrap stage 1 (run by ./bootstrap.sh once Nix is installed) |
 | [`component`](#component) | Run a component hook with the hook environment |
 | [`context`](#context) | Print the facts of the instance on this machine (--json for skills) |
@@ -68,10 +69,12 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | [`e2e`](#e2e) | Verify this machine against the instance: the end-to-end checks of a profile |
 | [`gate`](#gate) | Validate the candidate tree of a maintenance transaction (the gate) |
 | [`generate`](#generate) | Regenerate the .dotsteward/ mirrors and the derived lock values |
-| [`host`](#host) | Name this machine and bring its host file to the remote (init, publish, show, list, rename, producer, check) |
+| [`host`](#host) | Name this machine and bring its host file to the remote (init, publish, show, list, rename, producer, check, platform) |
+| [`incoming`](#incoming) | Answer what other machines changed: install it here, ask later, or never on this machine |
 | [`init`](#init) | Create a new instance from the framework template (--dir, --remote, --components) |
 | [`install`](#install) | Run the system-install phase (deb transaction, phase hooks) or check every install method |
 | [`login-shell`](#login-shell) | Set, migrate or check the stable login shell of the instance |
+| [`maintain`](#maintain) | Open a maintain transaction (maintain begin), which dotsteward apply finishes |
 | [`pins`](#pins) | Check, sync, research and move the pinned versions of the instance's lock files |
 | [`preflight`](#preflight) | Read-only check of this machine against the instance fast path (exit 3: adaptive route) |
 | [`probes`](#probes) | Run the version, presence and feature probes of a generation's manifest |
@@ -80,6 +83,7 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | [`scan`](#scan) | Scan files, the staged index or a commit range for secrets and private data |
 | [`settings`](#settings) | Sync tracked application settings with the instance's settings buffer |
 | [`skills`](#skills) | Track the user's own skills, and report what the instance means for this machine |
+| [`state`](#state) | Record the state this machine observes on its own state branch, push it, fetch and show the state of every machine |
 | [`static`](#static) | Check the static contracts of an instance or of the framework source |
 | [`sync`](#sync) | Old name of generate: a warning, then generate with the same arguments (until 2.0.0) |
 | [`txn`](#txn) | Prepare, publish and report a maintenance transaction |
@@ -124,6 +128,40 @@ never a failure; see `dotsteward skills status`.
 
 Exit status: 0 done or verified, 1 refusal or failed check, or the status
 of a failed command.
+```
+
+## `apply`
+
+Finish a maintain transaction in one command: gate, commit, activate, E2E, publish.
+
+```text
+usage: dotsteward apply [-h] [-m SUBJECT] [--activate | --no-activate]
+                        [--publish | --no-publish] [--profile PROFILE]
+                        [--json]
+
+Finishes a maintain transaction in one command: stages every change of the
+checkout, regenerates the mirrors, runs the gate in the maintain scope,
+commits with SUBJECT and the trace line of this machine, then with --activate
+installs the system-level components an adopt-mode profile needs, runs rebuild
+--switch and E2E against the base, and with --publish runs txn publish; when
+another machine published first, it moves the commits onto the new tip, proves
+and activates them again and pushes again, three times at most. [maintain]
+activate and publish of workstation.toml are the defaults (both false). Run
+the same command again after a fix or a sudo step: it does what is left. Exit
+status: 0 done, 1 a refusal or a red step, 2 usage error, 3 a sudo step or a
+person waits (review.json: a change of the same lines here and on the remote,
+or a remote that kept moving), 6 no network: the push waits, 130 interrupted.
+
+options:
+  -h, --help            show this help message and exit
+  -m, --message SUBJECT
+                        the conventional commit subject
+  --activate            activate here
+  --no-activate         do not activate
+  --publish             publish the commits
+  --no-publish          keep the commits here
+  --profile PROFILE     the profile to activate (default: this machine's)
+  --json                print the report on standard output
 ```
 
 ## `bootstrap`
@@ -515,7 +553,10 @@ the arguments; the clone (top of a git work tree, on instance.branch,
 origin exactly instance.remote); the lock <state>/update/validate.lock (a
 running gate is refused at once); untracked files (refused, Nix does not
 see them); the base OID; in the update scope the allowlist of changed
-paths; the candidate tree id; `nix --version`; the memo; then five quiet
+paths; the candidate tree id; the writer classes (on a machine that is not
+the producer of the base, no pin of the base moves, and no machine writes
+the host file of another: `writer-class` lines, docs/machines.md); `nix
+--version`; the memo; then five quiet
 steps, each with its output in <state>/update/validate.log:
   preflight    the binary cache answers (gate.cache_url) and /nix/store
                has gate.min_free_gib GiB free; never fall back to mirrors
@@ -565,9 +606,12 @@ Options:
 
 Memo: a passed record answers without running a step when the tree id,
 `nix --version`, the gate version (the framework VERSION), the framework
-override and the sha256 of the configured privacy denylist all equal the
-record's; scope and root are not part of the key. A failed run keeps the
-previous record.
+override, the sha256 of the configured privacy denylist and the scope all
+equal the record's (txn publish takes a record of its own scope only); the
+root is not part of the key. A memo answer for another base records that
+base, which the writer classes and the update allowlist were checked
+against first; txn publish takes a record of its own base only. A failed
+run keeps the previous record.
 
 validation.json (schema_version "1.1"): result, tree_oid, base_oid, scope,
 nix_version, gate_version, framework_override (or null), denylist_sha256
@@ -611,7 +655,7 @@ refused before any Nix call, because Nix does not see them. Exit codes:
 
 ## `host`
 
-Name this machine and bring its host file to the remote (init, publish, show, list, rename, producer, check).
+Name this machine and bring its host file to the remote (init, publish, show, list, rename, producer, check, platform).
 
 ```text
 usage: dotsteward host [-h] SUBCOMMAND ...
@@ -627,6 +671,8 @@ positional arguments:
     rename    give this machine another name
     producer  name the machine that moves the upstream values
     check     check the host files and the machines lists of the tree
+    platform  print the platform of this machine and what its platform files
+              say
 
 options:
   -h, --help  show this help message and exit
@@ -737,10 +783,100 @@ usage: dotsteward host check [-h]
 
 Checks every hosts/<name>.toml against schema/host.schema.json and nix.systems
 and profiles.names, and every machines list of the skills lock and of the
-plugin tables: not empty, and only names in hosts/.
+plugin tables: not empty, and only names in hosts/; every
+platforms/<platform>.toml against schema/platform.schema.json, and a fast path
+names its release.
 
 options:
   -h, --help  show this help message and exit
+```
+
+### `host platform`
+
+```text
+usage: dotsteward host platform [-h] [--json]
+
+Prints the platform of this machine (ubuntu-24.04, macos-15), its layers from
+the most specific one (the release, the operating system, linux or darwin),
+the files of platforms/ that exist for them and what they say about
+components, each from the most specific layer: a component that is unavailable
+here is left out by every command (skills effective names the reason
+platform).
+
+options:
+  -h, --help  show this help message and exit
+  --json      print one JSON document
+```
+
+## `incoming`
+
+Answer what other machines changed: install it here, ask later, or never on this machine.
+
+```text
+usage: dotsteward incoming [-h] [--json] SUBCOMMAND ...
+
+What other machines changed. The repository moves forward by itself; a new or
+changed skill, plugin or component lands on this machine only when the answer
+says so: install, ask later, or never on this machine. Without a subcommand:
+brings the checkout forward and asks, one item at a time; without a terminal
+every item is ask later, review.json holds the questions and the exit status
+is 3.
+
+positional arguments:
+  SUBCOMMAND
+    list      what waits, without a fetch
+    show      what an item is about
+    answer    answer one item
+
+options:
+  -h, --help  show this help message and exit
+  --json      print one JSON document
+
+Exit status: 0 done, 1 refusal, 2 usage error, 3 questions wait and no
+terminal can answer them.
+```
+
+### `incoming list`
+
+```text
+usage: dotsteward incoming list [-h] [--json]
+
+options:
+  -h, --help  show this help message and exit
+  --json      print one JSON document
+```
+
+### `incoming show`
+
+```text
+usage: dotsteward incoming show [-h] [--json] ID
+
+positional arguments:
+  ID
+
+options:
+  -h, --help  show this help message and exit
+  --json      print one JSON document
+```
+
+### `incoming answer`
+
+```text
+usage: dotsteward incoming answer [-h] (--install | --never) [--json] ID
+
+--install installs a skill or a plugin at once, removes what the repository no
+longer holds for this machine, and leaves a component to the next upgrade or
+rebuild, with what it needs; --never records the answer in the host file of
+this machine. To ask later, do nothing.
+
+positional arguments:
+  ID
+
+options:
+  -h, --help  show this help message and exit
+  --install   take the change
+  --never     never on this machine
+  --json      print one JSON document
 ```
 
 ## `init`
@@ -848,6 +984,46 @@ shell is executable, listed in the shells file and the user's login shell.
 
 Exit status: 0 done or verified, 1 refusal or failed check, or the status
 of a failed system command.
+```
+
+## `maintain`
+
+Open a maintain transaction (maintain begin), which dotsteward apply finishes.
+
+```text
+usage: dotsteward maintain [-h] begin ...
+
+Opens a maintain transaction: checks that this is the instance checkout on its
+branch, fast-forwards it when it is only behind the remote, runs the read-only
+preflight of the profile, records the base with txn prepare in the maintain
+scope and reads the settings status. Exit status: 0 open, 1 refused, 2 usage
+error, 3 open with questions for the user, or the adaptive route (nothing
+opened), 6 no network (nothing opened).
+
+positional arguments:
+  begin
+    begin     open a maintain transaction
+
+options:
+  -h, --help  show this help message and exit
+```
+
+### `maintain begin`
+
+```text
+usage: dotsteward maintain begin [-h] [--profile PROFILE] [--json]
+
+Opens a maintain transaction: checks that this is the instance checkout on its
+branch, fast-forwards it when it is only behind the remote, runs the read-only
+preflight of the profile, records the base with txn prepare in the maintain
+scope and reads the settings status. Exit status: 0 open, 1 refused, 2 usage
+error, 3 open with questions for the user, or the adaptive route (nothing
+opened), 6 no network (nothing opened).
+
+options:
+  -h, --help         show this help message and exit
+  --profile PROFILE  the profile of the preflight (default: this machine's)
+  --json             print one JSON document on standard output
 ```
 
 ## `pins`
@@ -1065,6 +1241,7 @@ Sync tracked application settings with the instance's settings buffer.
 usage: local-maintained-files [-h] [--repo REPO] [--home HOME]
                               [--state-dir STATE_DIR]
                               [--targets-file TARGETS_FILE]
+                              [--inactive-components INACTIVE_COMPONENTS]
                               {status,apply,flush,resolve,reconcile,verify,track,track-file,untrack,validate} ...
 
 Sync tracked application settings with the instance's settings buffer.
@@ -1092,6 +1269,9 @@ options:
                         files)
   --targets-file TARGETS_FILE
                         component settings targets and reload hooks (JSON)
+  --inactive-components INACTIVE_COMPONENTS
+                        JSON list of components not active here: the entries
+                        of their targets wait
 ```
 
 ### `settings status`
@@ -1220,7 +1400,8 @@ positional arguments:
     status     what the machine knows about the own skills of the lock
     reconcile  compare the skill roots with what is known, without network
     capture    publish the skills that wait, from a separate worktree
-    track      answer the question about a skill: --all, --here or --never
+    track      answer the question about a skill: --all, --here, --never or
+               --later
     resolve    settle a conflict: the local copy or the repository wins
     diff       the three trees of a skill, to compare them
     forget     take a skill out of the repository, for all machines
@@ -1298,14 +1479,16 @@ options:
 ### `skills track`
 
 ```text
-usage: dotsteward skills track [-h] [--all | --here | --never] [--own]
-                               [--no-capture]
+usage: dotsteward skills track [-h] [--all | --here | --never | --later]
+                               [--own] [--no-capture]
                                SKILL
 
 --all puts the skill into the lock for every machine, --here for this machine
-only, --never remembers in the host file of this machine that it stays out. A
-downloaded skill keeps its upstream pinned; --own tracks your own copy without
-one, which also turns a pinned skill into yours.
+only, --never remembers in the host file of this machine that it stays out.
+--later declines nothing: the sessions stop asking, and skills status keeps
+listing it. A downloaded skill keeps its upstream pinned; --own tracks your
+own copy without one, which also turns a pinned skill into yours. --all or
+--here takes an earlier --never back.
 
 positional arguments:
   SKILL
@@ -1315,6 +1498,7 @@ options:
   --all         for all machines
   --here        for this machine only
   --never       never on this machine
+  --later       not now: declines nothing, the sessions stop asking
   --own         your own copy, without an upstream
   --no-capture  record the answer; the next capture takes it
 ```
@@ -1418,6 +1602,93 @@ options:
                         default: the enabled agents
 ```
 
+## `state`
+
+Record the state this machine observes on its own state branch, push it, fetch and show the state of every machine.
+
+```text
+usage: dotsteward state [-h] SUBCOMMAND ...
+
+The state each machine observes, on the branch state/<name> of the instance
+remote.
+
+positional arguments:
+  SUBCOMMAND
+    record    record the state of this machine on its state branch and push it
+    push      send the records of this machine that the remote does not have
+    fetch     bring the state branches of every machine
+    show      print the recorded state of a machine
+
+options:
+  -h, --help  show this help message and exit
+
+Exit status: 0 done, 1 refusal, 2 usage error, 4 the record breaks its schema
+or the privacy scan found something (nothing was recorded), 6 no network or no
+login (the record waits; run it again).
+```
+
+### `state record`
+
+```text
+usage: dotsteward state record [-h] [--no-push]
+
+Observes this machine (platform, kernel, active generation and its last E2E
+run, the enabled components of the intent that apply here, the installed
+versions of the packages a deb component installs or follows), holds the
+document to schema/state.schema.json and the intent, scans it with the privacy
+policy of the instance and commits state.json on refs/heads/state/<name>
+without touching the checkout. A record equal to the last one is no commit.
+Then it pushes like state push.
+
+options:
+  -h, --help  show this help message and exit
+  --no-push   record on this machine only
+```
+
+### `state push`
+
+```text
+usage: dotsteward state push [-h] [--take-over]
+
+Pushes state/<name> without force. When the remote branch moved on and its
+records come from this machine, the record becomes one commit on its tip; when
+they come from another machine, the push stops. [policy] observed_state_push =
+false keeps the branch on this machine.
+
+options:
+  -h, --help   show this help message and exit
+  --take-over  this machine is the reinstall of the machine whose name it has:
+               continue the records of its branch
+```
+
+### `state fetch`
+
+```text
+usage: dotsteward state fetch [-h]
+
+Fetches refs/heads/state/* of the remote to refs/remotes/origin/state/*.
+
+options:
+  -h, --help  show this help message and exit
+```
+
+### `state show`
+
+```text
+usage: dotsteward state show [-h] [--json] [NAME]
+
+Prints the recorded state of NAME (default: this machine): the local branch of
+this machine, what the last state fetch brought for another. --json prints
+{host, this_machine, source, queued, state}.
+
+positional arguments:
+  NAME        a machine name
+
+options:
+  -h, --help  show this help message and exit
+  --json      print one JSON document
+```
+
 ## `static`
 
 Check the static contracts of an instance or of the framework source.
@@ -1452,8 +1723,10 @@ Instance checks, in this order:
   hosts          every hosts/<name>.toml is valid and named like a machine, and
                  every machines key of the lock and of the plugin tables names
                  known machines (dotsteward host check)
-  versions-lock  versions.lock.json: schema_version "1.0", no persistent
-                 agentic updates, native application updates kept
+  versions-lock  versions.lock.json: schema_version "1.0"; a policy left in
+                 it is read by nothing (a warning)
+  policy         workstation.toml [policy]: no persistent agentic updates,
+                 native application updates kept
   allowlist      no update allowlist entry (gate.update_allowlist and the
                  committed manifest mirrors) matches the settings buffer
   protected      byte-protected files keep their sha256 ([protected])
@@ -1552,8 +1825,8 @@ publish
   origin/<branch>, a new instance before its first push, is refused with
   the `git push -u` to run); at least one commit after
   the base, which must be an ancestor of HEAD; the HEAD tree is the tree
-  of a passed validation.json, made for the same scope and without a
-  framework override; when the transaction activated a tree on this
+  of a passed validation.json, made for the same scope and the same base
+  and without a framework override; when the transaction activated a tree on this
   machine (<state>/current/activation.json of rebuild --switch: its tree
   is the HEAD tree, or its revision a commit after the base), that tree
   is the HEAD tree and <state>/update/e2e.json records a passed E2E run
@@ -1561,11 +1834,19 @@ publish
   the repository checks (publishing without an activation needs no E2E
   record); the commit subjects (update scope: the last one is exactly
   commit.update_subject; maintain scope: every one after the base is a
-  conventional commit); a fresh fetch (60 s) finds origin/<branch>
-  still at the base; HEAD is pushed to <branch> without force (180 s) and
-  the remote branch is verified to be HEAD (60 s). When the fetch finds
-  the remote branch already at HEAD, the commit is already published:
-  nothing is pushed and the exit status is 0. Finally the canonical
+  conventional commit); a fresh fetch (60 s, into refs/dotsteward/txn/tip
+  and origin/<branch>) finds the remote branch still at the base, else
+  exit 3 and nothing is pushed; on a named machine every commit to publish
+  gets the line Dotsteward-Machine: <name>, whoever wrote it, with the same
+  tree, author and dates; HEAD is pushed to <branch> without force (180 s),
+  and a push rejected as no fast-forward is exit 3 as well; a fetch then
+  makes sure the remote holds HEAD or a commit after it (another machine
+  may push at the same moment). When the first fetch finds the remote
+  branch already at HEAD, the commit is already published: nothing is
+  pushed and the exit status is 0. Without a network the exit status is 6;
+  a push whose answer got lost and that landed is published. `dotsteward
+  apply` and `dotsteward upgrade` move their commits onto the new tip after
+  an exit 3 and publish again. Finally the canonical
   checkout (canonical_repo of <state>/host-overrides/inventory.json, else
   instance.checkout) is fast-forwarded when it is a clean clone of
   instance.remote on <branch> at the base; any other state is a warning,
@@ -1583,7 +1864,9 @@ status
                             record is the file's object, or null when the
                             file is absent or not a JSON object
 
-Exit status: 0 done (already published included), 1 refused or failed.
+Exit status: 0 done (already published included), 1 refused or failed,
+3 publish only: the remote moved since the base (a race another machine won;
+nothing was pushed), 6 publish only: no network (nothing was pushed).
 ```
 
 ## `update`
@@ -1625,8 +1908,8 @@ publish
   origin/<branch>, a new instance before its first push, is refused with
   the `git push -u` to run); at least one commit after
   the base, which must be an ancestor of HEAD; the HEAD tree is the tree
-  of a passed validation.json, made for the same scope and without a
-  framework override; when the transaction activated a tree on this
+  of a passed validation.json, made for the same scope and the same base
+  and without a framework override; when the transaction activated a tree on this
   machine (<state>/current/activation.json of rebuild --switch: its tree
   is the HEAD tree, or its revision a commit after the base), that tree
   is the HEAD tree and <state>/update/e2e.json records a passed E2E run
@@ -1634,11 +1917,19 @@ publish
   the repository checks (publishing without an activation needs no E2E
   record); the commit subjects (update scope: the last one is exactly
   commit.update_subject; maintain scope: every one after the base is a
-  conventional commit); a fresh fetch (60 s) finds origin/<branch>
-  still at the base; HEAD is pushed to <branch> without force (180 s) and
-  the remote branch is verified to be HEAD (60 s). When the fetch finds
-  the remote branch already at HEAD, the commit is already published:
-  nothing is pushed and the exit status is 0. Finally the canonical
+  conventional commit); a fresh fetch (60 s, into refs/dotsteward/txn/tip
+  and origin/<branch>) finds the remote branch still at the base, else
+  exit 3 and nothing is pushed; on a named machine every commit to publish
+  gets the line Dotsteward-Machine: <name>, whoever wrote it, with the same
+  tree, author and dates; HEAD is pushed to <branch> without force (180 s),
+  and a push rejected as no fast-forward is exit 3 as well; a fetch then
+  makes sure the remote holds HEAD or a commit after it (another machine
+  may push at the same moment). When the first fetch finds the remote
+  branch already at HEAD, the commit is already published: nothing is
+  pushed and the exit status is 0. Without a network the exit status is 6;
+  a push whose answer got lost and that landed is published. `dotsteward
+  apply` and `dotsteward upgrade` move their commits onto the new tip after
+  an exit 3 and publish again. Finally the canonical
   checkout (canonical_repo of <state>/host-overrides/inventory.json, else
   instance.checkout) is fast-forwarded when it is a clean clone of
   instance.remote on <branch> at the base; any other state is a warning,
@@ -1656,7 +1947,9 @@ status
                             record is the file's object, or null when the
                             file is absent or not a JSON object
 
-Exit status: 0 done (already published included), 1 refused or failed.
+Exit status: 0 done (already published included), 1 refused or failed,
+3 publish only: the remote moved since the base (a race another machine won;
+nothing was pushed), 6 publish only: no network (nothing was pushed).
 ```
 
 ## `upgrade`

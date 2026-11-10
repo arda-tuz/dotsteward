@@ -188,3 +188,17 @@ Preselected for new instances on: `x86_64-linux`.
 | Platform | Default method | Also supported | Pin (`versions.lock.json`) |
 | --- | --- | --- | --- |
 | Linux (x86_64) | `deb` | none | `desktop_packages.craft-anything` |
+
+## apt-policy
+
+The system files that bind the other drivers of apt (unattended-upgrades, the software updaters, a plain `apt upgrade`) to what `dotsteward upgrade` does with the kernel and driver classes. Linux only, method `system`.
+
+```toml
+[components.apt-policy]
+enable = false
+```
+
+| Platform | Method | What is installed |
+| --- | --- | --- |
+| Linux | `system` (the only supported method) | `/etc/apt/apt.conf.d/52dotsteward-unattended-upgrades`, root-owned, mode 0644 |
+| darwin | none | not available: the component is left out on darwin |
