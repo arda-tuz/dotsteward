@@ -612,32 +612,65 @@ _skills_install() {
   mv -- "$staging" "$destination"
 }
 
-# _skills_follows_upstream REAL REVISION: whether the skill at REAL is a
-# directory of a git clone that holds no change of its own and whose HEAD
-# descends from REVISION, the commit the lock pins: the clone moved on by
-# itself (a pull), as a downloaded skill linked into its clone does.
+# _skills_plain_url URL: URL as the lock writes an upstream: no credentials, no
+# trailing / or .git, a GitHub ssh remote as https.
+_skills_plain_url() {
+  local url=$1
+  case $url in
+    git@github.com:*) url=https://github.com/${url#git@github.com:} ;;
+    ssh://git@github.com/*) url=https://github.com/${url#ssh://git@github.com/} ;;
+  esac
+  if [[ $url =~ ^(https?://)[^/@]*@(.*)$ ]]; then
+    url=${BASH_REMATCH[1]}${BASH_REMATCH[2]}
+  fi
+  url=${url%/}
+  printf '%s\n' "${url%.git}"
+}
+
+# _skills_follows_upstream REAL REVISION [UPSTREAM]: whether the skill at REAL
+# is a directory of a git clone that holds no change of its own and is the
+# upstream the lock pins: its HEAD descends from REVISION (the clone moved on by
+# itself, a pull), or its origin is UPSTREAM (the pin moved on first, an update
+# of pins before the next pull). A downloaded skill linked into its clone is so.
+# Status 0: ahead of the pin; 3: another commit of the upstream; 1: neither.
 _skills_follows_upstream() (
-  local real=$1 revision=$2 changes
+  local real=$1 revision=$2 upstream=${3:-} changes remote
   unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_PREFIX
   [[ $revision =~ ^[0-9a-f]{40}$ ]] || return 1
   [[ $(git -C "$real" rev-parse --is-inside-work-tree 2>/dev/null) == true ]] || return 1
-  git -C "$real" merge-base --is-ancestor "$revision" HEAD 2>/dev/null || return 1
   changes=$(git -C "$real" status --porcelain --untracked-files=all -- . 2>/dev/null) || return 1
-  [[ -z $changes ]]
+  [[ -z $changes ]] || return 1
+  git -C "$real" merge-base --is-ancestor "$revision" HEAD 2>/dev/null && return 0
+  [[ -n $upstream ]] || return 1
+  remote=$(git -C "$real" config --get remote.origin.url 2>/dev/null) || return 1
+  [[ $(_skills_plain_url "$remote") == "$(_skills_plain_url "$upstream")" ]] || return 1
+  return 3
 )
 
-# _skills_refresh NAME PATH SOURCE DIGEST [REVISION]: replaces a drifted
-# copy-deployed skill with the vendored copy, after a backup. A copy that is a
-# clean clone ahead of the pinned REVISION is its upstream, newer: neither
-# drift nor replaced (that would write into the clone); a note says so.
+# _skills_refresh NAME PATH SOURCE DIGEST [REVISION [UPSTREAM]]: replaces a
+# drifted copy-deployed skill with the vendored copy, after a backup. A copy
+# that is a clean clone of the pinned upstream at another commit (see
+# _skills_follows_upstream) is neither drift nor replaced (that would write
+# into the clone); a note says so.
 _skills_refresh() {
-  local name=$1 path=$2 source=$3 expected=$4 revision=${5:-} real root root_real managed=0 backup_root staging
+  local name=$1 path=$2 source=$3 expected=$4 revision=${5:-} upstream=${6:-} real root root_real managed=0
+  local backup_root staging
   real=$(realpath -e -- "$path" 2>/dev/null) ||
     skills_fail skill-unresolvable "$path" "cannot resolve the skill path: $path"
   [[ $(directory_sha256 "$real") != "$expected" ]] || return 0
-  if [[ -n $revision ]] && _skills_follows_upstream "$real" "$revision"; then
-    warn "skill $name follows its clone, ahead of the pinned ${revision:0:12} ($real); the update of pins moves the pin"
-    return 0
+  if [[ -n $revision ]]; then
+    local follows=0
+    _skills_follows_upstream "$real" "$revision" "$upstream" || follows=$?
+    case $follows in
+      0)
+        warn "skill $name follows its clone, ahead of the pinned ${revision:0:12} ($real); the update of pins moves the pin"
+        return 0
+        ;;
+      3)
+        warn "skill $name follows its clone, not at the pinned ${revision:0:12} ($real); a pull in the clone brings it there"
+        return 0
+        ;;
+    esac
   fi
   if ((SKILLS_CHECK_ONLY)); then
     skills_fail skill-drift "$real" \
@@ -674,15 +707,19 @@ _skills_refresh() {
   log "skill differed from the lock; backed up and refreshed: $name (backup: $backup_root)"
 }
 
-# _skills_refresh_third_party NAME PATH SOURCE DIGEST [REVISION]: _skills_refresh, unless this
-# machine has a named copy that never was a pin of the lock: something of the user's under a name
-# another machine brought. It stays, and `dotsteward incoming` asks. A copy that follows its clone
-# past REVISION is not such a copy: _skills_refresh says so.
+# _skills_refresh_third_party NAME PATH SOURCE DIGEST [REVISION [UPSTREAM]]: _skills_refresh,
+# unless this machine has a named copy that never was a pin of the lock: something of the user's
+# under a name another machine brought. It stays, and `dotsteward incoming` asks. A clean clone of
+# the pinned upstream (see _skills_follows_upstream) is not such a copy: _skills_refresh says so.
 _skills_refresh_third_party() {
-  local name=$1 path=$2 expected=$4 revision=${5:-} real digest mode=install answer
+  local name=$1 path=$2 expected=$4 revision=${5:-} upstream=${6:-} real digest mode=install answer follows=1
   if [[ -n ${DS_MACHINE_NAME:-} ]] && real=$(realpath -e -- "$path" 2>/dev/null); then
     digest=$(directory_sha256 "$real")
-    if [[ $digest != "$expected" ]] && ! { [[ -n $revision ]] && _skills_follows_upstream "$real" "$revision"; }; then
+    if [[ $digest != "$expected" && -n $revision ]]; then
+      follows=0
+      _skills_follows_upstream "$real" "$revision" "$upstream" || follows=$?
+    fi
+    if [[ $digest != "$expected" ]] && ((follows != 0 && follows != 3)); then
       ((SKILLS_CHECK_ONLY)) && mode=check
       answer=$(ds_python dotsteward_cli.incoming clash --name "$name" --digest "$digest" --path "$real" --mode "$mode") ||
         skills_fail skill-unresolvable "$real" "cannot read the skill $name ($real)"
@@ -891,11 +928,12 @@ skills_process_framework() {
 
 skills_process_instance() {
   (($# == 1)) || die "usage: skills_process_instance ENTRY_JSON"
-  local entry=$1 name directory legacy skill_sha directory_sha deployment agents revision source found hm canonical_entry
+  local entry=$1 name directory legacy skill_sha directory_sha deployment agents revision upstream source found hm
+  local canonical_entry
   local -a fields=()
   mapfile -d '' fields < <(jq -j '[.name, .directory, (.legacy_directory // ""), .skill_sha256,
     (.directory_sha256 // ""), (.deployment // "copy"), ((.agents // []) | join(" ")),
-    (.revision // "" | tostring)]
+    (.revision // "" | tostring), (.source // "" | tostring)]
     | map(. + "\u0000") | add' <<<"$entry")
   name=${fields[0]}
   directory=${fields[1]}
@@ -905,6 +943,7 @@ skills_process_instance() {
   deployment=${fields[5]}
   agents=${fields[6]}
   revision=${fields[7]}
+  upstream=${fields[8]}
   source=$SKILLS_VENDOR/$directory
   hm=$SKILLS_HM_ROOT/$directory
 
@@ -942,7 +981,7 @@ skills_process_instance() {
         "installed skill digest differs from the lock: $name ($found); the native copy leaves out metadata.json, .git, __pycache__ and __pypackages__ and follows symlinks"
     fi
   elif [[ $deployment != home-manager && -n $directory_sha ]]; then
-    _skills_refresh_third_party "$name" "$found" "$source" "$directory_sha" "$revision"
+    _skills_refresh_third_party "$name" "$found" "$source" "$directory_sha" "$revision" "$upstream"
   fi
 
   canonical_entry=$(skills_canonical_entry "$found")

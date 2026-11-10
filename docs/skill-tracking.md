@@ -33,7 +33,8 @@ credentials it may carry), the commit HEAD and the directory of the skill within
 machine could fetch the same tree: a remote, a commit that holds the directory, and no change
 of the directory that the commit does not have (an untracked file counts). Otherwise the skill
 is unknown, and `skills status` and the refusal of `--all` say why; a directory with a `.git`
-of its own stays so even after a file tool wrote into it. Only the directory and the target
+of its own, or a link into a clone whose HEAD holds the directory, stays so even after a file
+tool wrote into it. Only the directory and the target
 of a link are looked at, never the directories above a real one. The vendored copy is the
 directory of the upstream as it is; when the upstream keeps its license above that directory,
 as most repositories do, the nearest `LICENSE*` above it at the pinned commit goes to
@@ -41,8 +42,9 @@ as most repositories do, the nearest `LICENSE*` above it at the pinned commit go
 at the clone again, so a clone cleaned up meanwhile is fine, and `skills reconcile --full`
 does the same for every unknown question. A clone that pulls by itself afterwards is newer
 than the pin, not drift: `agents install` leaves it alone and `agents check` passes with a
-note, as long as it holds no change of its own and its HEAD descends from the pinned commit;
-the update of pins moves the pin. Never tracked: `~/.claude/skills/synced/`, `dotsteward-*`,
+note, as long as it holds no change of its own and its HEAD descends from the pinned commit
+(the update of pins moves the pin) or its remote is the pinned upstream (a pin moved first;
+a pull in the clone catches up). Never tracked: `~/.claude/skills/synced/`, `dotsteward-*`,
 `~/.codex/skills/.system`, plugin and project skills.
 
 ## Plugins of Claude Code
