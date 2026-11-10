@@ -53,7 +53,7 @@ EXIT_INTERRUPTED = 130
 _SCOPE = "apply"
 _SUBJECT = re.compile(r"^(" + "|".join(context.CONVENTIONAL_TYPES) + r")(\([a-z0-9._/-]+\))?!?: .+")
 # The methods a rebuild of an adopt-mode profile never installs.
-_SYSTEM_LEVEL = {"linux": "deb", "darwin": "app-archive"}
+_SYSTEM_LEVEL = {"linux": ("deb", "system"), "darwin": ("app-archive",)}
 _SETTINGS_WAIT = {"local-changed", "local-deleted"}
 _STEP_WORDS = {"pending": "waits for you", "partial": "skipped, no network", "failed": "failed"}
 _COMMIT_SECONDS = 600
@@ -695,13 +695,13 @@ class Apply(_Checkout):
     def _system_components(self) -> list[str]:
         """The system-level components that this transaction adds or changes and that the rebuild of
         an adopt-mode profile leaves out."""
-        method = _SYSTEM_LEVEL.get(config.runtime_platform(self.env))
+        methods = _SYSTEM_LEVEL.get(config.runtime_platform(self.env), ())
         before = self._mirror_at(self.base)
         names = []
         for component in facts.active_components(self.instance, self.profile, self.env):
             name = str(component.get("name"))
             modes = component.get("modes") or {}
-            if component.get("method") != method or modes.get(self.profile) != "adopt":
+            if component.get("method") not in methods or modes.get(self.profile) != "adopt":
                 continue
             if before.get(name) != component:
                 names.append(name)

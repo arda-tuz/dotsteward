@@ -69,7 +69,7 @@ questions, or the adaptive route, which opens nothing; 6 no network, nothing ope
    it just made (`reset --soft`, the changes stay staged) and the same command proves the new tree
    (`tree-changed`).
 6. **Activated** (`--activate`): an adopt-mode profile never installs a system-level component
-   (`deb` on Linux, `app-archive` on macOS) in its rebuild, so for every such component that the
+   (`deb` and `system` on Linux, `app-archive` on macOS) in its rebuild, so for every such component that the
    transaction adds or changes and that `install --check-only` does not find in place, apply runs
    `install --profile PROFILE --component NAME` first. It needs sudo: on a terminal it runs there;
    without one `install-required` names the command and the run waits (exit 3) until the person ran
