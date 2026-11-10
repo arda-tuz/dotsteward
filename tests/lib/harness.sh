@@ -21,6 +21,8 @@
 #   DS_PASSWD_FILE, DS_GROUP_FILE
 #                   the user database behind DOTSTEWARD_PASSWD_CMD and the
 #                   getent, id, chsh and dscl stubs
+# PATH is the caller's, each entry resolved to the directory it is when the
+# test starts (a profile link that switches during the run changes nothing).
 # The host environment is neutralized: every XDG_*, GIT_*, DOTSTEWARD_*,
 # DOTFILES_* and application variable (CODEX_*, HERDR_*, PI_*, OPENCODE_*,
 # CLAUDE*) is removed, so are the SSH agent (SSH_AUTH_SOCK, SSH_AGENT_PID) and
@@ -103,6 +105,8 @@ ds_harness_init() {
   trap 'exit 143' TERM
   trap '_ds_on_error "$?" "$BASH_COMMAND" "${BASH_SOURCE[0]:-?}" "$LINENO"' ERR
 
+  _ds_fixed_path
+
   # Host state must never leak into a test.
   local name
   for name in $(compgen -v XDG_ || true) $(compgen -v GIT_ || true) \
@@ -161,6 +165,27 @@ EOF
 
   _ds_write_platform_files
   cd "$DS_TEST_ROOT/work"
+}
+
+# _ds_fixed_path: every PATH entry becomes the directory it resolves to now. A
+# user profile on PATH (such as ~/.nix-profile/bin) is a symbolic link that an
+# activation on the machine repoints at another generation at any moment; with
+# the resolved directory a switch during the run takes no tool away from the
+# test. An entry that does not resolve stays as it is.
+_ds_fixed_path() {
+  local entry real IFS=:
+  local -a entries fixed=()
+  read -ra entries <<<"$PATH"
+  for entry in "${entries[@]}"; do
+    if [[ -n $entry ]] && real=$(CDPATH="" cd -P -- "$entry" 2>/dev/null && pwd -P); then
+      fixed+=("$real")
+    else
+      fixed+=("$entry")
+    fi
+  done
+  PATH="${fixed[*]}"
+  export PATH
+  hash -r
 }
 
 # Synthetic platform data for the DOTSTEWARD_* injection points, so no test

@@ -68,7 +68,10 @@ loaded, under `set -Eeuo pipefail`, in its own temporary root:
   so a test can never reach a real remote with your identity;
 - platform facts (`/etc/shells`, `os-release`, the user database, macOS
   version) come from synthetic files through the `DOTSTEWARD_*` injection
-  points.
+  points;
+- `PATH` is the caller's with each entry resolved to the directory it is when
+  the test starts, so a profile link on it (such as `~/.nix-profile/bin`)
+  that an activation repoints during the run takes no tool away.
 
 Register cleanup with `ds_defer`; never replace the `EXIT` trap.
 A process a test keeps running on purpose, a lock holder for example, waits with `tests/lib/hold.sh`: nothing stays behind when the test fails or is killed.
