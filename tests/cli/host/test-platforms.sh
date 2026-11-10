@@ -76,7 +76,7 @@ assert_contains "$(effective .nix_tags)" '"no:needer"'
 # (requires is the CLI's alone: Nix never fails for it, so it goes before the tags of gate.)
 manifest_edit '(.components[] | select(.name == "needer")) |= del(.requires)'
 publish_instance
-write_host laptop
+write_host laptop 'platform = "ubuntu-22.04"'
 publish_instance
 name_machine laptop
 assert_eq '["machine:laptop","no:example"]' "$(effective .nix_tags)"
@@ -96,6 +96,11 @@ assert_contains "$DS_STDOUT" "components left out: example (platform)"
 cp "$(ds_fixture common/os-release/ubuntu-24.04)" "$DOTSTEWARD_OS_RELEASE"
 assert_eq '"ubuntu-24.04"' "$(platform_json .id)"
 assert_eq '[]' "$(platform_json .files)"
+# The host file still names 22.04, the one source: gate and rebuild stop until it says 24.04.
+assert_eq '"ubuntu-22.04"' "$(effective .platform_mismatch.recorded)"
+write_host laptop 'platform = "ubuntu-24.04"'
+publish_instance
+assert_eq 'null' "$(effective .platform_mismatch)"
 assert_eq '[]' "$(effective .skip.components)"
 assert_exit 0 run_e2e
 assert_contains "$(<"$ran")" "e2e hook"

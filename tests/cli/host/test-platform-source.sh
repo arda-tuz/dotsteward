@@ -51,7 +51,7 @@ assert_contains "$DS_STDERR" "hosts/laptop.toml names platform ubuntu-24.04, thi
 # host publish records what this machine runs; then both agree and nothing stops.
 assert_exit 0 run_host publish
 assert_contains "$(remote_file laptop)" 'platform = "ubuntu-22.04"'
-git -C "$agents_inst" pull -q --ff-only
+git -C "$agents_inst" fetch -q origin && git -C "$agents_inst" merge -q --ff-only origin/main
 assert_eq 'null' "$(effective .platform_mismatch)"
 assert_eq "$(effective .nix_tags_sha256)" "$(effective .host_build.tags_sha256)"
 assert_contains "$(effective .nix_tags)" '"no:example"'
