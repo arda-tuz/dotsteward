@@ -11,6 +11,8 @@ nothing of the framework. dotsteward_cli.apt_plan calls it:
               the changes of the depcache and what the refusal list says about them;
               it needs no privileges and changes nothing
     analysis  the upgradable packages outside the tracked set, read only
+    files     the pin file and the unattended-upgrades drop-in as policy would write them now
+              (paths and texts; no pin text when no pin file belongs there), read only
     policy    (root) under the lock of dpkg: the pin file and the unattended-upgrades drop-in, from
               what dpkg has, and the hook that keeps the pin file there whoever calls dpkg
     recover   (root) `dpkg --configure -a` when dpkg was left half way
@@ -1445,21 +1447,40 @@ def apply_pin_hook(pin_path, wanted):
     return {"config": config, "script": script, "present": wanted, "changed": changed}
 
 
-def apply_policy(session, classes):
-    """The files of this action from what dpkg has now, whatever they said before."""
+def wanted_files(session, classes):
+    """The pin file and the unattended-upgrades file as policy writes them from what dpkg has now:
+    (pin path, pin text or None when no pin file belongs there, unattended path)."""
     pin_path = os.path.join(session.real_parts, PIN_FILE)
-    wanted_pin = session.gated and (classes["kernel"] is not None or classes["nvidia"] is not None)
-    if wanted_pin:
+    text = None
+    if session.gated and (classes["kernel"] is not None or classes["nvidia"] is not None):
         # Half a transaction may hide the driver; the class stays until dpkg is whole again.
         keep_nvidia = classes["nvidia"] is None and bool(dpkg_audit()) and NVIDIA_GLOB in read_text(pin_path)
-        pin_changed = write_file(pin_path, installed_pin(classes, keep_nvidia=keep_nvidia))
+        text = installed_pin(classes, keep_nvidia=keep_nvidia)
+    return pin_path, text, os.path.join(apt_pkg.config.find_dir("Dir::Etc::Parts"), UNATTENDED_FILE)
+
+
+def action_files(session):
+    """What `policy` would write, read only: `dotsteward e2e` holds the files there to it."""
+    pin_path, pin, unattended_path = wanted_files(session, read_classes(session.open_pinless()))
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "pin": {"path": pin_path, "text": pin},
+        "unattended": {"path": unattended_path, "text": UNATTENDED_TEXT},
+    }
+
+
+def apply_policy(session, classes):
+    """The files of this action from what dpkg has now, whatever they said before."""
+    pin_path, pin, unattended_path = wanted_files(session, classes)
+    wanted_pin = pin is not None
+    if wanted_pin:
+        pin_changed = write_file(pin_path, pin)
     else:
         pin_changed = False
         if os.path.exists(pin_path):
             os.unlink(pin_path)
             pin_changed = True
     hook = apply_pin_hook(pin_path, wanted_pin)
-    unattended_path = os.path.join(apt_pkg.config.find_dir("Dir::Etc::Parts"), UNATTENDED_FILE)
     unattended_changed = write_file(unattended_path, UNATTENDED_TEXT)
     return {
         "pin": {"path": pin_path, "present": wanted_pin, "changed": pin_changed},
@@ -1817,6 +1838,7 @@ def action_commit(session):
 ACTIONS = {
     "plan": action_plan,
     "analysis": action_analysis,
+    "files": action_files,
     "policy": action_policy,
     "recover": action_recover,
     "commit": action_commit,

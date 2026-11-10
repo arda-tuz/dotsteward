@@ -3,7 +3,7 @@
 # The two apt files of the gated classes (design 10.3): the pin file
 # /etc/apt/preferences.d/60dotsteward and
 # /etc/apt/apt.conf.d/52dotsteward-unattended-upgrades. `dotsteward e2e` on a
-# Linux machine with dpkg checks them in core:apt-files against what the apt
+# Linux machine with dpkg (its status file) checks them in core:apt-files against what the apt
 # engine would write from what dpkg has now (its read only `files` action):
 # a file that is there must have those bytes, else a finding; a file that is
 # not there yet is a note with the step that installs it (the first
@@ -14,6 +14,8 @@
 source "$DS_REPO_ROOT/tests/cli/e2e/helpers.sh"
 
 ds_use_stubs sudo dpkg dpkg-query
+mkdir -p "$DS_SYSTEM_ROOT/var/lib/dpkg"
+: >"$DS_SYSTEM_ROOT/var/lib/dpkg/status"
 pin=$DS_SYSTEM_ROOT/etc/apt/preferences.d/60dotsteward
 unattended=$DS_SYSTEM_ROOT/etc/apt/apt.conf.d/52dotsteward-unattended-upgrades
 pin_text=$'# Managed by dotsteward: gated classes stay as dpkg has them.\n\nPackage: src:linux-meta*:any\nPin: version *\nPin-Priority: -1\n'

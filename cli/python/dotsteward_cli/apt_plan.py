@@ -10,7 +10,8 @@ turns its answer into report items. Nothing here decides about a package.
     answer = apt_plan.commit(request)              # sudo: plan and apply one depcache
     apt_plan.record(run, answer)
 
-``plan`` and ``analysis`` need no privileges and change nothing. The three others ask
+``plan``, ``analysis`` and ``files`` need no privileges and change nothing; ``check_files``
+holds the files there to what ``files`` says (``dotsteward e2e``, core:apt-files). The three others ask
 sudo without a prompt, so the caller opens the sudo window first, and they run as a
 protected child: Ctrl-C at the terminal does not stop dpkg half way, it ends up in
 ``interrupted`` of the answer. What dpkg prints goes to a file below the state root
@@ -20,6 +21,7 @@ closes must not fail a write of dpkg, which then stops half way.
 The internal command line of the same functions, for tests and for a look by hand:
 
     python3 -m dotsteward_cli.apt_plan ACTION [--request FILE|-] [--report COMMAND] [--state-root DIR]
+    python3 -m dotsteward_cli.apt_plan check-files --instance DIR
 
 prints the answer of the helper. With ``--report`` it also writes a run report and
 ``review.json`` for COMMAND and exits with the code of that run; without, it exits 0
@@ -43,7 +45,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from dotsteward_cli import atomic, config, procs, report
+from dotsteward_cli import atomic, config, machine, procs, report
+from dotsteward_cli.upgrade import facts
 
 _HELPER = Path(__file__).resolve().parents[2] / "libexec" / "apt_helper.py"
 _SYSTEM_PYTHON = "/usr/bin/python3"
@@ -176,6 +179,84 @@ def plan(request: Request) -> dict[str, Any]:
     answer = _read_only("plan", request)
     answer["items"] = [*answer.get("items", ()), *module_check(answer)]
     return answer
+
+
+def files(request: Request) -> dict[str, Any]:
+    """The pin file and the unattended-upgrades drop-in as ``policy`` would write them from what dpkg
+    has now: ``{pin: {path, text}, unattended: {path, text}}``, ``text`` null where no file belongs.
+    Raises AptEngineError."""
+    return _read_only("files", request)
+
+
+_FIRST_TERMINAL_RUN = "the first 'dotsteward upgrade' on a terminal writes it"
+
+
+def check_files(request: Request) -> list[dict[str, str]]:
+    """The files there against ``files`` (design 10.3): other bytes, or a pin file where none belongs,
+    are findings (``apt-file-mismatch``, ``apt-file-unwanted``); a file that is not there yet, or an
+    engine that cannot say, is a note (``apt-file-missing``, ``apt-files-unchecked``), since only the
+    sudo window of `dotsteward upgrade` writes them."""
+    try:
+        answer = files(request)
+    except AptEngineError as failure:
+        return [_note("apt-files-unchecked", "", f"the apt files were not checked: {failure.code}: {failure.message}")]
+    found = []
+    for key in ("pin", "unattended"):
+        entry = answer.get(key) or {}
+        path, wanted = str(entry.get("path") or ""), entry.get("text")
+        if not path:
+            continue
+        try:
+            there: str | None = Path(path).read_bytes().decode("utf-8", errors="replace")
+        except FileNotFoundError:
+            there = None
+        except OSError as error:
+            found.append(_finding("apt-file-unreadable", path, f"{path} cannot be read: {error.strerror}"))
+            continue
+        if wanted is None and there is not None:
+            found.append(
+                _finding(
+                    "apt-file-unwanted",
+                    path,
+                    f"{path} is there, but this machine has no gated class to pin or [apt.gated] enable = false: "
+                    "run 'dotsteward upgrade' on a terminal, which removes it",
+                )
+            )
+        elif wanted is not None and there is None:
+            found.append(_note("apt-file-missing", path, f"{path} is not there yet: {_FIRST_TERMINAL_RUN}"))
+        elif wanted is not None and there != wanted:
+            found.append(
+                _finding(
+                    "apt-file-mismatch",
+                    path,
+                    f"{path} does not hold what dpkg has now: "
+                    "run 'dotsteward upgrade' on a terminal, which rewrites it",
+                )
+            )
+    return found
+
+
+def _finding(code: str, path: str, message: str) -> dict[str, str]:
+    return {"kind": "finding", "code": code, "path": path, "message": message}
+
+
+def _note(code: str, path: str, message: str) -> dict[str, str]:
+    return {"kind": "note", "code": code, "path": path, "message": message}
+
+
+def _check_files_main(instance_dir: str) -> int:
+    """One line per finding or note: KIND, CODE, PATH (- for none) and MESSAGE, tab separated."""
+    try:
+        instance = config.load_instance(instance_dir)
+        record = machine.read_machine(config.state_root(instance, os.environ))
+    except config.DotstewardError as error:
+        print(f"[dotsteward] ERROR: {error}", file=sys.stderr)
+        return report.FAILED
+    gated = facts.gated(instance, machine.current_name(record, os.environ))
+    for item in check_files(Request(gated=gated)):
+        fields = [item["kind"], item["code"], item["path"] or "-", item["message"]]
+        print("\t".join(field.replace("\t", " ").replace("\n", " ") for field in fields))
+    return report.OK
 
 
 def analysis(request: Request) -> dict[str, Any]:
@@ -405,11 +486,13 @@ def _action(name: str, request: Request, state_root: str | None) -> dict[str, An
         return plan(request)
     if name == "analysis":
         return analysis(request)
+    if name == "files":
+        return files(request)
     changing = {"policy": policy, "recover": recover, "commit": commit}
     return changing[name](request, state_root=state_root)
 
 
-ACTIONS = ("analysis", "commit", "plan", "policy", "recover")
+ACTIONS = ("analysis", "commit", "files", "plan", "policy", "recover")
 
 
 def _load_request(source: str | None) -> Request:
@@ -420,6 +503,12 @@ def _load_request(source: str | None) -> Request:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == ["check-files"]:
+        if len(arguments) != 3 or arguments[1] != "--instance":
+            print("usage: python3 -m dotsteward_cli.apt_plan check-files --instance DIR", file=sys.stderr)
+            return 2
+        return _check_files_main(arguments[2])
     parser = argparse.ArgumentParser(
         prog="dotsteward_cli.apt_plan", description="The apt engine, for tests and by hand."
     )

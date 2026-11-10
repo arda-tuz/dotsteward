@@ -9,6 +9,8 @@
 # skills lock, framework source and generation builders; see there) and
 # adds:
 #   - engines/ in the framework copy, so `dotsteward settings` runs;
+#   - DOTSTEWARD_APT_PYTHON at a file that is not there, so no check reads
+#     the apt of this machine;
 #   - a python3 with tomlkit first on PATH (the one on PATH when it has
 #     tomlkit, as in the Nix check sandbox, else the framework's own
 #     interpreter built with Nix);
@@ -76,6 +78,10 @@ _e2e_use_python() {
   export PATH=$DS_TEST_ROOT/python/bin:$PATH
 }
 _e2e_use_python
+
+# The apt engine of this machine stays out of reach: core:apt-files of a test with a dpkg stub
+# warns that it cannot run, unless the test brings an engine of its own.
+export DOTSTEWARD_APT_PYTHON=$DS_TEST_ROOT/no-apt-python
 
 mkdir -p "$HOME/.agents/skills" "$HOME/.codex/skills"
 
