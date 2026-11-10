@@ -617,9 +617,10 @@ class Upgrade(runner.Runner):
             )
         self.run.step("pins-apply", report.OK, detail=f"the producer is {role}")
 
-    def _apply(self, latest: Path, skips: Sequence[str]) -> dict[str, Any] | None:
+    def _apply(self, latest: Path, skips: Sequence[str], *, record: bool = True) -> dict[str, Any] | None:
         """One run of the writer in the clone. None: nothing can come of it. A group that failed is put
-        back by the writer, so what the others moved still goes on."""
+        back by the writer, so what the others moved still goes on. RECORD false: a run of the
+        bisection of a red gate, which the report does not count as the move."""
         arguments = ["pins", "apply", "--latest", str(latest), "--json"]
         for pattern in skips:
             arguments += ["--skip", pattern]
@@ -629,8 +630,11 @@ class Upgrade(runner.Runner):
         try:
             answer: dict[str, Any] = json.loads(done.stdout)
         except ValueError:
-            self.run.step("pins-apply", done.returncode or report.FAILED, detail="the writer gave no answer")
+            if record:
+                self.run.step("pins-apply", done.returncode or report.FAILED, detail="the writer gave no answer")
             return None
+        if not record:
+            return answer
         self.run.step("pins-apply", done.returncode, moved=[row.get("id") for row in answer.get("moved") or ()])
         for group in answer.get("groups") or ():
             if group.get("outcome") == "failed":
@@ -766,6 +770,8 @@ class Upgrade(runner.Runner):
         started = time.time()
         status = self._ds_quiet("gate", "--scope", "update")
         environment = self._gate_environment(started) if status != 0 else None
+        if status == 0:
+            self.run.step("gate", status)
         if environment is not None:
             network = environment.startswith("the network")
             self.run.step("gate", report.PARTIAL if network else report.FAILED, detail=environment)
@@ -783,19 +789,12 @@ class Upgrade(runner.Runner):
             self.framework_moved = False
             self._remove_work()
             return
-        self.run.step("gate", status)
         if status != 0:
-            reason = f"the gate said no ({status})"
-            self._hold_moved(moved, [], reason)
-            self.run.item(
-                "gate-failed",
-                log=str(Path(self.state_root) / "update" / "validate.log"),
-                moved=[row.get("id") for row in moved],
-                message="the gate refused the new pins: nothing was committed",
-            )
-            self.framework_moved = False
-            self._remove_work()
-            return
+            moved = self._red_gate(latest, skips, moved, status)
+            if not moved:
+                self.framework_moved = False
+                self._remove_work()
+                return
         self._work_git("add", "-A")
         subject = self.instance.config["commit"]["update_subject"]
         identity = commit_identity(self.root, self.tip)
@@ -813,6 +812,103 @@ class Upgrade(runner.Runner):
         assert self.waiting is not None
         _say(f"committed {self.waiting[:12]} next to the checkout; it goes out after a green E2E")
         self.run.step("commit", report.OK, commit=self.waiting)
+
+    def _gate_with(
+        self, latest: Path, skips: Sequence[str], moved: Sequence[Mapping[str, Any]], rows: Sequence[Mapping[str, Any]]
+    ) -> int | None:
+        """The gate of the tip with only ROWS of MOVED moved: its status, None when the writer did not
+        move exactly those or the gate could not judge the tree."""
+        # A new clone of the tip: the writer starts from what the first one started from.
+        if not self._open_work(self.tip) or not self._prepare():
+            return None
+        wanted = {str(row.get("id")) for row in rows}
+        others = [str(row.get("id")) for row in moved if str(row.get("id")) not in wanted]
+        answer = self._apply(latest, [*skips, *others], record=False)
+        if answer is None or {str(row.get("id")) for row in answer.get("moved") or ()} != wanted:
+            return None
+        started = time.time()
+        status = self._ds_quiet("gate", "--scope", "update")
+        if status != 0 and self._gate_environment(started) is not None:
+            return None
+        return status
+
+    def _red_gate(
+        self, latest: Path, skips: Sequence[str], moved: list[dict[str, Any]], status: int
+    ) -> list[dict[str, Any]]:
+        """The gate refused the moved pins. Held is only what the red can be put on: the run bisects by
+        the groups of the writer, the gate again on the tip with some groups moved, until one group is
+        red by itself. When the gate is green with every other group, those are what the clone holds
+        now and what this run goes on with (the return value); else nothing goes on and nothing else is
+        held, so the next run tries the rest. When no group is red by itself, every moved pin is held."""
+        reason = f"the gate said no ({status})"
+        log = str(Path(self.state_root) / "update" / "validate.log")
+        groups = list(dict.fromkeys(str(row.get("group")) for row in moved))
+
+        def rows_of(names: Sequence[str]) -> list[dict[str, Any]]:
+            return [row for row in moved if str(row.get("group")) in names]
+
+        culprit: str | None = None
+        judged = True
+        if len(groups) == 1:
+            culprit = groups[0]
+        elif not self.framework_moved:
+            _say(f"the gate said no: looking for the group it is about, among {len(groups)}")
+            candidates = groups
+            while len(candidates) > 1 and judged:
+                half = candidates[: len(candidates) // 2]
+                found = self._gate_with(latest, skips, moved, rows_of(half))
+                judged = found is not None
+                candidates = half if found else candidates[len(half) :]
+            if judged:
+                alone = self._gate_with(latest, skips, moved, rows_of(candidates))
+                judged = alone is not None
+                culprit = candidates[0] if alone else None
+        if not judged:
+            # A bisection the gate could not judge says nothing: nothing is held, the next run tries again.
+            self.run.item(
+                "gate-failed",
+                log=log,
+                moved=[row.get("id") for row in moved],
+                held=[],
+                attribution=None,
+                run=self._command_again(),
+                message="the gate refused the new pins and could not judge a part of them: nothing was committed "
+                "and nothing is held, the next run tries again",
+            )
+            self.run.step("gate", status)
+            return []
+        if culprit is None:
+            self.run.step("gate", status)
+            self._hold_moved(moved, [], reason)
+            self.run.item(
+                "gate-failed",
+                log=log,
+                moved=[row.get("id") for row in moved],
+                held=[row.get("id") for row in moved],
+                attribution=None,
+                message="the gate refused the new pins and the red could not be attributed to one group of them: "
+                "every moved pin is held, nothing was committed",
+            )
+            return []
+        guilty = rows_of([culprit])
+        rest = [row for row in moved if row not in guilty]
+        self._hold_moved(guilty, [], f"{reason}, about group {culprit}")
+        green = bool(rest) and self._gate_with(latest, skips, moved, rest) == 0
+        self.run.item(
+            "gate-failed",
+            pending=not green,
+            log=log,
+            moved=[row.get("id") for row in moved],
+            held=[row.get("id") for row in guilty],
+            attribution=culprit,
+            message=f"the gate refused group {culprit}: its pins are held"
+            + ("; the other pins passed the gate and go on" if green else "; nothing was committed"),
+        )
+        if green:
+            self.run.step("gate", report.OK, detail=f"without group {culprit}, which it refused")
+            return rest
+        self.run.step("gate", status, detail=f"refused group {culprit}")
+        return []
 
     def _self_updates(self) -> None:
         """What updates itself is only asked to; a second way in is never added."""
