@@ -243,8 +243,9 @@ def _question(items: Sequence[Mapping[str, Any]]) -> str:
     lines = [
         "Skill tracking (dotsteward) has something the user should decide. "
         "Ask in the language of the user, then run what the answer names. Run --never only when the user "
-        "says never; when the user puts it off, is unsure or does not choose, run "
-        "dotsteward skills track <name> --later, which declines nothing and stops this question."
+        "says never. When the user says not now or later, run dotsteward skills track <name> --later, which "
+        "declines nothing and stops this question. When the user gives no answer, run nothing: it is asked "
+        "again in a day."
     ]
     if "ask" in groups:
         lines.append(

@@ -22,8 +22,8 @@ sentinel (`same-as-instance-checkout` or `[compat] repo_owned_revision`).
 The answer is one of `dotsteward skills track <name> --all`, `--here` (this machine
 only), `--never` (this machine, asked no more) or `--later` (nothing is declined or
 published; no session asks about it again, and `skills status` keeps listing it). Only
-`--never` declines, and the session text tells the agent so: an answer that puts the
-question off is `--later`. Every answer stays on the pending item as `answered` (which one,
+`--never` declines, and the session text tells the agent so: a "not now" is `--later`, and
+no answer at all runs nothing, so the question comes back after 24 hours. Every answer stays on the pending item as `answered` (which one,
 and when), and `skills status` shows it for a declined skill. `--all` or `--here` given
 later takes a `--never` back. `--own` tracks your own copy of it without an upstream.
 
