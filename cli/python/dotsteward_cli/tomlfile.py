@@ -2,9 +2,9 @@
 
 ``load`` and ``loads`` give a plain document. Text that is not TOML, bad syntax
 or bytes that are not UTF-8, raises ``TomlError``; an unreadable file raises its
-``OSError``. A caller words the error for its own file. The three modules that
-edit TOML and keep its comments (``init``, ``host`` and the settings engine) use
-tomlkit for that; a read goes through here.
+``OSError``. A caller words the error for its own file. The five modules that
+edit TOML and keep its comments (``init``, ``host``, ``skills.plugins``, ``track``
+and the settings engine) use tomlkit for that; a read goes through here.
 """
 
 from __future__ import annotations

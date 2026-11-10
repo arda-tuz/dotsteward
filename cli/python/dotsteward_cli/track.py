@@ -35,12 +35,11 @@ import shutil
 import subprocess
 import sys
 import textwrap
-import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from dotsteward_cli import atomic, config, context, locks, machine, report, runner
+from dotsteward_cli import atomic, config, context, locks, machine, report, runner, tomlfile
 from dotsteward_cli.skills import layout
 
 EXIT_USAGE = 2
@@ -349,9 +348,9 @@ class _Transaction(runner.Runner):
     def _same_intent_but_this(self, base: str) -> bool:
         before = self._git("show", f"{base}:{config.CONFIG_FILE}")
         try:
-            old = tomllib.loads(before.stdout) if before.code == 0 else {}
-            new = tomllib.loads(self.instance.file.read_text(encoding="utf-8"))
-        except (OSError, tomllib.TOMLDecodeError):
+            old = tomlfile.loads(before.stdout) if before.code == 0 else {}
+            new = tomlfile.loads(self.instance.file.read_text(encoding="utf-8"))
+        except (OSError, tomlfile.TomlError):
             return False
         return _without(old, self.name) == _without(new, self.name)
 
@@ -367,15 +366,15 @@ class _Transaction(runner.Runner):
         text = self.instance.file.read_text(encoding="utf-8")
         new_text = by_lines(text)
         try:
-            same = new_text is not None and _normal(tomllib.loads(new_text)) == _normal(expected)
-        except tomllib.TOMLDecodeError:
+            same = new_text is not None and _normal(tomlfile.loads(new_text)) == _normal(expected)
+        except tomlfile.TomlError:
             same = False
         if new_text is None or not same:
             tomlkit = _tomlkit()
             document = tomlkit.parse(text)
             edit(document)
             new_text = tomlkit.dumps(document)
-        problems = config.errors(tomllib.loads(new_text))
+        problems = config.errors(tomlfile.loads(new_text))
         if problems:
             raise UsageError("workstation.toml would not be valid: " + "; ".join(problems))
         return new_text
@@ -484,7 +483,7 @@ class Add(_Transaction):
 
     def _add_text(self) -> str:
         """The text with the table of the component as add wants it; sets self.change."""
-        current = tomllib.loads(self.instance.file.read_text(encoding="utf-8"))
+        current = tomlfile.loads(self.instance.file.read_text(encoding="utf-8"))
         table = dict((current.get("components") or {}).get(self.name) or {})
         wanted = {**table, "enable": True, **self.keys}
         expected = _normal(current)
@@ -703,20 +702,20 @@ class Remove(_Transaction):
     def _tracked_at(self, base: str) -> bool:
         """Whether the table of the component is in BASE or in the work tree."""
         try:
-            work = tomllib.loads(self.instance.file.read_text(encoding="utf-8"))
-        except (OSError, tomllib.TOMLDecodeError):
+            work = tomlfile.loads(self.instance.file.read_text(encoding="utf-8"))
+        except (OSError, tomlfile.TomlError):
             work = {}
         before = self._git("show", f"{base}:{config.CONFIG_FILE}")
         try:
-            old = tomllib.loads(before.stdout) if before.code == 0 else {}
-        except tomllib.TOMLDecodeError:
+            old = tomlfile.loads(before.stdout) if before.code == 0 else {}
+        except tomlfile.TomlError:
             old = {}
         return any(self.name in (document.get("components") or {}) for document in (work, old))
 
     def _remove_text(self) -> str:
         """The text without the component; sets self.change and self.kept_comments."""
         text = self.instance.file.read_text(encoding="utf-8")
-        current = tomllib.loads(text)
+        current = tomlfile.loads(text)
         components = current.get("components") or {}
         if self.name not in components and self.name not in (components.get("order") or []):
             self.change = "unchanged"
@@ -736,7 +735,7 @@ class Remove(_Transaction):
             return result
 
         new_text = self._edited(self._remove, by_lines, _without(current, self.name))
-        if _normal(tomllib.loads(new_text)) == _normal(current):
+        if _normal(tomlfile.loads(new_text)) == _normal(current):
             self.change = "unchanged"
         return new_text
 
