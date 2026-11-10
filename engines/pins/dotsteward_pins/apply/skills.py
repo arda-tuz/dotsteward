@@ -1,7 +1,10 @@
 """Replaces a vendored third-party skill with its upstream directory at the head of
 its row. It does so only when the vendored copy is exactly what upstream had at the
 pinned revision, so that nothing local is lost, and when the scan of the new
-directory is clean (N8). Any other case is a review item and writes nothing."""
+directory is clean (N8). Any other case is a review item and writes nothing. A license
+kept beside the skill (``agent/skill-licenses/<directory>``, for an upstream that keeps it
+above the skill directory) moves with the pin: the nearest ``LICENSE*`` above the
+directory at the new revision replaces it."""
 
 from __future__ import annotations
 
@@ -20,6 +23,8 @@ from ..latest.upstream import github_repo, github_url
 from ..lockfile import Locks
 from .plan import Move, skill_entry
 from .tools import GroupFailure, Tools, Waits
+
+LICENSES_DIR = "agent/skill-licenses"
 
 
 class Upstreams:
@@ -41,6 +46,40 @@ class Upstreams:
             self.clones[repository] = target
         return self.clones[repository]
 
+    def license_above(self, clone: Path, revision: str, source_path: str) -> tuple[str, bytes] | None:
+        """The nearest license file above SOURCE_PATH at REVISION: its name and content."""
+        parts = [part for part in source_path.strip("/").split("/") if part]
+        for depth in range(len(parts) - 1, -1, -1):
+            treeish = f"{revision}:{'/'.join(parts[:depth])}"
+            listed = subprocess.run(
+                ["git", "-C", str(clone), "ls-tree", "-z", treeish],
+                capture_output=True,
+                timeout=120,
+                check=False,
+                stdin=subprocess.DEVNULL,
+            )
+            if listed.returncode != 0:
+                continue
+            found = []
+            for line in listed.stdout.split(b"\0"):
+                meta, _, name = line.partition(b"\t")
+                fields = meta.split()
+                if len(fields) == 3 and fields[1] == b"blob" and name.lower().startswith(b"license"):
+                    found.append((name, fields[2]))
+            if found:
+                name, blob = sorted(found)[0]
+                content = subprocess.run(
+                    ["git", "-C", str(clone), "cat-file", "blob", blob.decode()],
+                    capture_output=True,
+                    timeout=600,
+                    check=False,
+                    stdin=subprocess.DEVNULL,
+                )
+                if content.returncode != 0:
+                    raise GroupFailure(f"cannot read the license of {treeish}")
+                return name.decode(errors="replace"), content.stdout
+        return None
+
     def extract(self, clone: Path, revision: str, source_path: str, target: Path) -> bool:
         """The directory at REVISION into TARGET; False when there is none."""
         treeish = f"{revision}:{source_path}" if source_path else revision
@@ -57,8 +96,9 @@ class Upstreams:
         return True
 
 
-def replace_skill(instance: Instance, tools: Tools, upstreams: Upstreams, locks: Locks, move: Move) -> Path:
-    """Replaces the directory and returns it; the caller updates the lock."""
+def replace_skill(instance: Instance, tools: Tools, upstreams: Upstreams, locks: Locks, move: Move) -> list[Path]:
+    """Replaces the directory, and the license beside it; returns what changed, the caller
+    updates the lock."""
     name = move.id.removeprefix("skills.")
     entry = skill_entry(locks, name)
     head = move.details.get("head")
@@ -70,6 +110,8 @@ def replace_skill(instance: Instance, tools: Tools, upstreams: Upstreams, locks:
     clone = upstreams.clone(repository)
     source_path = source_tree_path(str(entry.get("source_path", "")))
     vendored = instance.path(instance.vendor_dir) / str(entry.get("directory", name))
+    beside = instance.path(LICENSES_DIR) / str(entry.get("directory", name))
+    license_file = upstreams.license_above(clone, head, source_path) if beside.is_dir() and source_path else None
     with tempfile.TemporaryDirectory(prefix="dotsteward-pins-skill-") as work:
         old, new = Path(work) / "old", Path(work) / "new"
         known = upstreams.extract(clone, str(entry["revision"]), source_path, old)
@@ -83,7 +125,12 @@ def replace_skill(instance: Instance, tools: Tools, upstreams: Upstreams, locks:
             raise Waits("skill-scan-finding", findings=found[:20])
         shutil.rmtree(vendored)
         shutil.copytree(new, vendored, symlinks=True)
-    return vendored
+    if license_file is None:
+        return [vendored]
+    shutil.rmtree(beside)
+    beside.mkdir(parents=True)
+    (beside / license_file[0]).write_bytes(license_file[1])
+    return [vendored, beside]
 
 
 def relative(instance: Instance, path: Path) -> str:

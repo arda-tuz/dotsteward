@@ -42,7 +42,7 @@ from ..lockfile import Locks, load_json
 from . import plan as routing
 from .plan import Declared, Group, Plan
 from .authenticity import Authenticity, DiscoveryIncomplete
-from .skills import Upstreams, relative, replace_skill
+from .skills import LICENSES_DIR, Upstreams, relative, replace_skill
 from .tools import GroupFailure, Tools, Waits
 from .writers import TEMPLATE_FILES, Writer
 
@@ -224,7 +224,8 @@ class Run:
         if entry is None:
             raise GroupFailure(f"{move.id}: the skill is not in the lock")
         snapshot.keep_tree(instance.path(instance.vendor_dir) / str(entry.get("directory", name)))
-        directory = replace_skill(instance, self.tools, self.upstreams, document, move)
+        snapshot.keep_tree(instance.path(LICENSES_DIR) / str(entry.get("directory", name)))
+        changed = replace_skill(instance, self.tools, self.upstreams, document, move)
 
         def change(lock_files: Locks) -> None:
             found = routing.skill_entry(lock_files, name)
@@ -233,7 +234,7 @@ class Run:
 
         writer.edit(change)
         writer.sync(name)
-        self.outcome.stage.append(relative(instance, directory))
+        self.outcome.stage += [relative(instance, path) for path in changed]
 
     def done(self, group: Group) -> None:
         ids = []
