@@ -28,7 +28,8 @@ assert_eq ask "$(plugin_item a p1@example-market .state)"
 tip=$(remote_tip)
 
 : >"$DS_TEST_ROOT/nix-hang"
-setsid bash -c 'cd "$1" && HOME=$2 DOTSTEWARD_STATE_ROOT=$3 DOTSTEWARD_MACHINE=a DOTSTEWARD_INSTANCE=$1 exec "$4" skills track p1@example-market --all </dev/null >/dev/null 2>&1' _ \
+# A session of its own, as a terminal gives it; no setsid(1) in the Nix sandbox or on macOS.
+python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' bash -c 'cd "$1" && HOME=$2 DOTSTEWARD_STATE_ROOT=$3 DOTSTEWARD_MACHINE=a DOTSTEWARD_INSTANCE=$1 exec "$4" skills track p1@example-market --all </dev/null >/dev/null 2>&1' _ \
   "$(clone_of a)" "$(home_of a)" "$(state_of a)" "$DS_REPO_ROOT/cli/dotsteward" &
 leader=$!
 tries=0
