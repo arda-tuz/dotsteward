@@ -39,8 +39,8 @@ nix_resolved=$(inst_json "dsLib.config.resolve { catalog = builtins.attrNames ds
   (builtins.fromTOML (builtins.readFile (repoRoot + \"/template/workstation.toml\")))")
 assert_json - '.components.order == ["shell", "herdr", "claude-code", "codex", "opencode-pi", "vscode",
     "pdfcraft", "gridcraft", "wordcraft", "deckcraft", "craft-anything", "apt-policy"]
-  and ([.components | to_entries[] | select(.key != "order") | .value.enable] | all(. == false))' \
-  "no enabled component" <<<"$nix_resolved"
+  and ([.components | to_entries[] | select(.key != "order" and .value.enable) | .key] == ["apt-policy"])' \
+  "apt-policy is the one component enabled by default on Linux" <<<"$nix_resolved"
 cli_resolved=$(PYTHONPATH=$DS_REPO_ROOT/cli/python PYTHONDONTWRITEBYTECODE=1 \
   python3 -s -P -m dotsteward_cli.config --file "$toml" resolve)
 assert_eq "$(jq -S . <<<"$nix_resolved")" "$(jq -S . <<<"$cli_resolved")" "both readers agree"

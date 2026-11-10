@@ -134,3 +134,13 @@ bad '{ agentRulesTargets = [ { path = "~/.example-app/AGENTS.md"; } ]; }' agentR
 # order of definitions is the module system's, so it is not asserted).
 assert_nix_eq '["~/a","~/b"]' \
   'lib.sort lib.lessThan ((evalComponents [ { dotsteward.components.example-app = { method = "nix"; bootstrap.backupPaths = [ "~/a" ]; }; } { dotsteward.components.example-app.bootstrap.backupPaths = [ "~/b" ]; } ]).example-app.bootstrap.backupPaths)'
+
+# A system file: an absolute path without . or .. segments, and a mode every user can read,
+# so a check run as the user compares it.
+sysfile='p: m: (builtins.head (evalComponents [ { dotsteward.components.example-app = { method = "system"; install.system.files = [ { path = p; text = "x\n"; mode = m; } ]; }; } ]).example-app.install.system.files).path'
+assert_nix_eq '"/etc/example/50-example.conf"' "($sysfile) \"/etc/example/50-example.conf\" \"0644\""
+assert_nix_eq '"/usr/local/lib/example/run"' "($sysfile) \"/usr/local/lib/example/run\" \"0755\""
+for bad in /etc/../root/x /etc/./x etc/x /etc//x; do
+  assert_nix_fails "($sysfile) \"$bad\" \"0644\"" "absolute path"
+done
+assert_nix_fails "($sysfile) \"/etc/example/x\" \"0600\"" '"0644", "0755"'

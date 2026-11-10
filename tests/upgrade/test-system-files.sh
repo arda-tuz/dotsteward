@@ -1,8 +1,9 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from the harness and the helpers
 # The sudo window writes the files of the active system components that are missing or
-# differ, after the pin file and before apt moves anything, each through `sudo install`; a
-# second run writes nothing. A system component of another profile and one this machine
+# differ, on every profile (the adopted one here), after the pin file and before apt moves
+# anything: each under a temporary name next to it, then renamed over it; a second run
+# writes nothing. A system component of another profile and one this machine
 # leaves out are not touched; without a terminal the window waits as it always does.
 # shellcheck source=tests/upgrade/helpers.sh
 source "$DS_REPO_ROOT/tests/upgrade/helpers.sh"
@@ -39,7 +40,8 @@ assert_exit 3 upgrade --tracked
 
 clear_log
 assert_exit 0 on_terminal 'Update these too=n' -- --tracked
-assert_order '^apt policy' "^sudo -n install -D -o root -g root -m 0644 .* $DS_SYSTEM_ROOT$dropin\$" '^apt commit'
+assert_order '^apt policy' "^sudo -n install -D -o root -g root -m 0644 .* $DS_SYSTEM_ROOT${dropin%/*}/.dotsteward-50-example.conf.tmp\$" \
+  "^sudo -n mv -f -- .*/.dotsteward-50-example.conf.tmp $DS_SYSTEM_ROOT$dropin\$" '^apt commit'
 assert_eq "$text" "$(<"$DS_SYSTEM_ROOT$dropin")
 "
 assert_file_mode "$DS_SYSTEM_ROOT$dropin" 644
@@ -57,6 +59,9 @@ assert_eq ok "$(step_status system:example-policy)"
 printf 'changed\n' >"$DS_SYSTEM_ROOT$dropin"
 clear_log
 assert_exit 0 on_terminal 'Update these too=n' -- --tracked
-assert_order '^apt policy' "^sudo -n install .* $DS_SYSTEM_ROOT$dropin\$"
+assert_order '^apt policy' "^sudo -n mv -f -- .* $DS_SYSTEM_ROOT$dropin\$"
 assert_eq "$text" "$(<"$DS_SYSTEM_ROOT$dropin")
 "
+
+# The gated classes without apt-policy: said, not silent (an instance that opted out).
+assert_contains "$DS_STDOUT" "apt-policy is not active here: unattended-upgrades may remove kernels by itself"

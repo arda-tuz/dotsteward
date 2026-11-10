@@ -75,8 +75,12 @@ assert_eq 'contribute = "owner"' "$(tail -n 1 "$file")" "upstream ends the file"
 for mirror in manifest.x86_64-linux.json manifest.aarch64-darwin.json stage0.linux.env stage0.darwin.env; do
   [[ -f $dir/.dotsteward/$mirror ]] || ds_fail "the mirror .dotsteward/$mirror is missing"
 done
+# apt-policy comes enabled by default: active on Linux, left out on darwin (not available there).
 assert_jq "$dir/.dotsteward/manifest.aarch64-darwin.json" \
-  '[.components[] | {name, method}] == [{name: "shell", method: "nix"}, {name: "codex", method: "official-binary"}, {name: "vscode", method: "app-archive"}]'
+  '[.components[] | {name, method}] == [{name: "shell", method: "nix"}, {name: "codex", method: "official-binary"}, {name: "vscode", method: "app-archive"}, {name: "apt-policy", method: "system"}]
+   and ([.components[] | select(.name == "apt-policy") | .unavailable] == ["platform"])'
+assert_jq "$dir/.dotsteward/manifest.x86_64-linux.json" \
+  '[.components[] | select(.name == "apt-policy") | .unavailable] == [null]'
 instance_contract "$dir" aarch64-darwin
 
 # --- the defaults ----------------------------------------------------------------------------

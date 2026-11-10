@@ -66,10 +66,21 @@ assert_eq '["example"]' "$(effective .skip.components)"
 assert_eq '{"component:example":"platform"}' "$(effective .reasons)"
 # Nix leaves it out too, on a machine with a name and on one without.
 assert_contains "$(effective .nix_tags)" '"no:example"'
+# What needs it is left out with it, also on a machine without a name.
+add_component needer external '{}'
+manifest_edit '(.components[] | select(.name == "needer")).requires = ["example"]'
+publish_instance
+assert_eq '["example","needer"]' "$(effective .skip.components)"
+assert_eq '"requires"' "$(effective '.reasons["component:needer"]')"
+assert_contains "$(effective .nix_tags)" '"no:needer"'
 write_host laptop
 publish_instance
 name_machine laptop
-assert_eq '["machine:laptop","no:example"]' "$(effective .nix_tags)"
+assert_eq '["machine:laptop","no:example","no:needer"]' "$(effective .nix_tags)"
+# The host file names the release: gate builds the generation rebuild activates.
+write_host laptop 'platform = "ubuntu-22.04"'
+publish_instance
+assert_eq "$(effective .nix_tags_sha256)" "$(effective '.host_build.tags_sha256')" "the tags of the build of gate"
 : >"$ran"
 assert_exit 0 run_e2e --list
 assert_not_contains "$DS_STDOUT" "example:end-check"

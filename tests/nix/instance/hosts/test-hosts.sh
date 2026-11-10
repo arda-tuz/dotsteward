@@ -153,3 +153,17 @@ assert_inst_eq '{"now":true,"old":{"homeDirectory":"/h","profile":"p","username"
     old = builtins.intersectAttrs (builtins.functionArgs ({ username, homeDirectory, profile ? "x", system ? "y" }: { }))
       { username = "u"; homeDirectory = "/h"; profile = "p"; tags = [ "machine:laptop" ]; };
   }' "functionArgs"
+
+# The platform layer reaches the configuration of a machine through the release its host file
+# names: a component that platforms/ calls unavailable there is left out of it (a no: tag), so
+# gate builds the generation that rebuild activates. A machine of another release keeps it.
+plat=$DS_TEST_ROOT/platform-instance
+cp -R "$root" "$plat"
+mkdir -p "$plat/platforms"
+printf 'schema_version = 1\n[components.example-term]\nunavailable = "not on this release"\n' >"$plat/platforms/ubuntu.toml"
+printf 'platform = "ubuntu-22.04"\n' >>"$plat/hosts/laptop.toml"
+printf 'platform = "debian-12"\n' >>"$plat/hosts/server.toml"
+assert_inst_eq '{"laptop":true,"server":false}' "let
+    i = instance { root = /. + \"$plat\"; homeModules = [ ({ dotsteward, lib, ... }: { options.seen = lib.mkOption { default = dotsteward.tags; }; }) ]; };
+    no = n: lib.elem \"no:example-term\" i.hostConfigurations.\${n}.config.seen;
+  in { laptop = no \"laptop\"; server = no \"server\"; }" "the platform of a host file"
