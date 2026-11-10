@@ -78,6 +78,8 @@ from dotsteward_cli import atomic, config, host, locks, publish, report, writers
 from dotsteward_cli.skills import normal, plugins, reconcile, sleeper, state
 
 CAPTURE_LOCK = "capture.lock"
+# The licenses of pinned skills whose upstream keeps its license above the skill directory.
+LICENSES_DIR = "agent/skill-licenses"
 WORKTREE = "worktree"
 SETTLE_SECONDS = 2.0
 CHECK_SECONDS = 1800
@@ -565,9 +567,58 @@ def _apply_copy(
             entry["revision"] = _sentinel(context)
     attempt.applied.append(Applied(work, entry_name, local))
     allowed = [os.path.join(tree["vendor"], directory)]
+    pinned = entry.get("revision") not in (context.get("repo_owned_revisions") or [])
+    if pinned and isinstance(answer.get("source"), dict) and not _holds_license(destination):
+        allowed += _license_beside(worktree, directory, path, answer["source"])
     if machine and (answer.get("here") or declined_names):
         allowed.append(_write_host_file(context, worktree, machine, None, accepted=declined_names))
     return allowed
+
+
+def _holds_license(directory: str) -> bool:
+    """A license file at the top of DIRECTORY, by the rule of ``static``."""
+    with os.scandir(directory) as entries:
+        return any(entry.name.lower().startswith("license") and entry.is_file() for entry in entries)
+
+
+def _license_beside(worktree: str, directory: str, path: str, source: Mapping[str, Any]) -> list[str]:
+    """The license of a pinned skill that is a directory of its upstream, which keeps the
+    license further up as most repositories do: the nearest one above it, as the pinned commit
+    has it, goes to ``agent/skill-licenses/<directory>/``, beside the copy, which stays the tree
+    of the upstream. Nothing when the clone has none; ``static`` says so then."""
+    revision, within = source.get("revision"), source.get("path")
+    if not (isinstance(revision, str) and isinstance(within, str) and within not in ("", ".")):
+        return []
+    real = os.path.realpath(path)
+    top = publish.git(real, "rev-parse", "--show-toplevel").stdout.strip()
+    if not top:
+        return []
+    parts = within.strip("/").split("/")
+    for depth in range(len(parts) - 1, -1, -1):
+        parent = "/".join(parts[:depth])
+        listed = publish.git(top, "ls-tree", "-z", f"{revision}:{parent}")
+        if listed.code != 0:
+            continue
+        found = []
+        for line in listed.stdout.split("\0"):
+            meta, _, name = line.partition("\t")
+            fields = meta.split()
+            if len(fields) == 3 and fields[1] == "blob" and name.lower().startswith("license"):
+                found.append((name, fields[2]))
+        if not found:
+            continue
+        name, blob = sorted(found)[0]
+        content = publish.git(top, "cat-file", "blob", blob)
+        if content.code != 0:
+            return []
+        relative = os.path.join(LICENSES_DIR, directory)
+        target = os.path.join(worktree, relative)
+        shutil.rmtree(target, ignore_errors=True)
+        os.makedirs(target)
+        with open(os.path.join(target, name), "w", encoding="utf-8") as handle:
+            handle.write(content.stdout)
+        return [relative]
+    return []
 
 
 def _section(work: Work) -> str:
@@ -779,6 +830,9 @@ def _apply_forget(
     entries.remove(entry)
     attempt.applied.append(Applied(work, str(entry["name"]), None, forgotten=True))
     allowed = [os.path.join(vendor, directory)]
+    if not plugin and os.path.isdir(os.path.join(worktree, LICENSES_DIR, directory)):
+        shutil.rmtree(os.path.join(worktree, LICENSES_DIR, directory))
+        allowed.append(os.path.join(LICENSES_DIR, directory))
     machine = reconcile.machine_name(context)
     if machine:
         # This machine stays out of it, also when its state is gone.

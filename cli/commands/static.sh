@@ -231,9 +231,12 @@ done < <(list_files | LC_ALL=C sort -z -u)
 # Paths below these prefixes are vendored or generated: no shell or ban
 # checks.
 OWN_PLUGINS_DIR=agent/plugins
+# The license of a pinned skill whose upstream keeps it above the skill directory
+# (skills capture): agent/skill-licenses/<directory>/LICENSE*.
+SKILL_LICENSES_DIR=agent/skill-licenses
 SKIP_PREFIXES=()
 if [[ $target == instance ]]; then
-  SKIP_PREFIXES+=("${DS_SKILLS_VENDOR_DIR%/}/" "$OWN_PLUGINS_DIR/")
+  SKIP_PREFIXES+=("${DS_SKILLS_VENDOR_DIR%/}/" "$OWN_PLUGINS_DIR/" "$SKILL_LICENSES_DIR/")
 fi
 
 skipped() {
@@ -434,6 +437,12 @@ check_skills() {
   if [[ "${expected[*]}" != "${found[*]}" ]]; then
     fail "$vendor: directories do not match the lock (expected ${expected[*]:-nothing}, found ${found[*]:-nothing})"
   fi
+  if [[ -d $root/$SKILL_LICENSES_DIR ]]; then
+    while IFS= read -r licensed; do
+      [[ " ${expected[*]} " == *" $licensed "* ]] ||
+        fail "$SKILL_LICENSES_DIR/$licensed: no skill of the lock has this directory"
+    done < <(find "$root/$SKILL_LICENSES_DIR" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
+  fi
 
   if ! json_lines rows "$root/$lock" '.skills[] | objects
     | select((.name | type) == "string" and (.directory | type) == "string")
@@ -463,6 +472,9 @@ check_skills() {
     fi
     if [[ $revision != same-as-instance-checkout && $revision != "${DS_COMPAT_REPO_OWNED_REVISION:-same-as-instance-checkout}" ]]; then
       listed=$(find "$root/$vendor/$directory" -maxdepth 1 -type f -iname 'license*' -print -quit)
+      if [[ -z $listed && -d $root/$SKILL_LICENSES_DIR/$directory ]]; then
+        listed=$(find "$root/$SKILL_LICENSES_DIR/$directory" -maxdepth 1 -type f -iname 'license*' -print -quit)
+      fi
       [[ -n $listed ]] || fail "$name: no license file"
     fi
     declared=$(sed -n 's/^name:[[:space:]]*//p' "$entry" | head -n 1)

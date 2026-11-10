@@ -32,8 +32,12 @@ credentials it may carry), the commit HEAD and the directory of the skill within
 (`source`, `revision` and `source_path` of its lock entry). The clone counts only when another
 machine could fetch the same tree: a remote, a commit that holds the directory, and no change
 of the directory that the commit does not have (an untracked file counts). Otherwise the skill
-is unknown, and `skills status` and the refusal of `--all` say why. Only the directory and
-the target of a link are looked at, never the directories above a real one. The answer looks
+is unknown, and `skills status` and the refusal of `--all` say why; a directory with a `.git`
+of its own stays so even after a file tool wrote into it. Only the directory and the target
+of a link are looked at, never the directories above a real one. The vendored copy is the
+directory of the upstream as it is; when the upstream keeps its license above that directory,
+as most repositories do, the nearest `LICENSE*` above it at the pinned commit goes to
+`agent/skill-licenses/<directory>/`, where the license rule of `static` finds it. The answer looks
 at the clone again, so a clone cleaned up meanwhile is fine, and `skills reconcile --full`
 does the same for every unknown question. A clone that pulls by itself afterwards is newer
 than the pin, not drift: `agents install` leaves it alone and `agents check` passes with a
