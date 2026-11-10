@@ -18,7 +18,8 @@
 
 FAKE_NIX_STATE holds the scenario: fail-lock (input names whose relock
 fails), fail-build (attributes whose build fails with a builder error),
-fail-prefetch (URLs that do not download), serve/<sha256 of the URL> (the
+fail-prefetch (URLs that do not download: HTTP 404), unreachable (URLs whose
+host does not resolve), serve/<sha256 of the URL> (the
 file a URL downloads), store (hashes built so far), calls (one line per
 command). A prefetched file that is not served holds "download:<url>", except
 a sigstore bundle next to a download (.sigstore, .sigstore.json, .bundle),
@@ -148,6 +149,8 @@ def main():
         url = rest[-1]
         if url in lines_of("fail-prefetch"):
             sys.exit(f"error: unable to download '{url}': HTTP error 404")
+        if url in lines_of("unreachable"):
+            sys.exit(f"error: unable to download '{url}': Couldn't resolve host name (6)")
         served = STATE / "serve" / hashlib.sha256(url.encode()).hexdigest()
         if served.is_file():
             body = served.read_bytes()

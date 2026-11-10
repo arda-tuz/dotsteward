@@ -117,6 +117,9 @@ assert_eq "0" "$(ds_call_count systemctl)"
 # one more update reads what it fetched.
 : >"$DS_CALL_LOG"
 assert_exit 0 run_install --profile fresh
+# Releases newer than the pin come unverified: only the checksums of the same
+# release check them (design 9), and the install says so.
+assert_contains "$DS_STDOUT" "[dotsteward] example-app (deb): the local APT bridge serves releases of example-org/example-app newer than the pin unsigned (no attestation is verified, only the SHA256SUMS of the same release)"
 assert_eq "$(<"$DS_REPO_ROOT/cli/libexec/apt-bridge.sh")" "$(<"$script")"
 assert_eq "$expected_conf" "$(<"$conf")"
 assert_eq "$expected_service" "$(<"$service")"

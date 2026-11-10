@@ -186,7 +186,12 @@ assert_eq "authenticity-no-trusted-root $pin" "$(item_codes)"
 assert_eq "$before" "$(tree_state)"
 rm -f "$DS_TEST_ROOT/no-root"
 
-# --- An archive whose member is signed (the bundle is named after the member).
+# --- An archive whose member is signed (the bundle is named after the member,
+# the member is the one the component installs).
+json_edit "$manifest" '
+data["components"].append({"name": "example-release", "method": "official-binary", "install": {
+    "pin": "agent_tools.example-release", "member": "example-release-linux-x64", "verify": "sha256"}})
+'
 archive=$DS_TEST_ROOT/archive
 mkdir -p "$archive"
 cp "$fixtures/example-release-4.1.0" "$archive/example-release-linux-x64"

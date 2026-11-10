@@ -33,8 +33,10 @@ assert_contains "$DS_STDOUT" "[dotsteward] example-app (app-archive): $url is un
 rm -rf -- "$bundle"
 
 # A recorded signature of another file: refused before the archive is opened.
+# The signature names release v4.1.0, so the pin is at that version.
+pin_archive desktop_packages.example-app-darwin "$DS_TEST_ROOT/example-1.2.3.zip" "$url" 4.1.0
 lock_set trust "$(jq -c '{ sigstore_root: ., signers: { "desktop_packages.example-app-darwin": {
-    kind: "sigstore", identity_regexp: "^https://github\\.com/example/example-release/",
+    kind: "sigstore", identity_regexp: "^https://github\\.com/example/example-release/\\.github/workflows/release\\.yml@refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+$",
     issuer: "https://token.actions.githubusercontent.com", first_seen: "2026-11-01" } } }' "$fixtures/trusted_root.json")"
 lock_set desktop_packages.example-app-darwin.signature "$(jq -c '{ kind: "message", subject: "asset",
     identity: "https://github.com/example/example-release/.github/workflows/release.yml@refs/tags/v4.1.0", bundle: . }' \
@@ -48,7 +50,7 @@ assert_eq "" "$(temp_dirs)"
 
 # The archive the signature covers (the release blob stands in for a zip
 # the test cannot sign at run time): verified, then opened.
-pin_archive desktop_packages.example-app-darwin "$fixtures/example-release-4.1.0" "$url" 1.2.3
+pin_archive desktop_packages.example-app-darwin "$fixtures/example-release-4.1.0" "$url" 4.1.0
 lock_set desktop_packages.example-app-darwin.signature "$(jq -c '{ kind: "message", subject: "asset",
     identity: "https://github.com/example/example-release/.github/workflows/release.yml@refs/tags/v4.1.0", bundle: . }' \
   "$fixtures/example-release-4.1.0.sigstore.json")"

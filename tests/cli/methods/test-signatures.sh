@@ -52,7 +52,8 @@ trust() {
       sigstore_root: .,
       signers: {
         "agent_tools.example-release": { kind: "sigstore", identity_regexp: $regexp, issuer: $issuer, first_seen: "2026-11-01" },
-        "desktop_packages.example-term": { kind: "sigstore", identity_regexp: "^https://github\\.com/example-org/example-term/",
+        "desktop_packages.example-term": { kind: "sigstore",
+          identity_regexp: "^https://github\\.com/example-org/example-term/\\.github/workflows/release\\.yml@refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+$",
           issuer: "https://token.actions.githubusercontent.com", first_seen: "2026-11-01" }
       }
     }' "$fixtures/trusted_root.json")"
@@ -122,7 +123,7 @@ refused "example-release (official-binary): the sigstore signature of example-re
 # trusted root without the certificate authority.
 pin_download agent_tools.example-release "$release" "$url" 4.1.0
 lock_set agent_tools.example-release.signature "$member_signature"
-trust '^https://github\.com/example/example-fork/' "$issuer"
+trust '^https://github\.com/example/example-fork/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' "$issuer"
 refused "the sigstore signature of example-release-4.1.0/example-release does not verify: "
 trust "$regexp" https://issuer.example.invalid
 refused "the sigstore signature of example-release-4.1.0/example-release does not verify: "
@@ -146,7 +147,10 @@ pin_download agent_tools.example-release "$DS_TEST_ROOT/changed.tar.gz" "$url" 4
 lock_set agent_tools.example-release.signature "$member_signature"
 refused "the sigstore signature of example-release-4.1.0/example-release does not verify: "
 pin_download agent_tools.example-release "$release" "$url" 4.1.0
+# (A source the lock knows as signed never installs unsigned: this one is not.)
+lock_set trust "$(jq -c '{ sigstore_root: ., signers: {} }' "$fixtures/trusted_root.json")"
 assert_exit 0 install_release
+trust "$regexp" "$issuer"
 assert_eq "installed: example-release 4.1.0" "${DS_STDOUT##*$'\n'}"
 assert_contains "$DS_STDOUT" "[dotsteward] example-release (official-binary): $url is unsigned: versions.lock.json agent_tools.example-release records no signature"
 assert_eq "$installed" "$(sha256sum "$dest")"
@@ -168,12 +172,11 @@ lock_set agent_tools.example-release.signature "$(signature attestation asset "$
 assert_exit 0 install_release
 assert_eq "installed: example-release 5.0.0" "${DS_STDOUT##*$'\n'}"
 assert_contains "$DS_STDOUT" "sigstore attestation (https://slsa.dev/provenance/v1) of example-release-linux-x64 verified: $identity"
-# The attestation names another file (a newer pin, so the installed binary
-# does not satisfy it).
-pin_download agent_tools.example-release "$fixtures/example-release-4.1.0" "$raw_url" 5.0.1
+# The attestation names another file.
+pin_download agent_tools.example-release "$fixtures/example-release-4.1.0" "$raw_url" 5.0.0
 lock_set agent_tools.example-release.signature "$(signature attestation asset "$fixtures/example-release-5.0.0.intoto.jsonl" '{"predicate_type": "https://slsa.dev/provenance/v1"}')"
+rm -f "$dest"
 refused "the sigstore attestation (https://slsa.dev/provenance/v1) of example-release-linux-x64 does not verify: "
-assert_eq "example-release 5.0.0" "$("$dest" --version)"
 
 # A DEB with a recorded signature: verified before the first sudo call.
 term_deb=$(ds_fixture common/debs/example-term_0.9.0_amd64.deb)
