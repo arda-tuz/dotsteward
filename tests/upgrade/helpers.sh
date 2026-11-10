@@ -20,6 +20,10 @@
 #   UP_APT        the answers of the fake apt helper, ACTION.json or ACTION-MODE.json; one package
 #                 waits outside the tracked set, so a terminal gets the offer
 #   bridge        the apt bridge script as `install --component` leaves it, under DS_SYSTEM_ROOT
+#   systemctl     a fake of the user manager, never the real one: $UP_CONTROL/user-units holds one
+#                 line "UNIT INVOCATION" per running user service; --user list-units, show -p Id
+#                 -p InvocationID, stop and restart (a new invocation) read and change it, and each
+#                 call goes to UP_LOG as "systemctl ARG..."; start_unit UNIT starts one
 #
 #   upgrade ARG...           dotsteward upgrade through the dispatcher, standard input empty and
 #                            no terminal
@@ -160,6 +164,57 @@ fi
 
 upgrade() {
   "$fw/cli/dotsteward" --instance "$up_inst" upgrade "$@" </dev/null
+}
+
+: >"$UP_CONTROL/user-units"
+cat >"$DS_TEST_ROOT/up-bin/systemctl" <<SYSTEMCTL
+#!$BASH
+set -euo pipefail
+printf 'systemctl %s\n' "\$*" >>"$UP_LOG"
+units=$UP_CONTROL/user-units
+[[ \${1:-} == --user ]] || { printf 'Failed to connect to bus: Access denied\n' >&2; exit 1; }
+shift
+operation=\$1
+shift
+names=()
+for word in "\$@"; do
+  [[ \$word == -* ]] || names+=("\$word")
+done
+case \$operation in
+  list-units)
+    while read -r unit invocation; do
+      printf '%s loaded active running %s\n' "\$unit" "\$unit"
+    done <"\$units"
+    ;;
+  show)
+    for name in \${names[@]+"\${names[@]}"}; do
+      [[ \$name == Id || \$name == InvocationID ]] && continue
+      invocation=\$(awk -v unit="\$name" '\$1 == unit { print \$2 }' "\$units")
+      printf 'Id=%s\nInvocationID=%s\n\n' "\$name" "\$invocation"
+    done
+    ;;
+  stop)
+    for name in "\${names[@]}"; do
+      awk -v unit="\$name" '\$1 != unit' "\$units" >"\$units.new"
+      mv -- "\$units.new" "\$units"
+    done
+    ;;
+  restart)
+    for name in "\${names[@]}"; do
+      awk -v unit="\$name" -v now="\$RANDOM\$RANDOM" '\$1 == unit { \$2 = now } { print }' "\$units" >"\$units.new"
+      mv -- "\$units.new" "\$units"
+    done
+    ;;
+  *) exit 1 ;;
+esac
+SYSTEMCTL
+chmod 0755 "$DS_TEST_ROOT/up-bin/systemctl"
+
+# start_unit UNIT [INVOCATION]: UNIT runs now, with a new invocation.
+start_unit() {
+  awk -v unit="$1" '$1 != unit' "$UP_CONTROL/user-units" >"$UP_CONTROL/user-units.new"
+  printf '%s %s\n' "$1" "${2:-$RANDOM$RANDOM}" >>"$UP_CONTROL/user-units.new"
+  mv -- "$UP_CONTROL/user-units.new" "$UP_CONTROL/user-units"
 }
 
 # declare_tool NAME CHECK UPDATE [SKIP_PROVIDERS]: a table of [[upgrade.tools]] in the instance,

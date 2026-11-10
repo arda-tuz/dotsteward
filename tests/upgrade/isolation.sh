@@ -25,7 +25,7 @@ for index, entry in enumerate(os.environ["PATH"].split(os.pathsep)):
 print(os.pathsep.join(result))
 PY
 }
-PATH=$(hide_tools snap flatpak fwupdmgr claude codex modinfo ubuntu-drivers uname)
+PATH=$(hide_tools snap flatpak fwupdmgr claude codex modinfo ubuntu-drivers uname systemctl)
 tool_on_path_uname=$(command -v python3)
 mkdir -p "$DS_TEST_ROOT/up-bin"
 cat >"$DS_TEST_ROOT/up-bin/uname" <<UNAME
