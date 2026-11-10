@@ -135,8 +135,9 @@ cli.mkTestCheck {
     for generation in ${checks.home} ${checks.home-fresh}; do
       [[ -x $generation/activate ]] || fail "$generation is not an activation package"
     done
-    jq -e '.components == []' ${checks.home}/home-path/share/dotsteward/manifest.json >/dev/null ||
-      fail "the template generation lists components"
+    # The one component of the template: apt-policy, on by default on Linux.
+    jq -e '[.components[].name] == ["apt-policy"]' ${checks.home}/home-path/share/dotsteward/manifest.json >/dev/null ||
+      fail "the template generation lists other components than apt-policy"
 
     # The README example runs as an instance static script in the sandbox.
     [[ -e ${scripted.instance-static} && -e ${scripted.instance-contract} ]] ||
