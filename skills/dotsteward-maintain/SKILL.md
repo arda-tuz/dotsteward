@@ -50,6 +50,25 @@ Maintain one system: this machine is the observed input, the instance checkout i
 - `warnings`: an unreachable binary cache means stop and report; `gh` not logged in means ask the user to run `gh auth login`; low disk space is only reported (the gate stops below `gate.min_free_gib` GiB). Never collect garbage or delete Home Manager generations without the user's explicit approval.
 - `activate` and `publish` are the defaults of `apply` on this instance (`[maintain]` of `workstation.toml`).
 
+## Track or stop tracking one component
+
+When the request is to track one piece of software (an application, a CLI, a package) or to stop tracking one, and nothing else belongs to the transaction, one command replaces step 4 above and sections 2 to 4: it opens the transaction itself, writes the intent and runs the one `dotsteward apply`, with the same options and the same exit statuses. Run it in the background like `apply`, and choose `--activate` and `--publish` by the rules of section 4.
+
+```bash
+dotsteward status
+dotsteward add NAME --activate --publish
+dotsteward add NAME --apt PACKAGE --command COMMAND --activate --publish
+dotsteward add NAME --nix ATTRIBUTE --command COMMAND --activate --publish
+dotsteward remove NAME --activate --publish
+```
+
+- `dotsteward status` is the read-only, offline overview: what is tracked, what applies on this machine and why not, holds, whether the active generation is the checkout, what other machines brought, the skills and plugins. Read it to plan and to report; it never changes anything.
+- NAME is a catalog component or a component of the instance (`components/NAME/default.nix`); plain APT packages that a source of this machine offers take `--apt`, a nixpkgs package takes `--nix`. Scope it with `--here` (only this machine), `--machines`, `--tags` or `--profiles` when the user says so.
+- `channel-unknown`: the channel needs research (an official binary, a vendor APT repository, a release download, a Python application). Plan and implement it by sections 2 and 3, writing `components/NAME/default.nix` and its pins, without touching the table, then run the same `dotsteward add NAME` with the same options: it enables the component and commits its files with the table.
+- A red gate whose pins check names pins the lock lacks (a catalog component with a download pin): add those first pins by section 3 and the update references, then the same `dotsteward add NAME`.
+- `dotsteward remove` keeps the software installed: an APT package, an official binary or a Python environment stays on the machine (a `nix` component leaves the profile at the next activation, which is how Home Manager works; say so). Pass `--uninstall` only when the user asks to remove the software too. `uninstall-required`: ask the user to run the `run` command in their own terminal (it needs `sudo`), or run the same `dotsteward remove NAME --uninstall` on a terminal.
+- A question of `maintain begin` (`checkout-dirty`, `unpublished-commits`) means other changes wait: put it to the user as in section 1; the command wrote nothing. A red step or a sudo step is section 5, and the same command finishes it.
+
 ## Locally maintained settings
 
 When the user wants local settings written to the repository, or accepts pending entries found at the start, follow the "Write local settings to the repository" workflow in `references/local-maintained-files.md`: `status --json`, a decision report for every entry that needs a decision, `resolve` per the user's answer, `flush`, then the usual `dotsteward apply`, and finally `reconcile`. The decision report is plain text by default; an overlay may ask for another format. Tracking or untracking a setting is a normal transaction with `track`, `track-file` or `untrack`.
