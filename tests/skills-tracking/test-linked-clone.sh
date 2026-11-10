@@ -6,10 +6,12 @@
 # skill comes from, and --all pins that remote, the directory and the commit, as for a
 # record of `npx skills`. The clone moves by itself later: agents install never writes
 # through the link and agents check stays green. A clone with changes or without a remote
-# says why it is unknown, here and in the refusal of --all. An answer about a skill that was
-# seen as unknown before looks again, also after --never.
-# shellcheck source=tests/skills-tracking/capture-helpers.sh
-source "$DS_REPO_ROOT/tests/skills-tracking/capture-helpers.sh"
+# says why it is unknown, here and in the refusal of --all, and a clone of its own stays a
+# question even after a file tool wrote into it. An answer about a skill that was seen as
+# unknown before looks again, also after --never. The license of the clone, at its top as
+# most repositories keep it, goes with the pin; credentials in the remote never do.
+# shellcheck source=tests/skills-tracking/plugin-helpers.sh
+source "$DS_REPO_ROOT/tests/skills-tracking/plugin-helpers.sh"
 
 new_machine a
 new_machine b
@@ -19,16 +21,18 @@ sources=$(home_of a)/.local/share/skill-sources
 public=https://github.com/example-org/figures
 mkdir -p "$sources"
 
-# The upstream: a repository with two skills, each a directory of it, with a license.
+# The upstream: a repository with two skills, each a directory of it, and one license at
+# its top.
 upstream=$world/figures.git
 upstream_work=$world/figures
 git init -q -b main "$upstream_work"
 for skill in figure-making chart-making; do
-  mkdir -p "$upstream_work/$skill"
+  mkdir -p "$upstream_work/$skill/references"
   printf -- '---\nname: %s\ndescription: Synthetic skill.\n---\n\nversion one\n' "$skill" >"$upstream_work/$skill/SKILL.md"
-  printf 'MIT\n' >"$upstream_work/$skill/LICENSE"
+  printf '# Guide\n' >"$upstream_work/$skill/references/guide.md"
 done
 printf '# Figures\n' >"$upstream_work/README.md"
+printf 'Synthetic license, version 1\n' >"$upstream_work/LICENSE"
 git -C "$upstream_work" add -A
 git -C "$upstream_work" commit -q -m "chore: two skills"
 git clone -q --bare "$upstream_work" "$upstream"
@@ -55,11 +59,17 @@ assert_eq "$(git -C "$clone" rev-parse HEAD)" "$(jq -r .revision <<<"$entry")"
 assert_eq figure-making "$(jq -r .source_path <<<"$entry")"
 assert_eq null "$(jq -r '.machines // null' <<<"$entry")"
 assert_contains "$(remote_file agent/skills/figure-making/SKILL.md)" "version one"
+# The vendored copy is the directory of the upstream as it is; its license lies beside it.
+if git -C "$remote" cat-file -e refs/heads/main:agent/skills/figure-making/LICENSE 2>/dev/null; then
+  ds_fail "the copy stays the tree of the upstream"
+fi
+assert_eq "Synthetic license, version 1" "$(remote_file agent/skill-licenses/figure-making/LICENSE)"
 assert_eq "{}" "$(item a figure-making .)"
+git -C "$(clone_of a)" pull -q --ff-only
+assert_exit 0 ds a static --only skills
 
 # --- the clone moves by itself; nothing writes through the link, nothing turns red ------------
 
-git -C "$(clone_of a)" pull -q --ff-only
 assert_exit 0 ds a "${install[@]}"
 assert_exit 0 ds a agents check --profile workstation
 [[ -L $agents_skills/figure-making ]] || ds_fail "the link stays a link"
@@ -115,6 +125,57 @@ entry=$(remote_entry chart-making)
 assert_eq "$public" "$(jq -r .source <<<"$entry")"
 assert_eq chart-making "$(jq -r .source_path <<<"$entry")"
 assert_json - '.machines == ["a"]' <<<"$entry"
+
+# --- a clone of its own stays a question, whatever a file tool wrote into it --------------------
+
+solo=$world/solo
+git init -q -b main "$solo"
+printf -- '---\nname: solo\ndescription: Synthetic skill.\n---\n' >"$solo/SKILL.md"
+printf 'Synthetic license\n' >"$solo/LICENSE"
+git -C "$solo" add -A
+git -C "$solo" commit -q -m "chore: a skill at the top"
+git clone -q "$solo" "$(home_of a)/.claude/skills/solo"
+printf 'an edit\n' >>"$(home_of a)/.claude/skills/solo/SKILL.md"
+wrote a solo
+assert_exit 0 ds a skills reconcile
+assert_eq ask "$(item a solo .state)"
+assert_eq unknown "$(item a solo .origin)"
+assert_contains "$(item a solo .origin_detail)" "uncommitted"
+plugin_upstream=$world/plugin-upstream
+new_plugin a plugin-upstream
+mv "$(plugin_dir a plugin-upstream)" "$plugin_upstream"
+git -C "$plugin_upstream" init -q -b main
+git -C "$plugin_upstream" add -A
+git -C "$plugin_upstream" commit -q -m "chore: a plugin"
+git clone -q "$plugin_upstream" "$(plugin_dir a cloned-plugin)"
+printf '\n' >>"$(plugin_dir a cloned-plugin)/.claude-plugin/plugin.json"
+tool_wrote a "$(plugin_dir a cloned-plugin)/.claude-plugin/plugin.json"
+assert_exit 0 ds a skills reconcile
+assert_eq ask "$(plugin_item a cloned-plugin .state)"
+assert_eq unknown "$(plugin_item a cloned-plugin .origin)"
+
+# --- credentials in the remote stay on this machine ------------------------------------------------
+
+kit=$world/kit
+git init -q -b main "$kit"
+mkdir -p "$kit/plotting-kit"
+printf -- '---\nname: plotting-kit\ndescription: Synthetic skill.\n---\n' >"$kit/plotting-kit/SKILL.md"
+printf 'Synthetic license\n' >"$kit/LICENSE"
+git -C "$kit" add -A
+git -C "$kit" commit -q -m "chore: a skill"
+git clone -q "$kit" "$sources/kit"
+git -C "$sources/kit" remote set-url origin https://reader:not-a-real-secret@example.com/example-org/kit.git
+ln -s "$sources/kit/plotting-kit" "$agents_skills/plotting-kit"
+assert_exit 0 ds a skills reconcile
+assert_eq https://example.com/example-org/kit.git "$(item a plotting-kit .source.url)"
+ds_code a skills track plotting-kit --here
+assert_eq https://example.com/example-org/kit.git "$(jq -r .source <<<"$(remote_entry plotting-kit)")"
+if git -C "$remote" grep -q not-a-real-secret refs/heads/main --; then
+  ds_fail "no credential reaches the remote"
+fi
+if grep -rq not-a-real-secret "$(state_of a)/skills"; then
+  ds_fail "no credential is kept in the state"
+fi
 
 # --- seen as unknown and declined before: --all looks again and takes the decline back ----------
 
