@@ -52,6 +52,8 @@ WAITING_REF = "refs/dotsteward/upgrade/waiting"
 _WORK = "work"
 # What the waiting commit moved, next to it: {schema_version, commit, moved}.
 _WAITING_FILE = "waiting.json"
+# The running user services before a move, below <state>/rollback: {services: {unit: invocation}}.
+_SERVICES_FILE = "services.json"
 _PUBLISH_SCOPE = "upgrade"
 _WEEK_SECONDS = 7 * 24 * 60 * 60
 _STALE_PRODUCER_SECONDS = 14 * 24 * 60 * 60
@@ -856,6 +858,84 @@ class Upgrade(runner.Runner):
             saved += [(file, directory / file.name) for file in files]
         return saved
 
+    def _services_file(self) -> Path:
+        return Path(self.state_root) / "rollback" / _SERVICES_FILE
+
+    def _user_services(self) -> dict[str, str] | None:
+        """The running user services and the invocation of each; None when the user manager does not
+        answer (no systemd, no session)."""
+        if not self.linux or shutil.which("systemctl") is None:
+            return None
+        listed = self._systemctl("list-units", "--type=service", "--state=running", "--plain", "--no-legend")
+        if listed is None:
+            return None
+        names = [line.split()[0] for line in listed.splitlines() if line.strip()]
+        if not names:
+            return {}
+        shown = self._systemctl("show", "--property=Id,InvocationID", "--", *names)
+        if shown is None:
+            return None
+        found: dict[str, str] = {}
+        for block in shown.split("\n\n"):
+            fields = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
+            if fields.get("Id"):
+                found[fields["Id"]] = fields.get("InvocationID", "")
+        return found
+
+    def _systemctl(self, operation: str, *arguments: str) -> str | None:
+        try:
+            done = subprocess.run(
+                ["systemctl", "--user", operation, "--no-pager", *arguments],
+                capture_output=True,
+                text=True,
+                timeout=_VERSION_SECONDS,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        return done.stdout if done.returncode == 0 else None
+
+    def _save_services(self) -> None:
+        """The user services before the move, once: a file that is there came from before it."""
+        path = self._services_file()
+        if path.exists():
+            return
+        services = self._user_services()
+        if services is not None:
+            atomic.make_private_dirs(path.parent)
+            atomic.atomic_write_json(path, {"services": services}, mode=0o600)
+
+    def _saved_services(self) -> dict[str, str] | None:
+        try:
+            services = json.loads(self._services_file().read_text(encoding="utf-8"))["services"]
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        return (
+            {str(name): str(invocation) for name, invocation in services.items()}
+            if isinstance(services, dict)
+            else None
+        )
+
+    def _take_back_services(self, before: Mapping[str, str] | None, moved: Mapping[str, str] | None) -> None:
+        """What the moved generation started goes with it. BEFORE: the services before the move;
+        MOVED: those before the rebuild back. A service the rebuild back did not start again still runs
+        what the move started: stopped when it did not run before, else restarted."""
+        after = self._user_services()
+        if before is None or moved is None or after is None:
+            return
+        started = {name for name, invocation in moved.items() if before.get(name) != invocation}
+        left = sorted(name for name in started if after.get(name) == moved[name])
+        stop = [name for name in left if name not in before]
+        restart = [name for name in left if name in before]
+        if stop:
+            _say(f"stopping what the moved generation started: {', '.join(stop)}")
+            self._systemctl("stop", "--", *stop)
+        if restart:
+            _say(f"restarting what the moved generation restarted: {', '.join(restart)}")
+            self._systemctl("restart", "--", *restart)
+        if stop or restart:
+            self.run.step("go-back-services", report.OK, stopped=stop, restarted=restart)
+
     def _save_binaries(self) -> None:
         for dest, copy in self._saved_binaries():
             # A copy that is there came from before the move, also after a run that was cut short.
@@ -890,6 +970,7 @@ class Upgrade(runner.Runner):
         _say(f"rebuild of profile {self.profile}")
         if self.work is not None:
             self._save_binaries()
+            self._save_services()
         status = self._ds("rebuild", "--profile", self.profile, "--switch")
         if self.work is not None and (status == _KILLED or status < 0):
             # Out of memory, or stopped from outside: it says nothing about the pins, and this tree is
@@ -1095,6 +1176,7 @@ class Upgrade(runner.Runner):
         clone; the checkout never had it. A hold comes only when the way back is green, since otherwise
         the move is not what broke the machine. The next run leaves held pins and moves the others."""
         saved = self._saved_binaries()
+        services = self._saved_services()
         moved = self.moved
         base = self._git("rev-parse", f"{self.waiting}^").stdout.strip()
         self._drop_waiting(forget_binaries=False)
@@ -1105,8 +1187,10 @@ class Upgrade(runner.Runner):
             return
         assert self.profile is not None
         # The rebuild first: an installer keeps a binary newer than its pin, so the copy goes last.
+        running = self._user_services()
         status = self._ds("rebuild", "--profile", self.profile, "--switch")
         self._restore_binaries(saved)
+        self._take_back_services(services, running)
         self.run.step("go-back", status, detail=reason)
         again = self._run_e2e() if status == 0 else ["rebuild"]
         self.red = True
