@@ -6,13 +6,15 @@
 # only the moved generation has is stopped, and one whose unit file the moved generation changed is
 # restarted, unless the rebuild back restarted it already. Nothing else is touched: not a service
 # the owner or D-Bus started or restarted meanwhile, not a session service even when a generation
-# names it (dbus, the session manager, the audio server), and no record of an earlier run.
+# names it (dbus, the session manager, the audio server, a unit of the desktop that runs, named
+# after it in XDG_CURRENT_DESKTOP), and no record of an earlier run.
 # shellcheck source=tests/upgrade/helpers.sh
 source "$DS_REPO_ROOT/tests/upgrade/helpers.sh"
 
 tool_stub fwupdmgr 'exit 2'
 tool_stub claude 'case "$1" in --version) printf "2.0.0 (Claude Code)\n";; esac'
 export UP_GENERATIONS=$DS_TEST_ROOT/generations
+export XDG_CURRENT_DESKTOP=ubuntu:OtherDesk
 
 start_unit dbus.service bus-1
 start_unit pipewire.service pw-1
@@ -20,6 +22,8 @@ start_unit example-changed.service changed-1
 start_unit example-same.service same-1
 start_unit example-switched.service switched-1
 start_unit exampledesk-session-manager.service session-1
+start_unit otherdesk-portal.service portal-1
+start_unit org.otherdesk.Shell.service shell-1
 # An older release left a snapshot of the services of an earlier run: it is never read.
 mkdir -p "$DOTSTEWARD_STATE_ROOT/rollback"
 printf '{"services": {"dbus.service": "bus-0", "exampledesk-session-manager.service": "session-0", "pipewire.service": "pw-0"}}\n' \
@@ -35,7 +39,8 @@ units=$UP_GENERATIONS/generation-$(git -C "$DOTSTEWARD_INSTANCE" rev-parse 'HEAD
 mkdir -p "$units"
 printf 'same\n' >"$units/example-same.service"
 if [[ $DOTSTEWARD_INSTANCE == */upgrade/work ]]; then
-  for unit in example-daemon example-changed example-switched dbus exampledesk-session-manager pipewire; do
+  for unit in example-daemon example-changed example-switched dbus exampledesk-session-manager pipewire \
+    otherdesk-portal org.otherdesk.Shell; do
     printf 'moved\n' >"$units/$unit.service"
   done
   start_unit example-daemon.service daemon-1
@@ -43,7 +48,8 @@ if [[ $DOTSTEWARD_INSTANCE == */upgrade/work ]]; then
   start_unit example-switched.service switched-2
   start_unit dbus.service bus-2
 else
-  for unit in example-changed example-switched dbus exampledesk-session-manager pipewire; do
+  for unit in example-changed example-switched dbus exampledesk-session-manager pipewire otherdesk-portal \
+    org.otherdesk.Shell; do
     printf 'before\n' >"$units/$unit.service"
   done
   start_unit example-switched.service switched-3
@@ -75,7 +81,8 @@ units=$(<"$UP_CONTROL/user-units")
 assert_not_contains "$units" "example-daemon.service"
 assert_not_contains "$units" "changed-2"
 for left in "dbus.service bus-2" "pipewire.service pw-2" "exampledesk-terminal-server.service term-1" \
-  "exampledesk-session-manager.service session-1" "example-same.service same-1" "example-switched.service switched-3"; do
+  "exampledesk-session-manager.service session-1" "example-same.service same-1" "example-switched.service switched-3" \
+  "otherdesk-portal.service portal-1" "org.otherdesk.Shell.service shell-1"; do
   assert_contains "$units" "$left"
 done
 
