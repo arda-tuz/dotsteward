@@ -291,6 +291,19 @@ let
         "tests/upgrade"
       ])
     ];
+    cli-track = fs.unions [
+      runner
+      cli
+      catalog
+      (paths [
+        "engines"
+        "privacy"
+        "tests/apply"
+        "tests/cli/update/helpers.sh"
+        "tests/track"
+        "tests/upgrade"
+      ])
+    ];
     cli-upgrade = fs.unions [
       runner
       cli
