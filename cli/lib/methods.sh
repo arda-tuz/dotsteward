@@ -55,6 +55,8 @@
 #                                    bridge, then one apt transaction; sets
 #                                    METHODS_DEB_STATUS[name] and
 #                                    METHODS_DEB_DETAIL[name]
+#   methods_unavailable_notes        a line for each component that is not
+#                                    available on this platform
 #   methods_system_install NAME      the files of a system component
 #                                    (install.system.files) that are missing
 #                                    or differ, written root-owned through
@@ -1932,4 +1934,17 @@ methods_exec_hook() {
   path=$(methods_hook_path "$hook") || exit 1
   _methods_hook_env "$hook" "$profile" "$check_only"
   exec "${_methods_env[@]}" python3 -I -S -c "$_METHODS_SESSION_PY" "$path" "$@" </dev/null
+}
+
+# methods_unavailable_notes: one line on standard error for each component that is not
+# available on the platform of this machine (a platform file, or the platform filter of Nix:
+# the reasons platform and method of `skills effective`), so no command leaves one out silently.
+methods_unavailable_notes() {
+  local line
+  while IFS= read -r line; do
+    [[ -n $line ]] && log "$line" >&2
+  done < <(jq -r 'to_entries[] | select(.key | startswith("component:"))
+    | select(.value == "platform" or .value == "method")
+    | "\(.key | ltrimstr("component:")): not available on this platform"
+      + (if .value == "method" then " (its method)" else "" end)' <<<"${DS_SKIP_REASONS_JSON:-{\}}")
 }

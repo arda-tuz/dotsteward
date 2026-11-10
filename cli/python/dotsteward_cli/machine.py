@@ -409,10 +409,12 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
     # The platform filter of Nix: the manifest of this system leaves a component out.
     from dotsteward_cli.skills import layout
 
+    # A broken mirror is the finding of the command that reads it, not a failure here.
+    mirrored = layout.manifest(instance).get("components")
     filtered = {
         str(entry.get("name")): str(entry["unavailable"])
-        for entry in layout.manifest(instance).get("components") or []
-        if entry.get("unavailable") in (REASON_PLATFORM, REASON_METHOD)
+        for entry in (mirrored if isinstance(mirrored, list) else [])
+        if isinstance(entry, dict) and entry.get("unavailable") in (REASON_PLATFORM, REASON_METHOD)
     }
     for component, table in enabled_components(instance):
         if component in unavailable:

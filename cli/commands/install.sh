@@ -163,7 +163,7 @@ phase_hooks() {
 
 components=()
 load_components
-config_unavailable_notes
+methods_unavailable_notes
 report_components=()
 report_hooks=()
 result=passed

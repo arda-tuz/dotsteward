@@ -198,16 +198,3 @@ config_component_active() {
     *) die "unknown component: $1" ;;
   esac
 }
-
-# config_unavailable_notes: one line on standard error for each component that is not
-# available on the platform of this machine (a platform file, or the platform filter of Nix:
-# reasons platform and method of `skills effective`), so a command never leaves one out silently.
-config_unavailable_notes() {
-  local line
-  while IFS= read -r line; do
-    [[ -n $line ]] && log "$line" >&2
-  done < <(jq -r 'to_entries[] | select(.key | startswith("component:"))
-    | select(.value == "platform" or .value == "method")
-    | "\(.key | ltrimstr("component:")): not available on this platform"
-      + (if .value == "method" then " (its method)" else "" end)' <<<"${DS_SKIP_REASONS_JSON:-{\}}")
-}
