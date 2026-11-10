@@ -119,7 +119,7 @@ done
 
 # What another machine brought waits for an answer here.
 mkdir -p "$DOTSTEWARD_STATE_ROOT/machine"
-jq -n '{schema_version: 1, components: ["codex", "example-app"], plugins: []}' \
+jq -n '{schema_version: 1, components: ["codex", "example-app", "example-player"], plugins: []}' \
   >"$DOTSTEWARD_STATE_ROOT/machine/known.json.new"
 mv -- "$DOTSTEWARD_STATE_ROOT/machine/known.json.new" "$DOTSTEWARD_STATE_ROOT/machine/known.json"
 git -C "$up_inst" checkout -q -- docs/guide.md

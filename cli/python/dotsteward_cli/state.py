@@ -191,6 +191,15 @@ def _installs(component: Mapping[str, Any]) -> list[str]:
     return [str(name) for name in [*(install.get("packageNames") or ()), *(install.get("apt") or ())]]
 
 
+def deb_installed(install: Mapping[str, Any], versions: Mapping[str, str]) -> bool:
+    """Whether the deb block INSTALL is in place by VERSIONS (package to installed version), as the deb
+    method reads it: the names of packageNames are names of one package, so one installed name is
+    the package; every plain APT package must be there."""
+    names = [str(name) for name in install.get("packageNames") or ()]
+    plain = [str(name) for name in install.get("apt") or ()]
+    return (not names or any(name in versions for name in names)) and all(name in versions for name in plain)
+
+
 def _followed(instance: config.Instance, component: Mapping[str, Any]) -> list[str]:
     return [str(name) for name in _settings(instance, str(component["name"])).get("track") or ()]
 
@@ -436,7 +445,8 @@ def _components(instance: config.Instance, env: Mapping[str, str]) -> dict[str, 
             wanted = sorted({*installs, *_followed(instance, component)})
             versions = _installed_versions(wanted)
             if versions is not None:
-                entry["status"] = "installed" if all(package in versions for package in installs) else "missing"
+                installed = deb_installed(component.get("install") or {}, versions)
+                entry["status"] = "installed" if installed else "missing"
                 entry["packages"] = dict(sorted(versions.items()))
                 _with_check(entry, installs, checks.get(name))
         found[name] = entry

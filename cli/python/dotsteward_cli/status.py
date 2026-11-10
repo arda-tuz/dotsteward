@@ -163,9 +163,9 @@ def _installation(
     if method == "deb":
         if versions is None:
             return {}
-        installs, wanted = _deb_packages(entry, table)
+        _, wanted = _deb_packages(entry, table)
         return {
-            "installed": "installed" if all(package in versions for package in installs) else "missing",
+            "installed": "installed" if state_branch.deb_installed(install, versions) else "missing",
             "packages": {package: versions[package] for package in wanted if package in versions},
         }
     if method == "official-binary":
