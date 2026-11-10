@@ -145,6 +145,8 @@ assert_not_named
 assert_exit 0 run_host init --name desktop --reuse
 assert_eq '{"name":"desktop","profile":"fresh","platform":"ubuntu-24.04","tags":["big"]}' \
   "$(record '{name, profile: .host.profile, platform: .host.platform, tags: .host.tags}')"
+# The record says it is a reinstall: only such a machine takes over the state branch of the name.
+assert_eq 'true' "$(record .reused)"
 clean_checkout
 assert_eq '{"name":"desktop","profile":"fresh","tags":["big"]}' "$(effective '{name, profile, tags}')"
 rm -- "$(machine_file)"
@@ -157,12 +159,14 @@ assert_contains "$DS_STDOUT" "desktop"
 assert_contains "$DS_STDOUT" "reinstall"
 assert_eq '"desktop"' "$(record .name)"
 assert_eq '["big"]' "$(record .host.tags)"
+assert_eq 'true' "$(record .reused)"
 rm -- "$(machine_file)"
 
 # A new name, after an invalid one.
 assert_exit 0 on_tty $'Not Valid\nnew-machine' host init
 assert_contains "$DS_STDOUT" "invalid machine name"
 assert_eq '"new-machine"' "$(record .name)"
+assert_eq 'null' "$(record .reused)"
 rm -- "$(machine_file)"
 
 # Enter takes the suggestion, the cleaned host name.

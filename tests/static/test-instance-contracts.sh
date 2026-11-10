@@ -246,10 +246,10 @@ assert_exit 0 static --only policy --only versions-lock
 assert_not_contains "$DS_STDERR" "policy"
 fresh
 printf '\n[policy]\npersistent_agentic_updates = true\n' >>workstation.toml
-fails policy "workstation.toml: policy.persistent_agentic_updates must be false"
+fails policy "workstation.toml: policy.persistent_agentic_updates must be false; remove the key, its default is false"
 fresh
 printf '\n[policy]\nnative_application_updates = false\n' >>workstation.toml
-fails policy "workstation.toml: policy.native_application_updates must be true"
+fails policy "workstation.toml: policy.native_application_updates must be true; remove the key, its default is true"
 fresh
 printf '\n[policy]\npersistent_agentic_updates = false\nnative_application_updates = true\n' >>workstation.toml
 assert_exit 0 static --only policy

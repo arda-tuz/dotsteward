@@ -130,7 +130,9 @@ assert_eq "$before" "$(remote_tip laptop)" "the record of another machine moved 
 assert_exit 1 state_in "$desk" "$desk_state" push
 assert_eq "$before" "$(remote_tip laptop)"
 
-# The reinstall of laptop says so: its records continue the history of the branch.
+# The reinstall of laptop (host init --reuse) says so: its records continue the history of the branch.
+jq '.reused = true' "$desk_state/machine.json" >"$DS_TEST_ROOT/machine.json"
+mv -- "$DS_TEST_ROOT/machine.json" "$desk_state/machine.json"
 assert_exit 0 state_in "$desk" "$desk_state" push --take-over
 assert_contains "$DS_STDOUT" "published state/laptop"
 taken=$(remote_tip laptop)

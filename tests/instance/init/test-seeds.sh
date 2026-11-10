@@ -168,7 +168,7 @@ invalid_seed codex '.component = "herdr"' \
 invalid_seed codex '.skills_lock = { nix_tools: "x" }' "invalid seed modules/components/codex/seed.json: skills_lock.nix_tools"
 # The policy is intent, workstation.toml [policy]: no lock carries it, and no seed brings it.
 invalid_seed codex '.versions_lock.policy = { native_application_updates: true }' \
-  "invalid seed modules/components/codex/seed.json: versions_lock.policy: the policy is workstation.toml [policy], not a lock value"
+  "invalid seed modules/components/codex/seed.json: versions_lock.policy: the policy is workstation.toml [policy], not a lock value; remove it from the seed"
 invalid_seed herdr 'del(.versions_lock.flake_inputs)' \
   "invalid seed modules/components/herdr/seed.json: flake input herdr has no versions_lock.flake_inputs entry"
 invalid_seed herdr '.flake_inputs = { nixpkgs: .flake_inputs.herdr } | .versions_lock.flake_inputs = { nixpkgs: .versions_lock.flake_inputs.herdr }' \
