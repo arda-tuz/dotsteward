@@ -206,6 +206,8 @@ assert_exit 0 run_host rename big
 assert_contains "$DS_STDOUT" "chore(hosts): rename solo to big"
 assert_contains "$DS_STDOUT" "this machine is big"
 assert_eq '"big"' "$(jq -c .name "$(machine_file)")"
+# The old name, so that the gate lets this machine, and only it, remove hosts/solo.toml.
+assert_eq '"solo"' "$(jq -c .renamed_from "$(machine_file)")"
 assert_eq "$key" "$(jq -r .machine_key "$(machine_file)")"
 assert_eq "chore(hosts): rename solo to big" "$(git -C "$agents_inst" log -1 --format=%s)"
 assert_contains "$(git -C "$agents_inst" log -1 --format=%B)" "Dotsteward-Machine: big"

@@ -27,6 +27,9 @@
 #                             runs: a clone of the remote appends TEXT to FILE (a path in the tree),
 #                             generates, commits with its trace line and pushes; once removes the
 #                             hook after its push
+#   other_machine_edits_during_gate once|always FILE COMMAND
+#                             the same, but the other machine runs COMMAND (a shell command, FILE
+#                             is the path of the file in its clone) instead of appending text
 #   derived_current REF       the mirror of the fake generate in REF is what generate makes of
 #                             the tree of REF
 #   no_replay_left            no clone of a replay under the state root, no cherry-pick in the
@@ -99,14 +102,19 @@ add_system_component() {
 }
 
 other_machine_during_gate() {
-  local mode=$1 file=$2 text=$3
+  other_machine_edits_during_gate "$1" "$2" "printf '%s\\n' $(printf '%q' "$3") >>\"\$FILE\""
+}
+
+other_machine_edits_during_gate() {
+  local mode=$1 file=$2 edit=$3
   cat >"$UP_CONTROL/during-gate" <<HOOK
 set -euo pipefail
 clone=$DS_TEST_ROOT/other-machine
 rm -rf -- "\$clone"
 git clone -q "$up_bare" "\$clone"
-mkdir -p "\$(dirname -- "\$clone/$file")"
-printf '%s\\n' $(printf '%q' "$text") >>"\$clone/$file"
+FILE=\$clone/$file
+mkdir -p "\$(dirname -- "\$FILE")"
+$edit
 UP_LOG=$DS_TEST_ROOT/other-machine.log DOTSTEWARD_INSTANCE=\$clone bash "$fw/cli/commands/generate.sh"
 git -C "\$clone" add -A
 git -C "\$clone" -c user.name=other -c user.email=other@example.invalid commit -q \\

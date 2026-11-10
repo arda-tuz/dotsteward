@@ -84,3 +84,56 @@ upgrade --tracked >/dev/null 2>&1 || true
 assert_eq 3.0.0 "$(git -C "$up_bare" show main:versions.lock.json | jq -r '."agent_tools.codex.linux"')"
 assert_eq "$(remote_oid)" "$(git -C "$up_inst" rev-parse HEAD)"
 [[ ! -e $DOTSTEWARD_STATE_ROOT/review.json ]] || review_json '[.items[] | select(.code == "publish-race")] == []'
+
+# --- the rebuild of the tree of a replay is killed: that tree goes nowhere -----------------------
+# What was proven is the first tree; the second was never built nor checked by E2E.
+
+clear_log
+start=$(remote_oid)
+move agent_tools.codex.linux 4.0.0 download
+jq 'map(select(.to == "4.0.0"))' "$UP_CONTROL/moves" >"$UP_CONTROL/moves.new"
+mv -- "$UP_CONTROL/moves.new" "$UP_CONTROL/moves"
+other_machine once
+rm -f -- "$UP_CONTROL/rebuild-count"
+cat >"$UP_CONTROL/rebuild-status-hook" <<HOOK
+n=\$(( \$(cat "$UP_CONTROL/rebuild-count" 2>/dev/null || echo 0) + 1 ))
+echo "\$n" >"$UP_CONTROL/rebuild-count"
+if [[ \$n == 2 ]]; then echo 137 >"$UP_CONTROL/rebuild-status"; else rm -f -- "$UP_CONTROL/rebuild-status"; fi
+HOOK
+upgrade --tracked >/dev/null 2>&1 || true
+rm -f -- "$UP_CONTROL/rebuild-status-hook" "$UP_CONTROL/rebuild-status"
+assert_eq "" "$(git -C "$up_bare" log --format=%s "$start..main" | grep -v 'other machine' || true)" \
+  "the tree whose rebuild was killed is not published"
+last_report '[.steps[] | select(.name == "publish" and .status == "ok")] == []'
+last_report '[.steps[] | select(.name == "rebuild")] | last | .status == "failed"'
+
+# The next run builds, checks and publishes it.
+clear_log
+upgrade --tracked >/dev/null 2>&1 || true
+assert_eq 4.0.0 "$(git -C "$up_bare" show main:versions.lock.json | jq -r '."agent_tools.codex.linux"')"
+
+# --- the remote refuses the fetch of a replay: refused, not offline --------------------------------
+
+clear_log
+start=$(remote_oid)
+move agent_tools.codex.linux 5.0.0 download
+jq 'map(select(.to == "5.0.0"))' "$UP_CONTROL/moves" >"$UP_CONTROL/moves.new"
+mv -- "$UP_CONTROL/moves.new" "$UP_CONTROL/moves"
+other_machine once
+# After the push of the other machine the next connection is served, the one after it refused.
+printf 'printf "or" >"%s"\n' "$UP_CONTROL/plan" >>"$UP_CONTROL/during-gate"
+cat >"$DS_TEST_ROOT/up-bin/ssh-switch" <<SWITCH
+#!$BASH
+plan=$UP_CONTROL/plan
+if [[ -s \$plan ]]; then
+  next=\$(head -c 1 "\$plan")
+  tail -c +2 "\$plan" >"\$plan.new" && mv -- "\$plan.new" "\$plan"
+  [[ \$next != r ]] || { printf 'ERROR: Repository not found.\n' >&2; exit 1; }
+fi
+[[ ! -e "$UP_CONTROL/network-down" ]] || { printf 'ssh: connect to host github.com port 22: Network is unreachable\n' >&2; exit 255; }
+exec "$DS_REPO_ROOT/tests/lib/fakessh.sh" "\$@"
+SWITCH
+upgrade --tracked >/dev/null 2>&1 || true
+rm -f -- "$UP_CONTROL/plan"
+review_json '[.items[] | select(.code == "publish-refused")] | length == 1'
+last_report '[.steps[] | select(.detail // "" | contains("offline"))] == []'

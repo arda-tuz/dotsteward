@@ -4,8 +4,10 @@
 # every scope and before its memo, a pin value the base has (versions.lock.json, flake.lock, the
 # pin fields and tool tables of the skill lock, the files of a third-party skill), and another
 # machine's host file. It lets the same machine add a new pin, change machines, make a third-party
-# skill its own, forget one, move generated_at and write its own host file. The producer may move
-# every pin, and without [hosts] producer nothing is guarded. apply names the way out.
+# skill its own, forget one, move generated_at, write its own host file and remove its old one
+# when it was renamed. It does not remove another machine's host file, nor [hosts] producer. The
+# producer may move every pin and end the guard; without [hosts] producer nothing is guarded.
+# txn publish holds the proof of the gate to its own base. apply names the way out.
 # shellcheck source=tests/apply/helpers.sh
 source "$DS_REPO_ROOT/tests/apply/helpers.sh"
 
@@ -102,6 +104,32 @@ for scope in maintain update; do
 done
 git -C "$up_inst" reset -q --hard HEAD
 
+# A new machine, whose host file the base lacks, does not remove the host file of another one.
+name_machine new-host
+printf 'schema_version = 1\n' >"$up_inst/hosts/new-host.toml"
+rm -- "$up_inst/hosts/other-host.toml"
+clear_log
+assert_exit 1 apply -m "chore(hosts): add new-host" --no-activate --publish
+assert_contains "$DS_STDERR" "hosts/other-host.toml"
+assert_eq "$(remote_oid)" "$(head_oid)" "nothing was committed"
+git -C "$up_inst" reset -q --hard HEAD
+git -C "$up_inst" clean -qfd
+name_machine example-host
+
+# Not the producer, this machine does not remove [hosts] producer: that would end the guard.
+sed -i '/^producer = /d' "$up_inst/workstation.toml"
+refused workstation.toml "chore(hosts): no producer here"
+
+# txn publish holds the proof to its own base: a gate against another base proves nothing here.
+json_edit "$up_inst/versions.lock.json" '.agent_tools.codex.linux.version = "9.9.9"'
+git -C "$up_inst" add -A
+git -C "$up_inst" -c user.name=a -c user.email=a@example.invalid commit -q -m "chore: move codex"
+assert_exit 0 "$fw/cli/dotsteward" --instance "$up_inst" gate --scope maintain --expected-base "$(head_oid)"
+assert_exit 1 "$fw/cli/dotsteward" --instance "$up_inst" txn publish --scope maintain --expected-base "$(remote_oid)"
+assert_contains "$DS_STDERR" "the gate proved this tree against"
+assert_eq "1.0.0" "$(git -C "$up_bare" show main:versions.lock.json | jq -r .agent_tools.codex.linux.version)"
+git -C "$up_inst" reset -q --hard "$(remote_oid)"
+
 # --- not the producer: what any machine may write ----------------------------------------------------
 
 # The first key of a table the base has empty is a new pin as well.
@@ -134,13 +162,27 @@ allowed "chore(skills): forget fourth-skill"
 # --- the producer moves every pin; without a producer nothing is guarded --------------------------
 # The producer of the base decides, so a commit that names another producer cannot move pins.
 
+# A rename of this machine removes its old host file; machine.json names the old name.
+name_machine example-host
+git -C "$up_inst" mv hosts/example-host.toml hosts/desk-host.toml
+name_machine desk-host
+jq '.renamed_from = "example-host"' "$DOTSTEWARD_STATE_ROOT/machine.json" >"$DS_TEST_ROOT/machine.json"
+mv -- "$DS_TEST_ROOT/machine.json" "$DOTSTEWARD_STATE_ROOT/machine.json"
+allowed "chore(hosts): rename example-host to desk-host"
+git -C "$up_inst" mv hosts/desk-host.toml hosts/example-host.toml
+name_machine example-host
+jq '.renamed_from = "desk-host"' "$DOTSTEWARD_STATE_ROOT/machine.json" >"$DS_TEST_ROOT/machine.json"
+mv -- "$DS_TEST_ROOT/machine.json" "$DOTSTEWARD_STATE_ROOT/machine.json"
+allowed "chore(hosts): rename desk-host to example-host"
+
 name_machine other-host
 json_edit "$up_inst/versions.lock.json" '.agent_tools.codex.linux.version = "2.0.0"'
 json_edit "$up_inst/flake.lock" '.nodes.nixpkgs.locked.rev = "9999999"'
 allowed "chore: move codex and nixpkgs on the producer"
 
-name_machine example-host
+# The producer may end the guard; then nothing is guarded on any machine.
 sed -i '/^producer = /d' "$up_inst/workstation.toml"
 allowed "chore(hosts): no producer"
+name_machine example-host
 json_edit "$up_inst/versions.lock.json" '.agent_tools.codex.linux.version = "3.0.0"'
 allowed "chore: move codex without a producer"

@@ -6,7 +6,9 @@
 # proves the new tree with the gate, activates it and runs E2E against the new base, and pushes
 # without force. A change both machines made to the same lines stops it: the commits stay as they
 # were, the checkout stays clean with no cherry-pick in it, and review.json says publish-conflict.
-# Where both changed flake.lock, the tip's lock is taken and nix flake lock adds what is missing.
+# Where both changed flake.lock and this machine only added to it, the tip's lock is taken and nix
+# flake lock adds what is missing; a moved pin of the base is a conflict. No commit is dropped. A
+# red gate after the replay says that the commits moved, and a merge among them is named.
 # Another machine that keeps publishing ends it after three pushes with publish-race; the same
 # command later finishes. A push the remote rejects as no fast-forward is a race too.
 # shellcheck source=tests/apply/helpers.sh
@@ -102,22 +104,106 @@ assert_eq "$(head_oid)" "$(remote_oid)"
 assert_eq "$moved" "$(git -C "$up_inst" rev-parse HEAD^)"
 derived_current HEAD
 
-# --- both machines changed flake.lock: the tip's lock, then nix flake lock -------------------
+# --- both machines changed flake.lock -----------------------------------------------------------
+# One line of JSON, so that any two changes of the lock meet. A lock that this machine only added
+# to takes the tip's lock and nix flake lock adds what is missing; the commit stays, also when
+# nothing of it is left. A lock in which this machine moved a pin of the base is no text to merge:
+# publish-conflict, and the commit stays on the branch.
 
+jq -c '.nodes = {nixpkgs: {locked: {rev: "1111111"}}, root: {inputs: {nixpkgs: "nixpkgs"}}} | .root = "root"' \
+  "$up_inst/flake.lock" >"$DS_TEST_ROOT/flake.lock"
+mv -- "$DS_TEST_ROOT/flake.lock" "$up_inst/flake.lock"
+assert_exit 0 apply -m "chore: pin nixpkgs" --activate --publish
 base=$(remote_oid)
-edit "a change with a new input"
-printf '// an input of this machine\n' >>"$up_inst/flake.lock"
-other_machine_during_gate once flake.lock "// an input the producer moved"
+jq -c '.nodes.mine = {locked: {rev: "3333333"}}' "$up_inst/flake.lock" >"$DS_TEST_ROOT/flake.lock"
+mv -- "$DS_TEST_ROOT/flake.lock" "$up_inst/flake.lock"
+other_machine_edits_during_gate once flake.lock \
+  "jq -c '.nodes.theirs = {locked: {rev: \"4444444\"}}' \"\$FILE\" >\"\$FILE.new\" && mv \"\$FILE.new\" \"\$FILE\""
 : >"$DS_CALL_LOG"
 clear_log
 assert_exit 0 apply -m "feat: add an input" --activate --publish
 assert_eq "$(head_oid)" "$(remote_oid)"
-assert_eq "$(git -C "$up_inst" show HEAD^:flake.lock)" "$(git -C "$up_inst" show HEAD:flake.lock)" \
+assert_eq "feat: add an input" "$(git -C "$up_inst" log -1 --format=%s)" "the commit stays, nothing of it dropped"
+assert_eq "docs: a change of the other machine" "$(git -C "$up_inst" log -1 --format=%s HEAD^)"
+assert_eq "$base" "$(git -C "$up_inst" rev-parse HEAD~2)"
+assert_eq '"4444444"' "$(git -C "$up_inst" show HEAD:flake.lock | jq -c .nodes.theirs.locked.rev)" \
   "the lock of the tip, which nix flake lock completes"
-assert_contains "$(git -C "$up_inst" show HEAD:docs/guide.md)" "line a change with a new input"
 assert_call_count 1 nix '*flake lock*'
-derived_current HEAD
+apply_report '.items == [] and .status == "ok"'
 no_replay_left
+
+base=$(remote_oid)
+jq -c '.nodes.nixpkgs.locked.rev = "2222222"' "$up_inst/flake.lock" >"$DS_TEST_ROOT/flake.lock"
+mv -- "$DS_TEST_ROOT/flake.lock" "$up_inst/flake.lock"
+other_machine_edits_during_gate once flake.lock \
+  "jq -c '.nodes.other = {locked: {rev: \"5555555\"}}' \"\$FILE\" >\"\$FILE.new\" && mv \"\$FILE.new\" \"\$FILE\""
+clear_log
+assert_exit 3 apply -m "chore: move nixpkgs" --activate --publish
+assert_eq "chore: move nixpkgs" "$(git -C "$up_inst" log -1 --format=%s)" "the move stays on the branch"
+assert_eq "$base" "$(git -C "$up_inst" rev-parse HEAD^)"
+assert_eq '"2222222"' "$(git -C "$up_inst" show HEAD:flake.lock | jq -c .nodes.nixpkgs.locked.rev)"
+assert_eq "" "$(git -C "$up_inst" status --porcelain)"
+no_replay_left
+review_json '.items[] | select(.code == "publish-conflict") | .paths == ["flake.lock"]'
+review_json '[.items[] | select(.code == "publish-refused")] == []'
+# The person takes the tip's lock and moves nixpkgs again on top of it.
+git -C "$up_inst" reset -q --hard "$(remote_oid)"
+jq -c '.nodes.nixpkgs.locked.rev = "2222222"' "$up_inst/flake.lock" >"$DS_TEST_ROOT/flake.lock"
+mv -- "$DS_TEST_ROOT/flake.lock" "$up_inst/flake.lock"
+assert_exit 0 apply -m "chore: move nixpkgs" --activate --publish
+assert_eq "$(head_oid)" "$(remote_oid)"
+
+# --- after the replay the gate says no: the commits moved and wait here --------------------------
+
+base=$(remote_oid)
+edit "a change the second gate refuses"
+cat >"$UP_CONTROL/during-gate" <<HOOK
+if [[ -e $UP_CONTROL/pushed ]]; then
+  : >"$UP_CONTROL/static-red"
+  exit 0
+fi
+: >"$UP_CONTROL/pushed"
+clone=$DS_TEST_ROOT/other-machine
+rm -rf -- "\$clone"
+git clone -q "$up_bare" "\$clone"
+printf 'one more page\n' >"\$clone/docs/page-of-a-red-gate.md"
+git -C "\$clone" add -A
+git -C "\$clone" -c user.name=other -c user.email=other@example.invalid commit -q -m "docs: a change of the other machine"
+git -C "\$clone" push -q origin HEAD:main
+rm -rf -- "\$clone"
+HOOK
+clear_log
+assert_exit 1 apply -m "docs: a red second gate" --activate --publish
+rm -f -- "$UP_CONTROL/during-gate" "$UP_CONTROL/static-red" "$UP_CONTROL/pushed"
+assert_eq "docs: a red second gate" "$(git -C "$up_inst" log -1 --format=%s)"
+assert_eq "$(remote_oid)" "$(git -C "$up_inst" rev-parse HEAD^)" "the commit moved onto the tip"
+review_json '.items[] | select(.code == "gate-failed") | .message | contains("moved onto") and (contains("nothing was committed") | not)'
+[[ -z $(git -C "$up_inst" for-each-ref refs/dotsteward/apply/replayed) ]] || ds_fail "the ref of the replay stays"
+no_replay_left
+assert_exit 0 apply --activate --publish
+assert_eq "$(head_oid)" "$(remote_oid)"
+
+# --- a merge among the commits: no replay, the way out named -------------------------------------
+
+git -C "$up_inst" switch -q -c side
+edit "a line of a side branch"
+git -C "$up_inst" -c user.name=alice -c user.email=alice@example.invalid commit -qam "docs: a side line"
+git -C "$up_inst" switch -q main
+printf 'notes\n' >"$up_inst/docs/main-page.md"
+git -C "$up_inst" add -A
+git -C "$up_inst" -c user.name=alice -c user.email=alice@example.invalid commit -qm "docs: a main page"
+git -C "$up_inst" -c user.name=alice -c user.email=alice@example.invalid merge -q --no-ff -m "docs: merge the side line" side
+git -C "$up_inst" branch -q -D side
+mine=$(head_oid)
+other_machine_during_gate once docs/merge-race.md "a page while a merge waits"
+clear_log
+assert_exit 3 apply --activate --publish
+assert_eq "$mine" "$(head_oid)" "the merge stays as it was"
+no_replay_left
+review_json '.items[] | select(.code == "replay-merge") | (.commits | length) == 1 and (.run | contains("pull --rebase origin main"))'
+git -C "$up_inst" -c user.name=alice -c user.email=alice@example.invalid pull -q --rebase origin main
+assert_exit 0 apply --activate --publish
+assert_eq "$(head_oid)" "$(remote_oid)"
 
 # --- another machine keeps publishing: three pushes, then publish-race -----------------------
 
