@@ -114,22 +114,24 @@ Update these too? [y/N] n
    finding; what the owner's own apt can bring (another rule after a purge or an install of a
    driver, a file the machine no longer wants) and a file not there yet are warnings.
 4. **The pins, on the producer only, in a clone.** A clone of the fetched tip below
-   `<state>/upgrade/work` takes `pins latest`, `pins apply`, the gate in the update scope and a commit.
-   The producer is `[hosts] producer`; without one it is this machine when `hosts/` holds at most one
-   file, and nobody when it holds more (the command to name one is said). A machine without a name or
-   a profile moves no pins, since nothing could prove them there: the command to run is said. Flake
-   inputs move at most once a week, counted from the publish of their last move: a red gate or a red
-   E2E starts no week. The floor of a deb package moves only to a version dpkg has installed for every
-   package of its component (`dpkg-query`, after the sudo window or the owner's own apt); otherwise
-   it waits as `deb-floors-wait`, with the version it wants and what is installed, since a floor above
-   what dpkg has turns the E2E of the package red. Every other pin, such as an official binary of Codex, moves when upstream
-   does. A framework that moved runs the writer once more with its own CLI, and the rest of
-   the run with it too. What fails in one group of the writer is named, and what the others moved
-   goes on. Skills with a recorded transform are counted and left to `dotsteward-update` without
-   holding the exit status; other items of the writer wait in `review.json` under `pins-apply`.
-   The commit is kept as `refs/dotsteward/upgrade/waiting` until it is on the remote, and what it moved
-   in `<state>/upgrade/waiting.json`. The clone keeps the local settings of the checkout (signing, a
-   `pushurl`, credentials) and runs its hooks: `.git/hooks` or its `core.hooksPath`, as an absolute path.
+   `<state>/upgrade/work` takes `pins latest`, `pins apply`, the gate in the update scope and a
+   commit. The producer is `[hosts] producer`; without one it is this machine when `hosts/` holds at
+   most one file, and nobody when it holds more (the command to name one is said). A machine without a
+   name or a profile moves no pins, since nothing could prove them there: the command to run is said.
+   Flake inputs move at most once a week, counted from the publish of their last move: a red gate or a
+   red E2E starts no week; a move of them whose way back is red too, which holds nothing, pauses them
+   for a day. The floor of a deb package moves only to a version dpkg has installed for every package
+   of its component (`dpkg-query`, after the sudo window or the owner's own apt); otherwise it waits
+   as `deb-floors-wait`, with the version it wants and what is installed, since a floor above what
+   dpkg has turns the E2E of the package red. Every other pin, such as an official binary of Codex,
+   moves when upstream does. A framework that moved runs the writer once more with its own CLI, and
+   the rest of the run with it too. What fails in one group of the writer is named, and what the
+   others moved goes on. Skills with a recorded transform are counted and left to `dotsteward-update`
+   without holding the exit status; other items of the writer wait in `review.json` under
+   `pins-apply`. The commit is kept as `refs/dotsteward/upgrade/waiting` until it is on the remote,
+   and what it moved in `<state>/upgrade/waiting.json`. The clone keeps the local settings of the
+   checkout (signing, a `pushurl`, credentials) and runs its hooks: `.git/hooks` or its
+   `core.hooksPath`, as an absolute path.
 5. **Own updaters.** A component that declares its updater (`claude update`) is asked to update
    when it has `updater = "self"`, or no `updater` and a method other than `deb`. Nothing else.
    `dotsteward context --json` shows both for each component: `updater` and `self_update`.

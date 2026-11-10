@@ -88,6 +88,7 @@ _SESSION_UNITS = (
 )
 _PUBLISH_SCOPE = "upgrade"
 _WEEK_SECONDS = 7 * 24 * 60 * 60
+_DAY_SECONDS = 24 * 60 * 60
 _STALE_PRODUCER_SECONDS = 14 * 24 * 60 * 60
 _FLAKE_INPUTS = "flake_inputs.*"
 _BRIDGE = "/usr/local/lib/dotsteward/apt-bridge.sh"
@@ -641,9 +642,11 @@ class Upgrade(runner.Runner):
             return True
         return time.time() - moved_at >= _WEEK_SECONDS
 
-    def _start_week(self) -> None:
+    def _start_week(self, *, paused: float = _WEEK_SECONDS) -> None:
+        """The flake inputs wait PAUSED seconds from now (a week after a published move)."""
         atomic.make_private_dirs(self.upgrade_dir)
-        atomic.atomic_write_json(self.upgrade_dir / "nix-week.json", {"moved_at": time.time()}, mode=0o600)
+        moved_at = time.time() - _WEEK_SECONDS + paused
+        atomic.atomic_write_json(self.upgrade_dir / "nix-week.json", {"moved_at": moved_at}, mode=0o600)
 
     def _not_the_producer(self, role: str) -> None:
         if role == "unnamed":
@@ -1464,6 +1467,10 @@ class Upgrade(runner.Runner):
             self.run.step("e2e", report.PENDING, detail=f"went back: {reason}")
         else:
             self._still_red(again)
+            if any(str(row.get("id")).startswith(_FLAKE_INPUTS[:-1]) for row in moved):
+                # Nothing is held, so the next run would move them again, with a heavy rebuild and
+                # a rebuild back: they wait a day.
+                self._start_week(paused=_DAY_SECONDS)
         self._remove_work()
 
     def _host_checks(self) -> None:
