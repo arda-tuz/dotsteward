@@ -9,11 +9,11 @@
 #                               nothing while nobody is logged in, so a login catches up
 #
 # Both unit files and their default.target.wants links are managed links of core (E2E
-# checks them, rollback removes them). The service is Type=exec, so a login or an
-# activation never waits for it. A pending mark (exit 3) and a record that waits for the
-# network (exit 6) are no failures. Linux only:
-# macOS has neither dpkg nor systemd. Without an instance checkout (no instance.name)
-# there is no instance to observe, and no units.
+# checks them, rollback removes them); core:observer of E2E checks that the user manager
+# runs the path unit. The service is Type=exec, so a login or an activation never waits
+# for it. A pending mark (exit 3) and a record that waits for the network (exit 6) are no
+# failures. Linux only: macOS has neither dpkg nor systemd. Without an instance checkout
+# (no instance.name) there is no instance to observe, and no units.
 {
   config,
   lib,

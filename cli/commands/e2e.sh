@@ -24,6 +24,13 @@
 #    8. core:login-shell          the stable login shell path is executable,
 #                                 listed in the shells file and the user's
 #                                 login shell
+#       core:observer             on Linux when the generation has the
+#                                 observer (its path unit is a managed
+#                                 link): the user manager runs
+#                                 dotsteward-observe.path; no systemctl, no
+#                                 user manager to ask, or a unit it has not
+#                                 loaded yet (before the first activation
+#                                 reaches it) is a warning
 #       core:apt-files            on Linux with dpkg (/var/lib/dpkg/status
 #                                 below DOTSTEWARD_SYSTEM_ROOT): the pin
 #                                 file of the gated classes has the
@@ -107,7 +114,8 @@
 #   of `dotsteward agents check`, agents-failed; settings-invalid,
 #   settings-file-missing, settings-file-not-regular,
 #   settings-not-converged, settings-error; login-shell-not-executable,
-#   login-shell-not-listed, login-shell-mismatch; apt-file-mismatch;
+#   login-shell-not-listed, login-shell-mismatch; observer-inactive;
+#   apt-file-mismatch;
 #   repo-not-git, repo-dirty,
 #   repo-origin-missing, repo-origin-mismatch, remote-unreachable,
 #   remote-mismatch, remote-base-moved, base-not-ancestor,
@@ -187,6 +195,11 @@ keep_going=0
 json=0
 list=0
 skip_repo=0
+# The path unit of the observer (modules/core/observer.nix), and the managed
+# link that says the generation has it.
+_E2E_OBSERVER_UNIT=dotsteward-observe.path
+# shellcheck disable=SC2088 # the literal ~/ form of a manifest link
+_E2E_OBSERVER_LINK="~/.config/systemd/user/$_E2E_OBSERVER_UNIT"
 # The components of a run of some components (--component): such a run is no
 # run of the machine and writes no record.
 scope=()
@@ -543,6 +556,11 @@ _e2e_plan() {
   if jq -e '.login_shell != null' <<<"$DS_MANIFEST_JSON" >/dev/null; then
     printf 'core:login-shell\tlogin-shell\t\n'
   fi
+  if [[ $DS_RUNTIME_PLATFORM == linux ]] &&
+    jq -e --arg unit "$_E2E_OBSERVER_LINK" '(.managed_links // []) | index($unit) != null' \
+      <<<"$DS_MANIFEST_JSON" >/dev/null; then
+    printf 'core:observer\tobserver\t\n'
+  fi
   if [[ $DS_RUNTIME_PLATFORM == linux && -f ${DOTSTEWARD_SYSTEM_ROOT:-}/var/lib/dpkg/status ]]; then
     printf 'core:apt-files\tapt-files\t\n'
   fi
@@ -897,6 +915,29 @@ _e2e_login_shell() {
       "the login shell of $USER is $current, not $path; run 'dotsteward rebuild --profile $profile --switch' in a terminal"
 }
 
+# _e2e_observer: the user manager runs the path unit of the observer. Until an
+# activation reached the user manager (no systemctl, no user manager, the unit
+# not loaded yet) it only reports; a loaded unit that is not active is red.
+_e2e_observer() {
+  local unit=$_E2E_OBSERVER_UNIT loaded active
+  if ! command -v systemctl >/dev/null 2>&1; then
+    warn "core:observer: no systemctl; $unit was not checked"
+    return 0
+  fi
+  if ! loaded=$(systemctl --user show -p LoadState --value "$unit" 2>/dev/null); then
+    warn "core:observer: the user manager is not reachable; $unit was not checked"
+    return 0
+  fi
+  if [[ $loaded != loaded ]]; then
+    warn "core:observer: the user manager has not loaded $unit yet; the next login or 'dotsteward rebuild --profile $profile --switch' starts it"
+    return 0
+  fi
+  active=$(systemctl --user is-active "$unit" 2>/dev/null) || true
+  [[ $active == active ]] ||
+    skills_fail observer-inactive "$unit" \
+      "$unit is ${active:-unknown}: package changes outside dotsteward go unnoticed; run 'systemctl --user start $unit'"
+}
+
 # _e2e_apt_files: the files of the gated classes against what the apt engine
 # writes now; a note for what waits for the first terminal run of upgrade.
 _e2e_apt_files() {
@@ -1197,6 +1238,7 @@ for row in "${plan[@]}"; do
     settings-files) _e2e_unit "$id" _e2e_settings_files ;;
     settings-verify) _e2e_unit "$id" _e2e_settings_verify ;;
     login-shell) _e2e_unit "$id" _e2e_login_shell ;;
+    observer) _e2e_unit "$id" _e2e_observer ;;
     apt-files) _e2e_unit "$id" _e2e_apt_files ;;
     repo-clean) _e2e_unit "$id" _e2e_repo_clean ;;
     repo-origin | repo-remote | repo-skill-count)

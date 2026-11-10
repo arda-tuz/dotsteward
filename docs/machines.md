@@ -208,7 +208,10 @@ unattended-upgrades, a software center. The generation has a systemd user path u
 run whatever program drove it; it starts `dotsteward observe` for the instance checkout. The
 service also runs at login, since the user manager watches nothing while nobody is logged in.
 Linux only; `dotsteward.observer.enable = false` in a module of the instance leaves the units
-out.
+out. `dotsteward e2e` checks the unit files as managed links and, in `core:observer`, that the user
+manager runs `dotsteward-observe.path`. Until an activation reached the user manager (no
+`systemctl`, no user manager to ask, or a unit it has not loaded yet) that check only warns; a
+loaded path unit that is not active is red.
 
 The observer first waits until dpkg settled, without holding any lock, so that `upgrade` is not
 kept waiting meanwhile: no process holds a lock of `/var/lib/dpkg/lock-frontend`,
