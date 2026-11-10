@@ -279,13 +279,14 @@ def _question(items: Sequence[Mapping[str, Any]]) -> str:
             "- The name is taken here by another skill or plugin, a second copy, one of another machine or "
             f"one of another agent: {', '.join(groups['name-taken'])}; dotsteward skills status says which. "
             "Ask the user to rename it or remove the other copy, then dotsteward skills retry <name>; "
-            "or to answer dotsteward skills track <name> --never."
+            "or to answer dotsteward skills track <name> --never | --later."
         )
     if "deleted" in groups:
         lines.append(
             f"- Deleted on this machine: {', '.join(groups['deleted'])}. Ask whether to delete it everywhere "
             "(dotsteward skills forget <name>), to keep it away from this machine only "
-            "(dotsteward skills track <name> --never) or to bring it back (dotsteward skills restore <name>)."
+            "(dotsteward skills track <name> --never), to bring it back (dotsteward skills restore <name>) "
+            "or to decide later (dotsteward skills track <name> --later)."
         )
     if "offline" in groups:
         lines.append(
