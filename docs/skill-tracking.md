@@ -15,13 +15,26 @@ sentinel (`same-as-instance-checkout` or `[compat] repo_owned_revision`).
 | Where it comes from | What happens |
 | --- | --- |
 | a record in `~/.agents/.skill-lock.json` (`npx skills`) | a question |
-| a `.git` directory | a question |
+| a clean clone with a remote: the directory is one, or a link from the skill root resolves into one (the skill a directory of it) | a question |
 | a file tool of an agent wrote its `SKILL.md`, or `claude plugin init` made it | tracked, no question |
 | anything else: a tree no file tool touched | a question |
 
 The answer is one of `dotsteward skills track <name> --all`, `--here` (this machine
 only) or `--never` (this machine, asked no more). `--own` tracks your own copy of it
-without an upstream. Never tracked: `~/.claude/skills/synced/`, `dotsteward-*`,
+without an upstream.
+
+A downloaded skill pins its upstream. From a clone that is the remote `origin` (without any
+credentials it may carry), the commit HEAD and the directory of the skill within the clone
+(`source`, `revision` and `source_path` of its lock entry). The clone counts only when another
+machine could fetch the same tree: a remote, a commit that holds the directory, and no change
+of the directory that the commit does not have (an untracked file counts). Otherwise the skill
+is unknown, and `skills status` and the refusal of `--all` say why. Only the directory and
+the target of a link are looked at, never the directories above a real one. The answer looks
+at the clone again, so a clone cleaned up meanwhile is fine, and `skills reconcile --full`
+does the same for every unknown question. A clone that pulls by itself afterwards is newer
+than the pin, not drift: `agents install` leaves it alone and `agents check` passes with a
+note, as long as it holds no change of its own and its HEAD descends from the pinned commit;
+the update of pins moves the pin. Never tracked: `~/.claude/skills/synced/`, `dotsteward-*`,
 `~/.codex/skills/.system`, plugin and project skills.
 
 ## Plugins of Claude Code

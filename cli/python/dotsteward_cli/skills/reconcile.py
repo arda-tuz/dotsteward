@@ -190,7 +190,7 @@ def declined_in(tree: str, machine: str | None) -> set[str]:
 
 
 def _candidate_item(name: str, path: str, evidence: Mapping[str, Any] | None) -> dict[str, Any]:
-    where, source = origin.classify(name, path, evidence)
+    where, source, detail = origin.classify(name, path, evidence)
     return {
         "kind": _kind_of(path) or state.SKILL,
         "name": name,
@@ -198,6 +198,7 @@ def _candidate_item(name: str, path: str, evidence: Mapping[str, Any] | None) ->
         "state": CAPTURE if where == origin.OWN else ASK,
         "origin": where,
         "source": source,
+        "origin_detail": detail,
         "evidence": dict(evidence) if evidence else None,
         "detected_at": time.time(),
         "last_asked": None,
@@ -482,6 +483,11 @@ def _look(context: Mapping[str, Any], document: Mapping[str, Any], *, full: bool
             plan.set_items[key] = {"state": CAPTURE, "reason": None, "detected_at": now}
         elif key not in plan.set_items and _tree_may_have_moved(item, now, full):
             plan.set_items[key] = {"state": CAPTURE}
+        elif full and key not in plan.set_items and _origin_may_be_known(item):
+            # Off the path of a hook: the clone may have been cleaned up or given a remote.
+            known = origin.classify(str(item["name"]), str(item["path"]), None)
+            if known.where != origin.UNKNOWN or known.detail != item.get("origin_detail"):
+                plan.set_items[key] = {"origin": known.where, "source": known.source, "origin_detail": known.detail}
     if document.get("reconciled_at") is None:
         plan.looked_at = now
     return plan
@@ -551,6 +557,19 @@ def _tree_may_have_moved(item: Any, now: float, full: bool) -> bool:
         return False
     blocked_at = item.get("blocked_at")
     return full or not isinstance(blocked_at, (int, float)) or now - blocked_at >= _TREE_RETRY_SECONDS
+
+
+def _origin_may_be_known(item: Any) -> bool:
+    """A question about a skill of unknown origin whose copy is still there."""
+    return (
+        isinstance(item, dict)
+        and item.get("state") == ASK
+        and item.get("origin") == origin.UNKNOWN
+        and item.get("kind", state.SKILL) == state.SKILL
+        and isinstance(item.get("name"), str)
+        and isinstance(item.get("path"), str)
+        and os.path.isdir(item["path"])
+    )
 
 
 def _vanished(item: Any) -> bool:

@@ -221,7 +221,7 @@ def _plugin_answer(
         return {**fields, "path": path, "origin": (item or {}).get("origin", origin.OWN), "answer": {"never": True}}
     if path is None:
         raise AnswerRefused(f"no local copy of {name} to track")
-    where = (item or {}).get("origin") or origin.classify(name, path, None)[0]
+    where = (item or {}).get("origin") or origin.classify(name, path, None).where
     if not (own or where == origin.OWN):
         raise AnswerRefused(f"{name} comes from no marketplace and was not made here; --own tracks your own copy of it")
     return {**fields, "path": path, "origin": where, "answer": {"here": here, "own": True}}
@@ -254,16 +254,18 @@ def track(loaded: config.Instance, name: str, *, here: bool, never: bool, own: b
                 raise AnswerRefused(f"no local copy of {name} to track")
             answer["here"] = here
             known_origin = (item or {}).get("origin")
-            if known_origin is None:
-                known_origin, source = origin.classify(name, path, None)
-                item = {**(item or {}), "origin": known_origin, "source": source}
+            if not own and known_origin != origin.OWN:
+                # Looked at again: the commit a clone is at now, and a clone that was not clean
+                # or had no remote when the skill was first seen may be fine by now.
+                found = origin.classify(name, path, (item or {}).get("evidence"))
+                known_origin = found.where
+                item = {**(item or {}), "origin": found.where, "source": found.source, "origin_detail": found.detail}
             if own or known_origin == origin.OWN:
                 answer["own"] = True
             elif known_origin == origin.UNKNOWN:
-                raise AnswerRefused(f"nothing says where {name} comes from; --own tracks your own copy of it")
-            elif os.path.exists(os.path.join(path, ".git")):
-                # The commit it is at now, not when it was first seen.
-                answer["source"] = _pinned_source({"source": origin.git_source(path)})
+                detail = (item or {}).get("origin_detail")
+                why = f": {detail}" if detail else ""
+                raise AnswerRefused(f"nothing says where {name} comes from{why}; --own tracks your own copy of it")
             else:
                 answer["source"] = _pinned_source(item or {})
         fields = {
@@ -272,6 +274,7 @@ def track(loaded: config.Instance, name: str, *, here: bool, never: bool, own: b
             "path": path,
             "state": reconcile.CAPTURE,
             "origin": (item or {}).get("origin", origin.OWN),
+            "origin_detail": (item or {}).get("origin_detail"),
             "answer": answer,
             "reason": None,
             "detected_at": time.time(),

@@ -153,6 +153,8 @@ def _status(args: argparse.Namespace, loaded: config.Instance) -> int:
             else:
                 why = f": {item['reason']}" if item.get("reason") else ""
                 print(f"[dotsteward] {key}: {item.get('state')} ({item.get('origin')}){why}")
+            if item.get("origin") == "unknown" and item.get("origin_detail"):
+                print(f"[dotsteward] {key}: origin unknown: {item['origin_detail']}")
             copy = item.get("path")
             if item.get("state") in reconcile.KEPT_OUT and not (isinstance(copy, str) and os.path.isdir(copy)):
                 print(f"[dotsteward] {key}: no copy is left: dotsteward skills forget --clear {item.get('name')}")

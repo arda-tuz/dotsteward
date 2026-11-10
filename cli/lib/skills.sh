@@ -612,13 +612,33 @@ _skills_install() {
   mv -- "$staging" "$destination"
 }
 
-# _skills_refresh NAME PATH SOURCE DIGEST: replaces a drifted copy-deployed
-# skill with the vendored copy, after a backup.
+# _skills_follows_upstream REAL REVISION: whether the skill at REAL is a
+# directory of a git clone that holds no change of its own and whose HEAD
+# descends from REVISION, the commit the lock pins: the clone moved on by
+# itself (a pull), as a downloaded skill linked into its clone does.
+_skills_follows_upstream() (
+  local real=$1 revision=$2 changes
+  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_PREFIX
+  [[ $revision =~ ^[0-9a-f]{40}$ ]] || return 1
+  [[ $(git -C "$real" rev-parse --is-inside-work-tree 2>/dev/null) == true ]] || return 1
+  git -C "$real" merge-base --is-ancestor "$revision" HEAD 2>/dev/null || return 1
+  changes=$(git -C "$real" status --porcelain --untracked-files=all -- . 2>/dev/null) || return 1
+  [[ -z $changes ]]
+)
+
+# _skills_refresh NAME PATH SOURCE DIGEST [REVISION]: replaces a drifted
+# copy-deployed skill with the vendored copy, after a backup. A copy that is a
+# clean clone ahead of the pinned REVISION is its upstream, newer: neither
+# drift nor replaced (that would write into the clone); a note says so.
 _skills_refresh() {
-  local name=$1 path=$2 source=$3 expected=$4 real root root_real managed=0 backup_root staging
+  local name=$1 path=$2 source=$3 expected=$4 revision=${5:-} real root root_real managed=0 backup_root staging
   real=$(realpath -e -- "$path" 2>/dev/null) ||
     skills_fail skill-unresolvable "$path" "cannot resolve the skill path: $path"
   [[ $(directory_sha256 "$real") != "$expected" ]] || return 0
+  if [[ -n $revision ]] && _skills_follows_upstream "$real" "$revision"; then
+    warn "skill $name follows its clone, ahead of the pinned ${revision:0:12} ($real); the update of pins moves the pin"
+    return 0
+  fi
   if ((SKILLS_CHECK_ONLY)); then
     skills_fail skill-drift "$real" \
       "installed skill differs from the lock: $name ($real); $(_skills_rebuild_hint) to back it up and refresh it"
@@ -654,14 +674,15 @@ _skills_refresh() {
   log "skill differed from the lock; backed up and refreshed: $name (backup: $backup_root)"
 }
 
-# _skills_refresh_third_party NAME PATH SOURCE DIGEST: _skills_refresh, unless this machine has a
-# named copy that never was a pin of the lock: something of the user's under a name another
-# machine brought. It stays, and `dotsteward incoming` asks.
+# _skills_refresh_third_party NAME PATH SOURCE DIGEST [REVISION]: _skills_refresh, unless this
+# machine has a named copy that never was a pin of the lock: something of the user's under a name
+# another machine brought. It stays, and `dotsteward incoming` asks. A copy that follows its clone
+# past REVISION is not such a copy: _skills_refresh says so.
 _skills_refresh_third_party() {
-  local name=$1 path=$2 expected=$4 real digest mode=install answer
+  local name=$1 path=$2 expected=$4 revision=${5:-} real digest mode=install answer
   if [[ -n ${DS_MACHINE_NAME:-} ]] && real=$(realpath -e -- "$path" 2>/dev/null); then
     digest=$(directory_sha256 "$real")
-    if [[ $digest != "$expected" ]]; then
+    if [[ $digest != "$expected" ]] && ! { [[ -n $revision ]] && _skills_follows_upstream "$real" "$revision"; }; then
       ((SKILLS_CHECK_ONLY)) && mode=check
       answer=$(ds_python dotsteward_cli.incoming clash --name "$name" --digest "$digest" --path "$real" --mode "$mode") ||
         skills_fail skill-unresolvable "$real" "cannot read the skill $name ($real)"
@@ -921,7 +942,7 @@ skills_process_instance() {
         "installed skill digest differs from the lock: $name ($found); the native copy leaves out metadata.json, .git, __pycache__ and __pypackages__ and follows symlinks"
     fi
   elif [[ $deployment != home-manager && -n $directory_sha ]]; then
-    _skills_refresh_third_party "$name" "$found" "$source" "$directory_sha"
+    _skills_refresh_third_party "$name" "$found" "$source" "$directory_sha" "$revision"
   fi
 
   canonical_entry=$(skills_canonical_entry "$found")
@@ -1132,7 +1153,7 @@ _skills_process_scoped() {
         "installed skill digest differs from the lock: $name ($found); the native copy leaves out metadata.json, .git, __pycache__ and __pypackages__ and follows symlinks"
     fi
   elif [[ -n $directory_sha ]]; then
-    _skills_refresh_third_party "$name" "$found" "$source" "$directory_sha"
+    _skills_refresh_third_party "$name" "$found" "$source" "$directory_sha" "$revision"
   fi
 
   real=$(realpath -e -- "$found" 2>/dev/null) ||
