@@ -532,7 +532,9 @@ def publish(
     if name is None:
         raise Refusal("this machine has no name yet: 'dotsteward host init' names it")
     recorded = record if record is not None and record.get("name") == name else {}
-    facts: dict[str, Any] = recorded["host"] if isinstance(recorded.get("host"), dict) else {}
+    facts: dict[str, Any] = dict(recorded["host"]) if isinstance(recorded.get("host"), dict) else {}
+    # The platform this machine runs now, also after a release upgrade: the one source of gate.
+    facts["platform"] = platforms.platform_id(env)
     branch = instance.config["instance"]["branch"]
     path = f"{machine.HOSTS_DIR}/{name}.toml"
 

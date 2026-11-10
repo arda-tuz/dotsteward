@@ -47,6 +47,11 @@
 #   DS_MACHINE_NAME                      the name of this machine; empty
 #                                        without one (`dotsteward host init`)
 #   DS_NIX_TAGS_JSON, DS_NIX_TAGS_SHA256 the tags rebuild hands to Nix, and their digest
+#   DS_PLATFORM_MISMATCH                 the refusal of gate and rebuild when the
+#                                        host file names no platform or another
+#                                        one than this machine runs, and the
+#                                        platform files make that a difference;
+#                                        empty otherwise
 #   DS_HOST_BUILD_NAME, DS_HOST_BUILD_PROFILE, DS_HOST_BUILD_TAGS_SHA256
 #                                        the configuration of this machine in the
 #                                        flake (hostConfigurations), which the gate

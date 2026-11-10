@@ -1238,6 +1238,18 @@ def _changed_skills(scope: Mapping[str, Any]) -> list[str]:
     return [item["name"] for item in scope["incoming"] if item["kind"] == "skill" and item["change"] == "changed"]
 
 
+def _platform_mismatch_text(mismatch: Mapping[str, Any] | None) -> str:
+    """The refusal of gate and rebuild when the host file and this machine disagree about the
+    platform in a way the platform files make a difference; empty when they agree."""
+    if not mismatch:
+        return ""
+    named = f"names platform {mismatch['recorded']}" if mismatch["recorded"] else "names no platform"
+    return (
+        f"{mismatch['file']} {named}, this machine runs {mismatch['running']}, and platforms/ makes that a "
+        "difference; run: dotsteward host publish"
+    )
+
+
 def export_variables(instance: Instance, env: Mapping[str, str] | None = None) -> list[str]:
     """The DS_* declarations of an instance for bash (``cli/lib/config.sh``
     documents every name), one per line: exported scalars
@@ -1282,6 +1294,7 @@ def export_variables(instance: Instance, env: Mapping[str, str] | None = None) -
         ("DS_HOST_BUILD_NAME", (scope["host_build"] or {}).get("name")),
         ("DS_HOST_BUILD_PROFILE", (scope["host_build"] or {}).get("profile")),
         ("DS_HOST_BUILD_TAGS_SHA256", (scope["host_build"] or {}).get("tags_sha256")),
+        ("DS_PLATFORM_MISMATCH", _platform_mismatch_text(scope["platform_mismatch"])),
         ("DS_NIX_PRIMARY_SYSTEM", c["nix"]["systems"][0]),
         ("DS_NIX_ALLOW_UNFREE", c["nix"]["allow_unfree"]),
         ("DS_NIX_STATE_VERSION", c["nix"]["state_version"]),

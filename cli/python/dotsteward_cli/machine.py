@@ -364,7 +364,8 @@ def _note_not_activated(instance: config.Instance, state: str, reasons: dict[str
 
 def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -> dict[str, Any]:
     """What applies to this machine: ``{name, profile, tags, skip: {components, skills,
-    plugins}, reasons, incoming, requires, nix_tags, nix_tags_sha256, host_build}``. ``skip`` holds
+    plugins}, reasons, incoming, requires, nix_tags, nix_tags_sha256, host_build,
+    platform_mismatch}``. ``skip`` holds
     sorted names, ``reasons`` one word for each, under ``skill:<name>``, ``plugin:<name>``
     and ``component:<name>``. A plugin goes by its spec. The profile never falls back to a
     default of the instance. ``incoming`` is what waits for an answer
@@ -405,7 +406,21 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
     machine_tags = list(host.get("tags", recorded.get("tags") or []))
     from dotsteward_cli import platforms
 
-    unavailable = platforms.unavailable(platforms.resolve(instance, os.environ if env is None else env))
+    running_env = os.environ if env is None else env
+    unavailable = platforms.unavailable(platforms.resolve(instance, running_env))
+    # One source for the platform of a machine with a host file: the file, which mkInstance reads
+    # too, so gate builds the generation rebuild activates. When the file names no platform or
+    # another one, and the platform files make that a difference, gate and rebuild both stop.
+    mismatch: dict[str, Any] | None = None
+    if name is not None and host:
+        primary = instance.config["nix"]["systems"][0]
+        runtime = str(host.get("system", primary)).rpartition("-")[2]
+        recorded_platform = host.get("platform")
+        from_file = platforms.unavailable_on(instance.root, recorded_platform, runtime)
+        running = platforms.platform_id(running_env)
+        if recorded_platform != running and set(from_file) != set(unavailable):
+            mismatch = {"file": f"{HOSTS_DIR}/{name}.toml", "recorded": recorded_platform, "running": running}
+        unavailable = from_file
     # The platform filter of Nix: the manifest of this system leaves a component out.
     from dotsteward_cli.skills import layout
 
@@ -466,6 +481,7 @@ def effective(instance: config.Instance, env: Mapping[str, str] | None = None) -
         "nix_tags": nix_tags,
         "nix_tags_sha256": tags_digest(nix_tags),
         "host_build": _host_build(instance, name, host),
+        "platform_mismatch": mismatch,
     }
 
 

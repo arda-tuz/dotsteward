@@ -150,6 +150,8 @@ require_command git
 require_command jq
 # shellcheck disable=SC2119 # config_load takes no argument here
 config_load
+# One source for the platform of this machine (its host file): gate and rebuild stop alike.
+[[ -z ${DS_PLATFORM_MISMATCH:-} ]] || die "$DS_PLATFORM_MISMATCH"
 root=$DS_INSTANCE_ROOT
 txn_require_clone
 

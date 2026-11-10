@@ -137,6 +137,8 @@ done
 
 # shellcheck disable=SC2119 # the instance comes from --instance or discovery
 config_load
+# One source for the platform of this machine (its host file): gate and rebuild stop alike.
+[[ -z ${DS_PLATFORM_MISMATCH:-} ]] || die "$DS_PLATFORM_MISMATCH"
 require_profile "$profile"
 require_safe_identity
 
