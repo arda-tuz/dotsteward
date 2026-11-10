@@ -21,9 +21,11 @@ the commit does not have (an untracked file counts). The source is then that rem
 that falls short of that leaves the skill unknown, and the detail says why; a directory
 with a .git of its own stays so even when a file tool wrote into it. Only the directory
 itself and the target of a link are looked at, never the directories above a real one: a
-home that is a work tree would make every skill in it downloaded. A link into a work tree
-that cannot say where it comes from is judged like any other directory, so a skill an
-agent writes through a link into a repository of the user stays the user's.
+home that is a work tree would make every skill in it downloaded. A link into a clone that
+has a remote and whose HEAD holds the directory stays unknown while it has changes, also
+after a file tool wrote into it; a link into any other work tree (no remote, no commit, the
+directory not committed) is judged like any other directory, so a new skill an agent
+writes through a link into a repository of the user stays the user's.
 """
 
 from __future__ import annotations
@@ -62,6 +64,8 @@ class Origin(NamedTuple):
     detail: str | None = None
 
 
+# A clone with a remote whose HEAD holds the directory, changed since: a download all the same.
+UNCOMMITTED = "it has uncommitted changes in the clone it is in, which no commit of the remote holds"
 _USERINFO = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]*@")
 
 
@@ -113,7 +117,7 @@ def git_source(path: str) -> tuple[dict[str, Any] | None, str | None]:
     if changed is None or changed.returncode != 0:
         return None, "git cannot read the state of the clone it is in"
     if changed.stdout.strip():
-        return None, "it has uncommitted changes in the clone it is in, which no commit of the remote holds"
+        return None, UNCOMMITTED
     return {"url": public_url(url), "revision": head, "path": directory or None}, None
 
 
@@ -140,6 +144,9 @@ def classify(name: str, path: str, evidence: Mapping[str, Any] | None) -> Origin
         source, detail = git_source(path)
         if source is not None:
             return Origin(DOWNLOADED, source)
+        if detail == UNCOMMITTED:
+            # The upstream has this directory: an edit through the link does not make it yours.
+            return Origin(UNKNOWN, None, detail)
     if evidence:
         return Origin(OWN, None)
     from dotsteward_cli.skills import plugins
