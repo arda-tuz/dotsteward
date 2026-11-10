@@ -3,8 +3,10 @@
 #
 # $UP_CONTROL/e2e-red-once: this run is red, with the findings in the file (one id per line).
 # $UP_CONTROL/e2e-red: every run is. $UP_CONTROL/drop-network-after-e2e: the network ends here.
+# $UP_CONTROL/e2e-hook: a script that runs while E2E runs (what the owner does meanwhile).
 set -euo pipefail
 printf 'e2e %s root=%s\n' "$*" "$DOTSTEWARD_INSTANCE" >>"$UP_LOG"
+if [[ -e $UP_CONTROL/e2e-hook ]]; then bash "$UP_CONTROL/e2e-hook"; fi
 root=$DOTSTEWARD_INSTANCE
 repo_checks=true
 case " $* " in

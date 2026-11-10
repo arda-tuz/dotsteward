@@ -21,9 +21,10 @@
 #                 waits outside the tracked set, so a terminal gets the offer
 #   bridge        the apt bridge script as `install --component` leaves it, under DS_SYSTEM_ROOT
 #   systemctl     a fake of the user manager, never the real one: $UP_CONTROL/user-units holds one
-#                 line "UNIT INVOCATION" per running user service; --user list-units, show -p Id
-#                 -p InvocationID, stop and restart (a new invocation) read and change it, and each
-#                 call goes to UP_LOG as "systemctl ARG..."; start_unit UNIT starts one
+#                 line "UNIT INVOCATION" per running user service; --user list-units, show (Id,
+#                 ActiveState, InvocationID of the units named), stop and restart (a new
+#                 invocation) read and change it, and each call goes to UP_LOG as
+#                 "systemctl ARG..."; start_unit UNIT starts one
 #
 #   upgrade ARG...           dotsteward upgrade through the dispatcher, standard input empty and
 #                            no terminal
@@ -190,7 +191,9 @@ case \$operation in
     for name in \${names[@]+"\${names[@]}"}; do
       [[ \$name == Id || \$name == InvocationID ]] && continue
       invocation=\$(awk -v unit="\$name" '\$1 == unit { print \$2 }' "\$units")
-      printf 'Id=%s\nInvocationID=%s\n\n' "\$name" "\$invocation"
+      state=active
+      [[ -n \$invocation ]] || state=inactive
+      printf 'Id=%s\nActiveState=%s\nInvocationID=%s\n\n' "\$name" "\$state" "\$invocation"
     done
     ;;
   stop)
