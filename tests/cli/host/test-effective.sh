@@ -11,7 +11,7 @@ source "$DS_REPO_ROOT/tests/cli/host/helpers.sh"
 
 # --- an instance that names no machine ------------------------------------------------
 
-assert_eq '{"name":null,"profile":null,"tags":[],"skip":{"components":[],"skills":[],"plugins":[]},"reasons":{},"incoming":[],"requires":{"arriving":[],"unmet":[]},"nix_tags":[],"nix_tags_sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","host_build":null,"name_taken":[]}' \
+assert_eq '{"name":null,"profile":null,"tags":[],"skip":{"components":[],"skills":[],"plugins":[]},"reasons":{},"incoming":[],"requires":{"arriving":[],"unmet":[]},"nix_tags":[],"nix_tags_sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","host_build":null,"platform_mismatch":null,"name_taken":[]}' \
   "$(effective .)"
 assert_exit 0 run_skills effective
 assert_contains "$DS_STDOUT" "machine: (no name yet)"
