@@ -41,10 +41,11 @@ os_release=$DS_TEST_ROOT/os-release
 printf 'ID=ubuntu\nVERSION_ID="24.04"\nVERSION_CODENAME=noble\nPRETTY_NAME="Ubuntu 24.04 LTS"\n' >"$os_release"
 export DOTSTEWARD_OS_RELEASE=$os_release
 
-# A deb component with two packages and one that follows a third, and a component of
-# another method.
+# A deb component whose package goes by two names, as the deb method reads packageNames (one
+# installed name is the package), with a plain APT package besides and one that it follows, and
+# a component of another method.
 add_component example-shell external '{}'
-add_component example-editor deb '{"packageNames": ["example-editor", "example-editor-data"]}'
+add_component example-editor deb '{"packageNames": ["example-editor", "example-editor-legacy"], "apt": ["example-editor-data"]}'
 printf 'track = ["example-editor-plugins"]\n' >>"$agents_inst/workstation.toml"
 publish_instance "chore: two components"
 ds_dpkg_installed example-editor 1.2.3-1

@@ -28,10 +28,19 @@ text = open(path, encoding="utf-8").read()
 text = text.replace('track = ["example-tracked-too"]', 'track = ["example-tracked-too"]\nversion = "1.*"\nreason = "the plugins need 1.x"')
 open(path, "w", encoding="utf-8").write(text)
 EOF
+# A package that goes by two names (example-player): one installed name is the package, as the deb
+# method reads it.
 {
   printf '\n[components.example-viewer]\nenable = true\nmachines = ["other-host"]\n'
   printf '\n[components.example-gpu]\nenable = true\ntags = ["gpu"]\n'
+  printf '\n[components.example-player]\nenable = true\n'
 } >>"$up_inst/workstation.toml"
+mkdir -p "$up_inst/components/example-player"
+printf '{ ... }:\n{\n  dotsteward.components.example-player = { };\n}\n' >"$up_inst/components/example-player/default.nix"
+jq '.components += [{name: "example-player", method: "deb", profiles: null, platforms: ["linux"],
+  install: {packageNames: ["example-player", "example-player-legacy"]}}]' "$mirror" >"$mirror.new"
+mv -- "$mirror.new" "$mirror"
+ds_dpkg_installed example-player 3.0-1
 mkdir -p "$up_inst/components/example-gpu"
 printf '{ ... }:\n{\n  dotsteward.components.example-gpu = { };\n}\n' >"$up_inst/components/example-gpu/default.nix"
 git -C "$up_inst" add -A
@@ -86,7 +95,9 @@ assert_stdout_json '.machine.platform == "ubuntu-24.04" and (.machine.framework_
 assert_stdout_json ".checkout.branch == \"main\" and .checkout.head == \"$(head_oid)\""
 assert_stdout_json '.checkout.ahead == 0 and .checkout.behind == 1 and .checkout.changes == [" M docs/guide.md"]'
 assert_stdout_json '.activation.active == true and .activation.e2e == "pass"'
-assert_stdout_json '[.components[].name] == ["codex", "example-app", "example-gpu", "example-viewer"]'
+assert_stdout_json '[.components[].name] == ["codex", "example-app", "example-gpu", "example-player", "example-viewer"]'
+assert_stdout_json '.components[] | select(.name == "example-player") | .installed == "installed"
+  and .packages == {"example-player": "3.0-1"}'
 assert_stdout_json '.components[] | select(.name == "example-app") | .method == "deb" and .here == true
   and .installed == "installed" and .packages == {"example-tracked": "1.0-1", "example-tracked-lib": "1.0-2", "example-tracked-too": "1.1-1"}
   and .constraint == {version: "1.*", reason: "the plugins need 1.x"}'
