@@ -175,6 +175,8 @@
     "~/.config/nix/nix.conf",
     "~/.config/systemd/user/dotsteward-observe.path",
     "~/.config/systemd/user/dotsteward-observe.service",
+    "~/.config/systemd/user/default.target.wants/dotsteward-observe.path",
+    "~/.config/systemd/user/default.target.wants/dotsteward-observe.service",
     "~/.example-term/RULES.md",
     "~/.example-app/AGENTS.md"
   ],

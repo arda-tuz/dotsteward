@@ -16,10 +16,11 @@
 source "$DS_REPO_ROOT/tests/cli/host/observe-helpers.sh"
 
 # A deb component whose E2E check fails for the version 2.0.0-1, one that depends on a
-# virtual package and on an alternative, and one of another method.
+# virtual package and on an alternative, one without E2E checks, and one of another method.
 add_component example-shell external '{}'
 add_component example-editor deb '{"packageNames": ["example-editor"]}'
 add_component example-viewer deb '{"packageNames": ["example-viewer"]}'
+add_component example-tool deb '{"packageNames": ["example-tool"]}'
 cat <<'SH' | add_e2e_hook example-editor editor-opens main
 printf 'editor-opens\n' >>"$E2E_HOOK_LOG"
 [[ $(dpkg-query -W -f '${Version}' example-editor) != 2.0.0-1 ]]
@@ -37,6 +38,7 @@ pkg libc-example 2.39-1
 pkg example-render-impl 3.0-1 "Provides=example-render"
 pkg libtool-example 1.0-1
 pkg example-viewer 5.0-1 "Pre-Depends=libtool-example:any" "Depends=libmissing-example | example-render (>= 2)"
+pkg example-tool 0.5-1 "Depends=libexample-core"
 pkg unrelated-package 9.9
 
 head=$(git -C "$agents_inst" rev-parse HEAD)
@@ -110,6 +112,10 @@ assert_eq '"1.2.3-1"' "$(shown '.state.components["example-editor"].last_verifie
 assert_eq '"installed"' "$(shown '.state.components["example-viewer"].status')"
 assert_eq '"observe"' "$(shown '.state.recorded_by')"
 assert_eq "" "$(ds_calls_of notify-send)"
+# A component without E2E checks is named, but nothing verified it.
+assert_contains "$DS_STDOUT" "example-tool: no E2E checks at 0.5-1 (changed: libexample-core)"
+assert_eq '"installed"' "$(shown '.state.components["example-tool"].status')"
+assert_eq 'null' "$(shown '.state.components["example-tool"].last_verified')"
 # A check of some components is no E2E run of the machine: the record of E2E stays.
 [[ ! -e $DOTSTEWARD_STATE_ROOT/update/e2e.json ]] || ds_fail "the observer wrote the record of a full E2E run"
 
@@ -173,6 +179,20 @@ pkg example-viewer 5.0-1 "Pre-Depends=libtool-example:any" "Depends=libmissing-e
 assert_exit 0 run_observe
 assert_contains "$DS_STDOUT" "example-viewer: verified at 5.0-1 (changed: example-viewer)"
 assert_eq "viewer-opens" "$(hooks_ran)"
+
+# --- checks that give no result: the state is recorded, and the next run checks again -----
+
+hook=$agents_inst/components/example-editor/editor-opens.sh
+mv -- "$hook" "$hook.away"
+pkg libexample1 1.1-1 "Depends=libexample-core (>= 1.0)"
+assert_exit 1 run_observe
+assert_contains "$DS_STDERR" "the E2E checks of example-editor gave no result"
+assert_call_count 1 notify-send
+assert_eq '"observe"' "$(shown '.state.recorded_by')"
+mv -- "$hook.away" "$hook"
+assert_exit 0 run_observe
+assert_contains "$DS_STDOUT" "example-editor: verified at 2.0.1-1 (changed: libexample1)"
+assert_eq "editor-opens" "$(hooks_ran)"
 
 # --- no network: the record waits, and the next run sends it ----------------------------
 

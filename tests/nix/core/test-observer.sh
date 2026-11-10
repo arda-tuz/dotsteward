@@ -24,11 +24,12 @@ assert_core_eq '"exec"' "(homeOf $linux).systemd.user.services.dotsteward-observ
 assert_core_eq '"3 6"' "(homeOf $linux).systemd.user.services.dotsteward-observe.Service.SuccessExitStatus"
 assert_core_eq 'true' \
   "(homeOf $linux).systemd.user.services.dotsteward-observe.Service.ExecStart == [ \"\${(homeOf $linux).dotsteward.observer.script}\" ]"
-# Home Manager writes both units into the generation, and they are managed links of core:
-# E2E checks that they resolve, rollback removes them.
+# Home Manager writes both units and their links into default.target.wants into the
+# generation, and they are managed links of core: E2E checks that they resolve, rollback
+# removes them.
 assert_core_eq '[true,true]' \
   "map (name: builtins.hasAttr name (homeOf $linux).xdg.configFile) [ \"systemd/user/dotsteward-observe.path\" \"systemd/user/dotsteward-observe.service\" ]"
-assert_core_eq '["~/.config/systemd/user/dotsteward-observe.path","~/.config/systemd/user/dotsteward-observe.service"]' \
+assert_core_eq '["~/.config/systemd/user/dotsteward-observe.path","~/.config/systemd/user/dotsteward-observe.service","~/.config/systemd/user/default.target.wants/dotsteward-observe.path","~/.config/systemd/user/default.target.wants/dotsteward-observe.service"]' \
   "lib.filter (lib.hasInfix \"systemd\") (homeOf $linux).dotsteward.manifest.managed_links"
 
 # The service runs the CLI of the generation for the instance checkout, with the commands

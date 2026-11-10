@@ -50,7 +50,7 @@ assert_core_eq '[{"component":"core","command":"jq"}]' \
 # The minimal instance: no components, core contributions only.
 minimal=$(core_json '(homeOf { }).dotsteward.manifest')
 json_check "$minimal" '[.components, .backup_paths, .managed_links, .login_shell, .agent_rules.targets, .skills.hm_root]' \
-  '[[],["~/.config/nix/nix.conf","~/.agents/skills"],["~/.config/nix/nix.conf","~/.config/systemd/user/dotsteward-observe.path","~/.config/systemd/user/dotsteward-observe.service"],null,[],".agents/skills"]'
+  '[[],["~/.config/nix/nix.conf","~/.agents/skills"],["~/.config/nix/nix.conf","~/.config/systemd/user/dotsteward-observe.path","~/.config/systemd/user/dotsteward-observe.service","~/.config/systemd/user/default.target.wants/dotsteward-observe.path","~/.config/systemd/user/default.target.wants/dotsteward-observe.service"],null,[],".agents/skills"]'
 
 # manifestExtra (set by mkInstance) is merged at the top level.
 assert_core_eq '{"zsh":"5.9"}' \
