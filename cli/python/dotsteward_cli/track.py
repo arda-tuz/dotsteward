@@ -138,6 +138,131 @@ def _without(document: Mapping[str, Any], name: str) -> dict[str, Any]:
     return copy
 
 
+# --- workstation.toml as text ------------------------------------------------------------------
+#
+# A table goes where a person would put it and leaves every comment where it was: tomlkit hangs the
+# comment above a header onto the table before it, so a table it adds lands between a comment and
+# the header that comment is about. These edits work on lines; each result is checked against the
+# document it must parse to, and tomlkit's edit is the fallback for a layout they do not know.
+
+_HEADER = re.compile(r"^\s*\[\[?\s*([A-Za-z0-9_.-]+)\s*\]\]?\s*(#.*)?$")
+
+
+def _normal(document: Any) -> Any:
+    return json.loads(json.dumps(document, default=str))
+
+
+def _headers(lines: Sequence[str]) -> list[tuple[int, str]]:
+    found = []
+    for index, line in enumerate(lines):
+        matched = _HEADER.match(line)
+        if matched:
+            found.append((index, matched.group(1)))
+    return found
+
+
+def _is_comment(line: str) -> bool:
+    return line.lstrip().startswith("#")
+
+
+def _lead(lines: Sequence[str], index: int) -> int:
+    """The first line of the comments right above the header at INDEX, which are about it."""
+    while index > 0 and _is_comment(lines[index - 1]):
+        index -= 1
+    return index
+
+
+def _next_lead(lines: Sequence[str], headers: Sequence[tuple[int, str]], index: int) -> int:
+    """Where what follows the block of the header at INDEX begins: the lead of the next header."""
+    later = [at for at, _ in headers if at > index]
+    return _lead(lines, later[0]) if later else len(lines)
+
+
+def _block_end(lines: Sequence[str], headers: Sequence[tuple[int, str]], index: int) -> int:
+    """The line after the last line of the block of the header at INDEX, blank lines left out."""
+    end = _next_lead(lines, headers, index)
+    while end > index + 1 and not lines[end - 1].strip():
+        end -= 1
+    return end
+
+
+def _value(value: Any) -> str:
+    if value is True or value is False:
+        return "true" if value else "false"
+    return json.dumps(value)
+
+
+def _place_table(text: str, name: str, values: Mapping[str, Any]) -> str:
+    """TEXT with [components.NAME] after the last block of [components]."""
+    lines = text.splitlines(keepends=True)
+    headers = _headers(lines)
+    rendered = f"[components.{name}]\n" + "".join(f"{key} = {_value(value)}\n" for key, value in values.items())
+    ours = [at for at, header in headers if header == "components" or header.startswith("components.")]
+    if not ours:
+        body = text if not text or text.endswith("\n") else text + "\n"
+        return body + ("\n" if body.strip() else "") + rendered
+    end = _block_end(lines, headers, ours[-1])
+    before = "".join(lines[:end])
+    if not before.endswith("\n"):
+        before += "\n"
+    return before + "\n" + rendered + "".join(lines[end:])
+
+
+def _add_keys(text: str, name: str, values: Mapping[str, Any]) -> str | None:
+    """TEXT with VALUES as new keys at the end of the table [components.NAME]; None without its header."""
+    lines = text.splitlines(keepends=True)
+    headers = _headers(lines)
+    at = next((index for index, header in headers if header == f"components.{name}"), None)
+    if at is None:
+        return None
+    end = _block_end(lines, headers, at)
+    while end > at + 1 and (not lines[end - 1].strip() or _is_comment(lines[end - 1])):
+        end -= 1
+    before = "".join(lines[:end])
+    if not before.endswith("\n"):
+        before += "\n"
+    return before + "".join(f"{key} = {_value(value)}\n" for key, value in values.items()) + "".join(lines[end:])
+
+
+def _drop_table(text: str, name: str) -> tuple[str, list[str]]:
+    """TEXT without [components.NAME] and its sub-tables, and the comments it kept: the comment
+    above the table goes with it when it names the component; else it stays, as a paragraph of its
+    own, since it may be about more than this table."""
+    lines = text.splitlines(keepends=True)
+    headers = _headers(lines)
+    own = re.compile(rf"(?<![a-z0-9-]){re.escape(name)}(?![a-z0-9-])")
+    prefix = f"components.{name}"
+    targets = [at for at, header in headers if header == prefix or header.startswith(f"{prefix}.")]
+    kept: list[str] = []
+    drop: set[int] = set()
+    pad_after: set[int] = set()
+    for at in targets:
+        lead = _lead(lines, at)
+        start = lead
+        if lead < at and not any(own.search(line) for line in lines[lead:at]):
+            start = at
+            kept.append("".join(lines[lead:at]).strip())
+            pad_after.add(at - 1)
+        drop.update(range(start, _next_lead(lines, headers, at)))
+    out: list[str] = []
+    for index, line in enumerate(lines):
+        if index in drop:
+            continue
+        out.append(line if line.endswith("\n") else line + "\n")
+        if (
+            index in pad_after
+            and index + 1 < len(lines)
+            and any(later not in drop and lines[later].strip() for later in range(index + 1, len(lines)))
+        ):
+            following = next(later for later in range(index + 1, len(lines)) if later not in drop)
+            if lines[following].strip():
+                out.append("\n")
+    result = "".join(out)
+    while result.endswith("\n\n"):
+        result = result[:-1]
+    return result, kept
+
+
 class _Transaction(runner.Runner):
     """What add and remove share: the instance, begin, the check that only their change waits, apply."""
 
@@ -228,13 +353,20 @@ class _Transaction(runner.Runner):
             return True
         return not self._checkout_clean()
 
-    def _edit_workstation(self, edit: Callable[[Any], None]) -> str:
-        """The text of workstation.toml after EDIT, which gets the tomlkit document. Valid or UsageError."""
-        tomlkit = _tomlkit()
+    def _edited(self, edit: Callable[[Any], None], by_lines: Callable[[str], str | None], expected: Any) -> str:
+        """The new text of workstation.toml: BY_LINES of the text, when it parses to EXPECTED; else
+        EDIT of the tomlkit document. Valid, or UsageError."""
         text = self.instance.file.read_text(encoding="utf-8")
-        document = tomlkit.parse(text)
-        edit(document)
-        new_text: str = tomlkit.dumps(document)
+        new_text = by_lines(text)
+        try:
+            same = new_text is not None and _normal(tomllib.loads(new_text)) == _normal(expected)
+        except tomllib.TOMLDecodeError:
+            same = False
+        if new_text is None or not same:
+            tomlkit = _tomlkit()
+            document = tomlkit.parse(text)
+            edit(document)
+            new_text = tomlkit.dumps(document)
         problems = config.errors(tomllib.loads(new_text))
         if problems:
             raise UsageError("workstation.toml would not be valid: " + "; ".join(problems))
@@ -315,7 +447,7 @@ class Add(_Transaction):
         )
         self.run.data.update(channel=self.channel)
         # A usage error comes before anything runs.
-        self._edit_workstation(self._add)
+        self._add_text()
 
     def _keys(self) -> dict[str, Any]:
         options = self.options
@@ -341,6 +473,39 @@ class Add(_Transaction):
         if options.updater:
             keys["updater"] = options.updater
         return keys
+
+    def _add_text(self) -> str:
+        """The text with the table of the component as add wants it; sets self.change."""
+        current = tomllib.loads(self.instance.file.read_text(encoding="utf-8"))
+        table = dict((current.get("components") or {}).get(self.name) or {})
+        wanted = {**table, "enable": True, **self.keys}
+        expected = _normal(current)
+        expected.setdefault("components", {})[self.name] = _normal(wanted)
+        if not table:
+            self.change = "added"
+            values = {"enable": True, **self.keys}
+            return self._edited(self._add, lambda text: _place_table(text, self.name, values), expected)
+        self.change = "enabled" if table.get("enable") is not True else "unchanged"
+        moved = {key: value for key, value in self.keys.items() if table.get(key) != value}
+        if self.change == "unchanged" and moved:
+            self.change = "changed"
+        if self.change == "unchanged":
+            return self.instance.file.read_text(encoding="utf-8")
+
+        def by_lines(text: str) -> str | None:
+            # A key the table has changes in place; a new one goes at the end of the table.
+            tomlkit = _tomlkit()
+            document = tomlkit.parse(text)
+            entry = document["components"][self.name]
+            fresh = {}
+            for key, value in {"enable": True, **moved}.items():
+                if key in entry:
+                    entry[key] = value
+                else:
+                    fresh[key] = value
+            return _add_keys(tomlkit.dumps(document), self.name, fresh) if fresh else tomlkit.dumps(document)
+
+        return self._edited(self._add, by_lines, expected)
 
     def _add(self, document: Any) -> None:
         tomlkit = _tomlkit()
@@ -477,7 +642,7 @@ class Add(_Transaction):
         base = self._begin()
         if base is None:
             return self.finish()
-        text = self._edit_workstation(self._add)
+        text = self._add_text()
         wrote = self.change != "unchanged"
         if wrote:
             atomic.atomic_write(self.instance.file, text)
@@ -513,6 +678,7 @@ class Remove(_Transaction):
     def __init__(self, instance: config.Instance, state_root: str, options: argparse.Namespace) -> None:
         super().__init__(instance, state_root, options)
         self.uninstall_result: dict[str, Any] | None = None
+        self.kept_comments: list[str] = []
         self.plan_file = Path(state_root) / _UNINSTALL_DIRECTORY / f"uninstall-{self.name}.json"
         self.entry = self._manifest_entry(self.name)
 
@@ -521,6 +687,33 @@ class Remove(_Transaction):
             if isinstance(entry, dict) and entry.get("name") == name:
                 return entry
         return None
+
+    def _remove_text(self) -> str:
+        """The text without the component; sets self.change and self.kept_comments."""
+        text = self.instance.file.read_text(encoding="utf-8")
+        current = tomllib.loads(text)
+        components = current.get("components") or {}
+        if self.name not in components and self.name not in (components.get("order") or []):
+            self.change = "unchanged"
+            return text
+        self.change = "removed"
+
+        def by_lines(text: str) -> str | None:
+            dropped, self.kept_comments = _drop_table(text, self.name)
+            tomlkit = _tomlkit()
+            document = tomlkit.parse(dropped)
+            order = (document.get("components") or {}).get("order")
+            if order is not None:
+                for index in reversed(range(len(order))):
+                    if _plain(order[index]) == self.name:
+                        del order[index]
+            result: str = tomlkit.dumps(document)
+            return result
+
+        new_text = self._edited(self._remove, by_lines, _without(current, self.name))
+        if _normal(tomllib.loads(new_text)) == _normal(current):
+            self.change = "unchanged"
+        return new_text
 
     def _remove(self, document: Any) -> None:
         components = document.get("components")
@@ -679,7 +872,7 @@ class Remove(_Transaction):
         base = self._begin()
         if base is None:
             return self.finish()
-        text = self._edit_workstation(self._remove)
+        text = self._remove_text()
         definition = self.root / "components" / self.name
         wrote = self.change == "removed"
         if wrote and self.options.uninstall:
@@ -687,6 +880,9 @@ class Remove(_Transaction):
             atomic.atomic_write(self.plan_file, json.dumps(self._plan(), indent=2, sort_keys=True) + "\n")
         if wrote:
             atomic.atomic_write(self.instance.file, text)
+            for comment in self.kept_comments:
+                first = comment.splitlines()[0]
+                _say(self.command, f"the comment above [components.{self.name}] stays, it may be about more: {first}")
         if definition.is_dir():
             shutil.rmtree(definition)
             wrote = True

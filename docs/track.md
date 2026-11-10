@@ -35,7 +35,8 @@ The channel of NAME decides what it writes:
 expects. The scope options write `machines` (`--here`: this machine's name), `tags`, `profiles`,
 `method` and `updater` into the table ([workstation-toml.md](workstation-toml.md)); a table that is
 there already keeps its other keys and gets `enable = true`. The file keeps its comments and
-layout. A value the schema refuses is a usage error, before anything runs.
+layout: a new table goes after the last `[components]` table, never between a comment and the
+header that comment is about, and a new key goes at the end of its table. A value the schema refuses is a usage error, before anything runs.
 
 An official binary, a vendor APT repository, a release download or a Python application needs
 pins, hashes, a signing key or other research: that is no guess of a command. `add` writes nothing
@@ -59,7 +60,9 @@ through sudo on a terminal, else with `install-required` (exit 3), exactly as `a
 `dotsteward remove NAME [--uninstall] [-m SUBJECT] [--activate | --no-activate] [--publish |
 --no-publish] [--profile PROFILE] [--json]` removes `[components.NAME]`, NAME from
 `[components] order` and, for a component of the instance, the directory `components/NAME`, under
-the subject `feat: stop tracking NAME`. A component that another enabled component requires stays
+the subject `feat: stop tracking NAME`. The comment right above the table goes with it when it
+names the component; one that does not may be about more tables, so it stays as a paragraph of its
+own and remove says so. A component that another enabled component requires stays
 (exit 1, naming it); remove that one first. A name that is not tracked is nothing to do.
 
 Stopping to track never uninstalls what the person keeps:
