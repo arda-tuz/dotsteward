@@ -44,6 +44,9 @@ assert_contains "$nix_file" 'apt = [ "example-notes" "example-notes-data" ];'
 assert_contains "$nix_file" 'pin = null;'
 assert_contains "$nix_file" 'commands = [ "example-notes" ];'
 assert_not_contains "$nix_file" "$HOME"
+# The text is the fixture that checks.nix-instance evaluates (tests/nix/instance, case scaffold).
+fixtures=$DS_REPO_ROOT/tests/nix/instance/fixtures/example/components
+assert_eq "$(<"$fixtures/example-notes/default.nix")" "$nix_file" "the deb component is not the evaluated fixture"
 # An installed package counts as well, even when no source offers it any more.
 ds_dpkg_installed example-legacy 1.0-1
 assert_exit 0 add example-legacy --apt example-legacy --publish
@@ -55,6 +58,7 @@ nix_file=$(git -C "$up_inst" show HEAD:components/example-grep/default.nix)
 assert_contains "$nix_file" 'method = lib.mkDefault "nix";'
 assert_contains "$nix_file" 'packages = [ pkgs.ripgrep ];'
 assert_contains "$nix_file" 'commands = [ "rg" ];'
+assert_eq "$(<"$fixtures/example-grep/default.nix")" "$nix_file" "the nix component is not the evaluated fixture"
 assert_exit 2 add example-bad --nix 'rip grep'
 assert_exit 2 add example-viewer --nix ripgrep
 assert_contains "$DS_STDERR" "catalog component"
@@ -73,3 +77,20 @@ assert_eq "" "$(git -C "$up_inst" status --porcelain)" "the checkout is clean"
 # A scaffold never replaces a file the instance has.
 assert_exit 1 add example-tool --apt example-notes
 assert_contains "$DS_STDERR" "components/example-tool/default.nix"
+
+# A component that needs more than its directory (its first pins): the other changes are a question,
+# and --with-changes says they belong to this transaction.
+mkdir -p "$up_inst/components/example-pinned"
+printf '{ ... }:\n{\n  dotsteward.components.example-pinned = { };\n}\n' >"$up_inst/components/example-pinned/default.nix"
+jq '.agent_tools["example-pinned"] = {version: "1.0.0"}' "$up_inst/versions.lock.json" >"$up_inst/versions.lock.json.new"
+mv -- "$up_inst/versions.lock.json.new" "$up_inst/versions.lock.json"
+head=$(head_oid)
+assert_exit 3 add example-pinned --publish --json
+assert_stdout_json '[.ask[].code] == ["checkout-dirty"] and (.ask[0].changes | index(" M versions.lock.json") != null)'
+assert_eq "$head" "$(head_oid)" "no commit"
+toml_at work '.components["example-pinned"] == null'
+assert_exit 0 add example-pinned --with-changes --publish
+assert_eq "feat: track example-pinned" "$(git -C "$up_inst" log -1 --format=%s)"
+assert_eq "components/example-pinned/default.nix versions.lock.json workstation.toml" \
+  "$(git -C "$up_inst" diff --name-only HEAD^ HEAD -- . ':!.dotsteward' | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "$(head_oid)" "$(remote_oid)" "published"

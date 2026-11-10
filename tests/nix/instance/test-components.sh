@@ -67,3 +67,20 @@ assert_inst_eq '{"profile":"fresh","username":"alice","homeDirectory":"/Users/al
       };
     };
   in (homeOf (instance { homeModules = [ probe ]; }) "aarch64-darwin" "fresh").probe' "special arguments"
+
+# The components `dotsteward add --apt` and `--nix` write (tests/track holds their text to these
+# fixtures): the deb one on Linux with its APT packages and no pin, left out on darwin by the
+# platform filter; the nix one on both systems with its nixpkgs package.
+scaffold='instance { case = "scaffold"; }'
+assert_inst_eq '{"method":"deb","pin":null,"apt":["example-notes","example-notes-data"],"unavailable":null}' \
+  "let c = lib.findFirst (c: c.name == \"example-notes\") null ($scaffold).dotstewardManifest.x86_64-linux.components;
+   in { inherit (c) method; inherit (c.install) pin apt; unavailable = c.unavailable or null; }" "the deb component of add --apt"
+assert_inst_eq '"platform"' \
+  "(lib.findFirst (c: c.name == \"example-notes\") null ($scaffold).dotstewardManifest.aarch64-darwin.components).unavailable" \
+  "the deb component of add --apt on darwin"
+assert_inst_eq '[{"method":"nix","packages":["ripgrep"]},{"method":"nix","packages":["ripgrep"]}]' \
+  "map (system: let c = lib.findFirst (c: c.name == \"example-grep\") null ($scaffold).dotstewardManifest.\${system}.components;
+   in { inherit (c) method; inherit (c.install) packages; }) [ \"x86_64-linux\" \"aarch64-darwin\" ]" "the nix component of add --nix"
+assert_inst_eq '["example-notes","rg"]' \
+  "map (c: c.command) (lib.filter (c: c.component or null != \"core\") ($scaffold).dotstewardManifest.x86_64-linux.checks.commands)" \
+  "the commands of both"

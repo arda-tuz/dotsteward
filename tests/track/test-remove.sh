@@ -14,6 +14,14 @@ source "$DS_REPO_ROOT/tests/track/helpers.sh"
 ds_dpkg_installed example-tracked 1.0-1
 ds_dpkg_installed example-tracked-lib 1.0-1
 
+# A directory of a component that was never tracked (one the agent is writing) is not remove's.
+mkdir -p "$up_inst/components/example-draft"
+printf '{ ... }:\n{\n  dotsteward.components.example-draft = { };\n}\n' >"$up_inst/components/example-draft/default.nix"
+assert_exit 0 remove example-draft --publish
+assert_contains "$DS_STDOUT" "example-draft is not tracked"
+[[ -f $up_inst/components/example-draft/default.nix ]] || ds_fail "remove deleted a component it never tracked"
+rm -rf -- "$up_inst/components/example-draft"
+
 # Stop tracking a deb component: the packages stay installed.
 set_toml components order '["example-app", "codex"]'
 git -C "$up_inst" commit -q -am "chore: an order"
@@ -32,11 +40,14 @@ assert_no_step 'apt-get'
 assert_contains "$DS_STDOUT" "stays installed"
 assert_contains "$DS_STDOUT" "example-tracked"
 
-# Not tracked any more: nothing to do.
+# Not tracked any more: nothing to do, and nothing to uninstall when it left without --uninstall.
 clear_log
 assert_exit 0 remove example-app --publish
 assert_contains "$DS_STDOUT" "example-app is not tracked"
 assert_no_step '^static '
+assert_exit 0 remove example-app --uninstall --publish
+assert_contains "$DS_STDOUT" "nothing to uninstall"
+assert_no_step 'apt-get'
 
 # A component another one requires stays.
 component_entry example-base '{"method": "nix"}'

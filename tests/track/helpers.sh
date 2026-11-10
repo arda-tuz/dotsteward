@@ -23,7 +23,7 @@
 #   enable_component NAME [TOML]
 #                           a [components.NAME] table with enable = true and TOML lines, committed
 #                           and published
-#   snapshot                every ref, the work tree and the state root, as one listing
+#   snapshot                every ref, the work tree, the index and the state root, as one listing
 
 # shellcheck source=tests/apply/helpers.sh
 source "$DS_REPO_ROOT/tests/apply/helpers.sh"
@@ -92,6 +92,7 @@ snapshot() {
     git -C "$up_inst" rev-parse HEAD
     git -C "$up_inst" status --porcelain --untracked-files=all
     git -C "$up_inst" stash list
+    sha256sum "$up_inst/.git/index"
     find "$DOTSTEWARD_STATE_ROOT" -printf '%p %s %T@\n' | LC_ALL=C sort
   } 2>&1
 }
