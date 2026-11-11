@@ -104,4 +104,3 @@ data['schema_version'] = 2
 "
 assert_exit 1 state_in "$agents_inst" "$laptop_state" show desk
 assert_contains "$DS_STDERR" "breaks its schema"
-
