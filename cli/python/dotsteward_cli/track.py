@@ -28,6 +28,7 @@ as it is.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -41,6 +42,7 @@ from typing import Any
 
 from dotsteward_cli import atomic, config, context, locks, machine, report, runner, tomlfile
 from dotsteward_cli.skills import layout
+from dotsteward_cli.upgrade import holds
 
 EXIT_USAGE = 2
 SCHEMA_VERSION = 1
@@ -246,6 +248,24 @@ def _add_keys(text: str, name: str, values: Mapping[str, Any]) -> str | None:
     return before + "".join(f"{key} = {_value(value)}\n" for key, value in values.items()) + "".join(lines[end:])
 
 
+def _set_keys(text: str, name: str, values: Mapping[str, Any]) -> str | None:
+    """TEXT with VALUES in the table [components.NAME]: a key the table has changes in place, a
+    new one goes at the end of the table. None when the table has no header of its own."""
+    tomlkit = _tomlkit()
+    document = tomlkit.parse(text)
+    entry = (document.get("components") or {}).get(name)
+    if entry is None:
+        return None
+    fresh = {}
+    for key, value in values.items():
+        if key in entry:
+            entry[key] = value
+        else:
+            fresh[key] = value
+    changed: str = tomlkit.dumps(document)
+    return _add_keys(changed, name, fresh) if fresh else changed
+
+
 def _drop_table(text: str, name: str) -> tuple[str, list[str]]:
     """TEXT without [components.NAME] and its sub-tables, and the comments it kept. A table is its
     header and its keys. The comment right above the header goes with it when it names the
@@ -362,11 +382,16 @@ class _Transaction(runner.Runner):
             else:
                 self.ask.append(question)
         if self.ask:
-            for question in self.ask:
-                self.run.item(str(question.get("code")), **{k: v for k, v in question.items() if k != "code"})
-            self.code = report.PENDING
+            self._asked()
             return None
+        # begin may have brought the checkout forward: what follows reads the tree it brought.
+        self.instance = config.load_instance(str(self.root))
         return base
+
+    def _asked(self) -> None:
+        for question in self.ask:
+            self.run.item(str(question.get("code")), **{k: v for k, v in question.items() if k != "code"})
+        self.code = report.PENDING
 
     def _foreign(self, base: str) -> list[str]:
         """The paths whose change between BASE and the work tree is not about this component."""
@@ -540,17 +565,7 @@ class Add(_Transaction):
             return _read(self.instance.file)
 
         def by_lines(text: str) -> str | None:
-            # A key the table has changes in place; a new one goes at the end of the table.
-            tomlkit = _tomlkit()
-            document = tomlkit.parse(text)
-            entry = document["components"][self.name]
-            fresh = {}
-            for key, value in {"enable": True, **moved}.items():
-                if key in entry:
-                    entry[key] = value
-                else:
-                    fresh[key] = value
-            return _add_keys(tomlkit.dumps(document), self.name, fresh) if fresh else tomlkit.dumps(document)
+            return _set_keys(text, self.name, {"enable": True, **moved})
 
         return self._edited(self._add, by_lines, expected)
 
@@ -724,6 +739,9 @@ class Remove(_Transaction):
     command = "remove"
 
     def default_subject(self) -> str:
+        if self.options.keep_here:
+            this = machine.current_name(machine.read_machine(self.state_root), self.env)
+            return f"feat: keep {self.name} on {this} only"
         return f"feat: stop tracking {self.name}"
 
     def __init__(self, instance: config.Instance, state_root: str, options: argparse.Namespace) -> None:
@@ -731,26 +749,16 @@ class Remove(_Transaction):
         self.uninstall_result: dict[str, Any] | None = None
         self.kept_comments: list[str] = []
         self.plan_file = Path(state_root) / _UNINSTALL_DIRECTORY / f"uninstall-{self.name}.json"
-        self.entry = self._manifest_entry(self.name)
+        self.entry: dict[str, Any] | None = None
+        self.base = ""
+        if options.keep_here and options.uninstall:
+            raise UsageError("--keep-here or --uninstall, not both")
 
     def _manifest_entry(self, name: str) -> dict[str, Any] | None:
         for entry in layout.manifest(self.instance).get("components") or ():
             if isinstance(entry, dict) and entry.get("name") == name:
                 return entry
         return None
-
-    def _tracked_at(self, base: str) -> bool:
-        """Whether the table of the component is in BASE or in the work tree."""
-        try:
-            work = tomlfile.loads(_read(self.instance.file))
-        except (OSError, tomlfile.TomlError):
-            work = {}
-        before = self._git("show", f"{base}:{config.CONFIG_FILE}")
-        try:
-            old = tomlfile.loads(before.stdout) if before.code == 0 else {}
-        except tomlfile.TomlError:
-            old = {}
-        return any(self.name in (document.get("components") or {}) for document in (work, old))
 
     def _remove_text(self) -> str:
         """The text without the component; sets self.change and self.kept_comments."""
@@ -805,35 +813,38 @@ class Remove(_Transaction):
                 found.append(str(entry["name"]))
         return sorted(found)
 
+    def _home(self) -> Path:
+        return Path(os.environ.get("HOME") or os.path.expanduser("~")).resolve()
+
+    def _at_home(self, value: Any) -> Path | None:
+        """A home path of the manifest (~/...) as an absolute path strictly below HOME, else None."""
+        if not isinstance(value, str) or not value.startswith("~/"):
+            return None
+        home = self._home()
+        path = Path(os.path.normpath(home / value[2:]))
+        if path == home or home not in path.parents:
+            return None
+        return path
+
     def _plan(self) -> dict[str, Any]:
-        """What --uninstall removes, worked out from the manifest before the component goes."""
+        """What --uninstall may remove, worked out from the manifest before the component goes. Each
+        path is checked again when it is removed."""
         entry = self.entry or {}
         method = entry.get("method")
         install = entry.get("install") or {}
-        home = Path(os.environ.get("HOME") or os.path.expanduser("~"))
-
-        def at_home(value: Any) -> Path | None:
-            if not isinstance(value, str) or not value.startswith("~/"):
-                return None
-            return home / value[2:]
-
         plan: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "component": self.name, "method": method}
         if method == "deb":
             mine = [str(package) for package in [*(install.get("packageNames") or ()), *(install.get("apt") or ())]]
             others = self._packages_of_others()
             plan["packages"] = [package for package in dict.fromkeys(mine) if package not in others]
         elif method == "official-binary":
-            dest = at_home(install.get("dest"))
-            files = [] if dest is None else [dest]
-            if dest is not None:
-                files += [dest.parent / str(c.get("file")) for c in install.get("companions") or () if c.get("file")]
-            plan["files"] = [str(path) for path in files]
+            plan["binary"] = install.get("dest")
+            plan["probe"] = {"argv": install.get("versionArgv"), "regex": install.get("versionRegex")}
+            plan["companions"] = [str(c.get("file")) for c in install.get("companions") or () if c.get("file")]
         elif method == "pypi":
-            venv = at_home(install.get("venv"))
-            link_dir = at_home(install.get("linkDir") or "~/.local/bin")
-            links = [link_dir / str(script) for script in install.get("bin") or ()] if link_dir else []
-            plan["files"] = [str(path) for path in links]
-            plan["directories"] = [] if venv is None else [str(venv)]
+            plan["venv"] = install.get("venv")
+            plan["link_dir"] = install.get("linkDir") or "~/.local/bin"
+            plan["bin"] = [str(script) for script in install.get("bin") or ()]
         return plan
 
     def _packages_of_others(self) -> set[str]:
@@ -884,8 +895,87 @@ class Remove(_Transaction):
         elif method:
             _say(self.command, f"{self.name} stays installed ({method}); dotsteward remove --uninstall removes it")
 
+    # --- what --uninstall removes, each path proven the component's --------------------------------
+
+    def _keep(self, result: dict[str, Any], path: Path | str, why: str) -> None:
+        result["kept"].append({"path": str(path), "why": why})
+        _say(self.command, f"{path} stays: {why}")
+
+    def _answers_probe(self, binary: Path, probe: Mapping[str, Any]) -> bool:
+        argv, regex = probe.get("argv"), probe.get("regex")
+        if not isinstance(argv, list) or not isinstance(regex, str):
+            return False
+        try:
+            done = subprocess.run(
+                [str(binary), *(str(arg) for arg in argv)],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return re.search(regex, done.stdout + done.stderr) is not None
+
+    def _remove_files(self, plan: Mapping[str, Any], result: dict[str, Any]) -> None:
+        method = plan.get("method")
+        if method == "official-binary":
+            binary = self._at_home(plan.get("binary"))
+            if binary is None:
+                if plan.get("binary"):
+                    self._keep(result, str(plan.get("binary")), "it is not a path below HOME")
+                return
+            if not binary.exists() and not binary.is_symlink():
+                return
+            if binary.is_symlink() or not binary.is_file():
+                self._keep(result, binary, f"it is no file that {self.name} installed (a link or a directory)")
+                return
+            if not self._answers_probe(binary, plan.get("probe") or {}):
+                self._keep(result, binary, f"it does not answer the version probe of {self.name}")
+                return
+            for path in [binary, *(binary.parent / name for name in plan.get("companions") or ())]:
+                if path.is_file() and not path.is_symlink():
+                    path.unlink()
+                    result["removed"].append(str(path))
+        elif method == "pypi":
+            venv = self._at_home(plan.get("venv"))
+            link_dir = self._at_home(plan.get("link_dir"))
+            if venv is None:
+                if plan.get("venv"):
+                    self._keep(result, str(plan.get("venv")), "it is not a path below HOME")
+                return
+            for script in plan.get("bin") or ():
+                link = link_dir / script if link_dir is not None else None
+                if link is None or not (link.exists() or link.is_symlink()):
+                    continue
+                if link.is_symlink() and (venv.resolve() in link.resolve().parents):
+                    link.unlink()
+                    result["removed"].append(str(link))
+                else:
+                    self._keep(result, link, f"it is no link into the environment of {self.name}")
+            if venv.is_dir() and not venv.is_symlink():
+                if (venv / "pyvenv.cfg").is_file():
+                    shutil.rmtree(venv)
+                    result["removed"].append(str(venv))
+                else:
+                    self._keep(result, venv, "it holds no pyvenv.cfg: no environment of a Python application")
+
+    def _removal_published(self) -> bool:
+        """Whether the remote, as the last fetch saw it, no longer tracks the component."""
+        if self.apply_report is not None:
+            return bool((self.apply_report.get("data") or {}).get("published"))
+        shown = self._git("show", f"refs/remotes/origin/{self.branch}:{config.CONFIG_FILE}")
+        if shown.code != 0:
+            return False
+        try:
+            remote = tomlfile.loads(shown.stdout)
+        except tomlfile.TomlError:
+            return False
+        return self.name not in (remote.get("components") or {})
+
     def _uninstall(self) -> None:
-        """Carries out the recorded plan, once the removal landed."""
+        """Carries out the recorded plan, once the removal is published."""
         try:
             plan = json.loads(self.plan_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -895,15 +985,17 @@ class Remove(_Transaction):
                 "--uninstall); remove its software by hand",
             )
             return
-        result: dict[str, Any] = {"status": "done", "method": plan.get("method"), "removed": []}
-        for path in [*(plan.get("files") or ()), *(plan.get("directories") or ())]:
-            target = Path(path)
-            if target.is_dir() and not target.is_symlink():
-                shutil.rmtree(target)
-                result["removed"].append(path)
-            elif target.exists() or target.is_symlink():
-                target.unlink()
-                result["removed"].append(path)
+        if not self._removal_published():
+            _say(
+                self.command,
+                f"the removal of {self.name} is not published yet: nothing is uninstalled; the same "
+                "dotsteward remove --uninstall --publish does it",
+            )
+            self.uninstall_result = {"status": "waiting", "method": plan.get("method"), "removed": [], "kept": []}
+            self.run.step("uninstall", report.OK, detail="waits for the publish")
+            return
+        result: dict[str, Any] = {"status": "done", "method": plan.get("method"), "removed": [], "kept": []}
+        self._remove_files(plan, result)
         packages = self._installed(plan.get("packages") or [])
         if packages:
             command = ["sudo", "apt-get", "remove", *packages]
@@ -932,18 +1024,192 @@ class Remove(_Transaction):
         self.uninstall_result = result
         self.run.step("uninstall", report.OK)
 
+    # --- the tree ----------------------------------------------------------------------------------
+
+    def _table_at(self, revision: str) -> Mapping[str, Any] | None:
+        shown = self._git("show", f"{revision}:{config.CONFIG_FILE}")
+        if shown.code != 0:
+            return None
+        try:
+            table = (tomlfile.loads(shown.stdout).get("components") or {}).get(self.name)
+        except tomlfile.TomlError:
+            return None
+        return table if isinstance(table, dict) else None
+
+    def _work_table(self) -> Mapping[str, Any] | None:
+        try:
+            table = (tomlfile.loads(_read(self.instance.file)).get("components") or {}).get(self.name)
+        except (OSError, tomlfile.TomlError):
+            return None
+        return table if isinstance(table, dict) else None
+
+    def _directory(self) -> str:
+        return f"components/{self.name}/"
+
+    def _not_committed(self) -> list[str]:
+        """The files under components/NAME that no commit holds and git does not ignore: someone's
+        work, which the commit of remove would take along."""
+        untracked = self._git("ls-files", "--others", "--exclude-standard", "--", self._directory()).stdout
+        staged = self._git("diff", "--cached", "--name-only", "--diff-filter=A", "HEAD", "--", self._directory()).stdout
+        return sorted({line for line in (untracked + staged).splitlines() if line})
+
+    def _remove_directory(self) -> list[str]:
+        """Deletes the committed files of components/NAME; what else is there stays, named."""
+        committed = self._git("ls-tree", "-r", "--name-only", "HEAD", "--", self._directory()).stdout.splitlines()
+        removed = []
+        for name in committed:
+            path = self.root / name
+            if path.is_file() or path.is_symlink():
+                path.unlink()
+                removed.append(name)
+        directory = self.root / self._directory()
+        kept = (
+            sorted(
+                str(path.relative_to(self.root)) for path in directory.rglob("*") if path.is_file() or path.is_symlink()
+            )
+            if directory.is_dir()
+            else []
+        )
+        for name in kept:
+            _say(self.command, f"{name} stays: git does not know it (an ignored file)")
+        if directory.is_dir():
+            for folder in sorted((p for p in directory.rglob("*") if p.is_dir()), reverse=True):
+                with contextlib.suppress(OSError):
+                    folder.rmdir()
+            with contextlib.suppress(OSError):
+                directory.rmdir()
+        return removed
+
+    def _machines_of(self, table: Mapping[str, Any]) -> list[str]:
+        """The machines the component is for, by the intent: its machines, else every known machine."""
+        if isinstance(table.get("machines"), list):
+            return sorted(str(name) for name in table["machines"])
+        names = set(machine.known_names(self.root))
+        this = machine.current_name(machine.read_machine(self.state_root), self.env)
+        if this is not None:
+            names.add(this)
+        tags = table.get("tags")
+        if isinstance(tags, list):
+            names = {
+                name for name in names if set(tags) & set((machine.read_host(self.root, name) or {}).get("tags") or [])
+            }
+        return sorted(names)
+
+    def _host_text(self) -> tuple[Path, str] | None:
+        """This machine's host file without what it says about the component: its answer Never
+        and its holds. None when there is nothing to take out."""
+        this = machine.current_name(machine.read_machine(self.state_root), self.env)
+        if this is None:
+            return None
+        path = machine.host_path(self.root, this)
+        if not path.is_file():
+            return None
+        tomlkit = _tomlkit()
+        text = _read(path)
+        document = tomlkit.parse(text)
+        declined = document.get("declined")
+        if declined is not None and self.name in [_plain(item) for item in declined.get("components", [])]:
+            names = declined["components"]
+            for index in reversed(range(len(names))):
+                if _plain(names[index]) == self.name:
+                    del names[index]
+        held = document.get("holds")
+        if held is not None and self.name in held:
+            del held[self.name]
+        new_text: str = tomlkit.dumps(document)
+        return (path, new_text) if new_text != text else None
+
+    def _pins(self) -> list[str]:
+        install = (self.entry or {}).get("install") or {}
+        pins = [install.get("pin"), *((c or {}).get("pin") for c in install.get("companions") or ())]
+        return [str(pin) for pin in pins if isinstance(pin, str) and pin]
+
+    def _keep_here(self, table: Mapping[str, Any]) -> int:
+        this = machine.current_name(machine.read_machine(self.state_root), self.env)
+        if this is None:
+            raise UsageError("--keep-here: this machine has no name yet; 'dotsteward host init' names it")
+        current = tomlfile.loads(_read(self.instance.file))
+        expected = _normal(current)
+        expected["components"][self.name] = {**_normal(table), "machines": [this]}
+        if table.get("machines") == [this]:
+            self.change = "unchanged"
+            _say(self.command, f"{self.name} is kept on {this} only already")
+            if not self._pending_since(self.base):
+                return self.finish()
+        else:
+            self.change = "kept-here"
+
+            def edit(document: Any) -> None:
+                document["components"][self.name]["machines"] = [this]
+
+            text = self._edited(edit, lambda text: _set_keys(text, self.name, {"machines": [this]}), expected)
+            atomic.atomic_write(self.instance.file, text)
+        self.run.step("intent", report.OK, detail=self.change)
+        _say(self.command, f"{self.name} stays on {this} only: no other machine has it after its next rebuild")
+        self._apply()
+        return self.finish()
+
     def execute(self) -> int:
+        base = self._begin()
+        if base is None:
+            return self.finish()
+        self.base = base
+        self.entry = self._manifest_entry(self.name)
         dependents = self._dependents()
         if dependents:
             raise Refusal(
                 f"{', '.join(dependents)} requires {self.name}: remove {'it' if len(dependents) == 1 else 'them'} first"
             )
-        base = self._begin()
-        if base is None:
+        committed = self._table_at(base) or self._table_at("HEAD")
+        work = self._work_table()
+        if committed is None:
+            if work is not None:
+                _say(
+                    self.command,
+                    f"workstation.toml has a table of {self.name} that no commit holds (an add that did not "
+                    f"finish): dotsteward add {self.name} finishes it",
+                )
+            _say(self.command, f"{self.name} is not tracked: nothing to do")
+            if self.options.uninstall:
+                self._uninstall()
             return self.finish()
-        tracked = self._tracked_at(base) or self.change == "removed"
+        table = work if work is not None else committed
+        if self.options.keep_here:
+            if work is None:
+                raise Refusal(f"--keep-here: {self.name} is out of the intent already")
+            return self._keep_here(table)
+        method = (self.entry or {}).get("method")
+        if work is not None and method == "nix" and not self.options.uninstall:
+            machines = self._machines_of(table)
+            self.ask.append(
+                {
+                    "code": "profile-removal",
+                    "component": self.name,
+                    "machines": machines,
+                    "message": (
+                        f"{self.name} is a nix component: without its table it leaves the Home Manager profile of "
+                        f"every machine it is for at their next rebuild ({', '.join(machines) or 'every machine'}); "
+                        f"--uninstall confirms that, --keep-here keeps it on this machine only"
+                    ),
+                }
+            )
+            self._asked()
+            return self.finish()
+        unknown = self._not_committed()
+        if unknown:
+            self.ask.append(
+                {
+                    "code": "untracked-files",
+                    "paths": unknown,
+                    "message": (
+                        f"components/{self.name} holds files no commit has: move them out, or commit them first, "
+                        "then the same dotsteward remove; nothing was written"
+                    ),
+                }
+            )
+            self._asked()
+            return self.finish()
         text = self._remove_text()
-        definition = self.root / "components" / self.name
         wrote = self.change == "removed"
         if wrote and self.options.uninstall:
             atomic.make_private_dirs(self.plan_file.parent)
@@ -953,14 +1219,19 @@ class Remove(_Transaction):
             for comment in self.kept_comments:
                 first = comment.splitlines()[0]
                 _say(self.command, f"the comment above [components.{self.name}] stays, it may be about more: {first}")
-        # The directory of a component goes only with a table that was there: one never tracked is
-        # someone's work in progress.
-        if definition.is_dir() and tracked:
-            shutil.rmtree(definition)
+        if self._remove_directory():
             wrote = True
             self.change = "removed"
+        host = self._host_text()
+        if host is not None:
+            atomic.atomic_write(host[0], host[1])
+            _say(self.command, f"this machine's answer and holds about {self.name} leave {host[0].name}")
+            wrote = True
+        pins = self._pins()
+        if pins and wrote:
+            _say(self.command, f"the pins {', '.join(pins)} stay in versions.lock.json: only the producer moves pins")
         self.run.step("intent", report.OK, detail=self.change)
-        if not tracked or (not wrote and not self._pending_since(base)):
+        if not wrote and not self._pending_since(base):
             _say(self.command, f"{self.name} is not tracked: nothing to do")
         else:
             if not wrote:
@@ -970,6 +1241,10 @@ class Remove(_Transaction):
                 )
             self._summary()
             self._apply()
+        if self.code == report.OK:
+            kept = [hold for hold in holds.read(self.state_root) if hold.get("component") != self.name]
+            if len(kept) != len(holds.read(self.state_root)):
+                holds.write(self.state_root, kept)
         if self.code == report.OK and self.options.uninstall:
             self._uninstall()
         elif self.code == report.OK and self.plan_file.exists() and not self.options.uninstall:
@@ -1025,6 +1300,9 @@ def _remove_parser() -> argparse.ArgumentParser:
     _common(parser)
     parser.add_argument(
         "--uninstall", action="store_true", help="also remove what it installed outside the profile (asked for)"
+    )
+    parser.add_argument(
+        "--keep-here", action="store_true", help="keep it on this machine only instead: machines = [this machine]"
     )
     return parser
 
