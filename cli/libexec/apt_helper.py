@@ -32,17 +32,14 @@ in /etc/apt/preferences.d always tells what dpkg has, so that no other user of l
 ever sees a target: a plan and a commit read their pin from a temporary directory, and a
 hook of dpkg keeps the file right after every dpkg, also when a person calls it.
 
-The version constraints and holds of the instance (`kept` of the request) are a file of their
-own, 61dotsteward-kept. Its records only lower: one per package and rule (`name:any`, every
-architecture) gives -1 to every version outside the rule (`Pin: version /ERE/`), and every version
-inside keeps the priority of its origin, so no record raises a prerelease, a backport or an origin
-the owner turned off, and a version asked for by name still installs. A constraint is a series
-(16, 16.*, 5:27) and binds the packages of the component whose versions are of it; a hold keeps the
-line of the installed upstream version (its Debian revisions) while it is below the held version. A
-package the owner moved out of its rule, one that a package outside the component needs in a version
-outside the rule (a shared library), a constraint nothing matches and a rule that is no series or no
-version get no record and a note; a package of a gated class or firmware gets none. Plan, commit and
-analysis read these records from the request, never the file there.
+The version constraints and holds of the instance (`kept` of the request) bind what this engine
+does, never the owner's own apt: no preferences file is written for them. In each depcache of a plan,
+a commit and the analysis a package of a constrained or held component takes the newest version its
+rules allow from the origins apt trusts as much as the version apt would take (so no prerelease of a
+lower origin, no backport, nothing of an origin the owner turned off); with none it stays where it
+is and the newer one waits. A package the owner took out of its rule, one another package needs in a
+version outside the rule (a shared library: Depends, a versioned Provides, Breaks), a rule that is no
+series or no version, firmware and the gated classes are never bound, and the answer says so.
 """
 
 from __future__ import annotations
@@ -78,21 +75,15 @@ PIN_PRIORITY = 990
 PIN_HOOK_FILE = "60dotsteward-pin"
 PIN_SYNC_FILE = "usr/local/lib/dotsteward/pin-sync.py"
 PIN_HEADER = "# Managed by dotsteward: gated classes stay as dpkg has them. Only `dotsteward upgrade` moves them."
-KEPT_FILE = "61dotsteward-kept"
-KEPT_HEADER = (
-    "# Managed by dotsteward: the version constraints and holds of the instance; change `version` in "
-    "workstation.toml or a platform file, or the hold in hosts/<name>.toml. Only `dotsteward upgrade` writes it."
-)
-KEPT_RECORD = "Explanation: {explanation}\nPackage: {name}:any\nPin: version /{regex}/\nPin-Priority: {priority}\n"
-# The records only lower: what is outside a rule drops to -1, whatever its origin said; what is inside
-# keeps the priority of its origin, so no record raises a version.
-KEPT_PRIORITY = -1
 # A series of a version constraint: an optional epoch, numbers, an optional .* (16, 16.*, 5:27, 1.140).
 SERIES_RE = re.compile(r"(?:([0-9]+):)?([0-9]+(?:\.[0-9]+)*)(?:\.\*)?")
 # What may follow a series inside it (16.4, 16-1, 16+dfsg, 16~rc1), and the Debian revision of a line.
 SERIES_BOUNDARY = ".+~-"
 LINE_BOUNDARY = "-"
 VERSION_TEXT_RE = re.compile(r"[0-9A-Za-z.+~:-]+")
+# The relations through which another package needs a version of a package.
+NEEDS = ("Depends", "PreDepends")
+EXCLUDES = ("Breaks", "Conflicts")
 # An exact version constraint of an earlier release: that version alone.
 EXACT_RE = re.compile(r"[0-9][0-9A-Za-z.+~:-]*")
 PACKAGE_RE = re.compile(r"[a-z0-9][a-z0-9+.-]+")
@@ -185,7 +176,10 @@ def parse_series(constraint):
 
 def parse_rule(constraint):
     """(epoch, literal, boundary) of a version constraint: a series, or one exact version (nothing may
-    follow it, its epoch is its own); None when it is neither."""
+    follow it, its epoch is its own); None when it is neither. A leading v of a tag is no part of it."""
+    constraint = str(constraint).strip()
+    if constraint[:1] == "v" and constraint[1:2].isdigit():
+        constraint = constraint[1:]
     series = parse_series(constraint)
     if series is not None:
         return (series[0], series[1], SERIES_BOUNDARY)
@@ -212,53 +206,6 @@ def in_constraint(constraint, version):
     return rule is not None and in_line(version, *rule)
 
 
-def _ere(text):
-    return re.sub(r"([.+*?()\[\]{}|^$\\])", r"\\\1", text)
-
-
-def _not_one_of(chars):
-    """A bracket expression of every character but CHARS (a dash goes last)."""
-    chars = sorted(set(chars))
-    dash = "-" in chars
-    return "[^" + "".join(char for char in chars if char != "-") + ("-" if dash else "") + "]"
-
-
-def _rest_outside(literal, boundary, no_colon):
-    """ERE of a rest that is not LITERAL (followed by a character of BOUNDARY or the end). NO_COLON:
-    the whole version has no epoch, so no colon anywhere."""
-    colon = ":" if no_colon else ""
-    tail = "[^:]*" if no_colon else ".*"
-    alternatives = [
-        _ere(literal[:index]) + "($|" + _not_one_of(char + colon) + tail + "$)" for index, char in enumerate(literal)
-    ]
-    follows = _not_one_of(boundary + colon) if boundary + colon else "."
-    alternatives.append(_ere(literal) + follows + tail + "$")
-    return "(" + "|".join(alternatives) + ")"
-
-
-def _other_epoch(epoch):
-    """ERE of an epoch that is not EPOCH."""
-    alternatives = []
-    for index, digit in enumerate(epoch):
-        others = "".join(other for other in "0123456789" if other != digit)
-        alternatives.append(epoch[:index] + "[" + others + "][0-9]*")
-    alternatives += [epoch[:index] for index in range(1, len(epoch))]
-    alternatives.append(epoch + "[0-9]+")
-    return "(" + "|".join(alternatives) + ")"
-
-
-def outside_regex(epoch, literal, boundary):
-    """POSIX ERE (apt_preferences(5) `Pin: version /.../`) of every version outside the line: not
-    LITERAL followed by a character of BOUNDARY or the end, or of another epoch than EPOCH (None:
-    any). Measured by the apt worlds against apt itself."""
-    if epoch is None:
-        parts = ["^[0-9]+:" + _rest_outside(literal, boundary, False), "^" + _rest_outside(literal, boundary, True)]
-    else:
-        parts = ["^" + epoch + ":" + _rest_outside(literal, boundary, False), "^" + _other_epoch(epoch) + ":"]
-        parts.append("^" + _rest_outside(literal, boundary, True) if epoch == "0" else "^[^:]*$")
-    return "|".join(parts)
-
-
 def one_line(text):
     return " ".join(str(text).split())
 
@@ -271,165 +218,198 @@ def gated_package(pkg):
     return any(source_class(pkg.shortname, source) in classes for source in sources)
 
 
-def shared_with(pkg, inside, packages):
-    """A package outside the component (not in PACKAGES) with a dependency on PKG that only a version
-    outside the rule meets: then a record would break it (another major the owner installs). None
+def shared_with(cache, pkg, allowed, packages):
+    """A package outside the component (not in PACKAGES) that needs a version of PKG the rules do not
+    allow, or excludes every one they allow: a limit would break it (another major the owner
+    installs). Through the package itself and through each name its allowed versions provide. None
     when there is none."""
-    versions = [version.ver_str for version in pkg._pkg.version_list if inside(version.ver_str)]
-    for dependency in pkg._pkg.rev_depends_list:
-        if dependency.dep_type_untranslated not in ("Depends", "PreDepends"):
+    inside = [version for version in pkg._pkg.version_list if allowed(version.ver_str)]
+    names = {pkg.name: [(version.ver_str, version.ver_str) for version in inside]}
+    for version in inside:
+        for name, provided, _ in version.provides_list:
+            names.setdefault(name, []).append((provided, version.ver_str))
+    for name, offers in names.items():
+        try:
+            target = pkg._pkg if name == pkg.name else cache._cache[name]
+        except KeyError:
             continue
-        parent = dependency.parent_pkg.name
-        if parent in packages or not dependency.target_ver:
-            continue
-        if not any(apt_pkg.check_dep(version, dependency.comp_type, dependency.target_ver) for version in versions):
-            return parent
+        for dependency in target.rev_depends_list:
+            parent = dependency.parent_pkg.name
+            if parent in packages or parent == pkg.name:
+                continue
+            kind = dependency.dep_type_untranslated
+            meets = [
+                not dependency.target_ver
+                or (bool(offer) and apt_pkg.check_dep(offer, dependency.comp_type, dependency.target_ver))
+                for offer, _ in offers
+            ]
+            if kind in NEEDS and dependency.target_ver and not any(meets):
+                return parent
+            if kind in EXCLUDES and name == pkg.name and offers and all(meets):
+                return parent
     return None
 
 
 def _rule_note(code, rule, message, **fields):
     return report_item(
         code,
-        component=str(rule.get("component") or ""),
+        component=one_line(rule.get("component") or ""),
         version=one_line(rule.get("version")),
         message=message,
         **fields,
     )
 
 
-def kept_records(rules, cache):
-    """The records of the constraints and holds RULES of the request, by package, and the notes:
-    ({name: [{kind, component, version, reason, regex, explanation}]}, items). A record lowers what
-    is outside its rule; a package with two rules gets both."""
-    records = {}
+def read_rules(rules):
+    """The usable rules of the request by package, and a note for each that is not:
+    ({name: [{kind, component, version, reason, allows}]}, items). A constraint allows its series or
+    its one version, a hold what is below it."""
+    by_package = {}
     items = []
     for rule in rules:
         kind = rule.get("kind")
         version = str(rule.get("version") or "")
         component = one_line(rule.get("component") or "")
-        reason = one_line(rule.get("reason") or "")
-        packages = [str(name) for name in rule.get("packages") or () if PACKAGE_RE.fullmatch(str(name))]
         if kind == "constraint":
-            series = parse_rule(version)
-            if series is None:
+            parsed = parse_rule(version)
+            if parsed is None:
                 items.append(
                     _rule_note(
-                        "kept-invalid",
+                        "constraint-invalid",
                         rule,
-                        f"version {one_line(version)!r} of {component} is no series of versions (16, 16.*, 5:27) "
-                        "and no version: it binds nothing",
+                        f"version {one_line(version)!r} of {component} is no series (16, 16.*, 5:27) and no version: "
+                        "dotsteward moves no package of it by this rule",
                     )
                 )
                 continue
+
+            def allows(candidate, parsed=parsed):
+                return in_line(candidate, *parsed)
+
         elif kind == "hold":
             if not VERSION_TEXT_RE.fullmatch(version):
-                items.append(
-                    _rule_note("kept-invalid", rule, f"the hold of {component} names no version: it binds nothing")
-                )
+                items.append(_rule_note("constraint-invalid", rule, f"the hold of {component} names no version"))
                 continue
+
+            def allows(candidate, version=version):
+                return vcmp(candidate, version) < 0
+
         else:
             continue
-        bound = False
-        for name in packages:
-            if name not in cache:
-                continue
-            pkg = cache[name]
-            if gated_package(pkg):
-                continue
-            installed = pkg.installed.version if pkg.installed is not None else None
-            if kind == "constraint":
-                epoch, literal, boundary = series
-                inside = [
-                    candidate for candidate in pkg.versions if in_line(candidate.version, epoch, literal, boundary)
-                ]
-                if not inside:
-                    # Another scheme of versions (an extension of a server): not what the rule is about.
-                    continue
-                if installed is not None and not in_line(installed, epoch, literal, boundary):
-                    items.append(
-                        report_item(
-                            "constraint-outside",
-                            package=name,
-                            component=component,
-                            installed=installed,
-                            version=version,
-                            message=f"{name} {installed} is outside version {version} of {component}: it was "
-                            "moved by hand, so it is not pinned back",
-                        )
-                    )
-                    bound = True
-                    continue
-                explanation = f"{component}: version {version}"
-            else:
-                if installed is None:
-                    continue
-                if vcmp(installed, version) >= 0:
-                    items.append(
-                        report_item(
-                            "hold-outside",
-                            package=name,
-                            component=component,
-                            installed=installed,
-                            version=version,
-                            message=f"{name} {installed} is past the hold below {version} of {component}: it was "
-                            "moved by hand, so it is not held",
-                        )
-                    )
-                    bound = True
-                    continue
-                epoch, rest = split_epoch(installed)
-                literal = rest.rpartition("-")[0] or rest
-                boundary = LINE_BOUNDARY
-                explanation = f"{component}: a hold below {version}, the line of {literal} stays"
-            bound = True
-            line = (epoch, literal, boundary)
-            other = shared_with(pkg, lambda text, line=line: in_line(text, *line), set(packages))
-            if other is not None:
-                items.append(
-                    report_item(
-                        "constraint-shared",
-                        package=name,
-                        component=component,
-                        needed_by=other,
-                        version=version,
-                        message=f"{name} is also needed by {other} in a version outside the rule of {component}: "
-                        "a record would break it, so it is only reported",
-                    )
-                )
-                continue
-            if reason:
-                explanation += f": {reason}"
-            records.setdefault(name, []).append(
-                {
-                    "kind": kind,
-                    "component": component,
-                    "version": version,
-                    "reason": reason,
-                    "regex": outside_regex(epoch, literal, boundary),
-                    "explanation": explanation,
-                }
-            )
-        if kind == "constraint" and not bound:
+        entry = {
+            "kind": kind,
+            "component": component,
+            "version": version,
+            "reason": one_line(rule.get("reason") or ""),
+            "allows": allows,
+            "packages": [str(name) for name in rule.get("packages") or ()],
+        }
+        for name in entry["packages"]:
+            by_package.setdefault(name, []).append(entry)
+    return by_package, items
+
+
+def limit_candidates(rules, cache):
+    """Sets, in CACHE, the candidate of each package the RULES bind to the newest version they allow
+    from an origin apt trusts as much as its own candidate, or to the installed version. Answers
+    ({name: {rule, newest, chosen}}, items); a package the rules leave alone has no entry."""
+    by_package, items = read_rules(rules)
+    limits = {}
+    policy = cache._depcache.policy
+    for name, entries in sorted(by_package.items()):
+        if name not in cache:
+            continue
+        pkg = cache[name]
+        if gated_package(pkg):
+            continue
+
+        def allowed(text, entries=entries):
+            return all(entry["allows"](text) for entry in entries)
+
+        candidate = pkg.candidate
+        installed = pkg.installed
+        if candidate is None:
+            continue
+        if allowed(candidate.version):
+            continue
+        rule = (
+            entries[0]
+            if len(entries) == 1
+            else next(entry for entry in entries if not entry["allows"](candidate.version))
+        )
+        if installed is not None and not allowed(installed.version):
             items.append(
-                _rule_note(
-                    "constraint-matches-nothing",
-                    rule,
-                    f"no package of {component} has a version inside {version}: the constraint binds nothing",
+                report_item(
+                    "constraint-left-by-owner",
+                    package=name,
+                    component=rule["component"],
+                    installed=installed.version,
+                    version=rule["version"],
+                    message=f"{name} {installed.version} is outside {rule['kind']} {rule['version']} of "
+                    f"{rule['component']}: the owner took it there, and dotsteward leaves it as it is",
                 )
             )
-    return records, items
-
-
-def kept_text(records):
-    """The file of the records, None when there is none."""
-    if not records:
-        return None
-    body = [
-        KEPT_RECORD.format(explanation=entry["explanation"], name=name, regex=entry["regex"], priority=KEPT_PRIORITY)
-        for name, entries in sorted(records.items())
-        for entry in entries
-    ]
-    return KEPT_HEADER + "\n" + "\n".join(body)
+            pkg.candidate = installed
+            limits[name] = {"rule": rule, "newest": candidate.version, "chosen": installed.version}
+            continue
+        packages = {package for entry in entries for package in entry["packages"]}
+        other = shared_with(cache, pkg, allowed, packages)
+        if other is not None:
+            items.append(
+                report_item(
+                    "constraint-shared",
+                    package=name,
+                    component=rule["component"],
+                    needed_by=other,
+                    version=rule["version"],
+                    message=f"{other} needs {name} outside {rule['kind']} {rule['version']} of {rule['component']}: "
+                    "the rule does not bind it, so that install stays possible",
+                )
+            )
+            continue
+        trust = policy.get_priority(candidate._cand)
+        options = [
+            version
+            for version in pkg.versions
+            if allowed(version.version)
+            and policy.get_priority(version._cand) >= trust
+            and (installed is None or vcmp(version.version, installed.version) >= 0)
+        ]
+        chosen = max(options, key=functools.cmp_to_key(lambda a, b: vcmp(a.version, b.version)), default=None)
+        if chosen is None and installed is None:
+            continue
+        pkg.candidate = chosen or installed
+        limits[name] = {"rule": rule, "newest": candidate.version, "chosen": (chosen or installed).version}
+        items.append(
+            report_item(
+                "constraint-waits",
+                package=name,
+                component=rule["component"],
+                version=rule["version"],
+                newest=candidate.version,
+                chosen=(chosen or installed).version,
+                message=f"{name} {candidate.version} is outside {rule['kind']} {rule['version']} of "
+                f"{rule['component']}: dotsteward takes {(chosen or installed).version}, the newer one waits for you",
+            )
+        )
+    reported = set()
+    for entries in by_package.values():
+        for entry in entries:
+            if entry["kind"] != "constraint" or id(entry) in reported:
+                continue
+            reported.add(id(entry))
+            if not any(
+                name in cache and any(entry["allows"](version.version) for version in cache[name].versions)
+                for name in entry["packages"]
+            ):
+                items.append(
+                    _rule_note(
+                        "constraint-matches-nothing",
+                        entry,
+                        f"no package of {entry['component']} has a version inside {entry['version']}: it binds nothing",
+                    )
+                )
+    return limits, items
 
 
 PIN_PAIR = "Package: src:{source}:any\nPin: version {version}\nPin-Priority: {priority}\n"
@@ -529,7 +509,7 @@ class Session:
         self.codename = request.get("codename") or os_release_codename()
         self.constraints = {name: str(value) for name, value in (request.get("constraints") or {}).items()}
         self.kept_rules = [rule for rule in request.get("kept") or [] if isinstance(rule, dict)]
-        self.kept = None
+        self.limits = None
         self.kept_items = []
         self.accept_install = set()
         self.accept_kernel = None
@@ -557,39 +537,36 @@ class Session:
     def close(self):
         shutil.rmtree(self.scratch, ignore_errors=True)
 
-    def pin_dir(self, text, kept=True):
-        """A directory for Dir::Etc::PreferencesParts: the files of others as they are, ours with TEXT
-        and, with KEPT, the records of the constraints and holds of the request."""
+    def pin_dir(self, text):
+        """A directory for Dir::Etc::PreferencesParts: the files of others as they are, ours with TEXT."""
         self.pin_dirs += 1
         directory = os.path.join(self.scratch, f"pins-{self.pin_dirs}")
         os.mkdir(directory)
         if os.path.isdir(self.real_parts):
             for name in os.listdir(self.real_parts):
-                if name not in (PIN_FILE, KEPT_FILE):
+                if name != PIN_FILE:
                     os.symlink(os.path.join(self.real_parts, name), os.path.join(directory, name))
         if text is not None:
             with open(os.path.join(directory, PIN_FILE), "w", encoding="utf-8") as handle:
                 handle.write(text)
-        records = kept_text(self.kept_records()) if kept else None
-        if records is not None:
-            with open(os.path.join(directory, KEPT_FILE), "w", encoding="utf-8") as handle:
-                handle.write(records)
         return directory
 
-    def kept_records(self, cache=None):
-        """The records of the constraints and holds, from what dpkg has and the archive offers."""
-        if self.kept is None:
-            if not self.kept_rules:
-                self.kept = {}
-            else:
-                self.kept, self.kept_items = kept_records(self.kept_rules, cache or self.open_pinless())
-        return self.kept
+    def limit(self, cache):
+        """The constraints and holds of the request in CACHE (again after a clear of its marks)."""
+        limits, items = limit_candidates(self.kept_rules, cache)
+        if self.limits is None:
+            self.limits, self.kept_items = limits, items
+        return limits
 
-    def open_cache(self, text, kept=True):
-        """A cache under the other's pins and the pin TEXT; the real files of ours are never read."""
-        self.kept_records()
-        apt_pkg.config.set("Dir::Etc::PreferencesParts", self.pin_dir(text, kept))
-        return apt.Cache()
+    def open_cache(self, text, limited=True):
+        """A cache under the other's pins and the pin TEXT, the real file of ours never read; with
+        LIMITED, the constraints and holds set its candidates."""
+        apt_pkg.config.set("Dir::Etc::PreferencesParts", self.pin_dir(text))
+        cache = apt.Cache()
+        if limited and self.kept_rules:
+            self.limit(cache)
+            cache.dotsteward_limit = lambda: self.limit(cache)
+        return cache
 
     def open_pinless(self):
         """A cache without any pin: every version in the archive is a candidate for the records."""
@@ -1218,6 +1195,10 @@ def mark_tracked(cache, names, target=None, fix=False):
     """The tracked mode marks by hand; every name comes from the full upgrade, because a mark
     goes through phasing where a full upgrade does not."""
     cache.clear()
+    # A clear sets the candidates of the policy again: the constraints and holds come back first.
+    limit = getattr(cache, "dotsteward_limit", None)
+    if limit is not None:
+        limit()
     if fix:
         cache.fix_broken()
     with cache.actiongroup():
@@ -1510,6 +1491,8 @@ def make_plan(session):
     if cache.broken_count:
         items.append(report_item("apt-denied", pending=True, **{"class": "unsolvable"}, packages=[]))
 
+    # The constraints and holds, said once: the first cache that read them.
+    items += list(session.kept_items)
     rows, denied = evaluate(session, cache, classes, target)
     items += [report_item("apt-denied", pending=True, **entry) for entry in denied]
 
@@ -1599,7 +1582,7 @@ def action_analysis(session):
     pinless = session.open_pinless()
     classes = read_classes(pinless)
     del pinless
-    free = upgradable(session.open_cache(None, kept=False))
+    free = upgradable(session.open_cache(None, limited=False))
     cache = session.open_cache(installed_pin(classes) if session.gated else None)
     autoremovable = sum(1 for pkg in cache if pkg.is_installed and pkg.is_auto_removable)
     candidates = upgradable(cache)
@@ -1638,9 +1621,10 @@ def action_analysis(session):
 
 
 def kept_rows(session, cache, free):
-    """What our records keep from an upgrade apt would make without them: the installed packages
-    whose candidate they change, with why. ``free`` is the candidate without them."""
-    records = session.kept_records()
+    """What dotsteward keeps from an upgrade apt would make: the installed packages whose candidate
+    the constraints, the holds or the gated classes change, with why. ``free`` is the candidate
+    without them. The owner's own apt is not bound by any of it."""
+    limits = session.limits or {}
     rows = []
     for name, row in sorted(free.items()):
         candidate = cache[name].candidate.version if name in cache and cache[name].candidate is not None else None
@@ -1652,11 +1636,10 @@ def kept_rows(session, cache, free):
             "candidate": candidate or row["current"],
             "free": row["candidate"],
         }
-        record = (records.get(row["short"]) or [None])[0]
-        if record is not None:
-            entry.update(
-                why=record["kind"], component=record["component"], version=record["version"], reason=record["reason"]
-            )
+        limit = limits.get(name) or limits.get(row["short"])
+        if limit is not None:
+            rule = limit["rule"]
+            entry.update(why=rule["kind"], component=rule["component"], version=rule["version"], reason=rule["reason"])
         elif source_class(row["short"], row["source"]) in ("kernel", "nvidia-driver", "nvidia-module"):
             entry.update(why="gated", reason="moves with the shared target of kernel, module and driver")
         else:
@@ -1802,22 +1785,7 @@ def apply_policy(session, classes):
         "pin": {"path": pin_path, "present": wanted_pin, "changed": pin_changed},
         "hook": hook,
         "installed_pairs": classes["pairs"],
-        "kept": apply_kept(session),
     }
-
-
-def apply_kept(session):
-    """The file of the constraints and holds, from the request and what dpkg has now; none without
-    a record. Whatever the gated classes are, and with them off."""
-    path = os.path.join(session.real_parts, KEPT_FILE)
-    text = kept_text(session.kept_records())
-    if text is not None:
-        changed = write_file(path, text)
-    else:
-        changed = os.path.exists(path)
-        if changed:
-            os.unlink(path)
-    return {"path": path, "present": text is not None, "changed": changed}
 
 
 def action_policy(session):
@@ -1831,14 +1799,12 @@ def action_policy(session):
             "recovery": None,
         }
     try:
-        pinless = session.open_pinless()
-        classes = read_classes(pinless)
-        session.kept_records(pinless)
+        classes = read_classes(session.open_pinless())
         recovery = {"ran": session.journal_recovery is not None, "clean": not dpkg_audit()}
         return {
             "schema_version": SCHEMA_VERSION,
             "status": "done",
-            "items": list(session.kept_items),
+            "items": [],
             "recovery": recovery,
             **apply_policy(session, classes),
         }
@@ -1849,23 +1815,13 @@ def action_policy(session):
 def action_files(session):
     """The pin file as `policy` would write it from what dpkg has now, read only: `dotsteward e2e`
     holds the file there to it. The same decision as apply_policy."""
-    pinless = session.open_pinless()
-    classes = read_classes(pinless)
+    classes = read_classes(session.open_pinless())
     pin_path = os.path.join(session.real_parts, PIN_FILE)
     text = None
     if session.gated and (classes["kernel"] is not None or classes["nvidia"] is not None):
         keep_nvidia = classes["nvidia"] is None and bool(dpkg_audit()) and NVIDIA_GLOB in read_text(pin_path)
         text = installed_pin(classes, keep_nvidia=keep_nvidia)
-    kept = {
-        "path": os.path.join(session.real_parts, KEPT_FILE),
-        "text": kept_text(session.kept_records(pinless)),
-        "header": KEPT_HEADER,
-    }
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "pin": {"path": pin_path, "text": text, "header": PIN_HEADER},
-        "kept": kept,
-    }
+    return {"schema_version": SCHEMA_VERSION, "pin": {"path": pin_path, "text": text, "header": PIN_HEADER}}
 
 
 def dpkg_environment():

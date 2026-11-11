@@ -75,8 +75,8 @@ class Request:
     """What one apt step needs to know. ``tracked`` is the set T of the enabled deb
     components. ``accept`` holds the keys of ``--accept``. ``constraints`` maps a
     constrained server to its version constraint (``{"sampledbms": "16.*"}``). ``kept``
-    are the records of the constraints and holds of the machine: ``{component, kind
-    (constraint or hold), version, reason, packages}``. ``gated`` is false only for
+    are the constraints and holds of the machine, which bind the depcache of the engine and no
+    file: ``{component, kind (constraint or hold), version, reason, packages}``. ``gated`` is false only for
     ``[apt.gated] enable = false`` of the machine."""
 
     mode: str = "tracked"
@@ -216,9 +216,8 @@ def check_files(request: Request) -> list[dict[str, str]]:
     bring is a note: the rule, which classes the file holds back, not yet what the next terminal run
     writes (``apt-file-rule``); a file there that the machine does not want (``apt-file-unwanted``); a
     file not there yet (``apt-file-missing``); an engine that cannot say (``apt-files-unchecked``). The
-    file of the constraints and holds follows the intent and what dpkg has, which the owner changes
-    any time, so all it gets is notes: missing, differing or unwanted (``apt-kept-*``). The drop-in of
-    unattended-upgrades is the system component apt-policy's, which checks it."""
+    constraints and holds of the instance have no file: they bind only what the engine itself does.
+    The drop-in of unattended-upgrades is the system component apt-policy's, which checks it."""
     try:
         answer = files(request)
         entry = answer.get("pin")
@@ -230,8 +229,7 @@ def check_files(request: Request) -> list[dict[str, str]]:
     except (AptEngineError, AttributeError) as failure:
         detail = f"{failure.code}: {failure.message}" if isinstance(failure, AptEngineError) else str(failure)
         return [_note("apt-files-unchecked", "", f"the pin file was not checked: {detail}")]
-    kept = answer.get("kept")
-    return _check_pin(path, wanted) + (_check_kept(kept) if isinstance(kept, dict) else [])
+    return _check_pin(path, wanted)
 
 
 def _read_there(path: str) -> tuple[str | None, str | None]:
@@ -284,35 +282,6 @@ def _check_pin(path: str, wanted: str | None) -> list[dict[str, str]]:
             )
         ]
     return []
-
-
-def _check_kept(entry: Mapping[str, Any]) -> list[dict[str, str]]:
-    path, wanted = str(entry.get("path") or ""), entry.get("text")
-    if not path or not (wanted is None or isinstance(wanted, str)):
-        return [_note("apt-files-unchecked", "", "the file of the constraints and holds was not checked")]
-    there, unreadable = _read_there(path)
-    if unreadable is not None:
-        return [_note("apt-files-unchecked", path, f"{path} was not checked: {unreadable}")]
-    if there == wanted:
-        return []
-    if there is None:
-        return [_note("apt-kept-missing", path, f"{path} is not there yet: {_FIRST_TERMINAL_RUN}")]
-    if wanted is None:
-        return [
-            _note(
-                "apt-kept-unwanted",
-                path,
-                f"{path} is there, but nothing of the instance constrains or holds a package here: "
-                "the next 'dotsteward upgrade' on a terminal removes it",
-            )
-        ]
-    return [
-        _note(
-            "apt-kept-differs",
-            path,
-            f"{path} is not what the constraints and holds of the instance and dpkg say now: {_NEXT_TERMINAL_RUN}",
-        )
-    ]
 
 
 def _finding(code: str, path: str, message: str) -> dict[str, str]:

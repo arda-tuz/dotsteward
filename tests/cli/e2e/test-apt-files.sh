@@ -87,33 +87,6 @@ printf '[1, 2]\n' >"$DS_TEST_ROOT/apt-files.json"
 assert_exit 0 run_e2e
 assert_contains "$DS_STDERR" "core:apt-files: the pin file was not checked:"
 
-# The file of the constraints and holds follows the intent and what dpkg has, both the owner's to
-# change: missing, other bytes or unwanted, it is only ever a note.
-kept=$DS_SYSTEM_ROOT/etc/apt/preferences.d/61dotsteward-kept
-kept_text=$'# Managed by dotsteward: the version constraints and holds of the instance.\nPackage: example-server\nPin: version 16.*\nPin-Priority: 990\n'
-answer_kept() {
-  jq -n --arg pin "$pin" --arg ptext "$pin_text" --arg kept "$kept" --argjson text "$1" \
-    '{schema_version: 1, pin: {path: $pin, text: $ptext}, kept: {path: $kept, text: $text}}' >"$DS_TEST_ROOT/apt-files.json"
-}
-printf '%s' "$pin_text" >"$pin"
-answer_kept "$(jq -n --arg text "$kept_text" '$text')"
-assert_exit 0 run_e2e
-assert_json "$DS_TEST_ROOT/apt-request.json" '.kept == []'
-assert_contains "$DS_STDERR" "core:apt-files: $kept is not there yet: the first 'dotsteward upgrade' on a terminal writes it"
-printf '%s' "$kept_text" >"$kept"
-assert_exit 0 run_e2e
-assert_not_contains "$DS_STDERR" "core:apt-files"
-printf 'Package: example-server\nPin: version 17.*\nPin-Priority: 990\n' >"$kept"
-assert_exit 0 run_e2e --keep-going --json
-assert_eq '[]' "$(findings)"
-assert_contains "$DS_STDERR" "core:apt-files: $kept is not what the constraints and holds of the instance and dpkg say now"
-answer_kept null
-assert_exit 0 run_e2e
-assert_contains "$DS_STDERR" "core:apt-files: $kept is there, but nothing of the instance constrains or holds a package here"
-rm -f -- "$kept"
-assert_exit 0 run_e2e
-assert_not_contains "$DS_STDERR" "core:apt-files"
-
 # Checks change nothing.
 answer "$(jq -n --arg text "$pin_text" '$text')"
 printf '%s' "$pin_text" >"$pin"
