@@ -45,6 +45,9 @@ world_require() {
   fi
   mkdir -p "$DS_TEST_ROOT/world-bin" "$DS_TEST_ROOT/worlds" "$DS_TEST_ROOT/out"
   export PATH=$DS_TEST_ROOT/world-bin:$PATH
+  # apt includes every phased update when SOURCE_DATE_EPOCH is set (a reproducible build), and the
+  # dev shell (nix develop) sets it; a machine does not, so the worlds phase as a machine does.
+  unset SOURCE_DATE_EPOCH
   # The host's own tool looks at the host's hardware; a test that wants it writes its answers.
   world_ubuntu_drivers ''
   world_modinfo
