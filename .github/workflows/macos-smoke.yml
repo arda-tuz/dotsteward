@@ -7,7 +7,8 @@ name: macos-smoke
 #   runner's home, the login shell and the E2E checks;
 # - checks: the pinned Nix through stage 0, then `nix flake check`, which
 #   builds the checks of the runner's system: checks.aarch64-darwin, the
-#   darwinChecks of nix/outputs.nix.
+#   checks of nix/darwin-checks.nix (checks.darwin-platform runs their
+#   suites on Linux with the platform forced to darwin, in every gate).
 # macOS minutes are expensive, so the workflow runs on release tags (pushed
 # ones, and the ones the release workflow makes, on which it dispatches
 # this workflow), nightly on the default branch, and on demand for a tag or

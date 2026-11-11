@@ -75,11 +75,15 @@ let
   );
 
   # mkTestCheck { name, paths, source ? name, nativeBuildInputs ? [ ],
-  #               postCheck ? "", keepShebangs ? [ ] }:
+  #               postCheck ? "", keepShebangs ? [ ], platform ? null }:
   # a check that runs `tests/run.sh PATHS...` on a writable copy of its
   # source set in the build sandbox, with the CLI toolchain on PATH and as
   # many test files at once as the build has cores (NIX_BUILD_CORES), then
-  # the shell snippet postCheck. Used by nix/checks/*.nix. The source set is
+  # the shell snippet postCheck. A platform (linux or darwin) forces the
+  # platform every test sees (DS_TEST_PLATFORM of tests/lib/harness.sh).
+  # The derivation passes paths, nativeBuildInputs and keepShebangs on
+  # (passthru), so a check can run the suites of others
+  # (checks.darwin-platform). Used by nix/checks/*.nix. The source set is
   # the entry `source` of nix/check-sources.nix, the files the check reads,
   # so a change to any other file of the tree leaves the check as it is; a
   # set without VERSION gets the placeholder version 0.0.0. Executable files
@@ -94,6 +98,7 @@ let
       nativeBuildInputs ? [ ],
       postCheck ? "",
       keepShebangs ? [ ],
+      platform ? null,
     }:
     let
       checkSources = import ../check-sources.nix { inherit lib; };
@@ -112,7 +117,14 @@ let
     pkgs.runCommand "dotsteward-check-${name}"
       {
         nativeBuildInputs = toolchain ++ nativeBuildInputs;
-        passthru = { inherit src; };
+        passthru = {
+          inherit
+            src
+            paths
+            nativeBuildInputs
+            keepShebangs
+            ;
+        };
       }
       ''
         cp -R ${src} source
@@ -120,6 +132,7 @@ let
         cd source
         ${lib.optionalString (!checkSources.hasVersion source) "printf '0.0.0\\n' >VERSION"}
         ${patchShebangsCommand}
+        ${lib.optionalString (platform != null) "export DS_TEST_PLATFORM=${lib.escapeShellArg platform}"}
         bash tests/run.sh --jobs "$NIX_BUILD_CORES" ${lib.escapeShellArgs paths}
         ${postCheck}
         touch "$out"

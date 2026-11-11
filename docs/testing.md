@@ -71,7 +71,14 @@ loaded, under `set -Eeuo pipefail`, in its own temporary root:
   points;
 - `PATH` is the caller's with each entry resolved to the directory it is when
   the test starts, so a profile link on it (such as `~/.nix-profile/bin`)
-  that an activation repoints during the run takes no tool away.
+  that an activation repoints during the run takes no tool away;
+- `DS_TEST_PLATFORM=darwin` (or `linux`) from the caller forces the platform
+  of every test as `DOTSTEWARD_PLATFORM`. `checks.darwin-platform` runs the
+  suites of the darwin checks (`nix/darwin-checks.nix`) this way on Linux,
+  in every gate, so a fixture that assumes Linux (a mirror named
+  `manifest.x86_64-linux.json`, a kernel name read with `uname -s`) fails
+  there and not first on a Mac. Fixtures take the system and platform from
+  `tests/lib/fixture-system.sh`.
 
 Register cleanup with `ds_defer`; never replace the `EXIT` trap.
 A process a test keeps running on purpose, a lock holder for example, waits with `tests/lib/hold.sh`: nothing stays behind when the test fails or is killed.

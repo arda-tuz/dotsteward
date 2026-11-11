@@ -419,6 +419,8 @@ let
         "tests/skeleton/helpers.sh"
       ])
     ];
+    # The files of the suites it runs again.
+    darwin-platform = fs.unions (map (name: checks.${name}) darwinSuites);
     darwin-eval = fs.unions [
       runner
       framework
@@ -681,6 +683,12 @@ let
     "template-static"
   ];
 
+  # The suites that checks.darwin-platform runs on Linux with the platform forced to darwin:
+  # the darwin checks of nix/darwin-checks.nix whose set is not the whole tree. darwin-eval
+  # runs with the darwin platform already, and privacy and skeleton, whose tests scan the
+  # tree, would make it rebuild on every change of any file.
+  darwinSuites = lib.filter (name: !(lib.elem name wholeTree)) (import ./darwin-checks.nix);
+
   # Files that no check reads: the suites that run outside the build
   # sandbox (on the host, in GitHub Actions or in virtual machines), the
   # workflows and hooks they cover, and the documentation no test reads.
@@ -724,6 +732,8 @@ let
 in
 {
   inherit root;
+
+  inherit darwinSuites;
 
   # The source set of each check, as a file set.
   filesets = sets;
