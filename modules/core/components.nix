@@ -79,6 +79,20 @@ in
   };
 
   config = {
+    # A deb pin is the floor of its package: the install verifies it, and `dotsteward upgrade`
+    # moves it, against the installed version of install.deb.packageNames, so a pin without
+    # them could never install and its floor would never move.
+    assertions = map (
+      { name, component }:
+      {
+        assertion =
+          component.method != "deb"
+          || component.install.deb.pin == null
+          || component.install.deb.packageNames != [ ];
+        message = "dotsteward: component ${name} (deb): install.deb.pin ${toString component.install.deb.pin} needs install.deb.packageNames, the names of the package whose installed version the floor is checked against";
+      }
+    ) active;
+
     dotsteward.managedLinks =
       config.dotsteward.core.managedLinks
       ++ lib.concatMap ({ component, ... }: component.rollback.managedLinks) enabled;
