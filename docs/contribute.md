@@ -196,7 +196,10 @@ moved to the tag, `nix flake update dotsteward`, the launcher and
 `bootstrap.sh` refreshed from the release's `template/`, `generate`, the gate,
 a commit with `commit.upgrade_subject`, `rebuild --switch`, `e2e` and
 `txn publish --scope maintain`. It is safe to run again; it resumes at
-the instance commit.
+the instance commit. `txn publish` names the machine in the commits it
+pushes (a `Dotsteward-Machine:` trailer), which rewrites them, so the
+instance commit that `report` names is the published one, the commit
+origin has.
 
 `--main` moves the instance to the merged commit instead, the one the
 run's `check` and `trial` passed for, pinned by its revision on the same

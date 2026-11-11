@@ -1861,7 +1861,10 @@ contribute_cmd_upgrade() {
         _contribute_red "upgrade: cannot read origin/$DS_INSTANCE_BRANCH of the instance; run upgrade again once it is back"
       remote_now=${remote_now%%[[:space:]]*}
     fi
-    if [[ $instance_commit == "$base" || $remote_now == "$instance_commit" ]]; then
+    # txn publish names the machine in the commits it pushes, which rewrites them and moves
+    # HEAD to the rewritten tip: after a lost answer origin is HEAD, not the recorded commit.
+    if [[ $instance_commit == "$base" || $remote_now == "$instance_commit" ||
+      $remote_now == "$(git -C "$DS_INSTANCE_ROOT" rev-parse HEAD)" ]]; then
       _contribute_pinned e2e --profile "$profile" ||
         _contribute_red "upgrade: e2e failed on the upgraded instance; run upgrade again once it is fixed"
     else
@@ -1874,6 +1877,11 @@ contribute_cmd_upgrade() {
   else
     _contribute_pinned txn publish --scope maintain --expected-base "$base" ||
       _contribute_red "upgrade: txn publish failed; run upgrade again once it is fixed"
+    # What origin has: txn publish rewrote the commits to name the machine, and HEAD is the
+    # published tip. The report names this commit, never the one before the publish.
+    instance_commit=$(git -C "$DS_INSTANCE_ROOT" rev-parse HEAD)
+    # shellcheck disable=SC2016 # jq variables
+    _contribute_set '.instance_commit = $commit' --arg commit "$instance_commit"
   fi
   if [[ -n $(_contribute_get carry) ]]; then
     git -C "$DS_INSTANCE_ROOT" update-ref -d "$(_contribute_carry_ref)" 2>/dev/null || true
