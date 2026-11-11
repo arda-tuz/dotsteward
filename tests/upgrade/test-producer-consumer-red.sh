@@ -51,7 +51,7 @@ git -C "$up_bare" update-ref refs/heads/state/other-host "$commit"
 # Upstream still calls the red version the latest, and the writer would move it there again.
 latest_rows() {
   jq -n --arg latest "$1" '{schema_version: "1.0", researched_at: "2026-01-01T00:00:00Z",
-    items: [{id: "agent_tools.codex.linux", latest: $latest}]}' >"$UP_CONTROL/latest-rows"
+    items: [{id: "agent_tools.codex.linux", status: "update", latest: $latest}]}' >"$UP_CONTROL/latest-rows"
 }
 latest_rows 2.0.0
 move agent_tools.codex.linux 2.0.0 download
@@ -87,7 +87,8 @@ assert_json "$up_inst/versions.lock.json" '."agent_tools.codex.linux" == "2.1.0"
 
 # Checks that name no component: nothing is put back or held, the item names what moved and
 # waits for a person.
-before=$(git -C "$up_inst" rev-parse HEAD~1)
+# The commit before the last move of the lock (a publish of the host file may follow it).
+before=$(git -C "$up_inst" rev-parse "$(git -C "$up_inst" log -1 --format=%H -- versions.lock.json)~1")
 after=$(remote_oid)
 jq --arg x "$before" --arg y "$after" '.recorded_at = "2026-01-03T00:00:00Z"
   | .held = {commit: $x, lock_commit: $y, components: [], at: "2026-01-03T00:00:00Z"}' \

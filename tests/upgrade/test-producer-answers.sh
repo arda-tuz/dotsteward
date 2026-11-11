@@ -73,7 +73,7 @@ reset_remote() {
 items() {
   jq -c '[.items[] | select(.code == "consumer-red" or .code == "consumer-unread") | {code, person: (.person // false), machines: (.machines // [.machine]), ids}]' "$(newest_report)"
 }
-jq -n '{schema_version: "1.0", researched_at: "2026-01-01T00:00:00Z", items: [{id: "agent_tools.codex.linux", latest: "2.0.0"}]}' \
+jq -n '{schema_version: "1.0", researched_at: "2026-01-01T00:00:00Z", items: [{id: "agent_tools.codex.linux", status: "update", latest: "2.0.0"}]}' \
   >"$UP_CONTROL/latest-rows"
 
 # --- two consumers green on different values: nothing goes back, a person decides -----------------------
@@ -100,7 +100,8 @@ record other-a "$(held "$x2" "$y")"
 record other-c "$(held "$x2" "$y")"
 assert_exit 0 on_terminal 'Update these too=n' -- --tracked
 assert_eq 1.5.0 "$(published agent_tools.codex.linux)"
-assert_contains "$(git -C "$up_bare" log -1 --format=%B main)" "Put back for other-a, other-c: agent_tools.codex.linux 2.0.0 -> 1.5.0 (T19)"
+# The put back is the last move of the lock; the hold at the red value goes to the host file after it.
+assert_contains "$(git -C "$up_bare" log -1 --format=%B main -- versions.lock.json)" "Put back for other-a, other-c: agent_tools.codex.linux 2.0.0 -> 1.5.0 (T19)"
 assert_contains "$(<"$UP_LOG")" "--restore"
 assert_json "$DOTSTEWARD_STATE_ROOT/holds.json" '[.holds[] | select(.id == "agent_tools.codex.linux" and .version == "2.0.0")] | length == 1'
 reset_remote
