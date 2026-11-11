@@ -567,6 +567,35 @@ WORLDS = {
         ],
         description="a floating meta package reaches for another major version of a constrained server",
     ),
+    # ---- the constraints and holds of the instance (P10)
+    "constraints": world(
+        [
+            rec("sampledbms-16", "16.16-1", "sampledbms-16"),
+            rec("sampledbms-client", "16.16-1", "sampledbms-common"),
+            rec("sampledbms-client", "17.2-1", "sampledbms-common"),
+            rec("sampledbms-16-ext-3", "3.8.0-1", "sampledbms-ext"),
+            rec("sampledbms-17", "17.12-1", "sampledbms-17"),
+            rec("sampletool", "1.9-1", "sampletool"),
+            rec("sampletool", "2.5-1", "sampletool"),
+            rec("sampleapp", "1.5-1", "sampleapp"),
+            rec("sampleapp", "2.0-1", "sampleapp"),
+            rec("sampleheld", "1.5-1", "sampleheld"),
+            rec("samplenew", "16.2-1", "samplenew"),
+            rec("samplenew", "17.0-1", "samplenew"),
+        ],
+        installed=[
+            *BASE_INSTALLED,
+            rec("sampledbms-16", "16.15-1", "sampledbms-16"),
+            rec("sampledbms-client", "16.15-1", "sampledbms-common"),
+            rec("sampledbms-16-ext-3", "3.7.0-1", "sampledbms-ext"),
+            rec("sampledbms-17", "17.11-1", "sampledbms-17"),
+            rec("sampletool", "2.4-1", "sampletool"),
+            rec("sampleapp", "1.0-1", "sampleapp"),
+            rec("sampleheld", "1.2-1", "sampleheld"),
+        ],
+        description="a constrained server, a package with its own versions, one the owner moved out of "
+        "its constraint, another major the owner installed, a held package and one the owner moved past its hold",
+    ),
     "new-flavour": world(
         [
             *kernel_meta("7.0.0-44", K44)[:1],

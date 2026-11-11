@@ -12,7 +12,7 @@ if (($# >= 5)) && [[ $4 == --output ]]; then
   output=$5
 fi
 request=$(cat)
-printf 'apt %s %s\n' "$action" "$(jq -c '{mode, tracked, accept, constraints, gated}' <<<"$request")" >>"$UP_LOG"
+printf 'apt %s %s\n' "$action" "$(jq -c '{mode, tracked, accept, constraints, gated, kept}' <<<"$request")" >>"$UP_LOG"
 answer=$UP_APT/$action.json
 mode=$(jq -r .mode <<<"$request")
 if [[ -e $UP_APT/$action-$mode.json ]]; then
