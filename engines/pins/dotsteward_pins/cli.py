@@ -3,7 +3,7 @@
     dotsteward pins [--instance DIR] check [--nix]
     dotsteward pins [--instance DIR] sync [--nix] [--skill NAME]...
     dotsteward pins [--instance DIR] latest [--out FILE] [--all] [--jobs N]
-    dotsteward pins [--instance DIR] apply [--latest FILE] [--plan] [--skip ID]... [--json] [--jobs N]
+    dotsteward pins [--instance DIR] apply [--latest FILE] [--restore FILE] [--plan] [--skip ID]... [--json] [--jobs N]
 
 check   cross-checks the lock files with every rule and validates every
         pins latest declaration (offline, read-only, no query); --nix also
@@ -88,6 +88,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         metavar="ID",
         help="leave the rows with this id (a glob) alone (repeatable)",
+    )
+    apply_parser.add_argument(
+        "--restore",
+        metavar="FILE",
+        help="put the pins FILE names back to what an earlier commit held, whole groups, without the network",
     )
     apply_parser.add_argument("--json", action="store_true", help="print the summary as JSON on standard output")
     apply_parser.add_argument("--jobs", type=_jobs, default=8, metavar="N", help="parallel queries (default 8)")

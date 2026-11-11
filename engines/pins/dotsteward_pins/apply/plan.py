@@ -26,6 +26,8 @@ configuration, a new major of a security override.
 from __future__ import annotations
 
 import fnmatch
+import json
+import subprocess
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -37,13 +39,13 @@ from ..latest import model
 from ..latest.adapters import CURRENT_FIELDS, Adapter, Planned, Request
 from ..latest.adapters.framework import INPUT as FRAMEWORK_INPUT
 from ..latest.adapters.framework import ROW_ID as FRAMEWORK_ROW
-from ..lockfile import SKILLS, LockPath, Locks, Placeholder, load_json, parse_path
+from ..lockfile import SKILLS, VERSIONS, DeclarationError, LockPath, Locks, Placeholder, load_json, parse_path
 from ..rules import Context, Rule, build_rules
 from .tools import GroupFailure, Tools, nix_system
 
 MARKETPLACE_FIELD = "observed_marketplace_revision"
 HASH_SUFFIX = "_nix_sha256"
-ORDER = ("framework", "channel", "flake", "nix-package", "download", "pypi", "npm", "skill")
+ORDER = ("restore", "framework", "channel", "flake", "nix-package", "download", "pypi", "npm", "skill")
 Row = dict[str, Any]
 
 
@@ -325,8 +327,12 @@ class Router:
         name = f"{kind}:{key}" if key else kind
         self.groups.setdefault((kind, key), Group(name, kind, key)).moves.append(move)
 
-    def route(self, rows: list[Row], skips: list[str]) -> Plan:
+    def route(self, rows: list[Row], skips: list[str], restores: list[dict[str, Any]] | None = None) -> Plan:
+        restored = self._restores(restores or [], skips)
         for row in rows:
+            if row["id"] in restored:
+                self.line(row, "restored", "back to an earlier commit")
+                continue
             self._route(row, skips)
         for move in self.errors:
             place = group_of(move, self.instance, self.declared, self.locks)
@@ -334,6 +340,86 @@ class Router:
                 self.groups[place].blocked.append(move.id)
         self.plan.groups = sorted(self.groups.values(), key=lambda group: (ORDER.index(group.kind), group.name))
         return self.plan
+
+    def _restores(self, restores: list[dict[str, Any]], skips: list[str]) -> set[str]:
+        """The groups that put pins back to an earlier commit (``--restore``): a download pin with the
+        companions its component installs, or a pypi group with every pin its requirements guard, all
+        from one commit. A pin without such a group is a review item. The ids it restores."""
+        restored: set[str] = set()
+        old: dict[str, Locks | None] = {}
+        for entry in restores:
+            identifier, commit = str(entry.get("id") or ""), str(entry.get("commit") or "")
+            if identifier in restored:
+                continue
+            members, key = self._restore_members(identifier)
+            if key is None:
+                self.plan.items.append(
+                    {"code": "restore-unsupported", "id": identifier, "reason": "the writer has no group to restore it"}
+                )
+                continue
+            if any(fnmatch.fnmatchcase(member, pattern) for member in members for pattern in skips):
+                self.plan.lines.append({"id": identifier, "status": "skipped", "note": "--skip"})
+                continue
+            if commit not in old:
+                old[commit] = locks_at(self.instance, commit)
+            before = old[commit]
+            if before is None:
+                self.plan.items.append(
+                    {
+                        "code": "restore-unsupported",
+                        "id": identifier,
+                        "commit": commit,
+                        "reason": "the commit is not here",
+                    }
+                )
+                continue
+            for member in members:
+                path = parse_path(member)
+                was, now = pin_of(before, path), pin_of(self.locks, path)
+                if was is None or was == now:
+                    continue
+                row: Row = {
+                    "id": member,
+                    "kind": "restore",
+                    "current": _version_text(now),
+                    "latest": _version_text(was),
+                    "status": "update",
+                    "source": commit,
+                    "details": {"commit": commit},
+                }
+                move = Move(row, path, "")
+                self.groups.setdefault(("restore", key), Group(f"restore:{key}", "restore", key)).moves.append(move)
+            restored.update(members)
+        return restored
+
+    def _restore_members(self, identifier: str) -> tuple[list[str], str | None]:
+        """The pins that come back with IDENTIFIER, and the key of their group (None: no group)."""
+        try:
+            path = parse_path(identifier)
+        except DeclarationError:
+            return [identifier], None
+        text = path.text()
+        if text in self.declared.downloads:
+            members = [text]
+            for system in self.instance.systems:
+                for component in self.instance.manifest(system).get("components") or []:
+                    install = component.get("install") if isinstance(component, dict) else None
+                    if not isinstance(install, dict) or install.get("pin") != text:
+                        continue
+                    for companion in install.get("companions") or ():
+                        pin = companion.get("pin") if isinstance(companion, dict) else None
+                        if isinstance(pin, str) and pin in self.declared.downloads:
+                            members.append(pin)
+            return list(dict.fromkeys(members)), text
+        guarded = self.declared.guards.get(path.child("version").text()) or self.declared.guards.get(text)
+        if guarded is not None and guarded in self.declared.regenerators:
+            members = [
+                key.removesuffix(".version")
+                for key, file in self.declared.guards.items()
+                if file == guarded and not key.startswith("skills:")
+            ]
+            return sorted(set(members) | {text}), guarded
+        return [text], None
 
     def _route(self, row: Row, skips: list[str]) -> None:
         identifier, status = row["id"], row.get("status")
@@ -439,6 +525,40 @@ class Router:
 
 
 def route(
-    instance: Instance, locks: Locks, planned: list[Planned], rows: list[Row], skips: list[str], tools: Tools
+    instance: Instance,
+    locks: Locks,
+    planned: list[Planned],
+    rows: list[Row],
+    skips: list[str],
+    tools: Tools,
+    restores: list[dict[str, Any]] | None = None,
 ) -> Plan:
-    return Router(instance, locks, planned, tools).route(rows, skips)
+    return Router(instance, locks, planned, tools).route(rows, skips, restores)
+
+
+def show(instance: Instance, commit: str, name: str) -> bytes | None:
+    """The file NAME of the instance at COMMIT, None when it has none."""
+    done = subprocess.run(
+        ["git", "-C", str(instance.root), "show", f"{commit}:{name}"], capture_output=True, check=False, timeout=60
+    )
+    return done.stdout if done.returncode == 0 else None
+
+
+def locks_at(instance: Instance, commit: str) -> Locks | None:
+    text = show(instance, commit, instance.versions_label)
+    if text is None:
+        return None
+    try:
+        return Locks(documents={VERSIONS: json.loads(text)})
+    except ValueError:
+        return None
+
+
+def _version_text(value: Any) -> str | None:
+    """The version a pin value names, for the lines of a restore."""
+    if isinstance(value, dict):
+        for name in CURRENT_FIELDS:
+            if isinstance(value.get(name), str):
+                return str(value[name])
+        return None
+    return value if isinstance(value, str) else None

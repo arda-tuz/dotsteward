@@ -363,6 +363,47 @@ class Writer:
 
         self.edit(change)
 
+    # -- back to an earlier commit (--restore) --
+
+    def restore(self, group: Group) -> None:
+        """The pins of GROUP as the commit of its moves held them, and for a pypi group the
+        requirements file of that commit: a group that was consistent there comes back whole, without
+        the network. The signers of the lock stay: an entry without a signature does not come back for
+        a source the lock records as signed."""
+        commits = {str(move.details.get("commit")) for move in group.moves}
+        if len(commits) != 1:
+            raise GroupFailure(f"{group.name}: the pins of one group come back from one commit")
+        commit = commits.pop()
+        old = routing.locks_at(self.instance, commit)
+        if old is None:
+            raise GroupFailure(f"{group.name}: {commit[:12]} has no readable {self.instance.versions_label}")
+        signers = self.instance.load_locks().documents[VERSIONS].get("trust", {}).get("signers") or {}
+        values = {}
+        for move in group.moves:
+            path = _path(move)
+            value = old.get(path)
+            signer = signers.get(path.text().removeprefix("versions:"))
+            signed = isinstance(signer, dict) and signer.get("kind") == "sigstore"
+            if signed and not (isinstance(value, dict) and "signature" in value):
+                raise Waits(
+                    "restore-unsigned",
+                    reason="the lock records a signed source and the entry of that commit has no signature",
+                    commit=commit,
+                )
+            values[move.id] = (path, value)
+        if group.key in self.declared.regenerators:
+            text = routing.show(self.instance, commit, group.key)
+            if text is None:
+                raise GroupFailure(f"{group.name}: {commit[:12]} has no {group.key}")
+            atomic.atomic_write(self.instance.path(group.key), text)
+
+        def change(locks: Locks) -> None:
+            for path, value in values.values():
+                locks.set(path, value)
+
+        self.edit(change)
+        self.sync()
+
     # -- hash-pinned requirements --
 
     def pypi(self, group: Group) -> None:

@@ -206,6 +206,10 @@ class Run:
         elif group.kind == "pypi":
             snapshot.keep(instance.path(group.key))
             writer.pypi(group)
+        elif group.kind == "restore":
+            if group.key in writer.declared.regenerators:
+                snapshot.keep(instance.path(group.key))
+            writer.restore(group)
         elif group.kind == "npm":
             directory = instance.path(group.key)
             snapshot.keep(directory / "package.json", directory / "package-lock.json")
@@ -296,6 +300,25 @@ def load_rows(args: argparse.Namespace, planned: list[Planned]) -> tuple[list[ro
     return items, document.get("researched_at")
 
 
+def load_restores(name: str | None) -> list[dict[str, Any]]:
+    """The pins a --restore file puts back: ``{"schema_version": 1, "pins": [{"id", "commit"}]}``."""
+    if not name:
+        return []
+    try:
+        document = load_json(Path(name))
+        pins = document["pins"]
+        if document.get("schema_version") != 1 or not isinstance(pins, list):
+            raise TypeError("expected schema_version 1 and a list of pins")
+        if not all(
+            isinstance(pin, dict) and isinstance(pin.get("id"), str) and isinstance(pin.get("commit"), str)
+            for pin in pins
+        ):
+            raise TypeError("each pin needs an id and a commit")
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise EngineError(f"{name} is not a restore file: {error}") from error
+    return pins
+
+
 def summary(
     plan: Plan, outcome: Outcome | None, researched: str | None, run: report.RunReport | None
 ) -> dict[str, Any]:
@@ -348,7 +371,9 @@ def run(instance: Instance, args: argparse.Namespace) -> int:
     planned = research.plan(instance, False)
     rows, researched = load_rows(args, planned)
     tools = Tools(instance.root)
-    route = routing.route(instance, instance.load_locks(), planned, rows, list(args.skip), tools)
+    route = routing.route(
+        instance, instance.load_locks(), planned, rows, list(args.skip), tools, load_restores(args.restore)
+    )
 
     if args.plan:
         if args.json:

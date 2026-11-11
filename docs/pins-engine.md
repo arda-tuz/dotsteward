@@ -176,6 +176,17 @@ A group moves as a whole: on a failure every byte it touched is restored, the st
 is `failed` and the other groups go on. A second run with the same rows does nothing,
 because a pin that already holds the value of its row does not move.
 
+`--restore FILE` (`{"schema_version": 1, "pins": [{"id": "<lock path>", "commit": "<commit>"}]}`)
+puts pins back to what an earlier commit of the instance held, which is how `upgrade` answers a
+consumer that went red (T19). It works by group and needs no network: a download pin comes back with
+the companions its component installs, as that commit had them (version, URL, size, digest,
+signature); a pypi pin comes back with the requirements file of that commit and every pin that file
+guards. The mirrors follow, so `pins check` passes as it did at that commit. A restored pin takes no
+row of `--latest`; `--skip` leaves a restore group alone. The signers of the lock never go back: for
+a source the lock records as signed, an entry without a signature does not come back
+(`restore-unsigned`). A pin without such a group (a flake input, a package built from source, an
+npm or a skills lock) is never restored (`restore-unsupported`).
+
 These stay for a person or an agent, as items of `review.json`: a pin with a
 `*_reason` field, a version another rule derives, a `version` in the component's
 configuration or a new major of a security override (`pins-constrained`); a newer

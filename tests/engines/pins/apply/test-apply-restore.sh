@@ -39,6 +39,7 @@ restore() {
 # Back from X: the download pin as it was, the requirements as they were; upstream still calls
 # the red versions the latest, and the rows do not move them again.
 restore agent_tools.example-release pypi.example-tool
+: >"$FAKE_NIX_STATE/calls"
 assert_exit 0 apply --latest "$rows" --restore "$DS_TEST_ROOT/restore.json" --json
 assert_eq '[{"id":"agent_tools.example-release","from":"4.1.0","to":"4.0.0","group":"restore:agent_tools.example-release"},{"id":"pypi.example-tool","from":"1.1.0","to":"1.0.0","group":"restore:components/example-tool/requirements.txt"}]' \
   "$(jq -c '[.moved[] | {id, from, to, group}]' <<<"$DS_STDOUT")"
