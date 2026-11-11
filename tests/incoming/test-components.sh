@@ -5,6 +5,8 @@
 # generation of this machine until the answer. A component for other machines is no question.
 # shellcheck source=tests/incoming/helpers.sh
 source "$DS_REPO_ROOT/tests/incoming/helpers.sh"
+# shellcheck source=tests/lib/fixture-system.sh
+source "$DS_REPO_ROOT/tests/lib/fixture-system.sh"
 
 machine_up laptop1
 machine_up laptop2
@@ -157,7 +159,7 @@ up_to_date laptop1
 set_requires() {
   local clone manifest
   clone=$(clone_of laptop1)
-  manifest=$clone/.dotsteward/manifest.x86_64-linux.json
+  manifest=$clone/.dotsteward/manifest.$fixture_system.json
   jq --arg name "$1" --argjson requires "$2" '
     if any(.components[]?; .name == $name) then
       (.components[] | select(.name == $name)).requires = $requires
