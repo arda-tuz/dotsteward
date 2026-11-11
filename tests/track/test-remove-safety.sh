@@ -11,7 +11,9 @@
 # - a nix component would leave the profile of every machine it is for: a plain remove asks
 #   (profile-removal), --uninstall confirms, --keep-here keeps it on this machine only;
 # - what this machine said about the component goes with it: its host file's declined entry and
-#   holds, the holds of this machine; the pins of the component are named;
+#   holds (its name, as earlier releases wrote it, `component:` and the `pin:` holds of its pins;
+#   those of other components stay), the pin holds of this machine; the pins of the component are
+#   named;
 # - the requires check runs on the tree begin brought, so a dependent another machine just
 #   published stops it.
 # shellcheck source=tests/track/helpers.sh
@@ -111,7 +113,7 @@ toml_at HEAD '.components["example-tool"] == null'
 # --- what this machine said about it ---------------------------------------------------------
 component_entry example-held '{"method": "deb", "install": {"apt": ["example-held"], "pin": "desktop_packages.example-held"}}'
 enable_component example-held
-printf 'schema_version = 1\nsystem = "%s"\nprofile = "workstation"\nplatform = "ubuntu-24.04"\n\n[declined]\ncomponents = ["example-held", "example-other"]\n\n[holds.example-held]\nversion = "1.0"\nreason = "a regression"\n' \
+printf 'schema_version = 1\nsystem = "%s"\nprofile = "workstation"\nplatform = "ubuntu-24.04"\n\n[declined]\ncomponents = ["example-held", "example-other"]\n\n[holds.example-held]\nversion = "1.0"\nreason = "a regression"\n\n[holds."component:example-held"]\nversion = "1.0"\nreason = "a regression"\n\n[holds."pin:desktop_packages.example-held"]\nversion = "1.0"\nreason = "e2e-red"\n\n[holds."component:example-other"]\nversion = "3"\nreason = "another component"\n' \
   "$system" >"$up_inst/hosts/example-host.toml"
 git -C "$up_inst" add -A
 git -C "$up_inst" commit -q -m "chore: this machine declined example-held"
@@ -123,6 +125,7 @@ assert_exit 0 remove example-held --publish
 host=$(git -C "$up_inst" show HEAD:hosts/example-host.toml)
 assert_not_contains "$host" "example-held"
 assert_contains "$host" '"example-other"'
+assert_contains "$host" '[holds."component:example-other"]'
 assert_json "$DOTSTEWARD_STATE_ROOT/holds.json" '[.holds[].component] == ["codex"]'
 assert_contains "$DS_STDOUT" "desktop_packages.example-held"
 
