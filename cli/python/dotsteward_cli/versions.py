@@ -22,11 +22,12 @@ so ``1.2-1+esm1`` is a newer package than ``1.2-1`` and ``1.2.3+build5`` sorts a
 ``1.2.3``; numbers compare as numbers and a missing part sorts first (``1.2`` before
 ``1.2.0``).
 
-A version constraint (``version`` of a component) is a pattern of versions in the
-syntax of ``apt_preferences(5)``: ``*`` and ``?`` are wildcards. A series of numbers alone
-means that series: ``16`` and ``16.*`` are the same constraint, and so are ``1.140`` and
-``1.140.*``. ``constraint_pattern`` gives the pattern, ``in_constraint`` the answer, the
-same for apt and for every other channel.
+A version constraint (``version`` of a component) is a series: an optional epoch, numbers
+separated by dots and an optional ``.*`` (``16``, ``16.*``, ``1.140``, ``5:27``). A version is inside
+it when the part after its epoch is the series, or the series and then ``.``, ``-``, ``+`` or ``~``
+(``16.4``, ``16-1``, ``1.2+dfsg-1``, ``16~rc1``); a constraint without an epoch takes every epoch.
+``SERIES`` is the pattern of the schemas, ``in_constraint`` the answer, the same for apt
+(``cli/libexec/apt_helper.py``) and for every other channel.
 
 Where dpkg is at hand and the versions are of installed packages,
 ``dpkg --compare-versions`` stays the authority. Stage 0 keeps its small bash floor
@@ -36,7 +37,6 @@ before Python exists.
 
 from __future__ import annotations
 
-import fnmatch
 import functools
 import re
 from collections.abc import Iterable
@@ -159,16 +159,24 @@ def numeric_parts(version: Any) -> tuple[int, ...]:
     return tuple(int(part[:32]) for part in _DIGITS.findall(str(version)))
 
 
-def constraint_pattern(constraint: str) -> str:
-    """The apt pattern of a version constraint: a series of numbers alone is that series."""
-    text = constraint.strip()
-    return f"{text}.*" if _SERIES.fullmatch(text) else text
+SERIES = r"^([0-9]+:)?[0-9]+(\.[0-9]+)*(\.\*)?$"
+_SERIES_PARTS = re.compile(r"(?:([0-9]+):)?([0-9]+(?:\.[0-9]+)*)(?:\.\*)?")
+_SERIES_BOUNDARY = ".+~-"
 
 
 def in_constraint(constraint: str, version: Any) -> bool:
-    """Whether VERSION is inside CONSTRAINT; a leading v of a release tag is not part of it."""
+    """Whether VERSION is inside the series CONSTRAINT (False for a constraint that is no series); a
+    leading v of a release tag is not part of the version."""
+    series = _SERIES_PARTS.fullmatch(str(constraint).strip())
+    if series is None:
+        return False
     text = str(version).strip()
     if text[:1] == "v" and text[1:2] in _ASCII_DIGITS:
         text = text[1:]
-    pattern = constraint_pattern(constraint)
-    return fnmatch.fnmatchcase(text, pattern) or (pattern.endswith(".*") and text == pattern[:-2])
+    match = _EPOCH.fullmatch(text)
+    epoch, rest = (match.group(1), match.group(2)) if match else ("0", text)
+    if series.group(1) is not None and series.group(1) != epoch:
+        return False
+    literal = series.group(2)
+    tail = rest[len(literal) :] if rest.startswith(literal) else None
+    return tail is not None and (tail == "" or tail[0] in _SERIES_BOUNDARY)

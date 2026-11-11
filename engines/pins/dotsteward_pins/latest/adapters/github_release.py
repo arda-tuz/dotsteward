@@ -142,15 +142,18 @@ class GithubRelease(Adapter):
         return self._row(request, tag, release)
 
     def fetch_within(self, request: Request, upstream: Upstream, accept: Callable[[str], bool]) -> list[Row] | None:
-        """The newest stable tag of the family that ACCEPT takes, with its release when GitHub has one."""
+        """The newest stable tag of the family that ACCEPT takes, with its release when GitHub has one;
+        a tag whose release GitHub calls a prerelease or a draft is passed over."""
         repo = request.values["repo"]
         prefix = self.values["tag_prefix"]
         tags = [tag for tag in upstream.stable_tags(github_url(repo), prefix) if accept(tag_version(tag, prefix))]
-        best = versions.newest(tag_version(tag, prefix) for tag in tags)
-        if best is None:
-            return [item(request.id, self.name, request.current, request.current, "current", self.source_of(request))]
-        tag = next(tag for tag in tags if tag_version(tag, prefix) == best)
-        return self._row(request, tag, upstream.release_of(repo, tag))
+        tags.sort(key=lambda tag: versions.sort_key(tag_version(tag, prefix)), reverse=True)
+        for tag in tags:
+            release = upstream.release_of(repo, tag)
+            if release is not None and (release.get("prerelease") or release.get("draft")):
+                continue
+            return self._row(request, tag, release)
+        return [item(request.id, self.name, request.current, request.current, "current", self.source_of(request))]
 
     def _row(self, request: Request, tag: str, release: dict[str, Any] | None) -> list[Row]:
         prefix = self.values["tag_prefix"]

@@ -65,7 +65,8 @@ class Npm(Adapter):
         return self._row(request, data)
 
     def fetch_within(self, request: Request, upstream: Upstream, accept: Callable[[str], bool]) -> list[Row] | None:
-        """The newest stable version of the registry document that ACCEPT takes."""
+        """The newest stable version of the registry document that ACCEPT takes; a deprecated one is
+        passed over."""
         package = request.values["package"]
         encoded = urllib.parse.quote(package, safe="@")
         document = upstream.http_json(f"{self.values['registry']}/{encoded}")
@@ -74,8 +75,11 @@ class Npm(Adapter):
             raise UpstreamError(f"the registry answered no versions for {package}")
         best = versions.newest(
             version
-            for version in found
-            if isinstance(version, str) and STABLE_TAG.fullmatch(version) and accept(version)
+            for version, data in found.items()
+            if isinstance(version, str)
+            and STABLE_TAG.fullmatch(version)
+            and accept(version)
+            and not (isinstance(data, dict) and data.get("deprecated"))
         )
         if best is None:
             return [item(request.id, self.name, request.current, request.current, "current", self.source_of(request))]
