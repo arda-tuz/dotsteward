@@ -12,7 +12,8 @@
 # - a record with nothing to put back (the red lock moved no pin of what went red) waits for a
 #   person instead of passing as answered;
 # - a record this producer cannot read, or a hold with fields it does not know, is said, never
-#   acted on.
+#   acted on;
+# - a put back the gate refuses waits for a person and is not tried again for that lock.
 # shellcheck source=tests/upgrade/helpers.sh
 source "$DS_REPO_ROOT/tests/upgrade/helpers.sh"
 
@@ -135,3 +136,19 @@ record other-b "$(held "$x2" "$y" | jq -c '.held.revert = "all"')"
 on_terminal 'Update these too=n' -- --tracked >/dev/null 2>&1 || true
 assert_eq 2.0.0 "$(published agent_tools.codex.linux)"
 assert_eq '[{"code":"consumer-unread","person":false,"machines":["other-a"],"ids":null},{"code":"consumer-unread","person":false,"machines":["other-b"],"ids":null}]' "$(items)"
+
+# --- a put back the gate refuses waits for a person, and is not tried again for that lock ----------------
+forget other-a other-b
+reset_remote
+record other-a "$(held "$x2" "$y")"
+{
+  printf 'if jq -e %q "$DOTSTEWARD_INSTANCE/versions.lock.json" >/dev/null; then : >%q; else rm -f -- %q; fi\n' \
+    '.["agent_tools.codex.linux"] == "1.5.0"' "$UP_CONTROL/static-red" "$UP_CONTROL/static-red"
+} >"$UP_CONTROL/during-gate"
+on_terminal 'Update these too=n' -- --tracked >/dev/null 2>&1 || true
+assert_eq 2.0.0 "$(published agent_tools.codex.linux)"
+clear_log
+assert_exit 3 on_terminal 'Update these too=n' -- --tracked
+assert_not_contains "$(<"$UP_LOG")" "--restore"
+assert_eq '[{"code":"consumer-red","person":true,"machines":["other-a"],"ids":[]}]' "$(items)"
+rm -f -- "$UP_CONTROL/during-gate" "$UP_CONTROL/static-red"
