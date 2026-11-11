@@ -1092,14 +1092,13 @@ class Upgrade(runner.Runner):
                 )
                 continue
             green = entries[0][1]["from"]
-            newer = sorted(
+            # Every other consumer that reports a green run must have been green on that value too.
+            others = sorted(
                 name
                 for name, values_of in greens.items()
-                if name not in machines
-                and (value := consumer.pin_value(values_of, pin)) is not None
-                and (value == red_value or versions.compare(consumer.version_of(value), consumer.version_of(green)) > 0)
+                if name not in machines and (value := consumer.pin_value(values_of, pin)) is not None and value != green
             )
-            if newer:
+            if others:
                 self._consumer_item(
                     machines,
                     [],
@@ -1107,7 +1106,7 @@ class Upgrade(runner.Runner):
                     [component],
                     [pin],
                     person=True,
-                    said=f"{pin} went red on {', '.join(machines)}, and {', '.join(newer)} was green on a newer "
+                    said=f"{pin} went red on {', '.join(machines)}, and {', '.join(others)} was last green on another "
                     "version: it stays where it is and a person decides",
                 )
                 continue
@@ -1715,7 +1714,7 @@ class Upgrade(runner.Runner):
         marker = consumer.read_marker(self.state_root)
         revision = self._activation().get("revision")
         if marker is not None:
-            if isinstance(revision, str) and consumer.lock_digest(self.root, revision) == marker["lock"]:
+            if isinstance(revision, str) and consumer.holds(self.root, marker, revision):
                 self.red_active = True
                 self.lock_before = str(marker["commit"])
                 _say(
@@ -1723,7 +1722,7 @@ class Upgrade(runner.Runner):
                     "E2E checks it, and the way back follows a red one"
                 )
                 return False
-            if lock == marker["lock"] or not consumer.watch_moved(self.root, marker, head):
+            if consumer.holds(self.root, marker, head):
                 self.held = True
                 commit = str(marker["commit"])
                 moved = lock != marker["lock"]
@@ -2085,6 +2084,8 @@ class Upgrade(runner.Runner):
         self.red = True
         self._verify(False)
         if again is None:
+            # A put back for consumers that went red here waits for a person too (never a loop).
+            self._refuse_restores(moved)
             self._hold_moved(moved, red, reason)
             self.run.step("e2e", report.PENDING, detail=f"went back: {reason}")
         else:

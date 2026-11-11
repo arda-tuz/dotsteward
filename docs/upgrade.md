@@ -331,9 +331,10 @@ was published), `publish-waits`, `publish-race`, `publish-refused`, `red-held`, 
 `firmware-available`, `firmware-needs-ac`, the codes of the apt engine that wait (`apt-denied`,
 `dpkg-lock-busy`, `module-missing`, `python3-apt-missing`), and of the skills (`origin-unknown`,
 `skill-conflict`, `capture-blocked`). Notes that wait for nothing: `analysis`, `boot-space-low`,
-`reboot-required`, `checkout-dirty`, `checkout-behind`, `held`, `consumer-held`, `consumer-red`,
-`deb-floors-wait`, `deb-floor-unknown`, `pins-group-failed`, `series-available`, `phased-waiting`,
-`module-loss`, `producer-unset`,
+`reboot-required`, `checkout-dirty`, `checkout-behind`, `held`, `consumer-held` (the run waits
+through its `e2e` step: `held, unverified`), `consumer-red` (it waits when it has `person: true`),
+`consumer-unread`, `deb-floors-wait`, `deb-floor-unknown`, `pins-group-failed`, `series-available`,
+`phased-waiting`, `module-loss`, `producer-unset`,
 `producer-stale`, `plugin-scan-finding`, `plugin-scan-failed`, `firmware-locked`,
 `firmware-needs-reboot`.
 

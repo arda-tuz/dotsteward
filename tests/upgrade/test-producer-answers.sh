@@ -172,6 +172,8 @@ reset_remote
 forget other-a other-b
 record other-a "$(held "$x2" "$y")"
 printf 'codex:version\n' >"$UP_CONTROL/e2e-red-once"
+# The tree of the put back was green here before; this time E2E runs and is red.
+rm -f -- "$DOTSTEWARD_STATE_ROOT/upgrade/e2e-key.json"
 on_terminal 'Update these too=n' -- --tracked >/dev/null 2>&1 || true
 assert_eq 2.0.0 "$(published agent_tools.codex.linux)"
 clear_log

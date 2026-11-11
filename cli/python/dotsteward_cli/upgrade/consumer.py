@@ -264,6 +264,17 @@ def write_marker(
     atomic.atomic_write_json(_path(state_root), document, mode=0o600)
 
 
+def holds(root: Path, marker: Mapping[str, Any], treeish: str) -> bool:
+    """Whether the marker holds TREEISH back: its shared lock is the one that went red here, or a later
+    one that moved nothing the marker watches (so it still has what went red)."""
+    lock = lock_digest(root, treeish)
+    if lock is None:
+        return False
+    if lock == marker["lock"]:
+        return True
+    return isinstance(marker.get("watch"), dict) and not watch_moved(root, marker, treeish)
+
+
 def refusal(root: Path, state_root: str, treeish: str, role: str) -> str | None:
     """Why TREEISH must not become active on this machine: its shared lock is the one that went red
     here and this machine (of ROLE, facts.role) is a consumer that holds it back. None otherwise,
@@ -271,7 +282,7 @@ def refusal(root: Path, state_root: str, treeish: str, role: str) -> str | None:
     marker = read_marker(state_root)
     if marker is None or role in ("this-machine", "unnamed", "nobody"):
         return None
-    if lock_digest(root, treeish) != marker["lock"]:
+    if not holds(root, marker, treeish):
         return None
     components = ", ".join(str(name) for name in marker.get("components") or ()) or "its checks named none"
     return (
