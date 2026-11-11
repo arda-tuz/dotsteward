@@ -1668,6 +1668,9 @@ class Upgrade(runner.Runner):
             arguments.append("--skip-repo-checks")
         elif self.waiting is not None:
             arguments += ["--expected-remote-base", self.tip]
+        # What E2E checks is what dpkg has when it starts; what the owner's apt does meanwhile is not.
+        seen = self._dpkg_map()
+        tracked = self._versions_of_tracked()
         done = self._ds_output(*arguments)
         if done.returncode in _SIGNALLED:
             raise KeyboardInterrupt
@@ -1678,10 +1681,10 @@ class Upgrade(runner.Runner):
             atomic.atomic_write_json(self.upgrade_dir / "e2e-key.json", {"key": key}, mode=0o600)
             self._forget_binaries()
             self._verify(True)
-            self._checked(set())
-            if self.linux and shutil.which("dpkg-query"):
-                # design-v2 6.4: this E2E checked what dpkg has, so the observer it woke has nothing to do.
-                observe.refresh_snapshot(self.state_root)
+            self._checked(tracked, failed=None)
+            if seen is not None and self._dpkg_map() == seen:
+                # This E2E checked what dpkg has, so the observer this run woke has nothing to do.
+                observe.write_snapshot(self.state_root, seen)
             return None
         self._verify(False)
         try:
@@ -1692,12 +1695,20 @@ class Upgrade(runner.Runner):
             return [_NO_RESULT]
         red = sorted({str(finding.get("step")) for finding in findings})
         if red:
-            self._checked({check.split(":", 1)[0] for check in red})
+            self._checked(tracked, failed={check.split(":", 1)[0] for check in red})
         return red or [_NO_RESULT]
 
-    def _checked(self, red: Collection[str]) -> None:
-        """A full E2E with a result is the check of each tracked deb component that has checks: passed
-        unless one of RED, with what dpkg has of its packages (``state.write_check``)."""
+    def _dpkg_map(self) -> dict[str, str] | None:
+        """Every installed package and its version, as the observer reads them; None without dpkg."""
+        if not self.linux or shutil.which("dpkg-query") is None:
+            return None
+        return {name: str(entry["version"]) for name, entry in sorted(observe.installed().items())}
+
+    def _checked(self, installed: Mapping[str, str], *, failed: Collection[str] | None) -> None:
+        """A full E2E with a result is the check of the tracked deb components that have checks, with
+        INSTALLED (what dpkg had when it started) of their packages (``state.write_check``): every one
+        passed when FAILED is None, else only those of FAILED failed; a red E2E passes nothing, since a
+        finding may have come before the checks of a component."""
         if not self.linux or self.name is None or self.profile is None:
             return
         tracked = states.tracked_debs(self.instance, self.env)
@@ -1711,13 +1722,14 @@ class Upgrade(runner.Runner):
         except (ValueError, KeyError, TypeError):
             return
         names = {str(check).partition(":")[0] for check in checks if isinstance(check, str)} & set(tracked)
-        installed = self._versions_of_tracked()
+        if failed is not None:
+            names &= set(failed)
         for name in sorted(names):
             packages = {package: installed[package] for package in tracked[name]["packages"] if package in installed}
             if any(package not in packages for package in tracked[name]["installs"]):
                 continue
             version = states.main_version(tracked[name]["installs"], packages)
-            states.write_check(self.state_root, name, passed=name not in red, packages=packages, version=version)
+            states.write_check(self.state_root, name, passed=failed is None, packages=packages, version=version)
 
     def _e2e(self, *, force: bool = False) -> None:
         if self.profile is None or self.red:
