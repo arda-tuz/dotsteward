@@ -5,7 +5,8 @@
 # producer published goes red here. It goes back to the generation of the commit before, which is
 # green again, leaves the marker "held at commit X", and says so in its state record, which the
 # producer reads. No commit with that shared lock becomes active here, whatever else the remote
-# brings; a commit whose shared lock is another one is tried. Red on the way back holds nothing.
+# brings; a commit whose shared lock is another one is tried. Red on the way back holds nothing,
+# and without a named producer nothing goes back either.
 # shellcheck source=tests/upgrade/helpers.sh
 source "$DS_REPO_ROOT/tests/upgrade/helpers.sh"
 
@@ -49,6 +50,12 @@ remote_state_json 'has("held") | not'
 publish_lock agent_tools.codex.linux 2.0.0
 y=$(remote_oid)
 printf 'codex:version\n' >"$UP_CONTROL/e2e-red-once"
+# The rebuild of Y installs the binary of its pin; the way back brings the one from before.
+codex_bin=$HOME/.local/bin/codex
+mkdir -p "${codex_bin%/*}"
+printf 'codex 1.0.0\n' >"$codex_bin"
+printf '%s\n' "[[ \$DOTSTEWARD_INSTANCE == */upgrade/work ]] || printf 'codex 2.0.0\\n' >'$codex_bin'" \
+  >"$UP_CONTROL/rebuild-status-hook"
 clear_log
 assert_exit 3 on_terminal -- --tracked
 assert_eq "$y" "$(git -C "$up_inst" rev-parse HEAD)" "the checkout follows the remote as always"
@@ -62,6 +69,11 @@ assert_file_mode "$marker" 600
 review_json "[.items[] | select(.code == \"consumer-held\" and .commit == \"$x\" and .lock_commit == \"$y\")] | length == 1"
 assert_contains "$DS_STDOUT" "other-host"
 remote_state_json ".held.commit == \"$x\" and .held.lock_commit == \"$y\" and .held.components == [\"codex\"]"
+assert_eq "codex 1.0.0" "$(<"$codex_bin")" "the binary of the red lock stays installed"
+rm -f -- "$UP_CONTROL/rebuild-status-hook"
+# A record of another command keeps it.
+"$fw/cli/dotsteward" --instance "$up_inst" state record </dev/null >/dev/null 2>&1 || ds_fail "state record failed"
+remote_state_json ".held.lock_commit == \"$y\""
 # Nothing of the lock is written here: only the producer writes it.
 assert_eq "$y" "$(remote_oid)"
 assert_no_step '^pins '
@@ -94,3 +106,23 @@ assert_order "^e2e .*root=$up_inst\$" '^rebuild .*root=.*/upgrade/work$' '^e2e .
 [[ ! -e $marker ]] || ds_fail "a way back that is red too holds something"
 remote_state_json 'has("held") | not'
 review_json '[.items[] | select(.code == "e2e-red")] | length == 1'
+
+# --- several machines and no producer: nobody takes the lock to go back from ---------------------------
+rm -f -- "$UP_CONTROL/e2e-red"
+python3 - "$up_inst/workstation.toml" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+open(path, "w", encoding="utf-8").write(re.sub(r'^producer = "other-host"\n', "", text, flags=re.M))
+PY
+git -C "$up_inst" commit -q -am "chore(hosts): no producer"
+git -C "$up_inst" push -q origin HEAD:main
+assert_exit 0 on_terminal 'Update these too=n' -- --tracked
+publish_lock agent_tools.codex.linux 4.0.0
+printf 'codex:version\n' >"$UP_CONTROL/e2e-red-once"
+clear_log
+assert_exit 1 on_terminal -- --tracked
+assert_no_step '^rebuild .*root=.*/upgrade/work$'
+[[ ! -e $marker ]] || ds_fail "a machine without a producer holds a lock back"
