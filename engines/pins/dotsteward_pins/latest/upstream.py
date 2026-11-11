@@ -30,9 +30,10 @@ from .model import STABLE_TAG
 
 HTTP_TIMEOUT = 20
 COMMAND_TIMEOUT = 60
-# The release list of a repository is read in pages of its newest releases, at most this many.
-RELEASES_PAGE = 100
-RELEASES_PAGES = 5
+# The release list of a repository is read in pages of its newest releases, at most this many. A
+# page of 100 releases of a repository with many assets each times out at GitHub (HTTP 504).
+RELEASES_PAGE = 30
+RELEASES_PAGES = 10
 # A first number this high is a year: a calendar version.
 CALENDAR_YEAR = 1900
 USER_AGENT = "dotsteward-pins/1.0"
@@ -239,7 +240,7 @@ class Upstream:
         self, repo: str, prefix: str = "", *, like: str | None = None
     ) -> tuple[str | None, dict[str, Any] | None]:
         """The newest stable release of a GitHub repository in the tag family of PREFIX, and its
-        release JSON: of the release list (``gh api repos/<repo>/releases?per_page=100&page=N``, the
+        release JSON: of the release list (``gh api repos/<repo>/releases?per_page=30&page=N``, the
         newest releases first, read page by page until a page holds a stable release of the family,
         at most RELEASES_PAGES pages), the highest version whose tag is a stable tag with the prefix
         and that is neither a draft nor a prerelease, whatever GitHub calls latest. Only the list

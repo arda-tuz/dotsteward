@@ -14,8 +14,8 @@ Fields:
                 (linux, darwin) for an asset that differs from platform to
                 platform; missing assets are reported as ``asset_missing``
 
-Query: the release list ``gh api repos/<repo>/releases?per_page=100&page=N``,
-page by page (at most five): the highest version of a release in the tag family
+Query: the release list ``gh api repos/<repo>/releases?per_page=30&page=N``,
+page by page (at most ten): the highest version of a release in the tag family
 that is neither a draft nor a prerelease, whatever GitHub calls latest. A list
 gh does not give, or one without a stable release of the family in those
 pages, is an error row: only the list says what is a draft or a prerelease.
