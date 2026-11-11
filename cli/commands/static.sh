@@ -239,6 +239,29 @@ if [[ $target == instance ]]; then
   SKIP_PREFIXES+=("${DS_SKILLS_VENDOR_DIR%/}/" "$OWN_PLUGINS_DIR/" "$SKILL_LICENSES_DIR/")
 fi
 
+# The paths of an instance that the framework owns (a directory ends in /): its commands write
+# them and its checks check them, and a release may add one without the owner doing anything.
+# The instance scripts get them, and the other files, from the helper (run_scripts), so an
+# oracle of the owner's own files needs no edit when the framework starts to write a new path.
+OWNED_PATHS=()
+if [[ $target == instance ]]; then
+  OWNED_PATHS=(.dotsteward/ bootstrap.sh "$DS_SKILLS_LOCK" "${DS_SKILLS_VENDOR_DIR%/}/" "$OWN_PLUGINS_DIR/"
+    "$SKILL_LICENSES_DIR/" hosts/)
+fi
+
+# owned PATH: whether the framework owns the file PATH of the instance.
+owned() {
+  local entry
+  for entry in "${OWNED_PATHS[@]}"; do
+    if [[ $entry == */ ]]; then
+      [[ $1 != "$entry"* ]] || return 0
+    else
+      [[ $1 != "$entry" ]] || return 0
+    fi
+  done
+  return 1
+}
+
 skipped() {
   local prefix
   for prefix in "${SKIP_PREFIXES[@]}"; do
@@ -998,9 +1021,19 @@ run_scripts() {
   work=$(mktemp -d "$base/dotsteward-static.XXXXXX")
   # shellcheck disable=SC2064 # the directory is fixed now
   trap "cleanup_temp_dir '$work'" EXIT
-  printf '%s\n' '# shellcheck shell=bash' \
-    '# Sourced by instance static scripts: fail MESSAGE reports and exits 1.' \
-    "fail() {" "  printf '[dotsteward] ERROR: %s\\n' \"\$*\" >&2" "  exit 1" "}" >"$work/helper.sh"
+  printf '%s\n' "${OWNED_PATHS[@]}" >"$work/framework-paths"
+  for path in "${FILES[@]}"; do
+    owned "$path" || printf '%s\n' "$path"
+  done >"$work/own-files"
+  {
+    printf '%s\n' '# shellcheck shell=bash' \
+      '# Sourced by instance static scripts: fail MESSAGE reports and exits 1; own_files prints the' \
+      '# files of the instance the framework does not own and framework_paths the paths it owns' \
+      '# (a directory ends in /), one per line.' \
+      "fail() {" "  printf '[dotsteward] ERROR: %s\\n' \"\$*\" >&2" "  exit 1" "}"
+    printf 'own_files() {\n  cat -- %q\n}\n' "$work/own-files"
+    printf 'framework_paths() {\n  cat -- %q\n}\n' "$work/framework-paths"
+  } >"$work/helper.sh"
   for script in "${SCRIPTS[@]}"; do
     status=0
     path=$(config_instance_path "$script")

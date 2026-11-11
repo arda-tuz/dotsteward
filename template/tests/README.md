@@ -27,7 +27,7 @@ environment carries:
 | --- | --- |
 | `DOTSTEWARD_INSTANCE_ROOT` | the instance root (also the working directory) |
 | `DOTSTEWARD_SANDBOX` | `1` inside the Nix build sandbox, else `0` |
-| `DOTSTEWARD_STATIC_HELPER` | a bash file to source; it defines `fail MESSAGE`, which reports MESSAGE and makes the script fail |
+| `DOTSTEWARD_STATIC_HELPER` | a bash file to source; it defines `fail MESSAGE`, which reports MESSAGE and makes the script fail, `own_files` and `framework_paths` (below) |
 
 A script fails with a non-zero exit status; the first failing script ends the
 run with its status. An example `tests/static.sh`:
@@ -42,6 +42,23 @@ source "$DOTSTEWARD_STATIC_HELPER"
 if [[ $DOTSTEWARD_SANDBOX == 0 ]]; then
   : # checks that need git or the network
 fi
+```
+
+`own_files` prints the files of the instance that the framework does not own,
+one per line and sorted: what git carries (tracked files and untracked ones it
+does not ignore), or every file below the root in the sandbox.
+`framework_paths` prints the paths the framework owns (`.dotsteward/`,
+`bootstrap.sh`, the skills lock, the vendored skills, `agent/plugins/`,
+`agent/skill-licenses/`, `hosts/`; a directory ends in `/`): its commands write
+them and its checks check them, and a new release may add one. A list of your
+own files checked against `own_files` therefore needs no edit when the
+framework starts to write a new path, and still names a file you did not
+expect:
+
+```
+expected=$(printf '%s\n' README.md flake.lock flake.nix home.nix tests/static.sh \
+  versions.lock.json workstation.toml)
+[[ $(own_files) == "$expected" ]] || fail "unexpected files: $(own_files | tr '\n' ' ')"
 ```
 
 Keep these scripts fast and deterministic, and free of secrets: they are part
