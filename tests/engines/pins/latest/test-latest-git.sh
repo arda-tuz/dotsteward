@@ -137,7 +137,7 @@ done
 # against the tag's commit (an annotated tag is peeled).
 ds_stub_clear_routes gh
 ds_stub_route gh "api repos/example-org/example-tool/compare/*" --stdout '{"ahead_by": 2, "files": [{"filename": "skill/SKILL.md"}]}'
-ds_stub_route gh "api repos/example/dotsteward/releases?per_page=100&page=1" --stdout '[{"tag_name": "v0.2.0"}]'
+ds_stub_route gh "api repos/example/dotsteward/releases?per_page=30&page=1" --stdout '[{"tag_name": "v0.2.0"}]'
 ds_stub_route gh "api repos/example-org/example-skills/compare/*" --stdout-file "$latest_fixtures/gh/compare-skills.json"
 ds_stub_route gh "api repos/example-org/example-plugins/compare/*" --stdout-file "$latest_fixtures/gh/compare-plugins.json"
 ds_stub_route gh "api repos/example-org/example-watch/compare/*" --stdout-file "$latest_fixtures/gh/compare-watch.json"
@@ -153,7 +153,7 @@ tagged=$(rev example-org/example-tool v1.1.0)
 assert_exit 0 latest --out "$report"
 assert_eq "[\"review\",\"${pinned:0:12}\",\"${tagged:0:12}\",\"v1.1.0\",[\"skill/SKILL.md\"]]" \
   "$(row skills.example-bound '[.status, .current, .latest, .details.release, .details.changed_paths]')"
-assert_call_count 1 gh "api repos/example-org/example-tool/releases*per_page=100*"
+assert_call_count 1 gh "api repos/example-org/example-tool/releases*per_page=30*"
 assert_call_count 1 gh "api repos/example-org/example-tool/compare/$pinned...$tagged"
 
 # A skill directory that is not vendored: only the skill structure counts.

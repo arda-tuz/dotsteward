@@ -36,7 +36,7 @@ release_route example/dotsteward
 assert_exit 0 latest --out "$report"
 assert_eq '{"id":"framework","kind":"framework","current":"v0.1.0","latest":"v0.2.0","status":"review","source":"https://github.com/example/dotsteward/releases","details":{"tag":"v0.2.0","upstream":"github:example/dotsteward"}}' \
   "$(row framework)"
-assert_call_count 1 gh "api repos/example/dotsteward/releases*per_page=100*"
+assert_call_count 1 gh "api repos/example/dotsteward/releases*per_page=30*"
 
 # Pinned to the newest release, or ahead of it: current.
 set_original '{"owner": "example", "ref": "v0.2.0", "repo": "dotsteward", "type": "github"}'

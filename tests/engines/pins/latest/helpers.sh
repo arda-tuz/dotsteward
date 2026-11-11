@@ -230,7 +230,7 @@ latest_gh_routes() {
 }
 
 # release_route OWNER/REPO FILE...: the release list of OWNER/REPO (gh api
-# repos/OWNER/REPO/releases?per_page=100&page=1) holds the releases of the
+# repos/OWNER/REPO/releases?per_page=30&page=1) holds the releases of the
 # files, newest first; without files it is empty, so the tags answer.
 release_route() {
   local repo=$1 list
@@ -242,7 +242,7 @@ release_route() {
   else
     printf '[]\n' >"$list"
   fi
-  ds_stub_route gh "api repos/$repo/releases?per_page=100&page=1" --stdout-file "$list"
+  ds_stub_route gh "api repos/$repo/releases?per_page=30&page=1" --stdout-file "$list"
 }
 
 latest_world() {

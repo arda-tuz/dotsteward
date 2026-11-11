@@ -38,7 +38,7 @@ github() {
   jq -s . <<<"$(printf '%s\n' "$@")" >"$list"
   ds_stub_clear_routes gh
   ds_stub_route gh "api repos/example-org/example-cli/releases/latest" --stdout "$latest"
-  ds_stub_route gh "api repos/example-org/example-cli/releases?per_page=100&page=1" --stdout-file "$list"
+  ds_stub_route gh "api repos/example-org/example-cli/releases?per_page=30&page=1" --stdout-file "$list"
   ds_stub_route gh "api repos/example-org/example-cli/releases" --stdout-file "$list"
   latest_gh_routes
 }
