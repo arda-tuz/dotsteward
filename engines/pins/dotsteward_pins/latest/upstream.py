@@ -33,6 +33,8 @@ COMMAND_TIMEOUT = 60
 # The release list of a repository is read in pages of its newest releases, at most this many.
 RELEASES_PAGE = 100
 RELEASES_PAGES = 5
+# A first number this high is a year: a calendar version.
+CALENDAR_YEAR = 1900
 USER_AGENT = "dotsteward-pins/1.0"
 GITHUB = "https://github.com"
 _GITHUB_REFERENCE = re.compile(r"github:(?P<owner>[^/]+)/(?P<repo>[^/?#]+)(?:[/?#].*)?")
@@ -63,6 +65,17 @@ def github_repo(text: Any) -> str | None:
 def tag_version(tag: str, prefix: str = "") -> str:
     """The version a release tag names."""
     return tag[len(prefix) :] if prefix else tag.lstrip("v")
+
+
+def _calendar(version: str) -> bool:
+    first = re.match(r"[0-9]+", version)
+    return first is not None and int(first[0]) >= CALENDAR_YEAR
+
+
+def same_family(version: str, like: str | None) -> bool:
+    """VERSION belongs to the family of LIKE (any, without LIKE): plain versions (1.4.0) and
+    calendar versions (2024.11.01) are two, which tags without a prefix cannot tell apart."""
+    return like is None or _calendar(version) == _calendar(str(like).lstrip("v"))
 
 
 def is_stable_tag(tag: Any, prefix: str = "") -> bool:
@@ -209,14 +222,22 @@ class Upstream:
                 tags.append(name)
         return tags
 
-    def newest_tag(self, url: str, prefix: str = "", *, excluded: frozenset[str] = frozenset()) -> str | None:
-        tags = [tag for tag in self.stable_tags(url, prefix) if tag not in excluded]
+    def newest_tag(
+        self, url: str, prefix: str = "", *, excluded: frozenset[str] = frozenset(), like: str | None = None
+    ) -> str | None:
+        tags = [
+            tag
+            for tag in self.stable_tags(url, prefix)
+            if tag not in excluded and (prefix or same_family(tag_version(tag), like))
+        ]
         best = versions.newest(tag_version(tag, prefix) for tag in tags)
         if best is None:
             return None
         return next(tag for tag in tags if tag_version(tag, prefix) == best)
 
-    def latest_release(self, repo: str, prefix: str = "") -> tuple[str | None, dict[str, Any] | None]:
+    def latest_release(
+        self, repo: str, prefix: str = "", *, like: str | None = None
+    ) -> tuple[str | None, dict[str, Any] | None]:
         """The newest stable release of a GitHub repository in the tag family of PREFIX, and its
         release JSON: of the release list (``gh api repos/<repo>/releases?per_page=100&page=N``, the
         newest releases first, read page by page until a page holds a stable release of the family,
@@ -225,7 +246,8 @@ class Upstream:
         says which tag is a draft or a prerelease: a list that cannot be read, or that holds no
         stable release of the family in the pages read, is an UpstreamError. When the whole list
         holds none, the newest stable tag from ``git ls-remote`` that the list did not flag, without
-        a release."""
+        a release. Without a prefix, LIKE (the pinned version) keeps the family: plain and calendar
+        versions are two."""
         flagged: set[str] = set()
         stable: dict[str, dict[str, Any]] = {}
         for number in range(1, RELEASES_PAGES + 1):
@@ -240,6 +262,8 @@ class Upstream:
                 tag = release.get("tag_name") if isinstance(release, dict) else None
                 if not isinstance(tag, str) or not is_stable_tag(tag, prefix):
                     continue
+                if not prefix and not same_family(tag_version(tag), like):
+                    continue
                 if release.get("draft") or release.get("prerelease"):
                     flagged.add(tag)
                 else:
@@ -248,7 +272,7 @@ class Upstream:
             if best is not None:
                 return stable[best]["tag_name"], stable[best]
             if len(listed) < RELEASES_PAGE:
-                return self.newest_tag(github_url(repo), prefix, excluded=frozenset(flagged)), None
+                return self.newest_tag(github_url(repo), prefix, excluded=frozenset(flagged), like=like), None
         family = prefix or "of plain version tags"
         raise UpstreamError(
             f"{repo}: no stable release of the family {family} in the {RELEASES_PAGE * RELEASES_PAGES} newest releases"

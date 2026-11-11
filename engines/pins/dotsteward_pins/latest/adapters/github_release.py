@@ -5,7 +5,9 @@ Fields:
     repo        owner/name (a lock template); default: the pin's
                 ``reference`` (``github:owner/name/...``)
     tag_prefix  tag family of the releases (for example "rust-v"); without
-                it, tags are versions with an optional leading v
+                it, tags are versions with an optional leading v, and plain
+                versions (1.4.0) and calendar versions (2024.11.01) are two
+                families: a pin stays in the family of its version
     asset       release template ({version}, {tag}) of the asset name to
                 report (size, digest, URL), or an object of such templates
                 per Nix system (x86_64-linux, aarch64-darwin) or platform
@@ -97,7 +99,9 @@ def asset_details(
     match = next((entry for entry in entries if isinstance(entry, dict) and entry.get("name") == name), None)
     if match is None:
         return {"asset_missing": name}
-    digest = str(match.get("digest") or "").removeprefix("sha256:") or None
+    # A digest of another algorithm is no SHA-256: the writer downloads the file to learn it.
+    text = str(match.get("digest") or "")
+    digest = text.removeprefix("sha256:") if text.startswith("sha256:") else None
     return {"asset": name, "size": match.get("size"), "sha256": digest, "url": match.get("browser_download_url")}
 
 
@@ -128,7 +132,7 @@ class GithubRelease(Adapter):
     def fetch(self, request: Request, upstream: Upstream) -> list[Row]:
         repo = request.values["repo"]
         prefix = self.values["tag_prefix"]
-        tag, release = upstream.latest_release(repo, prefix)
+        tag, release = upstream.latest_release(repo, prefix, like=request.current)
         if tag is None:
             raise UpstreamError(f"{repo} has no stable release or tag")
         latest = tag_version(tag, prefix)
