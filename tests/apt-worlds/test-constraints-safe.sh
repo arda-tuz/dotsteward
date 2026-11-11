@@ -24,6 +24,8 @@ KEPT='{"kept": [
    "packages": ["sampleplus"]},
   {"component": "sampleother", "kind": "constraint", "version": "9", "reason": "a series it never had",
    "packages": ["sampleother"]},
+  {"component": "sampleexact", "kind": "constraint", "version": "1.2+dfsg-1", "reason": "exactly this build",
+   "packages": ["sampleplus"]},
   {"component": "samplesemver", "kind": "constraint", "version": "^16", "reason": "semver style",
    "packages": ["samplecli"]},
   {"component": "sampleline", "kind": "hold", "version": "2.0-1\n\nPackage: *\nPin: release a=*\nPin-Priority: 1001", "reason": "x",
@@ -82,7 +84,7 @@ assert_contains "$(APT_CONFIG=$WORLD/apt.conf apt-get -s install sampleapp=2.0-1
 
 # An epoch and a + version are inside their series.
 assert_eq 5:27.3.2-1 "$(candidate sampleepoch)"
-assert_eq 1.2+dfsg-2 "$(candidate sampleplus)"
+assert_eq 1.2+dfsg-1 "$(candidate sampleplus)" "an exact version, as earlier releases took it, stays exactly where it is"
 
 # A series no version has is said; a constraint that is no series is refused; a line break never
 # reaches the file; firmware is never bound.

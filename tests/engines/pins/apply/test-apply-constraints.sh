@@ -94,7 +94,7 @@ assert_exit 0 apply --plan --latest "$rows" --json
 assert_contains "$DS_STDOUT" "pins-constrained"
 
 # A constraint that is no series of versions is refused, never silently ineffective.
-for refused in '^4' '>=4' '4.x' '4*'; do
+for refused in '^4' '>=4' '4*' '4.*.1'; do
   git -C "$inst" checkout -q -- workstation.toml
   python3 - "$inst/workstation.toml" "$refused" <<'PY'
 import sys
@@ -105,4 +105,12 @@ PY
   assert_exit 2 apply --plan --latest "$rows" --json
   assert_contains "$DS_STDERR" "components.example-release.version"
 done
+git -C "$inst" checkout -q -- workstation.toml
+
+# An exact version, as earlier releases took it: the pin stays on it, a newer release waits.
+sed -i 's/^version = "4\.\*"$/version = "5.0.0"/' "$inst/workstation.toml"
+rows "$(release_row 5.0.0 5.1.0)"
+assert_exit 0 apply --plan --latest "$rows" --json
+assert_contains "$DS_STDOUT" "pins-constrained"
+assert_contains "$DS_STDOUT" "version = '5.0.0'"
 git -C "$inst" checkout -q -- workstation.toml
