@@ -59,6 +59,7 @@ every command is listed in [exit-codes.md](exit-codes.md).
 
 | Command | Summary |
 | --- | --- |
+| [`add`](#add) | Track a component: write it into the intent and publish it with dotsteward apply |
 | [`agents`](#agents) | Install or check the agent tools, the skill layout and the agents checks of a profile |
 | [`apply`](#apply) | Finish a maintain transaction in one command: gate, commit, activate, E2E, publish |
 | [`bootstrap`](#bootstrap) | Bootstrap stage 1 (run by ./bootstrap.sh once Nix is installed) |
@@ -75,21 +76,80 @@ every command is listed in [exit-codes.md](exit-codes.md).
 | [`install`](#install) | Run the system-install phase (deb transaction, phase hooks) or check every install method |
 | [`login-shell`](#login-shell) | Set, migrate or check the stable login shell of the instance |
 | [`maintain`](#maintain) | Open a maintain transaction (maintain begin), which dotsteward apply finishes |
+| [`observe`](#observe) | Notice the system packages changed outside dotsteward, check the tracked components they reach and record the state of this machine |
 | [`pins`](#pins) | Check, sync, research and move the pinned versions of the instance's lock files |
 | [`preflight`](#preflight) | Read-only check of this machine against the instance fast path (exit 3: adaptive route) |
 | [`probes`](#probes) | Run the version, presence and feature probes of a generation's manifest |
 | [`rebuild`](#rebuild) | Build the instance's Home Manager generation for this machine and optionally switch to it |
+| [`remove`](#remove) | Stop tracking a component, keeping its software unless asked: dotsteward apply publishes it |
 | [`rollback`](#rollback) | Undo the instance's Home Manager setup (login shell, managed links, force-linked files) |
 | [`scan`](#scan) | Scan files, the staged index or a commit range for secrets and private data |
 | [`settings`](#settings) | Sync tracked application settings with the instance's settings buffer |
 | [`skills`](#skills) | Track the user's own skills, and report what the instance means for this machine |
 | [`state`](#state) | Record the state this machine observes on its own state branch, push it, fetch and show the state of every machine |
 | [`static`](#static) | Check the static contracts of an instance or of the framework source |
+| [`status`](#status) | One read-only overview of this machine and its instance, offline |
 | [`sync`](#sync) | Old name of generate: a warning, then generate with the same arguments (until 2.0.0) |
 | [`txn`](#txn) | Prepare, publish and report a maintenance transaction |
 | [`update`](#update) | Old name of txn: a warning, then txn with the same arguments (until 2.0.0) |
 | [`upgrade`](#upgrade) | Bring this machine and the shared lock to the newest stable versions, with one command |
 | [`version`](#version) | Print the framework version, source revision and narHash |
+
+## `add`
+
+Track a component: write it into the intent and publish it with dotsteward apply.
+
+```text
+usage: dotsteward add [-h] [-m SUBJECT] [--activate | --no-activate]
+                      [--publish | --no-publish] [--profile PROFILE]
+                      [--with-changes] [--json] [--apt PACKAGE]
+                      [--nix ATTRIBUTE] [--command COMMAND] [--method METHOD]
+                      [--profiles PROFILE] [--machines MACHINE] [--here]
+                      [--also-here] [--replace-scope] [--tags TAG]
+                      [--updater UPDATER]
+                      NAME
+
+Tracks a component: opens a maintain transaction, writes [components.NAME]
+with enable = true into workstation.toml and finishes it with the one
+dotsteward apply, under the subject 'feat: track NAME'. NAME is a catalog
+component, a component of the instance in components/NAME/default.nix, plain
+APT packages (--apt) or a nixpkgs package (--nix), which become such a
+component. Any other channel needs research: nothing is written and channel-
+unknown says how to go on. Only this change is committed: other changes of the
+checkout or commits the remote lacks are questions. Run the same command again
+after a red step or a sudo step: it finishes. Exit status: the one of apply (0
+done, 1 a refusal or a red step, 3 a sudo step or a person waits, 6 no
+network: the push waits); 2 usage error; 3 also a question before anything was
+written.
+
+positional arguments:
+  NAME                  the component
+
+options:
+  -h, --help            show this help message and exit
+  -m, --message SUBJECT
+                        the conventional commit subject
+  --activate            activate here
+  --no-activate         do not activate
+  --publish             publish the commit
+  --no-publish          keep the commit here
+  --profile PROFILE     the profile to activate (default: this machine's)
+  --with-changes        the other changes of the checkout belong to this
+                        transaction (the user said so)
+  --json                print one JSON document on standard output
+  --apt PACKAGE         plain APT packages (repeatable)
+  --nix ATTRIBUTE       a nixpkgs package
+  --command COMMAND     a command it provides (repeatable)
+  --method METHOD       the install method, of those the component supports
+  --profiles PROFILE    only these profiles
+  --machines MACHINE    only these machines
+  --here                only this machine
+  --also-here           this machine too, besides the machines it has
+  --replace-scope       the scope options replace what the table has
+                        (confirmed)
+  --tags TAG            only machines with one of these tags
+  --updater UPDATER     the one thing that updates it
+```
 
 ## `agents`
 
@@ -143,14 +203,15 @@ Finishes a maintain transaction in one command: stages every change of the
 checkout, regenerates the mirrors, runs the gate in the maintain scope,
 commits with SUBJECT and the trace line of this machine, then with --activate
 installs the system-level components an adopt-mode profile needs, runs rebuild
---switch and E2E against the base, and with --publish runs txn publish; when
-another machine published first, it moves the commits onto the new tip, proves
-and activates them again and pushes again, three times at most. [maintain]
-activate and publish of workstation.toml are the defaults (both false). Run
-the same command again after a fix or a sudo step: it does what is left. Exit
-status: 0 done, 1 a refusal or a red step, 2 usage error, 3 a sudo step or a
-person waits (review.json: a change of the same lines here and on the remote,
-or a remote that kept moving), 6 no network: the push waits, 130 interrupted.
+--switch and E2E against the base, and with --publish runs txn publish and
+records the state of this machine on its state branch; when another machine
+published first, it moves the commits onto the new tip, proves and activates
+them again and pushes again, three times at most. [maintain] activate and
+publish of workstation.toml are the defaults (both false). Run the same
+command again after a fix or a sudo step: it does what is left. Exit status: 0
+done, 1 a refusal or a red step, 2 usage error, 3 a sudo step or a person
+waits (review.json: a change of the same lines here and on the remote, or a
+remote that kept moving), 6 no network: the push waits, 130 interrupted.
 
 options:
   -h, --help            show this help message and exit
@@ -503,7 +564,7 @@ Verify this machine against the instance: the end-to-end checks of a profile.
 Usage: dotsteward e2e --profile PROFILE [--expected-remote-base OID]
                       [--framework-override REF] [--generation PATH]
                       [--jobs N] [--keep-going] [--json] [--list]
-                      [--skip-repo-checks]
+                      [--skip-repo-checks] [--component NAME]...
 
 Verifies that this machine matches the instance for PROFILE after a
 rebuild: commands, component E2E hooks, managed links, agent rules, files,
@@ -511,6 +572,9 @@ the agents check, tracked settings, the login shell, the instance checkout
 and its remote, and the framework skills of the generation.
 
   --profile PROFILE          a profile of the instance (required)
+  --component NAME           only the checks of the active component NAME
+                             (repeatable): its hooks and agent rules; such a
+                             run writes no E2E record
   --expected-remote-base OID before a publish: the remote branch must still
                              be OID (40 hex digits) and OID an ancestor of
                              HEAD, instead of HEAD itself
@@ -531,7 +595,8 @@ and its remote, and the framework skills of the generation.
                              standard output (step is the check id); logs
                              go to standard error
   --list                     print the check ids of PROFILE in run order and
-                             run nothing (with --json: { "profile", "checks" })
+                             run nothing (with --json: { "profile",
+                             "components" (the active ones), "checks" })
   --skip-repo-checks         skip the instance checkout and remote checks
                              (CI fixtures only)
 
@@ -714,7 +779,8 @@ usage: dotsteward host publish [-h]
 Writes hosts/<name>.toml on the remote branch in one commit without force, and
 leaves the checkout as it is. The other keys of the file stay. Without a
 network or a login it exits 6 and nothing is lost: it works out the same again
-next time.
+next time. The holds `dotsteward upgrade` made on this machine, and the ones
+it took back, go with it.
 
 options:
   -h, --help  show this help message and exit
@@ -1026,6 +1092,35 @@ options:
   --json             print one JSON document on standard output
 ```
 
+## `observe`
+
+Notice the system packages changed outside dotsteward, check the tracked components they reach and record the state of this machine.
+
+```text
+usage: dotsteward observe [-h] [--settle-seconds SECONDS]
+                          [--wait-limit SECONDS]
+
+Notices the system packages changed outside dotsteward (the path unit on the
+dpkg status file starts it): waits until dpkg and apt settled, compares the
+installed packages with the last observation, runs the E2E checks of the
+tracked deb components whose packages or dependency closure changed, records
+the state on the state branch of this machine and notifies the desktop of a
+red component. It never changes a package.
+
+options:
+  -h, --help            show this help message and exit
+  --settle-seconds SECONDS
+                        how long the dpkg status file must stay the same
+                        (default 15)
+  --wait-limit SECONDS  how long to wait for dpkg and apt to settle (default
+                        1800)
+
+Exit status: 0 done (a red component too), 1 a refusal or checks that gave no
+result, 2 usage error, 3 the instance lock is busy and the observer runs when
+it is free, 4 the record breaks its schema or the privacy scan found
+something, 6 no network or no login (the record waits).
+```
+
 ## `pins`
 
 Check, sync, research and move the pinned versions of the instance's lock files.
@@ -1085,15 +1180,17 @@ options:
 
 ```text
 usage: dotsteward pins apply [-h] [--latest FILE] [--plan] [--skip ID]
-                             [--json] [--jobs N]
+                             [--restore FILE] [--json] [--jobs N]
 
 options:
-  -h, --help     show this help message and exit
-  --latest FILE  use this pins latest report instead of researching
-  --plan         show what would happen and write nothing
-  --skip ID      leave the rows with this id (a glob) alone (repeatable)
-  --json         print the summary as JSON on standard output
-  --jobs N       parallel queries (default 8)
+  -h, --help      show this help message and exit
+  --latest FILE   use this pins latest report instead of researching
+  --plan          show what would happen and write nothing
+  --skip ID       leave the rows with this id (a glob) alone (repeatable)
+  --restore FILE  put the pins FILE names back to what an earlier commit held,
+                  whole groups, without the network
+  --json          print the summary as JSON on standard output
+  --jobs N        parallel queries (default 8)
 ```
 
 ## `preflight`
@@ -1144,7 +1241,7 @@ Build the instance's Home Manager generation for this machine and optionally swi
 
 ```text
 Usage: dotsteward rebuild --profile PROFILE --switch|--build-only
-                          [--framework-override REF]
+                          [--framework-override REF] [--ignore-hold]
 
 Builds the Home Manager generation of PROFILE for the running user and home
 through the machine's host flake (<state>/host-overrides), or reuses the
@@ -1164,11 +1261,60 @@ them, so run it after the rebuild.
                              reference REF instead of the locked one,
                              without writing a lock file (default:
                              DOTSTEWARD_FRAMEWORK_OVERRIDE)
+  --ignore-hold              activate a shared lock this machine holds
+                             back (T19, docs/upgrade.md); the next
+                             `dotsteward upgrade` checks it with E2E
 
 The instance must be the root of a git repository without uncommitted
 changes or untracked files.
 
 Exit status: 0 done, 1 refusal, or the status of a failed step.
+```
+
+## `remove`
+
+Stop tracking a component, keeping its software unless asked: dotsteward apply publishes it.
+
+```text
+usage: dotsteward remove [-h] [-m SUBJECT] [--activate | --no-activate]
+                         [--publish | --no-publish] [--profile PROFILE]
+                         [--with-changes] [--json] [--uninstall] [--keep-here]
+                         NAME
+
+Stops tracking a component: opens a maintain transaction, removes
+[components.NAME], its entry of [components] order and, for a component of the
+instance, components/NAME, and finishes it with the one dotsteward apply,
+under the subject 'feat: stop tracking NAME'. Only files a commit holds go;
+anything else in components/NAME stays or is a question (untracked-files). The
+software stays installed. A nix component would leave the profile of every
+machine it is for: a plain remove asks (profile-removal); --uninstall
+confirms, --keep-here keeps it on this machine only. --uninstall also removes,
+once the removal is published, what the component provably installed outside
+the profile and no other component names: its APT packages (through sudo on a
+terminal, else uninstall-required with the command, exit 3), an official
+binary that answers its version probe, a Python environment and its links
+below HOME. A component that another one requires stays. Exit status: as for
+dotsteward add.
+
+positional arguments:
+  NAME                  the component
+
+options:
+  -h, --help            show this help message and exit
+  -m, --message SUBJECT
+                        the conventional commit subject
+  --activate            activate here
+  --no-activate         do not activate
+  --publish             publish the commit
+  --no-publish          keep the commit here
+  --profile PROFILE     the profile to activate (default: this machine's)
+  --with-changes        the other changes of the checkout belong to this
+                        transaction (the user said so)
+  --json                print one JSON document on standard output
+  --uninstall           also remove what it installed outside the profile
+                        (asked for)
+  --keep-here           keep it on this machine only instead: machines = [this
+                        machine]
 ```
 
 ## `rollback`
@@ -1769,6 +1915,27 @@ Exit status: 0 when every check passed, 1 on a failed check or a usage
 error, otherwise the exit status of the failing instance script.
 ```
 
+## `status`
+
+One read-only overview of this machine and its instance, offline.
+
+```text
+usage: dotsteward status [-h] [--json]
+
+One read-only overview of this machine and its instance: the machine, the
+checkout against what the last fetch knows of the remote, whether the active
+generation is the checkout and its E2E, every tracked component (here or why
+not, installed, method, updater, constraint, holds), newer versions the last
+upgrade found, what other machines brought that waits for an answer, the
+skills and plugins, the state branch of this machine and its orphans, and what
+review.json holds. Offline and fast: it fetches nothing, runs no other command
+and writes nothing. Exit status: 0, 1 when the instance cannot be read.
+
+options:
+  -h, --help  show this help message and exit
+  --json      print one JSON document
+```
+
 ## `sync`
 
 Old name of generate: a warning, then generate with the same arguments (until 2.0.0).
@@ -1974,8 +2141,8 @@ options:
   --all         also apt as a whole, snap, flatpak and the tools of
                 [[upgrade.tools]]; no second question
   --plan        say what both modes would do and change nothing
-  --retry-held  take back every local hold (<state>/holds.json) first, so the
-                held pins move again
+  --retry-held  take back the pin holds of this machine first (in its host
+                file and <state>/holds.json), so the held pins move again
   --json        print the report as one JSON document
   --accept KEY  answer in advance: install:PACKAGE, series:kernel=X.Y,
                 series:nvidia=N, firmware; all of them need a terminal in the
