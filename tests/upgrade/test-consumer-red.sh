@@ -78,10 +78,11 @@ remote_state_json ".held.lock_commit == \"$y\""
 assert_eq "$y" "$(remote_oid)"
 assert_no_step '^pins '
 
-# --- the remote brings intent on the same lock: nothing of it becomes active ---------------------------
+# --- the remote brings intent on the same lock: nothing of it becomes active, and the run waits -----------
 push_from_elsewhere "docs: a line"
 clear_log
-assert_exit 0 on_terminal 'Update these too=n' -- --tracked
+assert_exit 3 on_terminal 'Update these too=n' -- --tracked
+assert_contains "$DS_STDOUT" "e2e: held, unverified"
 assert_no_step '^rebuild '
 assert_no_step '^e2e '
 assert_eq "$(remote_oid)" "$(git -C "$up_inst" rev-parse HEAD)"

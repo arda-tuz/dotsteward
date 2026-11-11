@@ -278,6 +278,8 @@ class Upgrade(runner.Runner):
         # and whether a lock that went red here keeps this machine where it is.
         self.lock_before: str | None = None
         self.held = False
+        # The lock that went red here is active (activated outside upgrade): E2E checks it.
+        self.red_active = False
         # T19 on the producer: the pins it puts back for consumers, and the items that say so.
         self.put_back: list[dict[str, Any]] = []
         self.moved = self._waiting_moves()
@@ -370,7 +372,7 @@ class Upgrade(runner.Runner):
         for step in self.run.steps:
             if step["status"] != "ok":
                 detail = step.get("detail") or (f"exit status {step['exit_status']}" if "exit_status" in step else "")
-                word = _STEP_WORDS.get(step["status"], step["status"])
+                word = step.get("said") or _STEP_WORDS.get(step["status"], step["status"])
                 _say(f"{step['name']}: {word}" + (f" ({detail})" if detail else ""))
         _say(f"{self.run.status}: report {self.paths.report}")
         for item in self.run.items:
@@ -1521,18 +1523,33 @@ class Upgrade(runner.Runner):
         return [str(row["id"]) for row in consumer.moved_pins(self.root, self.lock_before, self._head(), owners)]
 
     def _held_back(self) -> bool:
-        """T19 before a rebuild of the checkout on a consumer: True when its shared lock is the one that
-        went red here, and nothing is built. Otherwise a marker of another lock goes, and a lock that
-        differs from the one of the active generation is remembered for the way back."""
+        """T19 before a rebuild of the checkout on a consumer: True when this machine stays where it is
+        and nothing is built, since the lock of the checkout is the one that went red here, or a later
+        one that moved nothing the marker watches (the pins of what went red, or every path the red
+        lock moved when the producer has none to put back). A lock that moved what it watches drops
+        the marker and is tried. When the red lock itself is active (a rebuild outside upgrade), E2E
+        checks it and the way back follows. A lock that differs from the one of the active generation
+        is remembered for the way back. On the producer a marker of an earlier role goes."""
         if not self._consumer():
+            consumer.drop_marker(self.state_root)
             return False
         head = self._head()
         lock = consumer.lock_digest(self.root, head)
         marker = consumer.read_marker(self.state_root)
+        revision = self._activation().get("revision")
         if marker is not None:
-            if lock == marker["lock"]:
+            if isinstance(revision, str) and consumer.lock_digest(self.root, revision) == marker["lock"]:
+                self.red_active = True
+                self.lock_before = str(marker["commit"])
+                _say(
+                    f"the shared lock of {str(marker['lock_commit'])[:12]} that went red here is active: "
+                    "E2E checks it, and the way back follows a red one"
+                )
+                return False
+            if lock == marker["lock"] or not consumer.watch_moved(self.root, marker, head):
                 self.held = True
                 commit = str(marker["commit"])
+                moved = lock != marker["lock"]
                 self.run.step("rebuild", report.OK, detail=f"held: the generation of {commit[:12]} stays")
                 self.run.item(
                     "consumer-held",
@@ -1540,20 +1557,32 @@ class Upgrade(runner.Runner):
                     commit=commit,
                     lock_commit=marker["lock_commit"],
                     components=marker.get("components") or [],
+                    watch=sorted(marker.get("watch") or ()),
                     message=(
-                        f"the shared lock of {str(marker['lock_commit'])[:12]} went red here: this machine stays at "
-                        f"the generation of {commit[:12]} until {facts.role(self.instance, self.name)} moves that lock"
+                        f"the shared lock of {str(marker['lock_commit'])[:12]} went red here"
+                        + (", and the lock moved nothing that went red" if moved else "")
+                        + f": this machine stays at the generation of {commit[:12]} until "
+                        f"{facts.role(self.instance, self.name)} moves what went red"
                     ),
                 )
                 return True
             consumer.drop_marker(self.state_root)
-            _say("the shared lock moved since it went red here: this run tries the new one")
-        revision = self._activation().get("revision")
+            _say("the shared lock moved what went red here: this run tries it")
         if isinstance(revision, str) and revision != head:
             before = consumer.lock_digest(self.root, revision)
             if before is not None and before != lock:
                 self.lock_before = revision
         return False
+
+    def _watch(self, revision: str, lock_commit: str, names: Collection[str]) -> dict[str, str]:
+        """What a held consumer watches: the pins of the components NAMES that the red lock moved, or
+        every path it moved when none of them is such a pin (nothing the producer can put back)."""
+        owners = facts.pin_owners(self._active())
+        mine = [pin for pin, owner in owners.items() if owner in names]
+        paths = [str(row["id"]) for row in consumer.moved_pins(self.root, revision, lock_commit, mine)]
+        if not paths:
+            paths = consumer.moved_paths(self.root, revision, lock_commit)
+        return consumer.watched_values(self.root, lock_commit, paths)
 
     def _consumer_back(self, red: Sequence[str]) -> None:
         """T19: the shared lock this run took went red on a consumer. The generation of the commit before
@@ -1585,7 +1614,14 @@ class Upgrade(runner.Runner):
         names = sorted(({check.split(":", 1)[0] for check in red} - _NOT_COMPONENTS) & active)
         lock = consumer.lock_digest(self.root, lock_commit)
         assert lock is not None
-        consumer.write_marker(self.state_root, commit=revision, lock_commit=lock_commit, lock=lock, components=names)
+        consumer.write_marker(
+            self.state_root,
+            commit=revision,
+            lock_commit=lock_commit,
+            lock=lock,
+            components=names,
+            watch=self._watch(revision, lock_commit, names),
+        )
         self.held = True
         producer = facts.role(self.instance, self.name)
         self.run.step("e2e", report.PENDING, detail=f"went back: {reason}")
@@ -1755,8 +1791,14 @@ class Upgrade(runner.Runner):
             return
         if self.held and self.work is None:
             # The checkout has the lock that went red here; the generation is the one it went back to.
+            # Nothing of this run is checked (an apt commit, the extra pass): it waits, never green.
             self._verify(False)
-            self.run.step("e2e", report.OK, detail="held: the checkout is not active")
+            self.run.step(
+                "e2e",
+                report.PENDING,
+                said="held, unverified",
+                detail="the generation it went back to stays; nothing of this run is checked until the lock moves",
+            )
             return
         if self.work is not None and not self._is_active(self.work):
             # Without a network its rebuild waits; this generation says nothing about the commit.
@@ -1777,7 +1819,12 @@ class Upgrade(runner.Runner):
                 ),
             )
             return
-        if not force and not self.apt_changed and self._e2e_green_for(self._e2e_key(self._repo_checks())):
+        if (
+            not force
+            and not self.red_active
+            and not self.apt_changed
+            and self._e2e_green_for(self._e2e_key(self._repo_checks()))
+        ):
             self._verify(True)
             self.run.step("e2e", report.OK, detail="skipped: nothing changed since the last green run")
             return
@@ -1786,6 +1833,9 @@ class Upgrade(runner.Runner):
         if red is None:
             _say("E2E is green")
             self.run.step("e2e", report.OK)
+            if self.red_active:
+                # The lock that went red here is green now: nothing is held any more.
+                consumer.drop_marker(self.state_root)
         elif red == [_NO_RESULT]:
             self._no_result()
         elif self.waiting is not None:

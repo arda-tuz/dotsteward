@@ -238,16 +238,25 @@ left to the vendor. Without a terminal it is never applied.
   outside the user manager is not known here; its component stops it in an `agentsPost` hook, which
   the rebuild back runs.
 - **A shared lock red on a machine that is not the producer (T19):** the checkout followed the
-  remote, the rebuild of it moved the shared lock (the pins of `versions.lock.json` and the inputs of
-  `flake.lock`) from the one of the active generation, and E2E went red. The generation of the
-  commit before comes back from a clone, with the same care for user services, and E2E checks it.
-  Green: the marker `<state>/upgrade/held-at.json` keeps this machine there (`consumer-held`, exit
-  3): the checkout follows the remote as always, but no commit with that shared lock is built or
-  checked here, whatever else it brings (`consumer-held` again, exit 0); that holds for an apt
-  commit of the run too, whose tracked packages wait for E2E until the marker goes. The state record carries it
-  as `held` (the commit it went back to, the commit of the red lock, the components that went red),
-  so the producer reads it from `state/<name>`. A commit with another shared lock drops the marker
-  and is tried. Red on the way back too: nothing is held, `e2e-red`, exit 1.
+  remote, the rebuild of it moved the shared lock from the one of the active generation, and E2E
+  went red. The shared lock is what only the producer moves: the pins of `versions.lock.json`, the
+  inputs of `flake.lock`, the skills lock and the vendored skills, the npm locks
+  (`packages/*/package-lock.json`) and the hash-pinned requirements. The generation of the commit
+  before comes back from a clone, with the same care for user services and binaries, and a pypi
+  environment goes back with its pin; E2E checks it. Green: the marker
+  `<state>/upgrade/held-at.json` keeps this machine there (`consumer-held`, exit 3). The checkout
+  follows the remote as always, but no commit with that lock is built or checked here. A later
+  lock is tried only when it moves what the marker watches: the pins of the components that went
+  red, or every path the red lock moved when none of them is a pin the producer can put back; a
+  lock that moves only other things leaves the machine where it is, with no rebuild and no E2E.
+  Each held run says `e2e: held, unverified` and waits (exit 3): nothing of that run, an apt commit
+  or the extra pass included, is checked until the marker goes. When the red lock became active
+  outside `upgrade` (a rebuild with `--ignore-hold`), the next run checks it with E2E: red, it goes
+  back again; green, the marker goes. `dotsteward rebuild --switch` and `dotsteward apply
+  --activate` refuse the red lock on a held machine. The state record carries the marker as `held`
+  (the commit it went back to, the commit of the red lock, the components that went red), so the
+  producer reads it from `state/<name>`. Red on the way back too: nothing is held, `e2e-red`, exit 1.
+  A machine that becomes the producer drops its marker.
 - **The producer answers a consumer:** each producer run fetches `state/*`. For a record that holds
   back the shared lock of the tip, the pins of the official binaries of the components that went red
   there go back to the values of the commit the consumer went back to, with a local hold at the red

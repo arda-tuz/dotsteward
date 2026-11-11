@@ -29,6 +29,13 @@ MARKER = "held-at.json"
 SCHEMA_VERSION = 1
 PIN_FILE = "versions.lock.json"
 FLAKE_LOCK = "flake.lock"
+SKILLS_LOCK = "agent/skills.lock.json"
+SKILLS_DIR = "agent/skills"
+# The other files of the shared lock (design: what the producer alone moves), by pattern: the skills
+# lock and the vendored skills, the npm locks, the hash-pinned Python requirements.
+_SHARED_FILES = re.compile(
+    r"(agent/skills\.lock\.json|packages/[^/]+/package-lock\.json|components/.+/requirements[^/]*\.txt)", re.ASCII
+)
 # Free on every machine: the time a writer last ran. No pin.
 _FREE_KEYS = frozenset({"generated_at", "schema_version"})
 _HEX40 = re.compile(r"[0-9a-f]{40}", re.ASCII)
@@ -68,11 +75,31 @@ def _flake_nodes(root: Path, commit: str) -> dict[str, Any]:
     )
 
 
+def _shared_files(root: Path, commit: str) -> dict[str, str]:
+    """The other files of the shared lock at COMMIT, by path: the object id of each, and of each
+    vendored skill directory (``agent/skills/<name>``)."""
+    done = publishing.git(root, "ls-tree", "-r", "-t", "--full-tree", commit, "--", "agent", "packages", "components")
+    found: dict[str, str] = {}
+    for line in done.stdout.splitlines() if done.code == 0 else ():
+        meta, _, path = line.partition("\t")
+        parts = meta.split()
+        if len(parts) != 3:
+            continue
+        kind, oid = parts[1], parts[2]
+        file = kind == "blob" and _SHARED_FILES.fullmatch(path) is not None
+        skill = kind == "tree" and path.startswith(f"{SKILLS_DIR}/") and path.count("/") == 2
+        if file or skill:
+            found[path] = oid
+    return found
+
+
 def lock_digest(root: Path, commit: str) -> str | None:
-    """What the shared lock of COMMIT says, whatever else the commit holds; None when COMMIT is not here."""
+    """What the shared lock of COMMIT says, whatever else the commit holds: the pins of the pin
+    file, the locked inputs of flake.lock and the other files of the shared lock (the skills lock
+    and skills, the npm locks, the hash-pinned requirements); None when COMMIT is not here."""
     if publishing.git(root, "cat-file", "-e", f"{commit}^{{commit}}").code != 0:
         return None
-    payload = {"pins": _pins(root, commit), "flake": _flake_nodes(root, commit)}
+    payload = {"pins": _pins(root, commit), "flake": _flake_nodes(root, commit), "files": _shared_files(root, commit)}
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
@@ -127,7 +154,36 @@ def moved_paths(root: Path, before: str, after: str) -> list[str]:
     paths += [
         f"flake.lock.{name}" for name in sorted(old_nodes) if name in new_nodes and new_nodes[name] != old_nodes[name]
     ]
+    old_files, new_files = _shared_files(root, before), _shared_files(root, after)
+    paths += [path for path in sorted({*old_files, *new_files}) if old_files.get(path) != new_files.get(path)]
     return paths
+
+
+def watched_values(root: Path, commit: str, paths: Sequence[str]) -> dict[str, str]:
+    """For each path of moved_paths (or a pin id), a digest of what COMMIT holds there ("" for
+    nothing): what a held consumer compares to know whether the lock moved what went red."""
+    pins = _pins(root, commit)
+    nodes = _flake_nodes(root, commit)
+    files = _shared_files(root, commit)
+    values: dict[str, str] = {}
+    for path in paths:
+        if path.startswith("flake.lock."):
+            value: Any = nodes.get(path.removeprefix("flake.lock."))
+        elif path in files or "/" in path:
+            value = files.get(path)
+        else:
+            value = _at(pins, _pin_path(pins, path))[1] if isinstance(pins, dict) else None
+        values[path] = "" if value is None else hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+    return values
+
+
+def watch_moved(root: Path, marker: Mapping[str, Any], commit: str) -> bool:
+    """Whether COMMIT moved what the marker watches. A marker without a watch list (of an older run)
+    watches the whole lock."""
+    watch = marker.get("watch")
+    if not isinstance(watch, dict):
+        return True
+    return watched_values(root, commit, [str(path) for path in watch]) != watch
 
 
 def put_back(work: Path, rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
@@ -178,21 +234,30 @@ def read_marker(state_root: str) -> dict[str, Any] | None:
     return document
 
 
-def write_marker(state_root: str, *, commit: str, lock_commit: str, lock: str, components: Sequence[str]) -> None:
+def write_marker(
+    state_root: str,
+    *,
+    commit: str,
+    lock_commit: str,
+    lock: str,
+    components: Sequence[str],
+    watch: Mapping[str, str] | None = None,
+) -> None:
+    """The marker: WATCH holds what a later lock must move before this machine tries it (the pins of
+    what went red, or every path the lock moved when none of them is a pin), by watched_values."""
     at = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     atomic.make_private_dirs(Path(state_root) / "upgrade")
-    atomic.atomic_write_json(
-        _path(state_root),
-        {
-            "schema_version": SCHEMA_VERSION,
-            "commit": commit,
-            "lock_commit": lock_commit,
-            "lock": lock,
-            "components": sorted(set(components)),
-            "at": at,
-        },
-        mode=0o600,
-    )
+    document: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "commit": commit,
+        "lock_commit": lock_commit,
+        "lock": lock,
+        "components": sorted(set(components)),
+        "at": at,
+    }
+    if watch is not None:
+        document["watch"] = dict(sorted(watch.items()))
+    atomic.atomic_write_json(_path(state_root), document, mode=0o600)
 
 
 def drop_marker(state_root: str) -> None:
