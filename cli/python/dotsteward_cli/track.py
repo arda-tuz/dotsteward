@@ -1333,8 +1333,11 @@ class Remove(_Transaction):
                 if _plain(names[index]) == self.name:
                     del names[index]
         held = document.get("holds")
-        if held is not None and self.name in held:
-            del held[self.name]
+        if held is not None:
+            # The bare name of an earlier release, the component hold and the pin holds of its pins.
+            keys = {self.name, holds.COMPONENT + self.name, *(holds.PIN + pin for pin in self._pins())}
+            for key in [key for key in held if key in keys]:
+                del held[key]
         new_text: str = tomlkit.dumps(document)
         return (path, new_text) if new_text != text else None
 
@@ -1493,9 +1496,8 @@ class Remove(_Transaction):
             self._summary()
             self._apply()
         if self.code == report.OK:
-            kept = [hold for hold in holds.read(self.state_root) if hold.get("component") != self.name]
-            if len(kept) != len(holds.read(self.state_root)):
-                holds.write(self.state_root, kept)
+            mine = [hold["id"] for hold in holds.read(self.state_root) if hold.get("component") == self.name]
+            holds.release(self.state_root, mine)
         if self.code == report.OK and self.options.uninstall:
             self._uninstall()
         elif self.code == report.OK and self.plan_file.exists() and not self.options.uninstall:
