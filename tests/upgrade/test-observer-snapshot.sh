@@ -7,6 +7,7 @@
 # E2E is the check of each tracked deb component that has checks, so the state record says verified
 # or red with the version. A red E2E, or one skipped because its key did not change, leaves the
 # observation alone: what the owner changed outside the key is still the observer's to check.
+# What changes while E2E runs is neither observed nor verified, and a red E2E passes no component.
 # shellcheck source=tests/upgrade/helpers.sh
 source "$DS_REPO_ROOT/tests/upgrade/helpers.sh"
 
@@ -58,3 +59,18 @@ clear_log
 assert_exit 0 on_terminal 'Update these too=n' -- --tracked
 assert_no_step '^e2e '
 assert_eq 1 "$(seen example-dependency)"
+
+# --- red before any check of a component: no component passes ---------------------------------------------
+ds_dpkg_installed example-tracked 1.4
+printf 'core:setup\n' >"$UP_CONTROL/e2e-red-once"
+assert_exit 1 on_terminal -- --tracked
+remote_state_json '.components["example-app"].status == "unverified" and .components["example-app"].last_verified.version == "1.2"'
+
+# --- the owner's apt runs while E2E runs: what E2E did not see is no observation and not verified ----------
+printf '%s\n' "printf 'Package: example-tracked\nStatus: install ok installed\nVersion: 1.5\nArchitecture: amd64\n' \
+  >'$DS_STUB_STATE/dpkg/installed/example-tracked'" >"$UP_CONTROL/e2e-hook"
+assert_exit 0 on_terminal 'Update these too=n' -- --tracked
+rm -f -- "$UP_CONTROL/e2e-hook"
+assert_eq 1.2 "$(seen example-tracked)"
+remote_state_json '.components["example-app"].status == "unverified" and .components["example-app"].version != "1.4"'
+assert_json "$DOTSTEWARD_STATE_ROOT/state/checks.json" '.components["example-app"].packages["example-tracked"] == "1.4"'
