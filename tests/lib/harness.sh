@@ -41,6 +41,10 @@
 # DS_SYSTEM_ROOT, and the
 # machine facts of the derived gate parallelism (DOTSTEWARD_MEMORY_MIB,
 # DOTSTEWARD_CPU_COUNT) describe a machine with 32768 MiB and 16 CPUs.
+# DS_TEST_PLATFORM (linux or darwin), an input of the caller, forces the
+# platform of the test as DOTSTEWARD_PLATFORM: checks.darwin-platform runs
+# the darwin suites on Linux with DS_TEST_PLATFORM=darwin, so a fixture that
+# asks the host instead of the platform the CLI sees fails on Linux too.
 #
 # Tests must not replace the EXIT trap; register cleanup work with ds_defer.
 # A process a test keeps running on purpose waits with tests/lib/hold.sh, which
@@ -164,6 +168,17 @@ auto = 0
 EOF
 
   _ds_write_platform_files
+  # The platform every test sees, from the caller: DS_TEST_PLATFORM linux or darwin forces it as
+  # DOTSTEWARD_PLATFORM, which the CLI and tests/lib/fixture-system.sh read first. A test that
+  # exports DOTSTEWARD_PLATFORM itself still wins.
+  case ${DS_TEST_PLATFORM:-} in
+    '') ;;
+    linux | darwin) export DOTSTEWARD_PLATFORM=$DS_TEST_PLATFORM ;;
+    *)
+      printf 'ds_harness_init: DS_TEST_PLATFORM: expected linux or darwin, got %s\n' "$DS_TEST_PLATFORM" >&2
+      return 1
+      ;;
+  esac
   cd "$DS_TEST_ROOT/work"
 }
 
