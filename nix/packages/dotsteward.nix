@@ -79,7 +79,8 @@ let
   # a check that runs `tests/run.sh PATHS...` on a writable copy of its
   # source set in the build sandbox, with the CLI toolchain on PATH and as
   # many test files at once as the build has cores (NIX_BUILD_CORES), then
-  # the shell snippet postCheck. A platform (linux or darwin) forces the
+  # the shell snippet postCheck. DS_TOOLCHAIN_PATH names the toolchain, as
+  # in the dev shell (nix/outputs.nix). A platform (linux or darwin) forces the
   # platform every test sees (DS_TEST_PLATFORM of tests/lib/harness.sh).
   # The derivation passes paths, nativeBuildInputs and keepShebangs on
   # (passthru), so a check can run the suites of others
@@ -132,6 +133,8 @@ let
         cd source
         ${lib.optionalString (!checkSources.hasVersion source) "printf '0.0.0\\n' >VERSION"}
         ${patchShebangsCommand}
+        # The toolchain, named for the tests and tools that put it first again (tools/gen-docs.sh).
+        export DS_TOOLCHAIN_PATH=${lib.escapeShellArg (lib.makeBinPath toolchain)}
         ${lib.optionalString (platform != null) "export DS_TEST_PLATFORM=${lib.escapeShellArg platform}"}
         bash tests/run.sh --jobs "$NIX_BUILD_CORES" ${lib.escapeShellArgs paths}
         ${postCheck}

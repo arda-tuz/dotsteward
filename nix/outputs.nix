@@ -106,6 +106,24 @@ in
     }
   );
 
+  # The environment of local test runs and of the generators in tools/: the CLI
+  # toolchain the checks run with (bash, coreutils, git, jq, cosign, the Python with
+  # tomlkit, ...) first on PATH, as mkTestCheck puts it, and shellcheck. DS_TOOLCHAIN_PATH
+  # names the toolchain, so tools/gen-docs.sh can put it first again (docs/testing.md).
+  devShells = forAllSystems (
+    system:
+    let
+      pkgs = pkgsFor system;
+      inherit (self.packages.${system}.dotsteward) toolchain;
+    in
+    {
+      default = pkgs.mkShellNoCC {
+        packages = toolchain ++ [ pkgs.shellcheck ];
+        DS_TOOLCHAIN_PATH = lib.makeBinPath toolchain;
+      };
+    }
+  );
+
   apps = forAllSystems (system: {
     default = {
       type = "app";

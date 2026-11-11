@@ -26,6 +26,22 @@ the rules, the harness, where each suite runs and how to add a test.
 
 ## Running tests
 
+Run the suites in the dev shell of the framework, which puts the toolchain of
+the checks first on `PATH`: bash, coreutils, Git, jq, `cosign` (the signature
+tests need it) and the Python with `tomlkit` (the configuration reader, the
+settings engine and the `tests/upgrade` and `tests/apply` worlds need it),
+plus `shellcheck`. It names that toolchain in `DS_TOOLCHAIN_PATH`, as every
+check does, which `tools/gen-docs.sh` puts first again: the help text it
+writes into `docs/cli.md` depends on the Python version that formats it.
+
+```sh
+nix develop                                # the dev shell; or prefix one command:
+nix develop --command bash tests/run.sh tests/upgrade
+```
+
+Outside the dev shell, a test that needs `cosign` fails with "cosign is
+required by this test", and the Python suites fail without `tomlkit`.
+
 ```sh
 bash tests/run.sh                          # every fast suite
 bash tests/run.sh tests/engines/settings   # one directory
@@ -140,8 +156,8 @@ real person.
 | `tests/host` | real Nix on the host: an instance built in a temporary home without activation (`instance-e2e.sh`), and the framework checks, which depend on the tree alone, never on its commit, and each only on the files of its source set (`test-*.sh`) | `instance-e2e.sh` locally; `test-*.sh` locally and in the host-level tests of `ci.yml` |
 | `tests/ci` | clean-machine install and the macOS smoke test with real activation | GitHub Actions only |
 | `tests/channels` | installing `dotsteward-init` through every channel (`local-install.sh`), and that script over stand-ins of the tools (`test-*.sh`) | the installs in GitHub Actions only (`channels.yml`); `test-*.sh` locally and in the host-level tests of `ci.yml` |
-| `tests/upgrade` | `dotsteward upgrade` through the dispatcher on a real pty: the real gate and `txn publish` against a bare remote, fakes that keep the contracts of `rebuild`, `e2e`, `pins` and the apt helper; `test-real-writer.sh` has the real `pins apply`; by hand they need a `python3` with `tomlkit` first on `PATH` | `checks.cli-upgrade` |
-| `tests/apply` | `dotsteward maintain begin` and `dotsteward apply` in the world of `tests/upgrade`: the real gate and `txn` against a bare remote, fakes of `generate`, `install`, `preflight` and `settings` besides; a second clone of the remote is the other machine that publishes while the gate runs (`test-race.sh`); by hand they need a `python3` with `tomlkit` first on `PATH` | `checks.cli-apply` |
+| `tests/upgrade` | `dotsteward upgrade` through the dispatcher on a real pty: the real gate and `txn publish` against a bare remote, fakes that keep the contracts of `rebuild`, `e2e`, `pins` and the apt helper; `test-real-writer.sh` has the real `pins apply`; by hand they run in the dev shell (`nix develop`), whose Python has `tomlkit` | `checks.cli-upgrade` |
+| `tests/apply` | `dotsteward maintain begin` and `dotsteward apply` in the world of `tests/upgrade`: the real gate and `txn` against a bare remote, fakes of `generate`, `install`, `preflight` and `settings` besides; a second clone of the remote is the other machine that publishes while the gate runs (`test-race.sh`); by hand they run in the dev shell (`nix develop`), whose Python has `tomlkit` | `checks.cli-apply` |
 | `tests/apt-worlds` | the apt engine (`cli/libexec/apt_helper.py`) on a real apt and python3-apt, rootless, on synthetic worlds with the records of real kernels and drivers | on the host when `/usr/bin/python3` has python3-apt, in the default run of `tests/run.sh`; otherwise each file says `SKIP`; it cannot run in the build sandbox |
 | `tests/container` | real commits of the apt engine, recovery after `kill -9` and Ctrl-C, and the pin against apt, unattended-upgrades, PackageKit and aptdaemon, on disposable ordinary Ubuntu containers without an init system (`tests/container/run.sh VERSION SCENARIO`); a container never gets the rights of the machine (`tests/static/test-no-system-containers.sh`), and what needs systemd as PID 1 runs on a CI runner or in a throwaway VM | on request: `DS_CONTAINER_VERSIONS="22.04 24.04 26.04" bash tests/run.sh tests/container`; otherwise each file says `SKIP` |
 | `tests/vm` | the virtual machine harness | its self-test locally and in CI (`ci.yml`); VMs only on request |
