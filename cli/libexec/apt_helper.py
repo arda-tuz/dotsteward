@@ -1433,7 +1433,7 @@ def action_analysis(session):
     cache = session.open_cache(installed_pin(classes) if session.gated else None)
     autoremovable = sum(1 for pkg in cache if pkg.is_installed and pkg.is_auto_removable)
     candidates = upgradable(cache)
-    kept = kept_rows(session, cache, free, classes)
+    kept = kept_rows(session, cache, free)
     upgrades = upgrade_all(cache)
     packages = [
         {
@@ -1467,7 +1467,7 @@ def action_analysis(session):
     }
 
 
-def kept_rows(session, cache, free, classes):
+def kept_rows(session, cache, free):
     """What our records keep from an upgrade apt would make without them: the installed packages
     whose candidate they change, with why. ``free`` is the candidate without them."""
     records = session.kept_records()
