@@ -1,15 +1,15 @@
 """A shared lock that goes red on a machine that is not the producer (T19, docs/upgrade.md).
 
-Only the producer moves the shared lock: the pins of ``versions.lock.json`` and ``flake.lock``. A
-consumer takes a new lock when it follows the remote. When E2E goes red after that and the
+Only the producer moves the shared lock: the pins of ``versions.lock.json``, ``flake.lock``, the
+skills lock and the vendored skills, the npm locks and the hash-pinned requirements. A consumer
+takes a new lock when it follows the remote. When E2E goes red after that and the
 generation of the commit before is green again, the consumer stays there: it leaves the marker
 ``<state>/upgrade/held-at.json`` (the commit it went back to, the commit of the red lock, the digest of
 that lock and the components that went red), and no commit whose shared lock is that one becomes
 active here. The record of its state carries the marker as ``held``, so the producer reads it from
-``state/<name>``. The producer puts the pins of those components back to the values of the commit
-the consumer went back to and holds them locally, for the pins of official binaries those components
-own; anything else the lock moved is named for a person. The lock that comes of it is another one,
-so the consumer drops the marker and tries it.
+``state/<name>``. The producer puts the pins of those components back (``pins apply --restore``) to
+a value every consumer that holds them back was green on, and holds them locally; anything else
+waits for a person. A later lock is tried here only when it moves what the marker watches.
 """
 
 from __future__ import annotations
@@ -186,21 +186,25 @@ def watch_moved(root: Path, marker: Mapping[str, Any], commit: str) -> bool:
     return watched_values(root, commit, [str(path) for path in watch]) != watch
 
 
-def put_back(work: Path, rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
-    """Writes the value each pin of ROWS had before (``from``) into the pin file of the clone WORK: the
-    rows it put back."""
-    if not rows:
-        return []
-    path = work / PIN_FILE
-    document = json.loads(path.read_text(encoding="utf-8"))
-    for row in rows:
-        keys = [str(key) for key in row["path"]]
-        target = document
-        for key in keys[:-1]:
-            target = target[key]
-        target[keys[-1]] = row["from"]
-    atomic.atomic_write(path, json.dumps(document, indent=2) + "\n")
-    return list(rows)
+def pin_values(root: Path, commit: str) -> dict[str, Any] | None:
+    """The pins of the pin file at COMMIT (None when it has none): what pins_at reads a value from."""
+    pins = _pins(root, commit)
+    return pins if isinstance(pins, dict) else None
+
+
+def pin_value(pins: Mapping[str, Any] | None, pin: str) -> Any:
+    """The value of the pin id PIN in PINS, None without it."""
+    if pins is None:
+        return None
+    return _at(pins, _pin_path(pins, pin))[1]
+
+
+def same_value(pins: Mapping[str, Any] | None, path: Sequence[str], value: Any) -> bool:
+    """Whether PINS hold VALUE at PATH (a path of moved_pins)."""
+    if pins is None:
+        return False
+    present, found = _at(pins, [str(key) for key in path])
+    return present and found == value
 
 
 def version_of(value: Any) -> str:
@@ -208,7 +212,7 @@ def version_of(value: Any) -> str:
     if isinstance(value, str):
         return value
     if isinstance(value, dict):
-        for key in ("version", "rev", "revision"):
+        for key in ("version", "minimum_version", "expected", "rev", "revision"):
             if isinstance(value.get(key), str):
                 return str(value[key])
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()[:16]

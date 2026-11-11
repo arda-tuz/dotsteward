@@ -2,13 +2,16 @@
 # summary: Fake pins of the upgrade tests: check passes, apply moves what $UP_CONTROL/moves names
 #
 # `pins apply` appends a line to versions.lock.json for each object of the JSON array
-# $UP_CONTROL/moves, once per id and version, and answers as the real writer. Its exit status is
+# $UP_CONTROL/moves, once per id and version, and answers as the real writer. With --restore FILE
+# it first puts each pin FILE names back to its value at the commit FILE names (group
+# restore:<id>), and no move of $UP_CONTROL/moves touches those pins. Its exit status is
 # $UP_CONTROL/pins-status when that exists. The writer itself has tests/engines/pins/apply.
 set -euo pipefail
 printf 'pins %s\n' "$*" >>"$UP_LOG"
 root=$DOTSTEWARD_INSTANCE
 command=
 out=
+restore=
 skips=()
 while (($#)); do
   case $1 in
@@ -21,6 +24,10 @@ while (($#)); do
       ;;
     --skip)
       skips+=("$2")
+      shift
+      ;;
+    --restore)
+      restore=$2
       shift
       ;;
   esac
@@ -44,14 +51,32 @@ case $command in
       exit 1
     fi
     moved='[]'
-    if [[ -e $UP_CONTROL/moves ]]; then
-      for move in $(jq -c '.[]' "$UP_CONTROL/moves"); do
-        id=$(jq -r .id <<<"$move")
+    restored=()
+    lock=$root/versions.lock.json
+    if [[ -n $restore ]]; then
+      for pin in $(jq -c '.pins[]' "$restore"); do
+        id=$(jq -r .id <<<"$pin")
         for skip in ${skips[@]+"${skips[@]}"}; do
           # shellcheck disable=SC2053 # the pattern is the point
           [[ $id != $skip ]] || continue 2
         done
-        lock=$root/versions.lock.json
+        restored+=("$id")
+        was=$(git -C "$root" show "$(jq -r .commit <<<"$pin"):versions.lock.json" | jq -c --arg id "$id" '.[$id]')
+        now=$(jq -c --arg id "$id" '.[$id]' "$lock")
+        [[ $was != "$now" ]] || continue
+        jq --arg id "$id" --argjson was "$was" '.[$id] = $was' "$lock" >"$lock.new"
+        mv -- "$lock.new" "$lock"
+        moved=$(jq -c --arg id "$id" --argjson was "$was" --argjson now "$now" \
+          '. + [{id: $id, from: $now, to: $was, group: "restore:\($id)"}]' <<<"$moved")
+      done
+    fi
+    if [[ -e $UP_CONTROL/moves ]]; then
+      for move in $(jq -c '.[]' "$UP_CONTROL/moves"); do
+        id=$(jq -r .id <<<"$move")
+        for skip in ${skips[@]+"${skips[@]}"} ${restored[@]+"${restored[@]}"}; do
+          # shellcheck disable=SC2053 # the pattern is the point
+          [[ $id != $skip ]] || continue 2
+        done
         if ! jq -e --argjson move "$move" '.[$move.id] == $move.to' "$lock" >/dev/null; then
           jq --argjson move "$move" '.[$move.id] = $move.to' "$lock" >"$lock.new"
           mv -- "$lock.new" "$lock"

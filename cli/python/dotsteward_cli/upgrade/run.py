@@ -280,8 +280,8 @@ class Upgrade(runner.Runner):
         self.held = False
         # The lock that went red here is active (activated outside upgrade): E2E checks it.
         self.red_active = False
-        # T19 on the producer: the pins it puts back for consumers, and the items that say so.
-        self.put_back: list[dict[str, Any]] = []
+        # T19 on the producer: the pins it puts back for consumers (pins apply --restore).
+        self.restores: list[dict[str, Any]] = []
         self.moved = self._waiting_moves()
         self.run.data.update(mode=mode)
 
@@ -817,6 +817,14 @@ class Upgrade(runner.Runner):
         back by the writer, so what the others moved still goes on. RECORD false: a run of the
         bisection of a red gate, which the report does not count as the move."""
         arguments = ["pins", "apply", "--latest", str(latest), "--json"]
+        if self.restores:
+            # What goes back for consumers comes from the commits they were green on (T19); the holds
+            # of those pins keep their rows of latest away, not the restore.
+            restore = self.upgrade_dir / "restore.json"
+            atomic.make_private_dirs(self.upgrade_dir)
+            pins = [{"id": entry["id"], "commit": entry["commit"]} for entry in self.restores]
+            atomic.atomic_write_json(restore, {"schema_version": 1, "pins": pins}, mode=0o600)
+            arguments += ["--restore", str(restore)]
         for pattern in skips:
             arguments += ["--skip", pattern]
         done = self._ds_output(*arguments)
@@ -845,6 +853,20 @@ class Upgrade(runner.Runner):
                     message=f"{group.get('group')} did not move: {group.get('error')}",
                 )
         return answer
+
+    def _message(self, subject: str, moved: Sequence[Mapping[str, Any]]) -> str:
+        """The commit message of a move of the lock; what went back for consumers is named in it."""
+        back = {str(row.get("id")) for row in moved if str(row.get("group") or "").startswith("restore:")}
+        lines = [
+            f"Put back for {', '.join(entry['machines'])}: {entry['id']} {entry['from']} -> {entry['to']} (T19)"
+            for entry in self.restores
+            if entry["id"] in back
+        ]
+        message = commit_message(subject, self.name)
+        if not lines:
+            return message
+        head, _, rest = message.partition("\n\n")
+        return f"{head}\n\n" + "\n".join(lines) + (f"\n\n{rest}" if rest else "\n")
 
     def _hold_moved(self, rows: Sequence[Mapping[str, Any]], red: Sequence[str], reason: str) -> None:
         """A local hold for each pin that went red: the writer leaves it until upstream has something
@@ -906,7 +928,9 @@ class Upgrade(runner.Runner):
             self._remove_work()
             return
         self._answer_consumers()
-        skips = holds.skip_patterns(self.state_root, latest)
+        restored = {str(entry["id"]) for entry in self.restores}
+        # The holds of what goes back keep its rows of latest away; the restore itself goes on.
+        skips = [pattern for pattern in holds.skip_patterns(self.state_root, latest) if pattern not in restored]
         if not self._week_due():
             skips = [_FLAKE_INPUTS, *skips]
         skips = [*skips, *self._waiting_floors(latest)]
@@ -985,13 +1009,17 @@ class Upgrade(runner.Runner):
         return True
 
     def _answer_consumers(self) -> None:
-        """T19 on the producer: the state records of the other machines, and for each that holds back the
-        shared lock of the tip, the pins of the components that went red there go back to the values of
-        the commit it went back to, with a local hold so the
-        writer leaves them until upstream has something newer. A record of a lock the tip no longer has
-        is answered. Only the pins of official binaries a red component owns go back; anything else the
-        lock moved is named, for a person to decide."""
-        self.put_back = []
+        """T19 on the producer: the state records of the other machines. A record that holds a lock back
+        is open while a pin of what went red there (an official binary, a pypi application or a deb
+        download its components own) still has the value of its red lock, whatever else moved since. Such
+        a pin goes back, through the writer (``pins apply --restore``), only to a value every consumer
+        that holds it back was green on, and only when no other consumer's last green run had a newer
+        value; a local hold keeps it from the red value while upstream calls that the latest. Anything
+        else waits for a person: consumers green on different values, a newer green consumer, a red lock
+        that moved no such pin (a flake input, the skills or npm locks: never put back). A record that
+        cannot be read, or a hold with fields this producer does not know, is said and never acted on.
+        The result does not depend on the order of the names."""
+        self.restores = []
         try:
             if states.fetch(self.instance) != 0:
                 return
@@ -1000,62 +1028,168 @@ class Upgrade(runner.Runner):
             return
         prefix = f"refs/remotes/origin/{states.BRANCH_PREFIX}"
         names = self._git("for-each-ref", "--format=%(refname)", prefix).stdout.split()
-        tip_lock = consumer.lock_digest(self.root, self.tip)
-        owners = facts.pin_owners(self._active())
+        records: dict[str, dict[str, Any]] = {}
         for ref in sorted(names):
             other = ref.removeprefix(prefix)
             if other == self.name:
                 continue
             try:
-                held = states.read(self.instance, other, self.env)["state"].get("held")
-            except states.Refusal:
+                shown = states.read(self.instance, other, self.env)
+            except states.Refusal as refusal:
+                self._unread(other, str(refusal))
                 continue
-            if not isinstance(held, dict) or consumer.lock_digest(self.root, str(held["lock_commit"])) != tip_lock:
+            if "held" in (shown.get("ignored_in") or ()):
+                self._unread(other, "its hold has fields this framework does not know: a newer one answers it")
+                continue
+            records[other] = shown["state"]
+        owners = facts.pin_owners(self._active())
+        tip_pins = consumer.pin_values(self.root, self.tip)
+        open_pins: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+        holders: dict[str, list[str]] = {}
+        for other, document in sorted(records.items()):
+            held = document.get("held")
+            if not isinstance(held, dict):
                 continue
             commit, lock_commit = str(held["commit"]), str(held["lock_commit"])
             red = {str(name) for name in held.get("components") or ()}
-            mine = {pin: owner for pin, owner in owners.items() if owner in red}
-            chosen = consumer.moved_pins(self.root, commit, lock_commit, mine)
-            moved = consumer.moved_paths(self.root, commit, lock_commit)
-            reason = f"red on {other} with the lock of {lock_commit[:12]}"
-            for row in chosen:
-                holds.add(self.state_root, mine[str(row["id"])], str(row["id"]), consumer.version_of(row["to"]), reason)
-            self.put_back += chosen
-            ids = [str(row["id"]) for row in chosen]
-            if ids:
-                said = f"{', '.join(ids)} go back to where they were and wait for upstream"
-            else:
-                said = "no pin of what went red moved, so nothing goes back: a person decides"
-            _say(f"{other} holds the lock of {lock_commit[:12]} back: {said}")
-            self.run.item(
-                "consumer-red",
-                pending=False,
-                machine=other,
-                lock_commit=lock_commit,
-                components=sorted(red),
-                ids=ids,
-                moved=moved,
-                message=f"the shared lock went red on {other}: {said}",
+            mine = [pin for pin, owner in owners.items() if owner in red]
+            rows = consumer.moved_pins(self.root, commit, lock_commit, mine)
+            if not rows:
+                moved = consumer.moved_paths(self.root, commit, lock_commit)
+                self._consumer_item(
+                    [other],
+                    [],
+                    lock_commit,
+                    sorted(red),
+                    moved,
+                    person=True,
+                    said="the red lock moved no pin of what went red there: nothing goes back, a person decides",
+                )
+                continue
+            holders[other] = sorted(red)
+            for row in rows:
+                if consumer.same_value(tip_pins, row["path"], row["to"]):
+                    row.update(commit=commit, lock_commit=lock_commit)
+                    open_pins.setdefault(str(row["id"]), []).append((other, row))
+        greens = self._green_values(records, holders)
+        for pin, entries in sorted(open_pins.items()):
+            machines = sorted(name for name, _ in entries)
+            values = {json.dumps(row["from"], sort_keys=True) for _, row in entries}
+            red_value = entries[0][1]["to"]
+            component = owners.get(pin, pin)
+            lock_commit = sorted(str(row["lock_commit"]) for _, row in entries)[0]
+            if len(values) != 1:
+                self._consumer_item(
+                    machines,
+                    [],
+                    lock_commit,
+                    [component],
+                    [pin],
+                    person=True,
+                    said=f"{pin} went red on {', '.join(machines)}, which were green on different versions: it stays "
+                    "where it is and a person decides",
+                )
+                continue
+            green = entries[0][1]["from"]
+            newer = sorted(
+                name
+                for name, values_of in greens.items()
+                if name not in machines
+                and (value := consumer.pin_value(values_of, pin)) is not None
+                and (value == red_value or versions.compare(consumer.version_of(value), consumer.version_of(green)) > 0)
             )
+            if newer:
+                self._consumer_item(
+                    machines,
+                    [],
+                    lock_commit,
+                    [component],
+                    [pin],
+                    person=True,
+                    said=f"{pin} went red on {', '.join(machines)}, and {', '.join(newer)} was green on a newer "
+                    "version: it stays where it is and a person decides",
+                )
+                continue
+            commit = sorted(str(row["commit"]) for _, row in entries)[0]
+            self.restores.append(
+                {
+                    "id": pin,
+                    "commit": commit,
+                    "machines": machines,
+                    "from": consumer.version_of(red_value),
+                    "to": consumer.version_of(green),
+                }
+            )
+            reason = f"red on {', '.join(machines)} with the lock of {lock_commit[:12]}"
+            holds.add(self.state_root, component, pin, consumer.version_of(red_value), reason)
+            said = f"{pin} goes back to {consumer.version_of(green)} and waits for upstream"
+            _say(f"{', '.join(machines)} hold the lock of {lock_commit[:12]} back: {said}")
+            self._consumer_item(machines, [pin], lock_commit, [component], [pin], person=False, said=said)
+
+    def _unread(self, other: str, why: str) -> None:
+        _say(f"the state record of {other} is not answered: {why}")
+        self.run.item(
+            "consumer-unread",
+            pending=False,
+            machine=other,
+            machines=[other],
+            message=f"the state record of {other} is not answered: {why}",
+        )
+
+    def _consumer_item(
+        self,
+        machines: Sequence[str],
+        ids: Sequence[str],
+        lock_commit: str,
+        components: Sequence[str],
+        moved: Sequence[str],
+        *,
+        person: bool,
+        said: str,
+    ) -> None:
+        fields: dict[str, Any] = {"person": True} if person else {}
+        self.run.item(
+            "consumer-red",
+            pending=person,
+            machine=machines[0],
+            machines=list(machines),
+            lock_commit=lock_commit,
+            components=list(components),
+            ids=list(ids),
+            moved=list(moved),
+            message=f"the shared lock went red on {', '.join(machines)}: {said}",
+            **fields,
+        )
+
+    def _green_values(
+        self, records: Mapping[str, Mapping[str, Any]], holders: Mapping[str, Sequence[str]]
+    ) -> dict[str, dict[str, Any]]:
+        """The pin values each other consumer was last green on: the commit a holder went back to, else
+        the commit of a record whose last E2E passed."""
+        greens: dict[str, dict[str, Any]] = {}
+        for name, document in records.items():
+            held = document.get("held")
+            generation = document.get("generation") or {}
+            if isinstance(held, dict):
+                commit = str(held["commit"])
+            elif generation.get("e2e") == "pass" and isinstance(document.get("intent_commit"), str):
+                commit = str(document["intent_commit"])
+            else:
+                continue
+            values = consumer.pin_values(self.root, commit)
+            if values is not None:
+                greens[name] = values
+        return greens
 
     def _write(self, latest: Path, skips: Sequence[str]) -> None:
         """The pins a consumer could not take go back, then the writer in the clone, the gate and the
         local commit."""
         assert self.work is not None
-        went_back = [
-            {
-                "id": row["id"],
-                "from": consumer.version_of(row["to"]),
-                "to": consumer.version_of(row["from"]),
-                "group": "consumer-red",
-            }
-            for row in consumer.put_back(self.work, self.put_back)
-        ]
         answer = self._apply(latest, skips)
         if answer is None:
             self._remove_work()
             return
-        moved = [*went_back, *(answer.get("moved") or ())]
+        moved = list(answer.get("moved") or ())
         if answer.get("framework_moved"):
             # The new framework writes the rest, with its own manifest and its own engine.
             self.framework_moved = True
@@ -1102,7 +1236,7 @@ class Upgrade(runner.Runner):
         subject = self.instance.config["commit"]["update_subject"]
         identity = commit_identity(self.root, self.tip)
         # The trace line says which machine made the commit.
-        committed = self._work_git(*identity, "commit", "--quiet", "-F", "-", stdin=commit_message(subject, self.name))
+        committed = self._work_git(*identity, "commit", "--quiet", "-F", "-", stdin=self._message(subject, moved))
         if committed.code != 0:
             self.run.step("commit", report.FAILED, detail=committed.stderr.strip())
             self.framework_moved = False

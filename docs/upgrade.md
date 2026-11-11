@@ -257,15 +257,24 @@ left to the vendor. Without a terminal it is never applied.
   (the commit it went back to, the commit of the red lock, the components that went red), so the
   producer reads it from `state/<name>`. Red on the way back too: nothing is held, `e2e-red`, exit 1.
   A machine that becomes the producer drops its marker.
-- **The producer answers a consumer:** each producer run fetches `state/*`. For a record that holds
-  back the shared lock of the tip, the pins of the official binaries of the components that went red
-  there go back to the values of the commit the consumer went back to, with a local hold at the red
-  value, so the writer leaves them while upstream calls that version the latest (`consumer-red`).
-  That commit takes the gate, the rebuild and E2E of the producer and is published as any move of
-  the lock. Anything else the lock moved, a flake input or a value no component owns, is named in
-  `consumer-red` for a person: nothing of it goes back or is held. A record of a lock the tip no
-  longer has is answered. Only a named producer answers, and only a machine with a named producer
-  goes back.
+- **The producer answers a consumer:** each producer run fetches `state/*`. A record that holds a
+  lock back is open while a pin of what went red there (an official binary and its companions, a
+  pypi application, a deb download: the pins its components install) still has the value of the red
+  lock, whatever else moved since. Such a pin goes back only to a value every consumer that holds it
+  back was green on, and only when no other consumer's last green run (the commit it went back to,
+  or the commit of a record whose last E2E passed) had a newer value; whatever the order of the
+  names. It goes back through the writer, `pins apply --restore` ([pins-engine.md](pins-engine.md)):
+  the whole group comes back from the commit the consumer was green on (a pypi pin with its
+  hash-pinned requirements, a binary with its companions), so the lock stays consistent and `pins
+  check` passes; a source the lock records as signed never comes back unsigned. A local hold at the
+  red value keeps the writer from moving it there again while upstream calls it the latest
+  (`consumer-red`). The commit message names what went back and for whom. That commit takes the
+  gate, the rebuild and E2E of the producer and is published as any move of the lock. Everything
+  else waits for a person (`consumer-red`, exit 3): consumers green on different values, a newer
+  green consumer, and a red lock that moved no such pin (a flake input, the skills lock, an npm
+  lock: these are never put back, the item names what moved). A record this producer cannot read,
+  or a hold with fields it does not know, is said (`consumer-unread`) and never acted on. Only a
+  named producer answers, and only a machine with a named producer goes back.
 - **E2E is red with nothing of this run to go back to:** `e2e-red` names the checks, exit 1, no offer
   and no firmware. A red `deb` component gets the `sudo apt-mark hold` command to run if you want it.
   Nothing is written to the TOML; later releases carry holds in the machine layer.

@@ -845,6 +845,8 @@ def read(instance: config.Instance, name: str, env: Mapping[str, str] | None = N
         "queued": queued,
         "state": document,
         "ignored": len(ignored),
+        # The known fields some ignored field was in: a reader that acts on one of them must not.
+        "ignored_in": sorted({path.split(".", 1)[0] for path in ignored if "." in path}),
     }
 
 
