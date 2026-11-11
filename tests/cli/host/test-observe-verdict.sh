@@ -71,6 +71,7 @@ assert_eq "editor-opens" "$(hooks_ran)"
 rm -f -- "$E2E_BROKEN"
 assert_exit 0 run_observe
 assert_contains "$DS_STDOUT" "example-editor: verified at 1.2.3-1 (red before)"
+assert_eq "editor-opens" "$(hooks_ran)"
 assert_eq '"verified"' "$(shown '.state.components["example-editor"].status')"
 # Green and nothing changed: nothing to check.
 assert_exit 0 run_observe

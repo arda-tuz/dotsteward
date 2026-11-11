@@ -84,7 +84,12 @@ in
     };
 
     systemd.user.services.dotsteward-observe = {
-      Unit.Description = "Check and record the system packages changed outside dotsteward";
+      Unit = {
+        Description = "Check and record the system packages changed outside dotsteward";
+        # An apt run writes the status file many times a second; a start limit would stop
+        # the path unit for good (unit-start-limit-hit).
+        StartLimitIntervalSec = 0;
+      };
       Service = {
         Type = "exec";
         ExecStart = "${script}";

@@ -210,26 +210,35 @@ service also runs at login, since the user manager watches nothing while nobody 
 Linux only; `dotsteward.observer.enable = false` in a module of the instance leaves the units
 out. `dotsteward e2e` checks the unit files as managed links and, in `core:observer`, that the user
 manager runs `dotsteward-observe.path`. Until an activation reached the user manager (no
-`systemctl`, no user manager to ask, or a unit it has not loaded yet) that check only warns; a
-loaded path unit that is not active is red.
+`systemctl`, no user manager to ask, or a unit it never started) that check only warns; a path
+unit that ran and stopped, or failed, is red. The service has no start limit
+(`StartLimitIntervalSec=0`): an apt run writes the status file many times a second.
 
 The observer first waits until dpkg settled, without holding any lock, so that `upgrade` is not
-kept waiting meanwhile: no process holds a lock of `/var/lib/dpkg/lock-frontend`,
-`/var/lib/dpkg/lock`, `/var/lib/apt/lists/lock` or `/var/cache/apt/archives/lock` (as
-`/proc/locks` lists them, which reaches every program that drives dpkg), `/var/lib/dpkg/updates`
-is empty, `dpkg --audit` is clean and the status file stayed the same for `--settle-seconds`
-(15). After `--wait-limit` (1800) seconds it observes nothing; the next change of the status file
-starts it again. Then it takes the instance lock without waiting; when another command holds it,
-a pending mark makes the holder start the observer when it lets go.
+kept waiting meanwhile, and so also on a machine without a name, where it then does nothing: no
+process holds a lock of `/var/lib/dpkg/lock-frontend`, `/var/lib/dpkg/lock`,
+`/var/lib/apt/lists/lock` or `/var/cache/apt/archives/lock` (as `/proc/locks` lists them, which
+reaches every program that drives dpkg; on btrfs and tmpfs the inode alone),
+`/var/lib/dpkg/updates` is empty, `dpkg --audit` is clean, and none of that nor a write of the
+status file was seen for `--settle-seconds` (15). While a lock is held it waits without a limit;
+after `--wait-limit` (1800) seconds of the other signs it observes nothing, and the next change
+of the status file starts it again. Then it takes the instance lock without waiting; when another
+command holds it, a pending mark makes the holder start the observer when it lets go. The lock
+covers the comparison, the checks and the record on this machine; the push of the state branch
+runs after it is let go.
 
 It compares the installed packages with the last observation, `<state>/observe/dpkg-snapshot.json`.
 The first run takes them as the baseline. When something changed, the tracked deb components
 whose packages changed, or whose dependency closure (the `Pre-Depends` and `Depends` of the
 installed packages, every alternative, the providers of a virtual package) holds a changed
-package, get their E2E checks alone (`dotsteward e2e --component NAME`, a run that writes no
-record of E2E); the full set stays with `upgrade` and `apply`. Each such component is named with
-its result, and a red one gets a desktop notification (`notify-send`). A component without E2E
-checks is named and stays unverified. When the checks give no result (exit 1), the state is
+package, and every component that was red, get their E2E checks alone (`dotsteward e2e
+--component NAME`, a run that writes no record of E2E); the full set stays with `upgrade` and
+`apply`. A component the active generation does not have yet is named and checked after the next
+rebuild. Each such component is named with its result, and a red version gets one desktop
+notification (`notify-send`). When dpkg moved during the checks (the owner started apt), the
+verdict is dropped and the observer settles and checks again. A component without E2E checks is
+named and stays unverified. A full `dotsteward e2e` run also records its verdict on the tracked
+deb components it checked, so red clears once they are green again. When the checks give no result (exit 1), the state is
 recorded but the change stays unobserved, so the next run checks it again. The state writer records
 the state with `recorded_by: observe`: a checked component is `verified` or `red` while its
 packages are the ones checked and `unverified` once they changed, with `version` (installed) and

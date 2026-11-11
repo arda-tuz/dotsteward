@@ -36,7 +36,8 @@ ones checked, ``unverified`` once they changed, and ``last_verified`` apart from
 ``version``.
 
 Python API for the commands that record a state: ``observe``, ``record``, ``push``,
-``read``, ``this_machine``, ``tracked_debs``, ``main_version``, ``read_checks``, ``write_check``.
+``read``, ``this_machine``, ``tracked_debs``, ``main_version``, ``read_checks``, ``write_check``,
+``record_e2e``.
 """
 
 from __future__ import annotations
@@ -208,6 +209,8 @@ def write_check(state: str, name: str, *, passed: bool, packages: Mapping[str, s
         "packages": dict(sorted(packages.items())),
         "at": at,
     }
+    if version is not None:
+        entry["version"] = version
     last = checks.get(name, {}).get("last_verified")
     if passed and version is not None:
         last = {"version": version, "at": at}
@@ -218,6 +221,33 @@ def write_check(state: str, name: str, *, passed: bool, packages: Mapping[str, s
     atomic.atomic_write_json(
         _checks_path(state), {"schema_version": 1, "components": dict(sorted(checks.items()))}, mode=0o600
     )
+
+
+def record_e2e(
+    instance: config.Instance, env: Mapping[str, str], checks: Sequence[str], failed: Sequence[str]
+) -> list[str]:
+    """After a full E2E run: each tracked deb component whose checks were among CHECKS (the
+    ids of the run) passed or failed with the run (FAILED: the steps of its findings); a
+    component with a missing package is left as it is. The names it wrote."""
+    ran = {check.partition(":")[0] for check in checks}
+    red = {step.partition(":")[0] for step in failed}
+    state = config.state_root(instance, env)
+    written = []
+    for name, component in tracked_debs(instance, env).items():
+        if name not in ran:
+            continue
+        versions = _installed_versions(component["packages"])
+        if versions is None or any(package not in versions for package in component["installs"]):
+            continue
+        write_check(
+            state,
+            name,
+            passed=name not in red,
+            packages=versions,
+            version=main_version(component["installs"], versions),
+        )
+        written.append(name)
+    return written
 
 
 def intent_problems(instance: config.Instance, document: Mapping[str, Any], env: Mapping[str, str]) -> list[str]:

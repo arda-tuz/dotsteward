@@ -31,9 +31,10 @@ touch -d '-40 seconds' "$dpkg_dir/status"
 lock_line /var/lib/dpkg/lock-frontend >"$DS_SYSTEM_ROOT/proc/locks"
 (sleep 1 && : >"$DS_SYSTEM_ROOT/proc/locks" && now_ns >"$DS_TEST_ROOT/released") &
 releaser=$!
-assert_exit 0 run_observe --settle-seconds 2 --wait-limit 60
+assert_exit 0 run_observe --settle-seconds 3 --wait-limit 60
 finished=$(now_ns)
 wait "$releaser"
+# It sees the lock once a second: quiet starts at the last time it saw it held.
 (((finished - $(<"$DS_TEST_ROOT/released")) >= 2000000000)) ||
   ds_fail "the observer went on less than --settle-seconds after dpkg let go of its lock"
 assert_contains "$DS_STDOUT" "1 package changed since the last observation"

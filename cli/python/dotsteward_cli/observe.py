@@ -5,26 +5,29 @@ The systemd user path unit ``dotsteward-observe.path`` of the generation starts 
 it (``apt-get upgrade`` in a terminal, unattended-upgrades, a software center); the service
 also runs at login, since nothing watches while nobody is logged in.
 
-1. Settle, without any lock: no process holds a lock of the dpkg and apt lock files
-   (``/proc/locks``, which every program's locks reach), ``/var/lib/dpkg/updates`` is
-   empty, ``dpkg --audit`` is clean, and the status file stayed the same for
-   ``--settle-seconds``. After ``--wait-limit`` seconds it observes nothing: the next
-   change of the status file starts it again.
+1. Settle, without any lock, also on a machine without a name (one run per apt run, not one
+   per write of the status file): no process holds a lock of the dpkg and apt lock files
+   (``/proc/locks``, which every program's locks reach; on an anonymous device the inode
+   alone), ``/var/lib/dpkg/updates`` is empty, ``dpkg --audit`` is clean, and nothing was
+   busy for ``--settle-seconds``. While a lock is held it waits without a limit; after
+   ``--wait-limit`` seconds of the other signs it observes nothing: the next change of the
+   status file starts it again. A machine without a name stops here.
 2. The instance lock, without waiting: when another command holds it, a pending mark makes
    the holder start the observer when it lets go (exit 3).
 3. The installed packages against the last observation (``<state>/observe/dpkg-snapshot.json``).
-   The first run takes them as the baseline: no check, no notification. Unchanged: nothing
-   to do, apart from sending a record that waits for the network.
+   The first run takes them as the baseline: no check, no notification.
 4. The tracked deb components whose packages changed, or whose dependency closure
    (``Pre-Depends`` and ``Depends`` of the installed packages, every alternative, the
-   providers of a virtual package) holds a changed package, get their E2E checks alone
-   (``e2e --component``, which writes no record of E2E); the full set stays with
-   ``upgrade`` and ``apply``. A red component gets a desktop notification; its last verified
-   version stays apart from the installed one. The observer never installs, removes, holds
-   or downgrades a package: what the owner installed stays.
-5. The state writer records the state (``recorded_by: observe``) and pushes it, then the
-   snapshot is written: a crash before that checks again. When the status file moved
-   meanwhile, it goes round again.
+   providers of a virtual package) holds a changed package, and those that were red, get
+   their E2E checks alone (``e2e --component``, which writes no record of E2E), when the
+   active generation has them; the full set stays with ``upgrade`` and ``apply``, and a full
+   ``e2e`` records its verdict on them too. When dpkg moved during the checks the verdict is
+   dropped (no red, no notification) and it settles again. A red version gets one desktop
+   notification; its last verified version stays apart from the installed one. The observer
+   never installs, removes, holds or downgrades a package: what the owner installed stays.
+5. The snapshot, then the record of the state writer on this machine
+   (``recorded_by: observe``); the lock is let go and the record is pushed. When the status
+   file moved meanwhile, it goes round again.
 
 Exit status: 0 done (a red component too, nothing to observe, dpkg did not settle), 1 a
 refusal or a check that could not run, 2 usage error, 3 the instance lock is busy and the
@@ -136,51 +139,74 @@ def _held_locks(env: Mapping[str, str]) -> set[tuple[int, int, int]]:
     return held
 
 
-def _busy(env: Mapping[str, str]) -> str | None:
-    """What says that dpkg or apt is at work now; None when nothing does."""
+def _locked(found: os.stat_result, held: set[tuple[int, int, int]]) -> bool:
+    """Whether /proc/locks lists a lock of the file whose stat is FOUND. On an anonymous
+    device (major 0: btrfs subvolumes, tmpfs) /proc/locks names the device of the superblock,
+    stat another one: there the inode matches alone."""
+    major, minor, inode = os.major(found.st_dev), os.minor(found.st_dev), found.st_ino
+    if (major, minor, inode) in held:
+        return True
+    return major == 0 and any(lock_major == 0 and lock_inode == inode for lock_major, _, lock_inode in held)
+
+
+def _busy(env: Mapping[str, str]) -> tuple[str | None, bool]:
+    """What says that dpkg or apt is at work now (None when nothing does), and whether it is
+    a lock some process holds."""
     held = _held_locks(env)
     for lock in LOCK_FILES:
         try:
             found = os.stat(_system(env, lock))
         except OSError:
             continue
-        if (os.major(found.st_dev), os.minor(found.st_dev), found.st_ino) in held:
-            return f"{lock} is locked"
+        if _locked(found, held):
+            return f"{lock} is locked", True
     try:
         with os.scandir(_system(env, UPDATES_DIRECTORY)) as entries:
             if any(True for _ in entries):
-                return f"{UPDATES_DIRECTORY} holds unfinished work"
+                return f"{UPDATES_DIRECTORY} holds unfinished work", False
     except FileNotFoundError:
         pass
     audit = subprocess.run(["dpkg", "--audit"], capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL)
     if audit.returncode != 0 or audit.stdout.strip():
-        return "dpkg --audit reports a problem"
-    return None
+        return "dpkg --audit reports a problem", False
+    return None, False
 
 
 def settle(env: Mapping[str, str], *, settle_seconds: float, wait_limit: float) -> tuple[int, int, int] | None:
-    """Waits until dpkg settled: the stamp of the status file then. Raises NotSettled."""
+    """Waits until dpkg settled: the stamp of the status file then. Quiet counts from the last
+    moment dpkg was seen at work; an old status file counts as quiet only when nothing was
+    busy. While a lock is held it waits without a limit (its holder is alive, and no later
+    write of the status file may come to start the observer again); the wait limit bounds
+    the other signs. Raises NotSettled."""
     status = _system(env, STATUS_FILE)
     deadline = time.monotonic() + wait_limit
     stamp = _stamp(status)
     since = time.monotonic()
+    busy_seen = False
     while True:
-        reason = _busy(env)
+        reason, locked = _busy(env)
         current = _stamp(status)
+        if reason is not None:
+            since, busy_seen = time.monotonic(), True
         if current != stamp:
-            stamp, since = current, time.monotonic()
+            stamp, since, busy_seen = current, time.monotonic(), True
             reason = reason or "the dpkg status file keeps changing"
         if reason is None:
             quiet = time.monotonic() - since
-            if current is not None:
+            if current is not None and not busy_seen:
                 quiet = max(quiet, time.time() - current[2] / 1e9)
             if quiet >= settle_seconds:
                 return stamp
             reason = f"the dpkg status file changed less than {settle_seconds:g} s ago"
         remaining = deadline - time.monotonic()
-        if remaining <= 0:
+        if remaining <= 0 and not locked:
             raise NotSettled(reason)
-        time.sleep(min(_POLL_SECONDS, remaining))
+        time.sleep(_POLL_SECONDS if locked else min(_POLL_SECONDS, max(remaining, 0.0)))
+
+
+def _moved(env: Mapping[str, str], stamp: tuple[int, int, int] | None) -> bool:
+    """Whether dpkg is at work again or wrote its status file since STAMP."""
+    return _busy(env)[0] is not None or _stamp(_system(env, STATUS_FILE)) != stamp
 
 
 # --- The installed packages -------------------------------------------------------------------------
@@ -245,8 +271,10 @@ def read_snapshot(state: str) -> dict[str, str] | None:
         document = json.loads(_snapshot_path(state).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    packages = document.get("packages") if isinstance(document, dict) else None
-    if document.get("schema_version") != _SCHEMA_VERSION or not isinstance(packages, dict):
+    if not isinstance(document, dict) or document.get("schema_version") != _SCHEMA_VERSION:
+        return None
+    packages = document.get("packages")
+    if not isinstance(packages, dict):
         return None
     return {str(key): str(version) for key, version in packages.items()}
 
@@ -322,14 +350,17 @@ def _no_result(names: Sequence[str], done: subprocess.CompletedProcess[str]) -> 
     return CheckError(f"the E2E checks of {', '.join(names)} gave no result: {detail}")
 
 
-def _with_checks(instance: config.Instance, profile: str, names: Sequence[str]) -> set[str]:
-    """Those of NAMES that have E2E checks. Raises CheckError."""
-    done = _e2e(instance, profile, names, "--list")
+def _generation(instance: config.Instance, profile: str) -> tuple[set[str], set[str]]:
+    """(the components the active generation has, those of them with E2E checks): what
+    `e2e --list --json` of the profile says. Raises CheckError."""
+    done = _e2e(instance, profile, (), "--list")
     try:
-        checks = json.loads(done.stdout)["checks"]
+        listed = json.loads(done.stdout)
+        components = {str(name) for name in listed["components"]}
+        checks = {str(check).partition(":")[0] for check in listed["checks"]}
     except (ValueError, KeyError, TypeError):
-        raise _no_result(names, done) from None
-    return {str(check).partition(":")[0] for check in checks if isinstance(check, str)} & set(names)
+        raise _no_result(["the profile"], done) from None
+    return components, checks & components
 
 
 def _check(instance: config.Instance, profile: str, names: Sequence[str]) -> tuple[set[str], list[str]]:
@@ -372,100 +403,123 @@ def _notify(title: str, body: str) -> None:
         _warn(f"the notification did not go out ({error}): {title}")
 
 
+class Moved(Exception):
+    """dpkg was at work again or wrote its status file during the checks: no verdict."""
+
+
 def _verify(
     instance: config.Instance,
     env: Mapping[str, str],
     state: str,
     packages: Mapping[str, Mapping[str, Any]],
     changed: set[str],
-) -> None:
-    """Checks the tracked deb components that the change reached and remembers the results.
-    Raises CheckError."""
+    stamp: tuple[int, int, int] | None,
+) -> bool:
+    """Checks the tracked deb components that the change reached and those that were red,
+    and remembers the results once the verdict stands: whether it checked any. Raises
+    CheckError, Moved."""
     tracked = states.tracked_debs(instance, env)
-    reached: dict[str, list[str]] = {}
+    checks = states.read_checks(state)
+    reached: dict[str, str] = {}
     for name, component in tracked.items():
         hit = closure(packages, component["packages"]) & changed
         if hit:
-            reached[name] = sorted(hit)
+            reached[name] = f"changed: {', '.join(sorted(hit))}"
+        elif checks.get(name, {}).get("result") == "fail":
+            reached[name] = "red before"
     if not reached:
-        _say("no tracked component depends on what changed")
-        return
+        if changed:
+            _say("no tracked component depends on what changed")
+        return False
     versions = {name: _component_versions(packages, tracked[name]["packages"]) for name in reached}
     missing = [name for name in reached if any(p not in versions[name] for p in tracked[name]["installs"])]
     for name in missing:
-        _say(f"{name}: missing (changed: {', '.join(reached[name])})")
+        _say(f"{name}: missing ({reached[name]})")
     checking = [name for name in reached if name not in missing]
     if not checking:
-        return
+        return False
     profile = machine.machine_profile(instance, state, machine.current_name(machine.read_machine(state), env), env)
     if profile is None:
         raise CheckError("this machine has no profile to check its components with")
-    # Nothing verifies a component without checks: it stays as it was.
-    with_checks = _with_checks(instance, profile, checking)
-    for name in [name for name in checking if name not in with_checks]:
-        version = states.main_version(tracked[name]["installs"], versions[name])
-        _say(f"{name}: no E2E checks at {version} (changed: {', '.join(reached[name])})")
-    checking = [name for name in checking if name in with_checks]
-    if not checking:
-        return
-    failed, messages = _check(instance, profile, checking)
-    checks = states.read_checks(state)
+    active, with_checks = _generation(instance, profile)
     for name in checking:
         version = states.main_version(tracked[name]["installs"], versions[name])
-        last = (checks.get(name, {}).get("last_verified") or {}).get("version")
+        if name not in active:
+            _say(f"{name}: not in the active generation yet; checked after the next rebuild")
+        elif name not in with_checks:
+            # Nothing verifies a component without checks: it stays as it was.
+            _say(f"{name}: no E2E checks at {version} ({reached[name]})")
+    checking = [name for name in checking if name in with_checks]
+    if not checking:
+        return False
+    failed, messages = _check(instance, profile, checking)
+    if _moved(env, stamp):
+        raise Moved()
+    for name in checking:
+        version = states.main_version(tracked[name]["installs"], versions[name])
+        before = checks.get(name, {})
+        last = (before.get("last_verified") or {}).get("version")
         states.write_check(state, name, passed=name not in failed, packages=versions[name], version=version)
-        what = ", ".join(reached[name])
         if name not in failed:
-            _say(f"{name}: verified at {version} (changed: {what})")
+            _say(f"{name}: verified at {version} ({reached[name]})")
             continue
-        before = f"last verified {last}" if last else "never verified before"
-        _say(f"{name}: red at {version}, {before} (changed: {what})")
+        told = f"last verified {last}" if last else "never verified before"
+        _say(f"{name}: red at {version}, {told} ({reached[name]})")
         for message in messages:
             if message.startswith(f"{name}:"):
                 _say(f"  {message}")
+        # The owner hears of a red version once.
+        if before.get("result") == "fail" and before.get("version") == version:
+            continue
         _notify(
             f"dotsteward: {name} is red",
-            f"{name} {version} fails its checks after a package change ({before}). "
+            f"{name} {version} fails its checks after a package change ({told}). "
             "The installed version stays. Details: dotsteward state show",
         )
+    return True
 
 
 # --- One observation -------------------------------------------------------------------------------------
 
 
-def _send_queued(instance: config.Instance, env: Mapping[str, str], name: str) -> int:
+def _queued(instance: config.Instance, env: Mapping[str, str], name: str) -> bool:
     try:
-        queued = states.read(instance, name, env)["queued"]
+        return bool(states.read(instance, name, env)["queued"])
     except states.Refusal:
-        return 0
-    return states.push(instance, env) if queued else 0
+        return False
 
 
-def _observe_once(instance: config.Instance, env: Mapping[str, str], state: str, name: str) -> int:
-    """Compares, checks and records under the instance lock: the exit status."""
+def _observe_once(
+    instance: config.Instance, env: Mapping[str, str], state: str, name: str, stamp: tuple[int, int, int] | None
+) -> bool:
+    """Compares, checks and records on this machine, under the instance lock: whether there
+    is something to push. Raises Moved when dpkg moved during the checks."""
     packages = installed()
     versions = _versions(packages)
     before = read_snapshot(state)
     if before is None:
         _say("the first observation: the installed packages are the baseline")
-        code = states.record(instance, env, by="observe")
         write_snapshot(state, versions)
-        return code
+        states.record(instance, env, by="observe", push_after=False)
+        return True
     changed = changed_names(before, versions)
-    if not changed:
+    if changed:
+        count = len({key for key in {*before, *versions} if before.get(key) != versions.get(key)})
+        _say(f"{count} package{'' if count == 1 else 's'} changed since the last observation")
+    else:
         _say("no package changed since the last observation")
-        return _send_queued(instance, env, name)
-    count = len({key for key in {*before, *versions} if before.get(key) != versions.get(key)})
-    _say(f"{count} package{'' if count == 1 else 's'} changed since the last observation")
     try:
-        _verify(instance, env, state, packages, changed)
+        checked = _verify(instance, env, state, packages, changed, stamp)
     except CheckError:
         # What is known is recorded; the change stays unobserved, so the next run checks it.
-        states.record(instance, env, by="observe")
+        states.record(instance, env, by="observe", push_after=False)
         raise
-    code = states.record(instance, env, by="observe")
+    if not changed and not checked:
+        return _queued(instance, env, name)
+    # The verdict stands: a refused record does not make the next trigger check it again.
     write_snapshot(state, versions)
-    return code
+    states.record(instance, env, by="observe", push_after=False)
+    return True
 
 
 def observe(
@@ -477,18 +531,21 @@ def observe(
     pending: Sequence[str] | None = None,
 ) -> int:
     """One run of the observer: the exit status. PENDING is the command the holder of a busy
-    instance lock starts when it lets go. Raises Refusal, Finding, Busy, CheckError."""
+    instance lock starts when it lets go. The push of the state branch runs after the lock is
+    let go. Raises Refusal, Finding, Busy, CheckError."""
     state = config.state_root(instance, env)
-    try:
-        name, _ = states.this_machine(instance, env)
-    except states.Refusal as refusal:
-        _say(f"{refusal}: nothing to observe")
-        return 0
     if _stamp(_system(env, STATUS_FILE)) is None or shutil.which("dpkg-query") is None:
         _say(f"no dpkg on this machine ({STATUS_FILE}): nothing to observe")
         return 0
+    try:
+        name, _ = states.this_machine(instance, env)
+    except states.Refusal as refusal:
+        unnamed: states.Refusal | None = refusal
+    else:
+        unnamed = None
     while True:
         try:
+            # Also without a name: one run per apt run, not one per write of the status file.
             stamp = settle(env, settle_seconds=settle_seconds, wait_limit=wait_limit)
         except NotSettled as busy:
             _say(
@@ -496,14 +553,21 @@ def observe(
                 "the next change of the dpkg status file observes again"
             )
             return 0
+        if unnamed is not None:
+            _say(f"{unnamed}: nothing to observe")
+            return 0
         kept = {key: env[key] for key in _PENDING_KEPT if key in env}
         try:
             with locks.instance_lock("observe", state_root=state, pending=pending, pending_env=kept):
-                code = _observe_once(instance, env, state, name)
+                pushing = _observe_once(instance, env, state, name, stamp)
         except locks.LockBusy as busy:
             who = "another command" if busy.holder is None else busy.holder.name
             _warn(f"the instance lock is held by {who}; observe runs when it is free")
             return EXIT_PENDING
+        except Moved:
+            _say("dpkg changed during the checks: the verdict is dropped; observing again once it settles")
+            continue
+        code = states.push(instance, env) if pushing else 0
         if _stamp(_system(env, STATUS_FILE)) == stamp:
             return code
         _say("the dpkg status file changed meanwhile: observing again")

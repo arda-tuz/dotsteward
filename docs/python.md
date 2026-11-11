@@ -246,7 +246,8 @@ read it. A command that records the state calls `record` with its own `by` (`upg
 `observe`, `apply`, `bootstrap`).
 `tracked_debs` names the deb components that apt updates and their packages, and `write_check`
 remembers the result of a check of one of them in `<state>/state/checks.json`, which `observe`
-merges: `verified`, `red` or `unverified`, with `version` and `last_verified`.
+merges: `verified`, `red` or `unverified`, with `version` and `last_verified`. `record_e2e` does
+it for the components a full `dotsteward e2e` run checked (`internal e2e-checks`).
 
 `dotsteward_cli.observe` is `dotsteward observe` ([machines.md](machines.md)): `settle` waits
 for dpkg and apt, `installed` reads the packages with `dpkg-query`, `closure` follows their

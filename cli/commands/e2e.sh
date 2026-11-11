@@ -28,9 +28,10 @@
 #                                 observer (its path unit is a managed
 #                                 link): the user manager runs
 #                                 dotsteward-observe.path; no systemctl, no
-#                                 user manager to ask, or a unit it has not
-#                                 loaded yet (before the first activation
-#                                 reaches it) is a warning
+#                                 user manager to ask, or a unit it never
+#                                 started (before the first activation
+#                                 reaches it) is a warning; a unit that
+#                                 ran and stopped, or failed, is red
 #       core:apt-files            on Linux with dpkg (/var/lib/dpkg/status
 #                                 below DOTSTEWARD_SYSTEM_ROOT): the pin
 #                                 file of the gated classes has the
@@ -176,7 +177,8 @@ and its remote, and the framework skills of the generation.
                              standard output (step is the check id); logs
                              go to standard error
   --list                     print the check ids of PROFILE in run order and
-                             run nothing (with --json: { "profile", "checks" })
+                             run nothing (with --json: { "profile",
+                             "components" (the active ones), "checks" })
   --skip-repo-checks         skip the instance checkout and remote checks
                              (CI fixtures only)
 
@@ -339,6 +341,18 @@ _e2e_write_result() {
     txn_write_private "$(txn_e2e_file)"
 }
 
+# _e2e_record_checks: the tracked deb components a full run checked pass or
+# fail with it, so a red one of the observer turns green again; a run that
+# cannot say so changes nothing and warns.
+_e2e_record_checks() {
+  local ids
+  ids=$(printf '%s\n' "${plan[@]%%$'\t'*}" | jq -R 'select(length > 0)' | jq -cs .) || ids='[]'
+  jq -cn --argjson checks "$ids" --slurpfile findings "$SKILLS_FINDINGS_FILE" \
+    '{checks: $checks, failed: [$findings[].step // empty]}' |
+    DOTSTEWARD_INSTANCE=$DS_INSTANCE_ROOT ds_internal e2e-checks >&2 ||
+    warn "e2e: the checks of the tracked components were not recorded"
+}
+
 _e2e_exit() {
   local status=$?
   _e2e_stop_hooks
@@ -349,6 +363,8 @@ _e2e_exit() {
   fi
   if ((record_ready && !list && ${#scope[@]} == 0)); then
     (_e2e_write_result "$status") || status=1
+    # What the run says of the tracked deb components it checked (dotsteward observe).
+    ((!finished)) || _e2e_record_checks
   fi
   if ((json && !list)); then
     jq -s --argjson status "$status" \
@@ -623,7 +639,8 @@ if ((list)); then
     ids+=("${row%%$'\t'*}")
   done
   if ((json)); then
-    jq -n --arg profile "$profile" '{ profile: $profile, checks: $ARGS.positional }' --args "${ids[@]}"
+    jq -n --arg profile "$profile" --argjson components "$active_json" \
+      '{ profile: $profile, components: $components, checks: $ARGS.positional }' --args "${ids[@]}"
   else
     printf '%s\n' "${ids[@]}"
   fi
@@ -916,26 +933,45 @@ _e2e_login_shell() {
 }
 
 # _e2e_observer: the user manager runs the path unit of the observer. Until an
-# activation reached the user manager (no systemctl, no user manager, the unit
-# not loaded yet) it only reports; a loaded unit that is not active is red.
+# activation reached the user manager it only reports: no systemctl, no user
+# manager, a unit it does not know, or one it never started (systemd loads unit
+# files on demand, so a unit no activation started is loaded and inactive, and
+# never entered the active state). Red: it ran and stopped, or it failed.
 _e2e_observer() {
-  local unit=$_E2E_OBSERVER_UNIT loaded active
+  local unit=$_E2E_OBSERVER_UNIT shown key value load='' unit_state='' result='' entered=''
   if ! command -v systemctl >/dev/null 2>&1; then
     warn "core:observer: no systemctl; $unit was not checked"
     return 0
   fi
-  if ! loaded=$(systemctl --user show -p LoadState --value "$unit" 2>/dev/null); then
+  if ! shown=$(systemctl --user show -p LoadState -p ActiveState -p Result -p ActiveEnterTimestampMonotonic \
+    "$unit" 2>/dev/null); then
     warn "core:observer: the user manager is not reachable; $unit was not checked"
     return 0
   fi
-  if [[ $loaded != loaded ]]; then
-    warn "core:observer: the user manager has not loaded $unit yet; the next login or 'dotsteward rebuild --profile $profile --switch' starts it"
+  while IFS='=' read -r key value; do
+    case $key in
+      LoadState) load=$value ;;
+      ActiveState) unit_state=$value ;;
+      Result) result=$value ;;
+      ActiveEnterTimestampMonotonic) entered=$value ;;
+    esac
+  done <<<"$shown"
+  local way="the next login or 'dotsteward rebuild --profile $profile --switch' starts it"
+  if [[ $load != loaded ]]; then
+    warn "core:observer: the user manager has not loaded $unit yet; $way"
     return 0
   fi
-  active=$(systemctl --user is-active "$unit" 2>/dev/null) || true
-  [[ $active == active ]] ||
+  [[ $unit_state != active ]] || return 0
+  if [[ $unit_state == failed ]]; then
     skills_fail observer-inactive "$unit" \
-      "$unit is ${active:-unknown}: package changes outside dotsteward go unnoticed; run 'systemctl --user start $unit'"
+      "$unit failed (${result:-unknown}): package changes outside dotsteward go unnoticed; run 'systemctl --user reset-failed $unit && systemctl --user start $unit'"
+  fi
+  if [[ -z $entered || $entered == 0 ]]; then
+    warn "core:observer: $unit has not been started yet; $way"
+    return 0
+  fi
+  skills_fail observer-inactive "$unit" \
+    "$unit is ${unit_state:-unknown}: package changes outside dotsteward go unnoticed; run 'systemctl --user start $unit'"
 }
 
 # _e2e_apt_files: the files of the gated classes against what the apt engine

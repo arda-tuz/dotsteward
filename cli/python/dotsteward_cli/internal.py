@@ -28,6 +28,10 @@ refused or failed, 2 usage error, unless a subcommand says otherwise.
                                  {"steps": [{"name": N, "code": STATUS, ...}], "items":
                                  [{"code": C, "pending": P, ...}], "data": {...}};
                                  prints where as JSON; its exit code is the run's
+    e2e-checks                   after a full `dotsteward e2e` run: {"checks": [ids],
+                                 "failed": [steps]} on standard input; the tracked deb
+                                 components it checked pass or fail with it
+                                 (state.record_e2e); nothing on a machine without a name
 """
 
 from __future__ import annotations
@@ -213,6 +217,27 @@ def _report_write(args: argparse.Namespace) -> int:
     return run.exit_code
 
 
+def _e2e_checks(args: argparse.Namespace) -> int:
+    from dotsteward_cli import config, machine, state
+
+    try:
+        document = json.load(sys.stdin)
+    except ValueError as error:
+        raise config.DotstewardError(f"e2e-checks: standard input is no JSON document: {error}") from error
+    checks = document.get("checks") if isinstance(document, dict) else None
+    failed = document.get("failed") if isinstance(document, dict) else None
+    if not (isinstance(checks, list) and isinstance(failed, list)):
+        raise config.DotstewardError("e2e-checks: expected {checks: [ids], failed: [steps]}")
+    instance = config.load_instance()
+    if machine.current_name(machine.read_machine(config.state_root(instance)), os.environ) is None:
+        return 0
+    try:
+        state.record_e2e(instance, os.environ, [str(item) for item in checks], [str(item) for item in failed])
+    except state.Refusal as refusal:
+        raise config.DotstewardError(str(refusal)) from refusal
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dotsteward_cli.internal",
@@ -265,6 +290,9 @@ def _parser() -> argparse.ArgumentParser:
     write_report.add_argument("--state-root")
     write_report.add_argument("--run")
     write_report.set_defaults(handler=_report_write)
+
+    checked = commands.add_parser("e2e-checks", allow_abbrev=False)
+    checked.set_defaults(handler=_e2e_checks)
     return parser
 
 

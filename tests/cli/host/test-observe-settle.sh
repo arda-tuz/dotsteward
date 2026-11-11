@@ -165,10 +165,10 @@ assert_json "$DOTSTEWARD_STATE_ROOT/instance.pending/observe.json" \
 : >"$work/release"
 wait "$holder_pid"
 tries=0
-until [[ $(jq -r '.packages["unrelated-package"]' "$snapshot") == 12.0 ]]; do
+until [[ $(state_tip) != "$before" ]]; do
   tries=$((tries + 1))
-  ((tries < 1500)) || ds_fail "the pending observer did not run: $(cat "$DOTSTEWARD_STATE_ROOT/instance.pending/observe.log" 2>&1)"
+  ((tries < 1500)) || ds_fail "the pending observer recorded nothing: $(cat "$DOTSTEWARD_STATE_ROOT/instance.pending/observe.log" 2>&1)"
   sleep 0.02
 done
+assert_eq "12.0" "$(jq -r '.packages["unrelated-package"]' "$snapshot")"
 assert_contains "$(<"$DOTSTEWARD_STATE_ROOT/instance.pending/observe.log")" "1 package changed since the last observation"
-[[ $(state_tip) != "$before" ]] || ds_fail "the pending observer recorded nothing"
