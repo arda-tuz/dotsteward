@@ -1102,6 +1102,51 @@ _skills_own_move() {
   SKILLS_OWN_MOVED=$destination
 }
 
+# _skills_own_duplicate NAME PLACED OTHER DIGEST: the own skill NAME has a copy at the placement
+# the lock gives it (PLACED) and one at the other placement (OTHER), which an earlier release or the
+# owner left there; DIGEST is the directory digest of the lock. The copy with an edit that was not
+# captured wins and ends up at PLACED; the other one, what the lock (or the winner) says, goes to
+# the backups of the state root. Check names the change as a placement note and changes nothing.
+# Both with edits of their own: a failure that names both and removes neither. SKILLS_OWN_KEPT is
+# the copy the decision is about afterwards (in check, where it is now), SKILLS_OWN_OTHER the
+# copy check left at the other placement, empty when there is none.
+SKILLS_OWN_KEPT=''
+SKILLS_OWN_OTHER=''
+_skills_own_duplicate() {
+  local name=$1 placed=$2 other=$3 digest=$4 placed_digest other_digest keep drop backup_root
+  placed_digest=$(directory_sha256 "$placed")
+  other_digest=$(directory_sha256 "$other")
+  if [[ $other_digest == "$digest" || $other_digest == "$placed_digest" ]]; then
+    keep=$placed drop=$other
+  elif [[ $placed_digest == "$digest" ]]; then
+    keep=$other drop=$placed
+  else
+    skills_fail own-skill-duplicate "$placed" \
+      "own $SKILLS_OWN_KIND $name has two copies with edits of their own: $placed and $other; keep the edited copy that should stay in $placed and capture it with 'dotsteward skills capture --name $name'; dotsteward removes neither"
+  fi
+  if ((SKILLS_CHECK_ONLY)); then
+    if [[ $keep == "$other" ]]; then
+      _skills_placement_note "$other moves to $placed (it has the edit) and $placed goes to the backups; $(_skills_rebuild_hint)"
+    else
+      _skills_placement_note "$other goes to the backups ($placed is the copy of the placement); $(_skills_rebuild_hint)"
+    fi
+    SKILLS_OWN_KEPT=$keep
+    SKILLS_OWN_OTHER=$other
+    return 0
+  fi
+  backup_root="$(state_root)/backups/$(timestamp_utc)-skills"
+  ensure_private_dir "$backup_root"
+  backup_file_private "$drop" "$backup_root"
+  rm -rf -- "$drop"
+  log "own $SKILLS_OWN_KIND $name had a second copy: $drop is in the backup $backup_root"
+  if [[ $keep == "$other" ]]; then
+    mv -- "$other" "$placed"
+    log "moved skill $name from $other to $placed"
+  fi
+  SKILLS_OWN_KEPT=$placed
+  SKILLS_OWN_OTHER=''
+}
+
 # _skills_process_own NAME DIRECTORY LEGACY DIGEST SOURCE: an own skill. Its copy is in a
 # shared root; one that an agent wrote into a link root, or that the scoped store holds
 # because the lock gave the skill to some agents only before, moves there.
@@ -1110,7 +1155,13 @@ _skills_process_own() {
   SKILLS_SOFT_LAYOUT=1
   [[ -n $digest ]] || digest=$(directory_sha256 "$source")
   found=$(skills_find_existing "$directory" "$legacy")
-  if [[ -z $found ]]; then
+  if [[ -n $found && ! -L $found && -n $SKILLS_SCOPED_STORE && -f $SKILLS_SCOPED_STORE/$directory/SKILL.md &&
+    ! -L $SKILLS_SCOPED_STORE/$directory ]]; then
+    # Widened while a shared copy was there already.
+    _skills_own_duplicate "$name" "$found" "$SKILLS_SCOPED_STORE/$directory" "$digest"
+    [[ $SKILLS_OWN_KEPT == "$found" ]] || placed=1
+    found=$SKILLS_OWN_KEPT
+  elif [[ -z $found ]]; then
     found=$(_skills_in_link_root "$name" "$directory")
     if [[ -z $found && -n $SKILLS_SCOPED_STORE && -f $SKILLS_SCOPED_STORE/$directory/SKILL.md &&
       ! -L $SKILLS_SCOPED_STORE/$directory ]]; then
@@ -1135,7 +1186,7 @@ _skills_process_own() {
 # refreshed like a shared copy (an own skill: as its decision says), and
 # <agent root>/NAME -> that copy for each agent.
 _skills_process_scoped() {
-  local name=$1 directory=$2 directory_sha=$3 source=$4 agents=$5 revision=${6:-} agent root found real i known decision shared
+  local name=$1 directory=$2 directory_sha=$3 source=$4 agents=$5 revision=${6:-} agent root found real i known decision shared duplicate=0
   local -a roots=() names=()
   read -r -a names <<<"$agents"
   for agent in "${names[@]}"; do
@@ -1164,6 +1215,18 @@ _skills_process_scoped() {
     else
       shared=''
     fi
+  elif _skills_is_own "$revision"; then
+    # Narrowed while a copy was in the store already.
+    shared=$(skills_find_existing "$directory" "")
+    if [[ -n $shared && ! -L $shared ]]; then
+      SKILLS_SOFT_LAYOUT=1
+      [[ -n $directory_sha ]] || directory_sha=$(directory_sha256 "$source")
+      _skills_own_duplicate "$name" "$found" "$shared" "$directory_sha"
+      shared=$SKILLS_OWN_OTHER
+      duplicate=1
+    else
+      shared=''
+    fi
   fi
   for root in "${SKILLS_SEARCH_ROOTS[@]}"; do
     if [[ -f $root/$directory/SKILL.md && $root/$directory != "$shared" ]]; then
@@ -1177,7 +1240,11 @@ _skills_process_scoped() {
     [[ -n $directory_sha ]] || directory_sha=$(directory_sha256 "$source")
     [[ -f $found/SKILL.md ]] || found=''
     # Check: the decision is about the copy where it is now.
-    [[ -z $shared ]] || found=$shared
+    if ((duplicate && SKILLS_CHECK_ONLY)); then
+      found=$SKILLS_OWN_KEPT
+    elif [[ -n $shared && ! -f $SKILLS_SCOPED_STORE/$directory/SKILL.md ]]; then
+      found=$shared
+    fi
     decision=$(_skills_own_decision "$name" "$found" "$directory_sha")
     _skills_own_apply "$name" "$directory" "$found" "$decision" "$directory_sha" "$source" "$SKILLS_SCOPED_STORE"
     found=$SKILLS_OWN_COPY
@@ -1286,16 +1353,15 @@ _skills_sweep_copy() {
 }
 
 # _skills_own_moves COPY: whether COPY of the scoped store is the copy of an own skill that the
-# lock gives every agent and that no shared root holds, which install moves to the shared root
-# (_skills_process_own) and check names as a placement note.
+# lock gives every agent, which install moves to the shared root, or resolves with the shared copy
+# (_skills_process_own), and check names as a placement note.
 _skills_own_moves() {
   local directory=${1##*/} entry
   [[ -f $1/SKILL.md && ! -L $1 ]] || return 1
   entry=$(jq -c --arg directory "$directory" \
     'first(.skills[] | select(.directory == $directory and (has("agents") | not))) // empty' "$SKILLS_LOCK")
   [[ -n $entry ]] || return 1
-  _skills_is_own "$(jq -r '.revision // empty' <<<"$entry")" || return 1
-  [[ -z $(skills_find_existing "$directory" "$(jq -r '.legacy_directory // empty' <<<"$entry")") ]]
+  _skills_is_own "$(jq -r '.revision // empty' <<<"$entry")"
 }
 
 skills_sweep() {
