@@ -6,7 +6,7 @@
 # the interpreter found on the user's PATH (refusing one inside the Nix
 # store), installs the hash-pinned requirements file with
 # `pip install --require-hashes`, checks the installed distribution against
-# the pin's exact version and links every declared console script into
+# the pin's version (at least) and links every declared console script into
 # linkDir. A second run changes nothing, a new pin upgrades the
 # distribution in place and keeps the packages the application installed
 # into its own environment, and a foreign file at a link is refused.
@@ -57,7 +57,7 @@ set_block() {
 # `install --check-only` reports the missing environment with the rebuild
 # hint; `install` leaves it to the agents installer.
 assert_exit 1 run_install --profile fresh --check-only
-assert_eq "[dotsteward] ERROR: example-app (pypi): example-app 1.0.0 not found in ~/.local/share/example-app/venv (found none); run 'dotsteward rebuild --profile fresh --switch'" "$DS_STDERR"
+assert_eq "[dotsteward] ERROR: example-app (pypi): example-app 1.0.0 or newer not found in ~/.local/share/example-app/venv (found none); run 'dotsteward rebuild --profile fresh --switch'" "$DS_STDERR"
 assert_exit 0 run_install --profile fresh
 assert_contains "$DS_STDOUT" "[dotsteward] example-app (pypi): skipped: installed by dotsteward agents install"
 # Adopt mode checks it the same way (user level).
@@ -86,7 +86,7 @@ assert_eq "$before" "$(stat -c %Y -- "$venv/bin/python")"
 "$venv/bin/python" -m pip install --quiet example-extra
 pin 1.1.0 "$sha_110"
 assert_exit 1 run_install --profile fresh --check-only
-assert_contains "$DS_STDERR" "example-app 1.1.0 not found in ~/.local/share/example-app/venv (found 1.0.0)"
+assert_contains "$DS_STDERR" "example-app 1.1.0 or newer not found in ~/.local/share/example-app/venv (found 1.0.0)"
 assert_exit 0 install_app
 assert_eq "installed: example-app 1.1.0" "$DS_STDOUT"
 assert_eq "example-app 1.1.0" "$("$link")"

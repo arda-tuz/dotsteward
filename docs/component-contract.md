@@ -75,8 +75,9 @@ needs code specific to one component.
 | `install.official-binary.companions.*.file` | file name | The file name next to `dest`, where the binary looks for it. |
 | `install.official-binary.companions.*.since` | version or null | The first version of the binary that needs the file; null: every version. |
 | `install.pypi` | block | Method `pypi`: a Python application in its own virtual environment in the home directory. |
-| `install.pypi.pin` | lock path | The pin; its `version` is the exact version of the distribution. |
+| `install.pypi.pin` | lock path | The pin; its `version` is the version of the distribution the requirements install. |
 | `install.pypi.distribution` | string | The distribution whose installed version is checked. |
+| `install.pypi.policy` | `at-least` (default) or `exact` | `at-least` keeps a newer version the owner installed by hand in the environment (`pip install -U`): it passes the check and is never moved back, and a pin that moves past it installs the pin. `exact` holds the environment to the pin's version. |
 | `install.pypi.requirements` | path | A requirements file with a hash for every distribution, installed with `pip install --require-hashes`; it must pin `<distribution>==<version>`, or reference the distribution directly (`<distribution> @ <URL>`, an archive its hash fixes) when the index does not carry it under that name; the installed version is the pin's version either way. |
 | `install.pypi.python` | string, default `python3` | The interpreter that creates the environment: a command on the user's `PATH` or an absolute path, run with the user's `PATH` (without the CLI's toolchain), so a version-manager shim reaches the user's interpreter. One whose base prefix is in the Nix store is refused. |
 | `install.pypi.venv` | home path | The virtual environment directory. It is created once and kept, so packages the application installs into it survive a new pin. |
@@ -121,7 +122,7 @@ needs code specific to one component.
 | --- | --- | --- | --- |
 | `nix` | the packages join `home.packages` | same | the probes cover it |
 | `official-binary` | verified download (HTTPS, size, SHA-256, the recorded sigstore signature), the member installed with mode 0755 into `dest`, version re-checked | same (user level) | version per `policy`, else exit 1 with a rebuild hint |
-| `pypi` | the virtual environment created when missing, the requirements installed with `pip install --require-hashes`, the exact version re-checked, the console scripts linked | same (user level) | exact version and links, else exit 1 with a rebuild hint |
+| `pypi` | the virtual environment created when missing, the requirements installed with `pip install --require-hashes` unless the version meets the pin by `policy`, the version re-checked, the console scripts linked | same (user level) | version per `policy` and links, else exit 1 with a rebuild hint |
 | `deb` | one APT transaction: verified DEBs only where the installed version is below the floor, never a downgrade, then the floors re-checked | `not-managed`, unless named with `install --component` | `dpkg --compare-versions` against the floor |
 | `app-archive` | verified zip or disk image into `dest`; an existing bundle is backed up first | `not-managed` | `CFBundleShortVersionString` of the bundle |
 | `system` | every file that is missing or differs, written root-owned through `sudo`: a temporary file next to it, synced, then renamed over it | the same as `fresh`: the files are the framework's policy for the system, which `dotsteward upgrade` also writes on every profile | the bytes, the mode and the owner (`root:root`) of every file |

@@ -333,8 +333,12 @@ let
       companions = list companionSpec "Further release assets the binary starts, installed next to dest.";
     };
     pypi = {
-      pin = option lockPath "Lock path of the pin; its version is the exact distribution version.";
+      pin = option lockPath "Lock path of the pin; its version is the distribution version it installs.";
       distribution = option types.str "Distribution name the version is read from.";
+      policy = optionDefault (types.enum [
+        "at-least"
+        "exact"
+      ]) "at-least" "at-least keeps a newer version the owner installed by hand.";
       requirements = option types.path "Hash-pinned requirements file installed with pip --require-hashes.";
       python =
         optionDefault types.str "python3"

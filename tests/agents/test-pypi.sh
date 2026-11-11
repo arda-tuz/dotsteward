@@ -42,7 +42,7 @@ add_component example-app pypi '{
 
 before=$(home_state)
 assert_exit 1 run_agents check
-assert_contains "$DS_STDERR" "example-term (pypi): example-term 1.1.0 not found in ~/.local/share/example-term/venv (found none); run 'dotsteward rebuild --profile workstation --switch'"
+assert_contains "$DS_STDERR" "example-term (pypi): example-term 1.1.0 or newer not found in ~/.local/share/example-term/venv (found none); run 'dotsteward rebuild --profile workstation --switch'"
 assert_eq "$before" "$(home_state)"
 assert_exit 1 run_agents check --json
 assert_eq '"pypi-failed"' "$(jq -c '.findings[0].code' <<<"$DS_STDOUT")"

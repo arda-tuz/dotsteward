@@ -1008,6 +1008,7 @@ _methods_pypi_state() {
   _py_dist=$(jq -r '.install.distribution // empty' <<<"$component")
   _py_requirements=$(jq -r '.install.requirements // empty' <<<"$component")
   _py_python=$(jq -r '.install.python // "python3"' <<<"$component")
+  _py_policy=$(jq -r '.install.policy // "at-least"' <<<"$component")
   _py_venv_text=$(jq -r '.install.venv // empty' <<<"$component")
   _py_link_text=$(jq -r '.install.linkDir // "~/.local/bin"' <<<"$component")
   mapfile -t _py_bin < <(jq -r '(.install.bin // [])[]' <<<"$component")
@@ -1015,6 +1016,10 @@ _methods_pypi_state() {
     die "$name (pypi): the install block needs pin, distribution, requirements and venv"
   [[ $_py_dist =~ ^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$ ]] ||
     die "$name (pypi): invalid distribution name: $_py_dist"
+  case $_py_policy in
+    at-least | exact) ;;
+    *) die "$name (pypi): unknown policy: $_py_policy" ;;
+  esac
   _py_venv=$(_methods_pypi_expand "$name" venv "$_py_venv_text") || exit 1
   _py_link_dir=$(_methods_pypi_expand "$name" linkDir "$_py_link_text") || exit 1
   for script in "${_py_bin[@]}"; do
@@ -1037,11 +1042,33 @@ except importlib.metadata.PackageNotFoundError:
     pass' "$_py_dist" 2>/dev/null </dev/null || true
 }
 
+# _methods_pypi_version_ok: the installed version meets the pin by policy: at-least keeps
+# a newer version the owner installed by hand, exact wants the pin's version.
 _methods_pypi_version_ok() {
   [[ -n $_py_found ]] || return 1
   local order
   order=$(methods_version_compare "$_py_found" "$_py_version") || exit 1
-  [[ $order == 0 ]]
+  [[ $order == 0 || ($_py_policy == at-least && $order == 1) ]]
+}
+
+# _methods_pypi_wanted: what the pin asks for, as the messages say it.
+_methods_pypi_wanted() {
+  if [[ $_py_policy == exact ]]; then
+    printf '%s %s exactly' "$_py_dist" "$_py_version"
+  else
+    printf '%s %s or newer' "$_py_dist" "$_py_version"
+  fi
+}
+
+# _methods_pypi_found: the installed version, and that it is newer than the pin.
+_methods_pypi_found() {
+  local order
+  order=$(methods_version_compare "$_py_found" "$_py_version") || exit 1
+  if [[ $order == 1 ]]; then
+    printf '%s %s (newer than the pin %s)' "$_py_dist" "$_py_found" "$_py_version"
+  else
+    printf '%s %s' "$_py_dist" "$_py_found"
+  fi
 }
 
 # _methods_pypi_links_ok: every console script link points at its script in
@@ -1065,14 +1092,14 @@ _methods_pypi_check() {
   _methods_pypi_state "$name"
   hint="run 'dotsteward rebuild --profile $profile --switch'"
   if ! _methods_pypi_version_ok; then
-    _methods_set failed "$_py_dist $_py_version not found in $_py_venv_text (found ${_py_found:-none}); $hint"
+    _methods_set failed "$(_methods_pypi_wanted) not found in $_py_venv_text (found ${_py_found:-none}); $hint"
     return 1
   fi
   if ! _methods_pypi_links_ok; then
     _methods_set failed "$_py_bad_link does not link to $_py_bad_target; $hint"
     return 1
   fi
-  _methods_set satisfied "$_py_dist $_py_found"
+  _methods_set satisfied "$(_methods_pypi_found)"
 }
 
 # _methods_pypi_pinned FILE: FILE has a requirement line that pins the
@@ -1121,7 +1148,7 @@ methods_pypi_install() {
   [[ $(methods_component_method "$name") == pypi ]] || die "$name: not a pypi component"
   _methods_pypi_state "$name"
   if _methods_pypi_version_ok && _methods_pypi_links_ok; then
-    _methods_set satisfied "$_py_dist $_py_found"
+    _methods_set satisfied "$(_methods_pypi_found)"
     return 0
   fi
   requirements=$(_methods_manifest_path "$name (pypi): requirements" "$_py_requirements") || exit 1
@@ -1147,7 +1174,7 @@ methods_pypi_install() {
   ((status == 0)) || die "$name (pypi): pip install failed (exit $status): $(tail -n 5 <<<"$output")"
   _py_found=$(_methods_pypi_installed)
   _methods_pypi_version_ok ||
-    die "$name (pypi): $_py_dist $_py_version not found in $_py_venv after the install (found ${_py_found:-none})"
+    die "$name (pypi): $(_methods_pypi_wanted) not found in $_py_venv after the install (found ${_py_found:-none})"
   for script in "${_py_bin[@]}"; do
     link=$_py_link_dir/$script
     target=$_py_venv/bin/$script

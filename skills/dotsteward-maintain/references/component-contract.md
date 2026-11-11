@@ -38,7 +38,7 @@ Every component, a catalog one in the framework or a private one in `components/
 | --- | --- | --- | --- |
 | `nix` | package in `home.packages` | same | probes |
 | `official-binary` | verified download into `dest` (user level); `at-least` keeps a newer self-updated binary | same | version per policy |
-| `pypi` | own virtual environment (user level) from a hash-pinned requirements file, console scripts linked into `~/.local/bin` | same | exact version and links |
+| `pypi` | own virtual environment (user level) from a hash-pinned requirements file, console scripts linked into `~/.local/bin` | same | version per `policy` (`at-least` keeps a newer version the owner installed by hand) and links |
 | `deb` (Linux) | the vendor APT sources (pinned signing key) and the local APT bridge, then one verified apt transaction in the system-install phase | not managed, unless named with `install --component` | `dpkg` floor, sources, keyrings, bridge files and timer |
 | `app-archive` (macOS) | verified archive into `~/Applications` | not managed | bundle version |
 | `external` | nothing (the user installs it) | same | optional presence and floor |
