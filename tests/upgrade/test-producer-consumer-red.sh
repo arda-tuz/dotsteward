@@ -36,10 +36,13 @@ git -C "$up_inst" commit -q -am "chore: update pinned tool versions"
 y=$(git -C "$up_inst" rev-parse HEAD)
 git -C "$up_inst" push -q origin HEAD:main
 
-# What other-host recorded: held at X, the lock of Y red for codex.
+# What other-host recorded: held at X, the lock of Y red for codex. It runs a newer framework,
+# whose record has fields this producer does not know: they do not hide the hold.
 jq -n --arg x "$x" --arg y "$y" '{schema_version: 1, host: "other-host", machine_key: "ffeeddccbbaa99887766554433221100",
-  recorded_at: "2026-01-02T00:00:00Z", recorded_by: "upgrade", components: {codex: {}},
-  held: {commit: $x, lock_commit: $y, components: ["codex"], at: "2026-01-02T00:00:00Z"}}' >"$DS_TEST_ROOT/other-state.json"
+  recorded_at: "2026-01-02T00:00:00Z", recorded_by: "upgrade", components: {codex: {future_channel: "stable"}},
+  future_summary: {count: 1},
+  held: {commit: $x, lock_commit: $y, components: ["codex"], at: "2026-01-02T00:00:00Z", reason_code: "e2e"}}' \
+  >"$DS_TEST_ROOT/other-state.json"
 blob=$(git -C "$up_bare" hash-object -w "$DS_TEST_ROOT/other-state.json")
 tree=$(printf '100644 blob %s\tstate.json\n' "$blob" | git -C "$up_bare" mktree)
 commit=$(git -C "$up_bare" -c user.name=other -c user.email=other@example.invalid commit-tree "$tree" -m "state: other-host")
