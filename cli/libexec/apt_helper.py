@@ -79,7 +79,7 @@ KEPT_FILE = "61dotsteward-kept"
 KEPT_HEADER = (
     "# Managed by dotsteward: the version constraints and holds of the instance. Only `dotsteward upgrade` writes it."
 )
-KEPT_RECORD = "Explanation: {explanation}\nPackage: {name}\nPin: version {version}\nPin-Priority: {priority}\n"
+KEPT_RECORD = "Explanation: {explanation}\nPackage: {name}:any\nPin: version {version}\nPin-Priority: {priority}\n"
 SERIES_RE = re.compile(r"[0-9]+(?:\.[0-9]+)*")
 # The Sources of the gated classes: what the pin holds. The other kernel packages
 # (linux-signed-*, linux-hwe-*) carry the ABI in their names: only these pull them in. A rebuild
@@ -1481,7 +1481,7 @@ def kept_rows(session, cache, free, classes):
             "candidate": candidate or row["current"],
             "free": row["candidate"],
         }
-        record = records.get(name)
+        record = records.get(row["short"])
         if record is not None:
             entry.update(
                 why=record["kind"], component=record["component"], version=record["version"], reason=record["reason"]

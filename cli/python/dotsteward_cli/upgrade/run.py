@@ -496,7 +496,9 @@ class Upgrade(runner.Runner):
     def _front(self) -> bool:
         self._name_machine()
         if self.name is not None:
-            status = self._ds_output("host", "publish").returncode
+            # A hold commit before a waiting commit of the pins would make the remote another tip.
+            wait = ["--holds-wait"] if self._waiting_ref() else []
+            status = self._ds_output("host", "publish", *wait).returncode
             self.run.step("host-publish", status)
         self._skills()
         return self._fetch()
@@ -2201,8 +2203,11 @@ class Upgrade(runner.Runner):
                 commit = str(self.waiting)
                 self._drop_waiting()
                 # The holds of this run after the pins, so that their publish never races it; the
-                # checkout follows both, with the one rebuild it takes anyway.
-                self._follow(self._publish_holds() or commit)
+                # checkout follows both, with the one rebuild it takes anyway, unless something of
+                # another machine came between them: that is for the next run and its questions.
+                held = self._publish_holds()
+                after = held is not None and self._git("rev-parse", f"{held}^").stdout.strip() == commit
+                self._follow(held if after and held else commit)
                 return
             if status == _TXN_OFFLINE:
                 self.offline = True
@@ -2236,8 +2241,13 @@ class Upgrade(runner.Runner):
     def _publish_holds(self) -> str | None:
         """What this run held or released goes to the host file of this machine, in a commit of its
         own (`host publish`). The new tip, or None: nothing to publish, or it waits for the next run.
-        The checkout stays where it is: only a publish of the pins moves it, with its rebuild."""
+        The checkout stays where it is: only a publish of the pins moves it, with its rebuild. While a
+        commit of the pins waits for the remote, the holds wait too: a hold commit first would make
+        the remote another tip than the base of that commit, and the next run would make it again."""
         if self.name is None or self.offline or not holds.unpublished(self.state_root):
+            return None
+        if self.waiting or self._waiting_ref():
+            self.run.step("hold-publish", report.OK, detail="waits for the commit of the pins")
             return None
         status = self._ds_output("host", "publish").returncode
         self.run.step("hold-publish", status)

@@ -526,7 +526,7 @@ def declined_text(
 
 
 def cmd_publish(args: argparse.Namespace, instance: config.Instance, env: Mapping[str, str]) -> int:
-    return publish(instance, env)
+    return publish(instance, env, holds_wait=args.holds_wait)
 
 
 class _PrivacyFinding(Exception):
@@ -539,11 +539,15 @@ def publish(
     *,
     declined: Mapping[str, Collection[str]] | None = None,
     check: Callable[[str], None] | None = None,
+    holds_wait: bool = False,
 ) -> int:
     """Brings hosts/<name>.toml of this machine to the remote: the exit status of
     ``host publish`` (OK, PARTIAL without a network, PRIVACY_STOP); Refusal when the
     remote says no. DECLINED adds names to declined in the same commit (`incoming`), and
-    CHECK looks at that commit before it leaves; it refuses by raising."""
+    CHECK looks at that commit before it leaves; it refuses by raising. The holds of this
+    machine go with it (`dotsteward_cli.upgrade.holds`), unless HOLDS_WAIT: `upgrade` keeps
+    them back while a commit of its pins waits for the remote, which a hold commit before it
+    would make another machine's tip."""
     env = os.environ if env is None else env
     root = instance.root
     state = config.state_root(instance, env)
@@ -568,8 +572,9 @@ def publish(
             current_holds = dict((tomlfile.loads(current) if current is not None else {}).get("holds") or {})
         except tomlfile.TomlError:
             current_holds = {}
-        wanted = holds.table(current_holds, state, components)
-        there.update(holds=wanted)
+        wanted = current_holds if holds_wait else holds.table(current_holds, state, components)
+        if not holds_wait:
+            there.update(holds=wanted)
         text = host_text(current, facts, wanted)
         if declined:
             text = declined_text(text, facts, None, more=declined)
@@ -850,10 +855,13 @@ def _parser() -> argparse.ArgumentParser:
         description=(
             "Writes hosts/<name>.toml on the remote branch in one commit without force, and leaves the checkout as "
             "it is. The other keys of the file stay. Without a network or a login it exits 6 and nothing is lost: "
-            "it works out the same again next time."
+            "it works out the same again next time. The holds `dotsteward upgrade` made on this machine, and "
+            "the ones it took back, go with it."
         ),
         allow_abbrev=False,
     )
+    # Internal: `upgrade` while a commit of its pins waits for the remote.
+    publish.add_argument("--holds-wait", action="store_true", help=argparse.SUPPRESS)
     publish.set_defaults(handler=cmd_publish)
     show = commands.add_parser(
         "show", help="print this machine", description="Prints this machine.", allow_abbrev=False
