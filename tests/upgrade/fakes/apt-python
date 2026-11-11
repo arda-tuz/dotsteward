@@ -3,6 +3,8 @@
 # (DOTSTEWARD_APT_PYTHON): `apt-python -I HELPER ACTION [--output FILE]`. It logs the action and the
 # request, and answers with $UP_APT/ACTION-MODE.json, else $UP_APT/ACTION.json. The real helper has suites of its own
 # (tests/apt-worlds, tests/container).
+# With $UP_CONTROL/apt-installs, a commit that says committed also installs what it says in the fake
+# dpkg database, as dpkg would: each install and upgrade at its new version.
 set -euo pipefail
 action=$3
 output=
@@ -15,6 +17,13 @@ answer=$UP_APT/$action.json
 mode=$(jq -r .mode <<<"$request")
 if [[ -e $UP_APT/$action-$mode.json ]]; then
   answer=$UP_APT/$action-$mode.json
+fi
+if [[ $action == commit && -e $UP_CONTROL/apt-installs ]] && jq -e '.committed == true' "$answer" >/dev/null; then
+  jq -r '(.changes.install + .changes.upgrade)[] | "\(.name) \(.to)"' "$answer" | while read -r name version; do
+    mkdir -p "$DS_STUB_STATE/dpkg/installed"
+    printf 'Package: %s\nStatus: install ok installed\nVersion: %s\nArchitecture: amd64\n' "$name" "$version" \
+      >"$DS_STUB_STATE/dpkg/installed/$name"
+  done
 fi
 if [[ -n $output ]]; then
   cp -- "$answer" "$output"
