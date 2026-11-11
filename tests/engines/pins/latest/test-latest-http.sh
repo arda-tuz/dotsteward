@@ -44,7 +44,8 @@ declare_latest "{\"component\":\"example-app\",\"id\":\"desktop_packages.example
 assert_exit 0 latest --out "$report"
 assert_eq "{\"id\":\"desktop_packages.example-app\",\"kind\":\"apt-index\",\"current\":\"1.1.0\",\"latest\":\"1.4.0\",\"status\":\"update\",\"source\":\"$url/apt\",\"details\":{\"url\":\"$url/apt/pool/contrib/e/example-app/example-app_1.4.0_arm64.deb\",\"size\":200,\"sha256\":\"3f79bb7b435b05321651daefd374cdc681dc06faa65e374e38337b88ca046dea\"}}" \
   "$(row desktop_packages.example-app)"
-assert_contains "$(<"$DS_HTTPFIX_LOG")" "GET /apt/dists/noble/contrib/binary-arm64/Packages"$'\n'
+# One whole line of the log, wherever the parallel research put it.
+grep -qxF "GET /apt/dists/noble/contrib/binary-arm64/Packages" "$DS_HTTPFIX_LOG" || ds_fail "no request [GET /apt/dists/noble/contrib/binary-arm64/Packages]: $(<"$DS_HTTPFIX_LOG")"
 
 # The declared arch wins over [pins] apt_arch; dist defaults to stable and
 # the component to main.

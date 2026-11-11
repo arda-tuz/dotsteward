@@ -35,7 +35,8 @@ serve_releases "{
 assert_exit 0 latest --out "$report"
 assert_eq "{\"id\":\"pypi.example-app\",\"kind\":\"pypi\",\"current\":\"1.0.0\",\"latest\":\"1.4.0\",\"status\":\"update\",\"source\":\"$url/pypi/example-app\",\"details\":{\"requires_python\":\">=3.10\"}}" \
   "$(row pypi.example-app)"
-assert_contains "$(<"$DS_HTTPFIX_LOG")" "GET /pypi/example-app/json"$'\n'
+# One whole line of the log, wherever the parallel research put it.
+grep -qxF "GET /pypi/example-app/json" "$DS_HTTPFIX_LOG" || ds_fail "no request [GET /pypi/example-app/json]: $(<"$DS_HTTPFIX_LOG")"
 
 # A newer major version is a review; the current release is current.
 serve_releases "{ \"1.0.0\": [$(file)], \"2.0.0\": [$(file)] }"
