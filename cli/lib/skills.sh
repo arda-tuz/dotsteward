@@ -1077,30 +1077,49 @@ _skills_in_link_root() {
   done
 }
 
-# _skills_process_own NAME DIRECTORY LEGACY DIGEST SOURCE: an own skill.
+# _skills_own_move NAME FOUND DESTINATION: the copy FOUND of the own skill NAME belongs at
+# DESTINATION. Check names the move (a placement note) and leaves the copy; install moves it.
+# SKILLS_OWN_MOVED is the copy afterwards, and 1 when check left it where it was.
+SKILLS_OWN_MOVED=''
+SKILLS_OWN_LEFT=0
+_skills_own_move() {
+  local name=$1 found=$2 destination=$3
+  SKILLS_OWN_MOVED=$found
+  SKILLS_OWN_LEFT=0
+  if ((SKILLS_CHECK_ONLY)); then
+    _skills_placement_note "$found moves to $destination; $(_skills_rebuild_hint)"
+    SKILLS_OWN_LEFT=1
+    return 0
+  fi
+  if [[ -L $destination && ! -e $destination ]] && _skills_is_managed_target "$(readlink -- "$destination")"; then
+    unlink -- "$destination"
+  fi
+  [[ ! -e $destination && ! -L $destination ]] ||
+    skills_fail install-destination-exists "$destination" "skill install destination exists: $destination"
+  mkdir -p -- "${destination%/*}"
+  mv -- "$found" "$destination"
+  log "moved skill $name from $found to $destination"
+  SKILLS_OWN_MOVED=$destination
+}
+
+# _skills_process_own NAME DIRECTORY LEGACY DIGEST SOURCE: an own skill. Its copy is in a
+# shared root; one that an agent wrote into a link root, or that the scoped store holds
+# because the lock gave the skill to some agents only before, moves there.
 _skills_process_own() {
-  local name=$1 directory=$2 legacy=$3 digest=$4 source=$5 found decision destination placed=0 entry
+  local name=$1 directory=$2 legacy=$3 digest=$4 source=$5 found decision placed=0 entry
   SKILLS_SOFT_LAYOUT=1
   [[ -n $digest ]] || digest=$(directory_sha256 "$source")
   found=$(skills_find_existing "$directory" "$legacy")
   if [[ -z $found ]]; then
     found=$(_skills_in_link_root "$name" "$directory")
+    if [[ -z $found && -n $SKILLS_SCOPED_STORE && -f $SKILLS_SCOPED_STORE/$directory/SKILL.md &&
+      ! -L $SKILLS_SCOPED_STORE/$directory ]]; then
+      found=$SKILLS_SCOPED_STORE/$directory
+    fi
     if [[ -n $found ]]; then
-      destination=$SKILLS_CANONICAL/$directory
-      if ((SKILLS_CHECK_ONLY)); then
-        _skills_placement_note "$found moves to $destination; $(_skills_rebuild_hint)"
-        placed=1
-      else
-        if [[ -L $destination && ! -e $destination ]] && _skills_is_managed_target "$(readlink -- "$destination")"; then
-          unlink -- "$destination"
-        fi
-        [[ ! -e $destination && ! -L $destination ]] ||
-          skills_fail install-destination-exists "$destination" "skill install destination exists: $destination"
-        mkdir -p -- "${destination%/*}"
-        mv -- "$found" "$destination"
-        log "moved skill $name from $found to $destination"
-        found=$destination
-      fi
+      _skills_own_move "$name" "$found" "$SKILLS_CANONICAL/$directory"
+      found=$SKILLS_OWN_MOVED
+      placed=$SKILLS_OWN_LEFT
     fi
   fi
   decision=$(_skills_own_decision "$name" "$found" "$digest")
@@ -1116,7 +1135,7 @@ _skills_process_own() {
 # refreshed like a shared copy (an own skill: as its decision says), and
 # <agent root>/NAME -> that copy for each agent.
 _skills_process_scoped() {
-  local name=$1 directory=$2 directory_sha=$3 source=$4 agents=$5 revision=${6:-} agent root found real i known decision
+  local name=$1 directory=$2 directory_sha=$3 source=$4 agents=$5 revision=${6:-} agent root found real i known decision shared
   local -a roots=() names=()
   read -r -a names <<<"$agents"
   for agent in "${names[@]}"; do
@@ -1132,18 +1151,33 @@ _skills_process_scoped() {
     fi
     roots+=("$root")
   done
+  found=$SKILLS_SCOPED_STORE/$directory
+  # An own skill that was for every agent before: its shared copy moves to the store.
+  shared=''
+  if _skills_is_own "$revision" && [[ ! -f $found/SKILL.md ]]; then
+    shared=$(skills_find_existing "$directory" "")
+    if [[ -n $shared && ! -L $shared ]]; then
+      SKILLS_SOFT_LAYOUT=1
+      _skills_own_move "$name" "$shared" "$found"
+      shared=$SKILLS_OWN_MOVED
+      ((SKILLS_OWN_LEFT)) || shared=''
+    else
+      shared=''
+    fi
+  fi
   for root in "${SKILLS_SEARCH_ROOTS[@]}"; do
-    if [[ -f $root/$directory/SKILL.md ]]; then
+    if [[ -f $root/$directory/SKILL.md && $root/$directory != "$shared" ]]; then
       skills_fail scoped-skill-shared "$root/$directory" \
         "skill $name is for ${agents// /, } only but is also in the shared skill root: $root/$directory; remove it there"
     fi
   done
 
-  found=$SKILLS_SCOPED_STORE/$directory
   if _skills_is_own "$revision"; then
     SKILLS_SOFT_LAYOUT=1
     [[ -n $directory_sha ]] || directory_sha=$(directory_sha256 "$source")
     [[ -f $found/SKILL.md ]] || found=''
+    # Check: the decision is about the copy where it is now.
+    [[ -z $shared ]] || found=$shared
     decision=$(_skills_own_decision "$name" "$found" "$directory_sha")
     _skills_own_apply "$name" "$directory" "$found" "$decision" "$directory_sha" "$source" "$SKILLS_SCOPED_STORE"
     found=$SKILLS_OWN_COPY
@@ -1251,6 +1285,19 @@ _skills_sweep_copy() {
   log "removed scoped skill copy not in the lock: $copy"
 }
 
+# _skills_own_moves COPY: whether COPY of the scoped store is the copy of an own skill that the
+# lock gives every agent and that no shared root holds, which install moves to the shared root
+# (_skills_process_own) and check names as a placement note.
+_skills_own_moves() {
+  local directory=${1##*/} entry
+  [[ -f $1/SKILL.md && ! -L $1 ]] || return 1
+  entry=$(jq -c --arg directory "$directory" \
+    'first(.skills[] | select(.directory == $directory and (has("agents") | not))) // empty' "$SKILLS_LOCK")
+  [[ -n $entry ]] || return 1
+  _skills_is_own "$(jq -r '.revision // empty' <<<"$entry")" || return 1
+  [[ -z $(skills_find_existing "$directory" "$(jq -r '.legacy_directory // empty' <<<"$entry")") ]]
+}
+
 skills_sweep() {
   local root link copy scoped failed=0
   local -a links=() copies=()
@@ -1259,6 +1306,8 @@ skills_sweep() {
     mapfile -d '' copies < <(find "$SKILLS_SCOPED_STORE" -mindepth 1 -maxdepth 1 -print0 | LC_ALL=C sort -z)
     for copy in "${copies[@]}"; do
       grep -qxF -- "${copy##*/}" <<<"$scoped" && continue
+      # The copy of an own skill the lock now gives every agent, which install moves.
+      _skills_own_moves "$copy" && continue
       _skills_sweep_copy "$copy" || failed=1
     done
   fi
