@@ -4,7 +4,8 @@
 # tag family by version, whatever GitHub calls latest; drafts and
 # prereleases never count, not even through the tags when no release of the
 # family is left; the asset, its size and its digest come from the release
-# that wins. The fake GitHub answers both the latest release and the list.
+# that wins (a digest that is not SHA-256 none). Without a tag prefix, plain and calendar
+# versions are two families. The fake GitHub answers both the latest release and the list.
 # shellcheck source=tests/engines/pins/latest/helpers.sh
 source "$DS_REPO_ROOT/tests/engines/pins/latest/helpers.sh"
 
@@ -92,3 +93,32 @@ github "$(release desktop-v9.0.0 false false)" \
   "$(release cli-v1.8.0 false true)"
 assert_exit 0 latest --out "$report"
 assert_eq '["1.4.0","update",{"tag":"cli-v1.4.0"}]' "$(row agent_tools.example-release '[.latest, .status, .details]')"
+
+# A digest that is not SHA-256 is no SHA-256: the writer downloads the file to learn it.
+rm -rf -- "$sources/example-org/example-cli"
+dir4=$(remote_repo example-org/example-cli)
+for tag in cli-v1.3.0 cli-v1.4.0; do
+  ds_git_commit "$dir4" VERSION "$tag" "chore: $tag"
+  git -C "$dir4" tag "$tag"
+done
+publish example-org/example-cli
+github "$(release cli-v1.4.0 false false)" "$(jq -c '.assets[0].digest = "sha512:\("ab" * 64)"' <<<"$(release cli-v1.4.0 false false)")"
+assert_exit 0 latest --out "$report"
+assert_eq '["1.4.0",null,"example-cli-linux-x64.tar.gz"]' "$(row agent_tools.example-release '[.latest, .details.sha256, .details.asset]')"
+
+# Without a tag prefix, plain versions and calendar versions are two families: a pin of one
+# never moves to the other.
+rm -rf -- "$sources/example-org/example-cli"
+dir5=$(remote_repo example-org/example-cli)
+for tag in v1.3.0 v1.4.0 v2024.11.01; do
+  ds_git_commit "$dir5" VERSION "$tag" "chore: $tag"
+  git -C "$dir5" tag "$tag"
+done
+publish example-org/example-cli
+declare_latest '{"component":"example-cli","id":"agent_tools.example-release","adapter":"github-release","repo":"example-org/example-cli","at":"agent_tools.example-release","asset":"example-cli-linux-x64.tar.gz"}'
+github "$(release v2024.11.01 false false)" "$(release v2024.11.01 false false)" "$(release v1.4.0 false false)" "$(release v1.3.0 false false)"
+assert_exit 0 latest --out "$report"
+assert_eq '["1.3.0","1.4.0","update"]' "$(row agent_tools.example-release '[.current, .latest, .status]')"
+json_edit "$versions" 'data["agent_tools"]["example-release"]["minimum_version"] = "2024.10.01"'
+assert_exit 0 latest --out "$report"
+assert_eq '["2024.10.01","2024.11.01","update"]' "$(row agent_tools.example-release '[.current, .latest, .status]')"
