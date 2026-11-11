@@ -143,7 +143,8 @@ agent's judgment, and leaves the result in the working tree: it never commits or
 publishes. It researches itself, or takes a saved report with `--latest FILE`;
 `--plan` shows what would happen and writes nothing at all; `--skip ID` (a glob,
 repeatable) leaves rows alone; `--json` prints the summary (`moved`, `groups`,
-`lines`, `items`, `framework_moved`, `flake_inputs_moved`, `report`).
+`lines`, `items`, `framework_moved`, `flake_inputs_moved`, `report`). The line of an
+error row of a failed job keeps the pins the job was for (`ids`).
 
 | Row | What happens |
 | --- | --- |

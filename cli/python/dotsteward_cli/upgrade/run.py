@@ -137,6 +137,20 @@ def _say(text: str) -> None:
     print(f"[upgrade] {text}", flush=True)
 
 
+def _unread(answer: Mapping[str, Any]) -> list[str]:
+    """The pins of a writer's answer whose upstream gave no answer, or one it could not use: the
+    rows of pins latest that are errors (a failed job names the pins it was for) and the groups
+    the writer left for the next run."""
+    names: set[str] = set()
+    for line in answer.get("lines") or ():
+        if isinstance(line, dict) and line.get("status") == "error":
+            names.update(str(name) for name in line.get("ids") or [line.get("id")] if name)
+    for group in answer.get("groups") or ():
+        if isinstance(group, dict) and group.get("outcome") == "skipped":
+            names.update(str(name) for name in group.get("ids") or () if name)
+    return sorted(names)
+
+
 def _installed_version(package: str) -> str | None:
     """The version dpkg has installed of PACKAGE, None when it has none. Installed is the status
     "installed" whatever the owner wants of it: a package held with apt-mark hold is installed, as
@@ -814,7 +828,12 @@ class Upgrade(runner.Runner):
             return None
         if not record:
             return answer
-        self.run.step("pins-apply", done.returncode, moved=[row.get("id") for row in answer.get("moved") or ()])
+        unread = _unread(answer)
+        fields: dict[str, Any] = {"moved": [row.get("id") for row in answer.get("moved") or ()]}
+        if unread:
+            fields["unread"] = unread
+            fields["detail"] = f"the upstream of {', '.join(unread)} could not be read: they wait for the next run"
+        self.run.step("pins-apply", done.returncode, **fields)
         for group in answer.get("groups") or ():
             if group.get("outcome") == "failed":
                 self.run.item(

@@ -110,12 +110,12 @@ rows "$(row job-0 error "" "" error '{"error":"gh api failed: error connecting t
   "$later"
 : >"$UP_LOG"
 assert_exit 3 upgrade --tracked
-assert_contains "$DS_STDOUT" "pins-apply: skipped, no network (no answer from upstream for agent_tools.example-app, pypi.example-tool: they wait for the next run)"
+assert_contains "$DS_STDOUT" "pins-apply: skipped, no network (the upstream of agent_tools.example-app, pypi.example-tool could not be read: they wait for the next run)"
 assert_eq '"4.2.0"' "$(json_get "$versions" '.agent_tools["example-release"].minimum_version')"
 assert_eq '"1.0.0"' "$(json_get "$versions" '.pypi["example-tool"].version')"
 assert_contains "$(<"$UP_LOG")" "txn publish --scope update"
 newest=$(jq -r --slurp 'max_by(.sequence) | .run' "$state"/runs/upgrade/*.json)
 assert_json "$state/runs/upgrade/$newest.json" '[.steps[] | select(.name == "pins-apply")] | length == 1 and
   .[0].status == "partial" and .[0].moved == ["agent_tools.example-release"]
-  and .[0].unanswered == ["agent_tools.example-app", "pypi.example-tool"]'
+  and .[0].unread == ["agent_tools.example-app", "pypi.example-tool"]'
 assert_json "$state/runs/upgrade/$newest.json" '.status != "failed"'

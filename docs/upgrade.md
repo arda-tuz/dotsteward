@@ -130,7 +130,10 @@ Update these too? [y/N] n
    refuses such a component) stays where it is, as `deb-floor-unknown`. Every other pin, such as an official binary of Codex,
    moves when upstream does. A framework that moved runs the writer once more with its own CLI, and
    the rest of the run with it too. What fails in one group of the writer is named, and what the
-   others moved goes on. Skills with a recorded transform are counted and left to `dotsteward-update`
+   others moved goes on. A pin whose upstream gives no answer (GitHub, a package index, a vendor
+   site) while the remote does, or answers what cannot be used, waits for the next run: the step
+   `pins-apply` is `partial` and names it (`unread`), never red; every query of `pins latest` and
+   of the signature lookups is bounded by a timeout. Skills with a recorded transform are counted and left to `dotsteward-update`
    without holding the exit status; other items of the writer wait in `review.json` under
    `pins-apply`. The commit is kept as `refs/dotsteward/upgrade/waiting` until it is on the remote,
    and what it moved in `<state>/upgrade/waiting.json`. The clone keeps the local settings of the

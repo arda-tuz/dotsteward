@@ -293,8 +293,8 @@ class Router:
         self.groups: dict[tuple[str, str], Group] = {}
         self.errors: list[Move] = []
 
-    def line(self, row: Row, status: str, note: Any = None) -> None:
-        self.plan.lines.append({"id": row["id"], "status": status, "note": note})
+    def line(self, row: Row, status: str, note: Any = None, **fields: Any) -> None:
+        self.plan.lines.append({"id": row["id"], "status": status, "note": note, **fields})
 
     def item(self, code: str, move: Move, **fields: Any) -> None:
         self.plan.items.append(
@@ -345,8 +345,10 @@ class Router:
         elif status in ("held", "manual"):
             self.line(row, status, details.get("note"))
         elif status == "error":
-            self.line(row, "error", details.get("error"))
-            for name in [identifier, *details.get("ids", [])]:
+            # A row of a job of pins latest that failed names the pins it was for.
+            ids = [str(name) for name in details.get("ids") or ()]
+            self.line(row, "error", details.get("error"), **({"ids": ids} if ids else {}))
+            for name in [identifier, *ids]:
                 move = self.move_of({**row, "id": name})
                 if move is not None:
                     self.errors.append(move)
