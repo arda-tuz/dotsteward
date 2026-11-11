@@ -33,12 +33,13 @@ ever sees a target: a plan and a commit read their pin from a temporary director
 hook of dpkg keeps the file right after every dpkg, also when a person calls it.
 
 The version constraints and holds of the instance (`kept` of the request) are a file of their
-own, 61dotsteward-kept, one record per package at 990 and none at -1, so a version asked for by
-name still installs: a constraint for a package of the component whose installed version is inside
-it (or, not installed, that has a version inside it); a hold for an installed package below the
-held version, at that version. A package the owner moved out of its constraint or past its hold
-gets no record and a note; a package of a gated class gets none, the series rule is its rule. Plan,
-commit and analysis read these records from the request, never the file there.
+own, 61dotsteward-kept, one record per package (`name:any`, every architecture) at 990 and none at
+-1, so a version asked for by name still installs: a constraint for a package of the component
+whose installed version is inside it (or, not installed, that has a version inside it); a hold for
+an installed package below the held version, at that version. A package the owner moved out of its
+constraint or past its hold gets no record and a note; a package of a gated class gets none, the
+series rule is its rule. Plan, commit and analysis read these records from the request, never the
+file there.
 """
 
 from __future__ import annotations

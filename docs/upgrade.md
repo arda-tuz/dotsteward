@@ -229,7 +229,8 @@ is part of the version); a series of numbers alone is that series, so `16` and `
 | The kernel and NVIDIA series | not a pin | the pin file of the gated classes (above) | `apt kept`: it moves with the kernel and driver |
 
 The records of apt are a file of their own, `/etc/apt/preferences.d/61dotsteward-kept`, written
-from the request in the sudo window and taken away when nothing is left to keep. Each record has an
+from the request in the sudo window and taken away when nothing is left to keep. A record names
+the package with `:any`, so it binds every architecture of it (a `:i386` library too), and has an
 `Explanation:` line that names the component, the rule and its reason, so `apt-cache policy` says why.
 There is no record at -1, so a version you ask for by name (`apt install example-app=2.0.0`) still
 installs, and a package you moved yourself is never pulled back: a package of the component that is
@@ -265,8 +266,9 @@ Every run names each hold in force with the machine whose host file has it and i
   commit waits for the next run.
 - **Holds:** a hold goes to the machine layer, `[holds."<pin id>"]` of `hosts/<name>.toml`, in a
   commit of its own (`chore(hosts): holds on <name>`) that the run publishes after the commit of the
-  pins, never before it, so that publish never races its own hold; when the pins went out, the
-  checkout follows both with its one rebuild, else it takes the hold commit with the next run. Other
+  pins, never before it, so that publish never races its own hold: while a commit of the pins waits
+  for the remote, its holds wait with it. When the pins went out, the checkout follows both with its
+  one rebuild, else it takes the hold commit with the next run. Other
   machines pull it, and each run there names it with the machine and the reason (`held`); the writer
   of any producer leaves it. Without a network the hold waits in `<state>/holds.json` and the next
   run publishes it first, a hold of an older release kept only there too. `dotsteward upgrade
