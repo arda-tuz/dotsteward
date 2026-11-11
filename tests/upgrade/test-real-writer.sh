@@ -2,8 +2,9 @@
 # shellcheck disable=SC2154 # DS_* and the variables of the writer tests come from their helpers
 # The real writer under `upgrade`: a real `pins apply` on the world of its own tests moves real pins,
 # upgrade reads its document and commits the tree; the week of the flake inputs is a --skip it
-# understands, a hold too, and what stays for review keeps its own command in review.json. The
-# rest of the run is fake: the writer is what this test is about, and it needs no network.
+# understands, a hold too, and what stays for review keeps its own command in review.json. An
+# upstream that gives no answer (GitHub, a package index) while the remote does leaves its pins
+# for the next run, named, and never turns the run red. The rest of the run is fake: the writer is what this test is about, and it needs no network.
 # shellcheck source=tests/engines/pins/apply/helpers.sh
 source "$DS_REPO_ROOT/tests/engines/pins/apply/helpers.sh"
 # shellcheck source=tests/upgrade/isolation.sh
@@ -96,3 +97,25 @@ jq -n '{schema_version: 1, holds: [{component: "example-release", id: "agent_too
 assert_exit 3 upgrade --tracked
 assert_contains "$(<"$UP_LOG")" "--skip agent_tools.example-release"
 assert_eq '"4.1.0"' "$(json_get "$versions" '.agent_tools["example-release"].minimum_version')"
+
+# GitHub and the package index give no answer while the remote does: pins latest makes rows of
+# the jobs that failed, with the pins they were for. Those pins wait, named in the step, the run
+# is not red, and the pin that has an answer still moves and is published.
+rm -f -- "$state/holds.json"
+ds_git_commit "$sources/example/example-release" VERSION v4.2.0 "chore: v4.2.0"
+git -C "$sources/example/example-release" tag -a v4.2.0 -m "release v4.2.0"
+_apply_publish example/example-release
+rows "$(row job-0 error "" "" error '{"error":"gh api failed: error connecting to api.github.com","ids":["agent_tools.example-app"]}')" \
+  "$(row job-1 error "" "" error '{"error":"<urlopen error [Errno 111] Connection refused>","ids":["pypi.example-tool"]}')" \
+  "$later"
+: >"$UP_LOG"
+assert_exit 3 upgrade --tracked
+assert_contains "$DS_STDOUT" "pins-apply: skipped, no network (no answer from upstream for agent_tools.example-app, pypi.example-tool: they wait for the next run)"
+assert_eq '"4.2.0"' "$(json_get "$versions" '.agent_tools["example-release"].minimum_version')"
+assert_eq '"1.0.0"' "$(json_get "$versions" '.pypi["example-tool"].version')"
+assert_contains "$(<"$UP_LOG")" "txn publish --scope update"
+newest=$(jq -r --slurp 'max_by(.sequence) | .run' "$state"/runs/upgrade/*.json)
+assert_json "$state/runs/upgrade/$newest.json" '[.steps[] | select(.name == "pins-apply")] | length == 1 and
+  .[0].status == "partial" and .[0].moved == ["agent_tools.example-release"]
+  and .[0].unanswered == ["agent_tools.example-app", "pypi.example-tool"]'
+assert_json "$state/runs/upgrade/$newest.json" '.status != "failed"'
