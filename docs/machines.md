@@ -196,7 +196,9 @@ fails too), and a state branch checked out in a work tree is never moved under i
 `[policy] observed_state_push = false` keeps the branch on this machine.
 `dotsteward upgrade` records the state itself (`recorded_by: upgrade`) after it published and the
 checkout followed, before the offer of tracked mode and once more after the extra pass, so what
-it moved reaches the remote next to the shared lock ([upgrade.md](upgrade.md)).
+it moved reaches the remote next to the shared lock ([upgrade.md](upgrade.md)). A machine that
+is not the producer and holds back a shared lock that went red there has `held` in every record
+until the lock moves: the producer reads it and puts the pins of what went red back.
 
 `dotsteward state fetch` brings the branches of every machine to
 `refs/remotes/origin/state/*`, and `dotsteward state show [NAME] [--json]` prints the state of

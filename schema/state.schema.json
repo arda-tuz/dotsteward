@@ -157,6 +157,34 @@
         "additionalProperties": false
       }
     },
+    "held": {
+      "type": "object",
+      "description": "A shared lock that went red here and that this machine does not activate (T19): it went back to the generation of commit and stays there until the producer moves the lock of lock_commit again. Only a machine that is not the producer has it.",
+      "required": ["commit", "lock_commit", "components", "at"],
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "The commit of the generation this machine went back to."
+        },
+        "lock_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "The commit whose shared lock went red here."
+        },
+        "components": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/componentName" },
+          "description": "The components of the intent whose checks went red; empty when the checks named none."
+        },
+        "at": {
+          "$ref": "#/$defs/instant",
+          "description": "When this machine went back."
+        }
+      },
+      "additionalProperties": false
+    },
     "apt_pins_owned": {
       "type": "array",
       "description": "The packages dotsteward pins or holds on this machine.",

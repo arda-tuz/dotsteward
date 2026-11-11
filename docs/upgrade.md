@@ -227,6 +227,24 @@ left to the vendor. Without a terminal it is never applied.
   move is not what broke the machine: no hold, `e2e-red`, exit 1. A daemon that a command starts
   outside the user manager is not known here; its component stops it in an `agentsPost` hook, which
   the rebuild back runs.
+- **A shared lock red on a machine that is not the producer (T19):** the checkout followed the
+  remote, the rebuild of it moved the shared lock (the pins of `versions.lock.json` and the inputs of
+  `flake.lock`) from the one of the active generation, and E2E went red. The generation of the
+  commit before comes back from a clone, with the same care for user services, and E2E checks it.
+  Green: the marker `<state>/upgrade/held-at.json` keeps this machine there (`consumer-held`, exit
+  3): the checkout follows the remote as always, but no commit with that shared lock is built or
+  checked here, whatever else it brings (`consumer-held` again, exit 0). The state record carries it
+  as `held` (the commit it went back to, the commit of the red lock, the components that went red),
+  so the producer reads it from `state/<name>`. A commit with another shared lock drops the marker
+  and is tried. Red on the way back too: nothing is held, `e2e-red`, exit 1.
+- **The producer answers a consumer:** each producer run fetches `state/*`. For a record that holds
+  back the shared lock of the tip, the pins of the components that went red there (by the pin of
+  their binary or by their name in the pin id, all that moved when the checks named none) go back to
+  the values of the commit the consumer went back to, with a local hold at the red value, so the
+  writer leaves them until upstream calls something newer the latest (`consumer-red`). That commit
+  takes the gate, the rebuild and E2E of the producer and is published as any move of the lock. A
+  flake input is only held: `flake.nix` and `flake.lock` move with the writer. A record of a lock the
+  tip no longer has is answered.
 - **E2E is red with nothing of this run to go back to:** `e2e-red` names the checks, exit 1, no offer
   and no firmware. A red `deb` component gets the `sudo apt-mark hold` command to run if you want it.
   Nothing is written to the TOML; later releases carry holds in the machine layer.
@@ -271,6 +289,7 @@ The heaviest one of a run is the status, in the order 4, 1, 3, 6, 0 ([exit-codes
 | `upgrade/waiting.json` | what the waiting commit moved |
 | `plugins/scan.json` | the digests of the installed plugin trees and the open findings |
 | `holds.json` | the local holds |
+| `upgrade/held-at.json` | on a consumer, the shared lock that went red here and the commit it went back to |
 | `rollback/` | the official binaries saved while a move is not green yet |
 | `apt-logs/` | what dpkg printed, the newest 20 |
 
@@ -280,8 +299,9 @@ was published), `publish-waits`, `publish-race`, `publish-refused`, `red-held`, 
 `firmware-available`, `firmware-needs-ac`, the codes of the apt engine that wait (`apt-denied`,
 `dpkg-lock-busy`, `module-missing`, `python3-apt-missing`), and of the skills (`origin-unknown`,
 `skill-conflict`, `capture-blocked`). Notes that wait for nothing: `analysis`, `boot-space-low`,
-`reboot-required`, `checkout-dirty`, `checkout-behind`, `held`, `deb-floors-wait`, `deb-floor-unknown`,
-`pins-group-failed`, `series-available`, `phased-waiting`, `module-loss`, `producer-unset`,
+`reboot-required`, `checkout-dirty`, `checkout-behind`, `held`, `consumer-held`, `consumer-red`,
+`deb-floors-wait`, `deb-floor-unknown`, `pins-group-failed`, `series-available`, `phased-waiting`,
+`module-loss`, `producer-unset`,
 `producer-stale`, `plugin-scan-finding`, `plugin-scan-failed`, `firmware-locked`,
 `firmware-needs-reboot`.
 

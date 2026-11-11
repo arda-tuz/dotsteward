@@ -58,7 +58,7 @@ from typing import Any
 
 from dotsteward_cli import atomic, config, host, locks, machine, platforms, report
 from dotsteward_cli import publish as publishing
-from dotsteward_cli.upgrade import facts
+from dotsteward_cli.upgrade import consumer, facts
 
 EXIT_REFUSAL = 1
 EXIT_USAGE = 2
@@ -445,6 +445,10 @@ def observe(instance: config.Instance, env: Mapping[str, str] | None = None, *, 
     }
     document.update({key: value for key, value in optional.items() if value})
     document["components"] = _components(instance, env)
+    # A shared lock this machine holds back stays in every record until the producer moved it.
+    held = consumer.held(state, list(document["components"]))
+    if held is not None:
+        document["held"] = held
     return document
 
 

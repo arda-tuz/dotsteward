@@ -51,7 +51,7 @@ from dotsteward_cli import state as states
 from dotsteward_cli.host import commit_identity, commit_message
 from dotsteward_cli.skills import commands as skills_commands
 from dotsteward_cli.skills import state as skill_state
-from dotsteward_cli.upgrade import analysis, facts, holds, plugins
+from dotsteward_cli.upgrade import analysis, consumer, facts, holds, plugins
 
 WAITING_REF = "refs/dotsteward/upgrade/waiting"
 _WORK = "work"
@@ -248,6 +248,12 @@ class Upgrade(runner.Runner):
         self.approved: tuple[firmware.Device, ...] = ()
         self.paths: report.ReportPaths | None = None
         self.e2e_status = 0
+        # T19 on a consumer: the commit of the generation before a rebuild that moved the shared lock,
+        # and whether a lock that went red here keeps this machine where it is.
+        self.lock_before: str | None = None
+        self.held = False
+        # T19 on the producer: the pins it puts back for consumers, and the items that say so.
+        self.put_back: list[dict[str, Any]] = []
         self.moved = self._waiting_moves()
         self.run.data.update(mode=mode)
 
@@ -866,6 +872,7 @@ class Upgrade(runner.Runner):
             self.run.step("pins-latest", done.returncode or report.FAILED)
             self._remove_work()
             return
+        self._answer_consumers()
         skips = holds.skip_patterns(self.state_root, latest)
         if not self._week_due():
             skips = [_FLAKE_INPUTS, *skips]
@@ -944,13 +951,76 @@ class Upgrade(runner.Runner):
             return False
         return True
 
+    def _answer_consumers(self) -> None:
+        """T19 on the producer: the state records of the other machines, and for each that holds back the
+        shared lock of the tip, the pins of the components that went red there go back to the values of
+        the commit it went back to (all that moved, when the checks named none), with a local hold so the
+        writer leaves them until upstream has something newer. A record of a lock the tip no longer has
+        is answered. The flake inputs are only held: flake.nix and flake.lock move with the writer."""
+        self.put_back = []
+        try:
+            if states.fetch(self.instance) != 0:
+                return
+        except states.Refusal as refusal:
+            self.run.step("state-fetch", report.FAILED, detail=str(refusal))
+            return
+        prefix = f"refs/remotes/origin/{states.BRANCH_PREFIX}"
+        names = self._git("for-each-ref", "--format=%(refname)", prefix).stdout.split()
+        tip_lock = consumer.lock_digest(self.root, self.tip)
+        owners = facts.pin_owners(self._active())
+        for ref in sorted(names):
+            other = ref.removeprefix(prefix)
+            if other == self.name:
+                continue
+            try:
+                held = states.read(self.instance, other, self.env)["state"].get("held")
+            except states.Refusal:
+                continue
+            if not isinstance(held, dict) or consumer.lock_digest(self.root, str(held["lock_commit"])) != tip_lock:
+                continue
+            rows = consumer.moved_pins(self.root, str(held["commit"]), str(held["lock_commit"]))
+            ids = consumer.owned_by(rows, held.get("components") or [], owners) or [str(row["id"]) for row in rows]
+            chosen = [row for row in rows if str(row["id"]) in ids]
+            if not chosen:
+                continue
+            reason = f"red on {other} with the lock of {str(held['lock_commit'])[:12]}"
+            for row in chosen:
+                component = owners.get(str(row["id"])) or next(
+                    (name for name in held.get("components") or () if name in str(row["id"]).split(".")),
+                    str(row["id"]),
+                )
+                holds.add(self.state_root, component, str(row["id"]), consumer.version_of(row["to"]), reason)
+            self.put_back += [row for row in chosen if not consumer.flake_input(row)]
+            shown = ", ".join(str(row["id"]) for row in chosen)
+            _say(f"{other} holds the lock of {str(held['lock_commit'])[:12]} back: {shown} go back and wait")
+            self.run.item(
+                "consumer-red",
+                pending=False,
+                machine=other,
+                lock_commit=held["lock_commit"],
+                ids=[str(row["id"]) for row in chosen],
+                message=f"the shared lock went red on {other}: {shown} go back to where they were and wait for "
+                "upstream",
+            )
+
     def _write(self, latest: Path, skips: Sequence[str]) -> None:
-        """The writer in the clone, the gate and the local commit."""
+        """The pins a consumer could not take go back, then the writer in the clone, the gate and the
+        local commit."""
+        assert self.work is not None
+        went_back = [
+            {
+                "id": row["id"],
+                "from": consumer.version_of(row["to"]),
+                "to": consumer.version_of(row["from"]),
+                "group": "consumer-red",
+            }
+            for row in consumer.put_back(self.work, self.put_back)
+        ]
         answer = self._apply(latest, skips)
         if answer is None:
             self._remove_work()
             return
-        moved = list(answer.get("moved") or ())
+        moved = [*went_back, *(answer.get("moved") or ())]
         if answer.get("framework_moved"):
             # The new framework writes the rest, with its own manifest and its own engine.
             self.framework_moved = True
@@ -1368,6 +1438,8 @@ class Upgrade(runner.Runner):
         if where == self.root and self.dirty:
             self.run.step("rebuild", report.OK, detail="the checkout is not clean")
             return
+        if self.work is None and self._held_back():
+            return
         if self._is_active(where):
             self.run.step("rebuild", report.OK, detail="skipped: this tree is active")
             return
@@ -1400,6 +1472,89 @@ class Upgrade(runner.Runner):
         self.run.step("rebuild", status)
         if status != 0 and self.work is not None:
             self._go_back(f"rebuild failed with status {status}", [])
+
+    def _consumer(self) -> bool:
+        """This machine takes the shared lock from another one, the producer."""
+        return facts.role(self.instance, self.name) not in ("this-machine", "unnamed")
+
+    def _held_back(self) -> bool:
+        """T19 before a rebuild of the checkout on a consumer: True when its shared lock is the one that
+        went red here, and nothing is built. Otherwise a marker of another lock goes, and a lock that
+        differs from the one of the active generation is remembered for the way back."""
+        if not self._consumer():
+            return False
+        head = self._head()
+        lock = consumer.lock_digest(self.root, head)
+        marker = consumer.read_marker(self.state_root)
+        if marker is not None:
+            if lock == marker["lock"]:
+                self.held = True
+                commit = str(marker["commit"])
+                self.run.step("rebuild", report.OK, detail=f"held: the generation of {commit[:12]} stays")
+                self.run.item(
+                    "consumer-held",
+                    pending=False,
+                    commit=commit,
+                    lock_commit=marker["lock_commit"],
+                    components=marker.get("components") or [],
+                    message=(
+                        f"the shared lock of {str(marker['lock_commit'])[:12]} went red here: this machine stays at "
+                        f"the generation of {commit[:12]} until {facts.role(self.instance, self.name)} moves that lock"
+                    ),
+                )
+                return True
+            consumer.drop_marker(self.state_root)
+            _say("the shared lock moved since it went red here: this run tries the new one")
+        revision = self._activation().get("revision")
+        if isinstance(revision, str) and revision != head:
+            before = consumer.lock_digest(self.root, revision)
+            if before is not None and before != lock:
+                self.lock_before = revision
+        return False
+
+    def _consumer_back(self, red: Sequence[str]) -> None:
+        """T19: the shared lock this run took went red on a consumer. The generation of the commit before
+        comes back, from a clone; when its E2E is green the marker holds this machine there and the
+        state record tells the producer. Red there too: the lock is not what broke it, nothing is held."""
+        assert self.profile is not None and self.lock_before is not None
+        revision, lock_commit = self.lock_before, self._head()
+        reason = f"E2E red: {', '.join(red)}"
+        if not self._open_work(revision):
+            self._still_red(red)
+            return
+        units = self._generation_units()
+        running = self._unit_states(sorted(name for name in units if not _session_unit(name, self.env)))
+        status = self._ds("rebuild", "--profile", self.profile, "--switch")
+        if status == 0:
+            self._take_back_services(units, running)
+        self.run.step("go-back", status, detail=reason)
+        again = self._run_e2e() if status == 0 else ["rebuild"]
+        self.red = True
+        self._verify(False)
+        self._remove_work()
+        if again is not None:
+            self._still_red(again)
+            return
+        active = {str(component["name"]) for component in self._active()}
+        names = sorted(({check.split(":", 1)[0] for check in red} - _NOT_COMPONENTS) & active)
+        lock = consumer.lock_digest(self.root, lock_commit)
+        assert lock is not None
+        consumer.write_marker(self.state_root, commit=revision, lock_commit=lock_commit, lock=lock, components=names)
+        self.held = True
+        producer = facts.role(self.instance, self.name)
+        self.run.step("e2e", report.PENDING, detail=f"went back: {reason}")
+        self.run.item(
+            "consumer-held",
+            pending=False,
+            commit=revision,
+            lock_commit=lock_commit,
+            components=names,
+            findings=list(red),
+            message=(
+                f"the shared lock of {lock_commit[:12]} went red here: this machine went back to the generation of "
+                f"{revision[:12]} and stays there until {producer} moves that lock; state/{self.name} tells {producer}"
+            ),
+        )
 
     def _user_channels(self) -> None:
         if self.offline:
@@ -1509,6 +1664,11 @@ class Upgrade(runner.Runner):
     def _e2e(self, *, force: bool = False) -> None:
         if self.profile is None or self.red:
             return
+        if self.held and self.work is None:
+            # The checkout has the lock that went red here; the generation is the one it went back to.
+            self._verify(False)
+            self.run.step("e2e", report.OK, detail="held: the checkout is not active")
+            return
         if self.work is not None and not self._is_active(self.work):
             # Without a network its rebuild waits; this generation says nothing about the commit.
             self._verify(False)
@@ -1541,6 +1701,8 @@ class Upgrade(runner.Runner):
             self._no_result()
         elif self.waiting is not None:
             self._go_back(f"E2E red: {', '.join(red)}", red)
+        elif self.lock_before is not None and self.work is None:
+            self._consumer_back(red)
         else:
             self._still_red(red)
 
