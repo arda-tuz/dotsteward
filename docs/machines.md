@@ -218,9 +218,11 @@ The observer first waits until dpkg settled, without holding any lock, so that `
 kept waiting meanwhile, and so also on a machine without a name, where it then does nothing: no
 process holds a lock of `/var/lib/dpkg/lock-frontend`, `/var/lib/dpkg/lock`,
 `/var/lib/apt/lists/lock` or `/var/cache/apt/archives/lock` (as `/proc/locks` lists them, which
-reaches every program that drives dpkg; on btrfs and tmpfs the inode alone),
-`/var/lib/dpkg/updates` is empty, `dpkg --audit` is clean, and none of that nor a write of the
-status file was seen for `--settle-seconds` (15). While a lock is held it waits without a limit;
+reaches every program that drives dpkg, by device and inode; on btrfs the device of the
+superblock of the mount, from `/proc/self/mountinfo`; a lock of the same inode on another
+anonymous device counts only up to the wait limit), `/var/lib/dpkg/updates` is empty,
+`dpkg --audit` is clean, and none of that nor a write of the status file was seen for
+`--settle-seconds` (15). While a lock is held it waits without a limit;
 after `--wait-limit` (1800) seconds of the other signs it observes nothing, and the next change
 of the status file starts it again. Then it takes the instance lock without waiting; when another
 command holds it, a pending mark makes the holder start the observer when it lets go. The lock

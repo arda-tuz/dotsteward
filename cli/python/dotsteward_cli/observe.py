@@ -7,11 +7,12 @@ also runs at login, since nothing watches while nobody is logged in.
 
 1. Settle, without any lock, also on a machine without a name (one run per apt run, not one
    per write of the status file): no process holds a lock of the dpkg and apt lock files
-   (``/proc/locks``, which every program's locks reach; on an anonymous device the inode
-   alone), ``/var/lib/dpkg/updates`` is empty, ``dpkg --audit`` is clean, and nothing was
-   busy for ``--settle-seconds``. While a lock is held it waits without a limit; after
-   ``--wait-limit`` seconds of the other signs it observes nothing: the next change of the
-   status file starts it again. A machine without a name stops here.
+   (``/proc/locks``, which every program's locks reach, by device and inode: the device of
+   stat or, on btrfs, of the superblock of the mount), ``/var/lib/dpkg/updates`` is empty,
+   ``dpkg --audit`` is clean, and nothing was busy for ``--settle-seconds``. While a lock is
+   held it waits without a limit; after ``--wait-limit`` seconds of the other signs (a lock
+   of the same inode elsewhere among them) it observes nothing: the next change of the status
+   file starts it again. A machine without a name stops here.
 2. The instance lock, without waiting: when another command holds it, a pending mark makes
    the holder start the observer when it lets go (exit 3).
 3. The installed packages against the last observation (``<state>/observe/dpkg-snapshot.json``).
@@ -70,6 +71,7 @@ LOCK_FILES = (
     "/var/cache/apt/archives/lock",
 )
 PROC_LOCKS = "/proc/locks"
+MOUNTINFO = "/proc/self/mountinfo"
 SNAPSHOT_FILE = "dpkg-snapshot.json"
 SETTLE_SECONDS = 15.0
 WAIT_LIMIT_SECONDS = 1800.0
@@ -139,27 +141,63 @@ def _held_locks(env: Mapping[str, str]) -> set[tuple[int, int, int]]:
     return held
 
 
-def _locked(found: os.stat_result, held: set[tuple[int, int, int]]) -> bool:
-    """Whether /proc/locks lists a lock of the file whose stat is FOUND. On an anonymous
-    device (major 0: btrfs subvolumes, tmpfs) /proc/locks names the device of the superblock,
-    stat another one: there the inode matches alone."""
-    major, minor, inode = os.major(found.st_dev), os.minor(found.st_dev), found.st_ino
-    if (major, minor, inode) in held:
-        return True
-    return major == 0 and any(lock_major == 0 and lock_inode == inode for lock_major, _, lock_inode in held)
+def _mounts(env: Mapping[str, str]) -> list[tuple[str, tuple[int, int]]]:
+    """(mount point, device of its superblock) of every mount in /proc/self/mountinfo,
+    longest mount point first. On btrfs the superblock device is the one /proc/locks names,
+    stat gives the one of the subvolume."""
+    try:
+        text = _system(env, MOUNTINFO).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    found = []
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) < 5 or ":" not in fields[2]:
+            continue
+        major, _, minor = fields[2].partition(":")
+        if not (major.isdigit() and minor.isdigit()):
+            continue
+        # Mount points escape blanks and backslashes as octal (\040).
+        point = re.sub(r"\\([0-7]{3})", lambda escaped: chr(int(escaped.group(1), 8)), fields[4])
+        found.append((point, (int(major), int(minor))))
+    return sorted(found, key=lambda mount: len(mount[0]), reverse=True)
+
+
+def _devices(path: Path, found: os.stat_result, mounts: Sequence[tuple[str, tuple[int, int]]]) -> set[tuple[int, int]]:
+    """The devices a lock of the file at PATH may carry in /proc/locks: the one stat gives
+    and the one of the superblock of its mount."""
+    devices = {(os.major(found.st_dev), os.minor(found.st_dev))}
+    real = os.path.realpath(path)
+    for point, device in mounts:
+        if real == point or real.startswith(point.rstrip("/") + "/"):
+            devices.add(device)
+            break
+    return devices
 
 
 def _busy(env: Mapping[str, str]) -> tuple[str | None, bool]:
     """What says that dpkg or apt is at work now (None when nothing does), and whether it is
-    a lock some process holds."""
+    a lock some process holds. A lock matches by device and inode. Without the device of the
+    superblock (no mountinfo), a lock of the same inode on another anonymous device (major 0:
+    tmpfs, btrfs, FUSE) may be dpkg's or another file's: it counts, but as no held lock, so
+    that the wait limit bounds it."""
     held = _held_locks(env)
+    mounts = _mounts(env) if held else []
+    maybe = None
     for lock in LOCK_FILES:
+        path = _system(env, lock)
         try:
-            found = os.stat(_system(env, lock))
+            found = os.stat(path)
         except OSError:
             continue
-        if _locked(found, held):
+        devices = _devices(path, found, mounts)
+        if any((major, minor, found.st_ino) in held for major, minor in devices):
             return f"{lock} is locked", True
+        anonymous = os.major(found.st_dev) == 0 and len(devices) == 1
+        if maybe is None and anonymous and any(major == 0 and inode == found.st_ino for major, _, inode in held):
+            maybe = f"{lock} may be locked: a lock of its inode on another device"
+    if maybe is not None:
+        return maybe, False
     try:
         with os.scandir(_system(env, UPDATES_DIRECTORY)) as entries:
             if any(True for _ in entries):
