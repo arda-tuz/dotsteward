@@ -11,6 +11,8 @@
 # attestation, an attestation of another file, a lookup without an answer: the pin stays (a
 # review item, or the group waits for the next run), and the requirements are put back.
 # pins check refuses a signed pin whose requirements allow a file beyond its attestations.
+# Without repo on the row, the project URLs of the pinned version name the repository; without
+# one there, an attested release is unsigned.
 # The transitive requirements stay hash-pinned only.
 # shellcheck source=tests/engines/pins/apply/helpers.sh
 source "$DS_REPO_ROOT/tests/engines/pins/apply/helpers.sh"
@@ -195,3 +197,47 @@ declare_row '{"integrity": "http://127.0.0.1:9/integrity"}'
 commit "the integrity API is down" >/dev/null
 assert_exit 0 apply --latest "$rows"
 assert_contains "$DS_STDOUT" "moved pypi.example-tool: 1.0.0 -> 1.1.0 (unsigned, signature discovery incomplete)"
+
+# --- A row without repo: the repository the first signer must belong to comes from the project
+# URLs of the version already pinned (never of the release it moves to, which could name its
+# own); without one there, an attested release is recorded unsigned. --------------------------
+# project_urls VERSION JSON: the project URLs the index gives for that version.
+project_urls() {
+  mkdir -p "$www/pypi/example-tool/$1"
+  if [[ -f $www/pypi/example-tool/$1/json ]]; then
+    jq --argjson urls "$2" '.info.project_urls = $urls' "$www/pypi/example-tool/$1/json" >"$DS_TEST_ROOT/urls.json"
+  else
+    jq -n --arg version "$1" --argjson urls "$2" '{info: {name: "example-tool", version: $version, project_urls: $urls}, urls: []}' \
+      >"$DS_TEST_ROOT/urls.json"
+  fi
+  mv -- "$DS_TEST_ROOT/urls.json" "$www/pypi/example-tool/$1/json"
+}
+at "$start"
+DECLARED='{}' json_edit "$manifest" '
+for entry in data["pins"]["latest"]:
+    if entry["id"] == "pypi.example-tool":
+        entry.pop("repo", None)
+'
+norepo=$(commit "the pypi row names no repo")
+provenance "$sdist" "$sdist.provenance.json"
+provenance "$wheel" "$wheel.fork.provenance.json"
+project_urls 1.0.0 '{"Source": "https://github.com/example/example-tool", "Documentation": "https://example-tool.example.invalid/"}'
+project_urls 1.1.0 '{"Source": "https://github.com/example/example-tool-fork"}'
+before=$(tree_state)
+assert_exit 3 apply --latest "$rows"
+assert_eq "authenticity-first-use-foreign pypi.example-tool" "$(item_codes)"
+assert_eq "$before" "$(tree_state)"
+assert_contains "$(<"$DS_HTTPFIX_LOG")" "GET /pypi/example-tool/1.0.0/json"
+
+# The project URLs name the repository of the signer: trusted on first use.
+provenance "$wheel" "$wheel.provenance.json"
+assert_exit 0 apply --latest "$rows"
+assert_contains "$DS_STDOUT" "moved pypi.example-tool: 1.0.0 -> 1.1.0 (sigstore: $workflow/v1.1.0, trusted on first use)"
+at "$norepo"
+
+# No GitHub repository among the project URLs of the pinned version: unsigned, said so.
+project_urls 1.0.0 '{"Homepage": "https://example-tool.example.invalid/"}'
+assert_exit 0 apply --latest "$rows"
+assert_contains "$DS_STDOUT" "moved pypi.example-tool: 1.0.0 -> 1.1.0 (unsigned, the repository that publishes it is unknown)"
+assert_eq '"unsigned"' "$(signer .kind)"
+assert_eq null "$(signature .)"
