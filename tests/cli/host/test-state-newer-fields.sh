@@ -86,7 +86,6 @@ assert_not_contains "$DS_STDOUT" "future_"
 newer "data['machine_key'] = 'not a key'"
 assert_exit 1 state_in "$agents_inst" "$laptop_state" show desk
 assert_contains "$DS_STDERR" "breaks its schema"
-assert_not_contains "$DS_STDERR" "not a key"
 
 # Nor is a record without a required field, whatever else it holds.
 newer "

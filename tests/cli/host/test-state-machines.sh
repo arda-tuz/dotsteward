@@ -102,7 +102,8 @@ assert_exit 2 state_in "$agents_inst" "$laptop_state" show 'Not A Name'
 # The fetch keeps away from main and from the checkout.
 assert_eq "" "$(git -C "$agents_inst" status --porcelain --untracked-files=normal)"
 
-# A branch of the remote that breaks the schema is no state: show refuses to read it.
+# A branch of the remote that breaks the schema is no state: show refuses to read it, and
+# never prints the free text it leaves out.
 broken=$DS_TEST_ROOT/broken
 mkdir -p "$broken"
 printf '{"schema_version": 1, "host": "desk", "note": "free text"}\n' >"$broken/state.json"
@@ -112,7 +113,9 @@ commit=$(git -C "$e2e_bare" commit-tree "$tree" -p "$(remote_tip desk)" -m "chor
 git -C "$e2e_bare" update-ref refs/heads/state/desk "$commit"
 assert_exit 0 state_in "$agents_inst" "$laptop_state" fetch
 assert_exit 1 state_in "$agents_inst" "$laptop_state" show desk
-assert_contains "$DS_STDERR" "unknown key note"
+assert_contains "$DS_STDERR" "breaks its schema"
+assert_contains "$DS_STDERR" "machine_key"
+assert_not_contains "$DS_STDERR" "free text"
 
 # --- two machines, one name ------------------------------------------------------------------------
 

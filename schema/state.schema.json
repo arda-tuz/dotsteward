@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/arda-tuz/dotsteward/schema/state.schema.json",
   "title": "dotsteward state.json",
-  "description": "The state one machine observes, schema version 1: the one file of the branch state/<name> of the instance remote, which only that machine writes. The schema is an allowlist: every value has a fixed form and no field takes free text, so no user name, home directory, path, host name, address, serial number, message or environment value can enter it. Unknown keys are errors.",
-  "$comment": "Readers interpret the keyword subset of workstation.schema.json. Beyond the schema the writer holds components to the enabled components of the intent and packages to the packages a component installs or follows.",
+  "description": "The state one machine observes, schema version 1: the one file of the branch state/<name> of the instance remote, which only that machine writes. The schema is an allowlist: every value has a fixed form and no field takes free text, so no user name, home directory, path, host name, address, serial number, message or environment value can enter it. Unknown keys are errors for the writer; a reader leaves them out and holds the rest to the schema, so a newer framework can add optional fields.",
+  "$comment": "Readers interpret the keyword subset of workstation.schema.json. Beyond the schema the writer holds components to the enabled components of the intent and packages to the packages a component installs or follows. A new field is always optional: a new required field, or another form of a known field, takes a new schema_version. Releases up to 1.6.0 refuse unknown keys when they read a record.",
   "type": "object",
   "required": ["schema_version", "host", "machine_key", "recorded_at", "recorded_by"],
   "properties": {

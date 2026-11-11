@@ -23,7 +23,10 @@ one is the queue, and the next ``record`` or ``push`` sends it.
 
 ``fetch`` brings the branches of every machine to ``refs/remotes/origin/state/*``; ``show``
 prints the state of this machine (its local branch) or of another (what the last fetch
-brought).
+brought). A reader holds a record to the schema without the fields the schema does not know
+(``known_fields``): a machine on a newer framework may record new optional fields, and this
+one reads the rest. A new required field or another form of a known field is a new
+``schema_version``, which this reader refuses.
 
 Exit status: 0 done, 1 refusal, 2 usage error, 4 the record breaks its schema or the
 privacy scan found something (nothing was recorded), 6 no network or no login (what was
@@ -36,8 +39,8 @@ ones checked, ``unverified`` once they changed, and ``last_verified`` apart from
 ``version``.
 
 Python API for the commands that record a state: ``observe``, ``record``, ``push``,
-``read``, ``this_machine``, ``tracked_debs``, ``main_version``, ``read_checks``, ``write_check``,
-``record_e2e``.
+``read``, ``known_fields``, ``this_machine``, ``tracked_debs``, ``main_version``, ``read_checks``,
+``write_check``, ``record_e2e``.
 """
 
 from __future__ import annotations
@@ -135,6 +138,47 @@ def schema_problems(document: Mapping[str, Any]) -> list[str]:
     if not isinstance(document, dict):
         return ["(root): expected a table"]
     return config.schema_errors(schema(), document)
+
+
+def known_fields(document: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """DOCUMENT without the fields its schema does not know, and their paths: what a reader
+    holds to the schema. A newer framework may record new optional fields; a reader ignores
+    them, and never shows them, since the schema is the allowlist of what a record says. Only
+    a closed object (``properties`` without other keys) loses a key; the keys of a map are
+    held to its ``propertyNames``. The writer keeps the whole schema (``_check``)."""
+    root = schema()
+    ignored: list[str] = []
+
+    def node_of(node: Any) -> Any:
+        while isinstance(node, dict) and isinstance(node.get("$ref"), str):
+            node = root.get("$defs", {}).get(node["$ref"].removeprefix("#/$defs/"))
+        return node
+
+    def known(node: Any, value: Any, where: str) -> Any:
+        node = node_of(node)
+        if not isinstance(node, dict):
+            return value
+        if isinstance(value, dict):
+            properties = node.get("properties")
+            extra = node.get("additionalProperties", True)
+            result: dict[str, Any] = {}
+            for key, item in value.items():
+                if isinstance(properties, dict) and key in properties:
+                    result[key] = known(properties[key], item, f"{where}{key}.")
+                elif isinstance(extra, dict):
+                    result[key] = known(extra, item, f"{where}{key}.")
+                elif extra is False and isinstance(properties, dict):
+                    ignored.append(f"{where}{key}")
+                else:
+                    result[key] = item
+            return result
+        if isinstance(value, list) and isinstance(node.get("items"), dict):
+            return [known(node["items"], item, where) for item in value]
+        return value
+
+    if not isinstance(document, dict):
+        return dict(document), ignored
+    return known(root, document, ""), ignored
 
 
 def _settings(instance: config.Instance, name: str) -> Mapping[str, Any]:
@@ -783,9 +827,11 @@ def read(instance: config.Instance, name: str, env: Mapping[str, str] | None = N
     commit = local or fetched
     if commit is None:
         raise Refusal(f"no recorded state of {name} here: 'dotsteward state fetch' brings it")
-    document = _document_at(instance, commit)
-    if document is None:
+    recorded = _document_at(instance, commit)
+    if recorded is None:
         raise Refusal(f"{branch(name)} holds no {FILE} that can be read")
+    # A newer framework may have recorded fields this one does not know: they are left out.
+    document, ignored = known_fields(recorded)
     problems = schema_problems(document)
     if problems:
         raise Refusal(f"{branch(name)}: {FILE} breaks its schema: {'; '.join(problems)}")
@@ -798,6 +844,7 @@ def read(instance: config.Instance, name: str, env: Mapping[str, str] | None = N
         "source": "local" if local is not None else "remote",
         "queued": queued,
         "state": document,
+        "ignored": len(ignored),
     }
 
 
@@ -811,6 +858,9 @@ def _human(shown: Mapping[str, Any]) -> list[str]:
     )
     if shown["queued"] is not None:
         lines.append(f"queued: {'yes (not on the remote yet)' if shown['queued'] else 'no'}")
+    if shown.get("ignored"):
+        count = shown["ignored"]
+        lines.append(f"ignored: {count} field{'' if count == 1 else 's'} of a newer framework")
     platform = document.get("platform") or {}
     if platform:
         parts = (platform.get(key) for key in ("os", "version", "codename", "arch"))
