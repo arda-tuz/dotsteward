@@ -41,6 +41,14 @@
           "unavailable": {
             "$ref": "#/$defs/nonEmptyString",
             "description": "The component does not exist on this platform, and why: every command and Nix leave it out on a machine of the platform."
+          },
+          "version": {
+            "$ref": "#/$defs/nonEmptyString",
+            "description": "The version constraint of the component on this platform, in place of the one of workstation.toml: an apt_preferences(5) pattern, a series of numbers alone being that series (16 is 16.*). It binds apt on a machine of the platform and the shared pins as soon as one machine runs it."
+          },
+          "reason": {
+            "$ref": "#/$defs/nonEmptyString",
+            "description": "Why the version is constrained on this platform."
           }
         },
         "additionalProperties": false

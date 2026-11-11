@@ -188,8 +188,12 @@ a source the lock records as signed, an entry without a signature does not come 
 npm or a skills lock) is never restored (`restore-unsupported`).
 
 These stay for a person or an agent, as items of `review.json`: a pin with a
-`*_reason` field, a version another rule derives, a `version` in the component's
-configuration or a new major of a security override (`pins-constrained`); a newer
+`*_reason` field, a version another rule derives, a new version outside the `version`
+constraint of its component, or a pin already outside it, or a new major of a security
+override (`pins-constrained`). The constraint is the one of `[components.<name>]`, or of the
+platform file of a platform a machine of the instance runs (its host file names it), since the
+shared lock reaches them all; the item names the rule, its reason and the newest version. A
+move inside every such constraint moves like any other; a newer
 series of a channel (`series-available`); a framework major (`framework-major`); a
 changed watched path (`pins-review`), since moving it is an inspection; a release
 without the asset (`asset-missing`); a bundle whose audit findings grow, or whose audit

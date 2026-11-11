@@ -19,8 +19,10 @@ A group can still wait when it runs: ``npm-audit``, and for a skill
 ``skill-local-delta``, ``skill-source-missing``, ``skill-scan-finding``.
 
 Constrained (T18-a keeps these for a person): a field ``*_reason`` on the pin, a
-version another rule derives, a ``version`` in ``[components.<name>]`` of the
-configuration, a new major of a security override.
+version another rule derives, a new major of a security override, and a version outside
+the ``version`` constraint of the component: the one of ``[components.<name>]``, or of
+the platform file of a machine of the instance, since the shared lock reaches them all.
+A move inside every such constraint is no decision: it moves.
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Any
 
-from dotsteward_cli import versions
+from dotsteward_cli import platforms, versions
 
 from ..checker import GROUP_ERRORS
 from ..instance import Instance
@@ -264,9 +266,17 @@ def constraint(move: Move, instance: Instance, declared: Declared, pin: Any) -> 
             if origin is not None:
                 return f"the version follows {origin}"
     components = instance.config.get("components")
-    entry = components.get(move.component) if isinstance(components, dict) else None
-    if isinstance(entry, dict) and entry.get("version") is not None:
-        return f"[components.{move.component}] version = {entry['version']!r}"
+    shared = components if isinstance(components, dict) else {}
+    for rule in platforms.shared_constraints(instance.root, shared, move.component):
+        version = rule["version"]
+        if versions.in_constraint(version, move.row.get("current")) and versions.in_constraint(version, move.latest):
+            continue
+        where = rule["where"] + (f", machines {', '.join(rule['machines'])}" if rule["machines"] else "")
+        said = f"[components.{move.component}] version = {version!r} ({where})"
+        said += f": {rule['reason']}" if rule["reason"] else ""
+        if not versions.in_constraint(version, move.row.get("current")):
+            return f"{said}; the pinned {move.row.get('current')} is outside it, so a person decides"
+        return f"{said}; the newest is {move.latest}, outside it"
     bundle = declared.bundles.get(move.path.text()) if move.path is not None else None
     if bundle is not None and bundle.override and move.row["status"] == "review":
         return "a new major of a security override"

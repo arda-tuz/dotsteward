@@ -22,6 +22,12 @@ so ``1.2-1+esm1`` is a newer package than ``1.2-1`` and ``1.2.3+build5`` sorts a
 ``1.2.3``; numbers compare as numbers and a missing part sorts first (``1.2`` before
 ``1.2.0``).
 
+A version constraint (``version`` of a component) is a pattern of versions in the
+syntax of ``apt_preferences(5)``: ``*`` and ``?`` are wildcards. A series of numbers alone
+means that series: ``16`` and ``16.*`` are the same constraint, and so are ``1.140`` and
+``1.140.*``. ``constraint_pattern`` gives the pattern, ``in_constraint`` the answer, the
+same for apt and for every other channel.
+
 Where dpkg is at hand and the versions are of installed packages,
 ``dpkg --compare-versions`` stays the authority. Stage 0 keeps its small bash floor
 check for operating system versions (``preflight_version_at_least``), since it runs
@@ -30,6 +36,7 @@ before Python exists.
 
 from __future__ import annotations
 
+import fnmatch
 import functools
 import re
 from collections.abc import Iterable
@@ -49,6 +56,7 @@ _ATTACHED = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 _DIGITS = re.compile(r"[0-9]+")
+_SERIES = re.compile(r"[0-9]+(?:\.[0-9]+)*")
 
 
 def _order(char: str) -> int:
@@ -149,3 +157,18 @@ def numeric_parts(version: Any) -> tuple[int, ...]:
     """Every number in VERSION, in order (how far apart two versions are, not their
     order); the first digits of a number too long to mean anything."""
     return tuple(int(part[:32]) for part in _DIGITS.findall(str(version)))
+
+
+def constraint_pattern(constraint: str) -> str:
+    """The apt pattern of a version constraint: a series of numbers alone is that series."""
+    text = constraint.strip()
+    return f"{text}.*" if _SERIES.fullmatch(text) else text
+
+
+def in_constraint(constraint: str, version: Any) -> bool:
+    """Whether VERSION is inside CONSTRAINT; a leading v of a release tag is not part of it."""
+    text = str(version).strip()
+    if text[:1] == "v" and text[1:2] in _ASCII_DIGITS:
+        text = text[1:]
+    pattern = constraint_pattern(constraint)
+    return fnmatch.fnmatchcase(text, pattern) or (pattern.endswith(".*") and text == pattern[:-2])

@@ -866,7 +866,7 @@
         "version": {
           "$ref": "#/$defs/nonEmptyString",
           "default": null,
-          "description": "A constraint on the version: `dotsteward upgrade` keeps a `deb` server on its major version."
+          "description": "A constraint on the version, an apt_preferences(5) pattern (a series of numbers alone is that series: 16 is 16.*): the writer moves a pin of the component only inside it, apt keeps the packages of a `deb` component inside it, and a constrained server refuses another major."
         },
         "reason": {
           "$ref": "#/$defs/nonEmptyString",

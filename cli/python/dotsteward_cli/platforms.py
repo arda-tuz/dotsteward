@@ -152,6 +152,52 @@ def resolve(instance: config.Instance, env: Mapping[str, str] | None = None) -> 
     }
 
 
+def _runtime_of(platform: str) -> str:
+    return "darwin" if is_darwin(platform) else "linux"
+
+
+def constraint(
+    root: str | os.PathLike[str], shared: Mapping[str, Any], name: str, platform: str | None
+) -> dict[str, str] | None:
+    """The version constraint of component NAME on a machine of PLATFORM: ``{version, reason,
+    where}`` from the most specific platform layer that has one, else from SHARED (the
+    ``[components]`` of workstation.toml); None when nothing constrains it."""
+    chain = layers(platform, _runtime_of(platform)) if platform else []
+    for layer in chain:
+        table = ((read_platform(root, layer) or {}).get("components") or {}).get(name) or {}
+        if table.get("version"):
+            return {"version": str(table["version"]), "reason": str(table.get("reason") or ""), "where": _label(layer)}
+    table = shared.get(name)
+    if isinstance(table, Mapping) and table.get("version"):
+        return {"version": str(table["version"]), "reason": str(table.get("reason") or ""), "where": "workstation.toml"}
+    return None
+
+
+def shared_constraints(root: str | os.PathLike[str], shared: Mapping[str, Any], name: str) -> list[dict[str, Any]]:
+    """Every version constraint of component NAME that binds the shared lock, which reaches every
+    machine: the one each machine of the instance (hosts/*.toml) has on its platform, and the one of
+    workstation.toml when there is no machine yet. Each ``{version, reason, where, machines}``, one
+    per distinct rule."""
+    from dotsteward_cli import machine
+
+    found: dict[tuple[str, str], dict[str, Any]] = {}
+    names = machine.known_names(root)
+    for host in names:
+        try:
+            document = machine.read_host(root, host) or {}
+        except config.DotstewardError:
+            document = {}
+        rule = constraint(root, shared, name, document.get("platform"))
+        if rule is not None:
+            entry = found.setdefault((rule["version"], rule["where"]), {**rule, "machines": []})
+            entry["machines"].append(host)
+    if not names:
+        rule = constraint(root, shared, name, None)
+        if rule is not None:
+            found[(rule["version"], rule["where"])] = {**rule, "machines": []}
+    return [found[key] for key in sorted(found)]
+
+
 def unavailable_on(root: str | os.PathLike[str], platform: str | None, runtime: str) -> list[str]:
     """What the layers of the release PLATFORM (None: only the Nix platform RUNTIME) call
     unavailable, sorted: the rule mkInstance applies to a host file, so a machine's no: tags are
