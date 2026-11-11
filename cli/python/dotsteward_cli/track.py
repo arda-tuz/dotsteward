@@ -252,6 +252,19 @@ def _add_keys(text: str, name: str, values: Mapping[str, Any]) -> str | None:
     return before + "".join(f"{key} = {_value(value)}\n" for key, value in values.items()) + "".join(lines[end:])
 
 
+def machines_for(root: Path, this: str | None, table: Mapping[str, Any]) -> set[str]:
+    """The machines a table is for: those of its machines list, else every known machine (the host
+    files and this one), each with one of its tags when it has tags."""
+    if isinstance(table.get("machines"), list):
+        names = {str(name) for name in table["machines"]}
+    else:
+        names = set(machine.known_names(root)) | ({this} if this else set())
+    tags = table.get("tags")
+    if isinstance(tags, list):
+        names = {name for name in names if set(tags) & set((machine.read_host(root, name) or {}).get("tags") or [])}
+    return names
+
+
 def _set_keys(text: str, name: str, values: Mapping[str, Any]) -> str | None:
     """TEXT with VALUES in the table [components.NAME]: a key the table has changes in place, a
     new one goes at the end of the table. None when the table has no header of its own."""
@@ -607,14 +620,20 @@ class Add(_Transaction):
         table = dict((current.get("components") or {}).get(self.name) or {})
         if self.options.also_here and isinstance(table.get("machines"), list) and self.this not in table["machines"]:
             self.keys["machines"] = [*table["machines"], self.this]
-        self.dropped = {
-            key: [value for value in table[key] if value not in self.keys[key]]
-            for key in ("machines", "tags", "profiles")
-            if isinstance(table.get(key), list)
-            and key in self.keys
-            and any(value not in self.keys[key] for value in table[key])
-        }
         wanted = {**table, "enable": True, **self.keys}
+        # A table without a scope key is for every machine and every profile: an option that
+        # leaves any of them out narrows it as much as one that shortens a list.
+        self.dropped = {}
+        # A new table narrows nothing: no machine has the component yet.
+        before, after = machines_for(self.root, self.this, table), machines_for(self.root, self.this, wanted)
+        lost = sorted(before - after) if table else []
+        if lost:
+            self.dropped["machines"] = lost
+        if table and "profiles" in self.keys:
+            had = table.get("profiles") or list(self.instance.config["profiles"]["names"])
+            gone = [profile for profile in had if profile not in self.keys["profiles"]]
+            if gone:
+                self.dropped["profiles"] = gone
         expected = _normal(current)
         expected.setdefault("components", {})[self.name] = _normal(wanted)
         if not table:
@@ -794,7 +813,9 @@ class Add(_Transaction):
             ),
             machine.REASON_TAGS: (
                 f"{self.name} does not apply on this machine (tags: {', '.join(table.get('tags') or [])}, this "
-                f"machine has {', '.join(scope['tags']) or 'none'})"
+                f"machine has {', '.join(scope['tags']) or 'none'}): give this machine one of them (tags of "
+                f"hosts/{self.this}.toml), or change the scope with --tags and --replace-scope; --also-here does "
+                "not help, since machines and tags both apply"
             ),
             machine.REASON_PLATFORM: (
                 f"{self.name} is not available on this platform ({platforms.platform_id(self.env)})"
@@ -897,6 +918,19 @@ class Add(_Transaction):
                 ),
             }
         )
+        lost = self.dropped.get("machines") or []
+        if lost and (self.entry or {}).get("method") == "nix":
+            self.ask.append(
+                {
+                    "code": "profile-removal",
+                    "component": self.name,
+                    "machines": lost,
+                    "message": (
+                        f"{self.name} is a nix component: it would leave the Home Manager profile of "
+                        f"{', '.join(lost)} at their next rebuild; --replace-scope confirms that"
+                    ),
+                }
+            )
         self._asked()
         return True
 
@@ -926,6 +960,7 @@ class Remove(_Transaction):
         super().__init__(instance, state_root, options)
         self.uninstall_result: dict[str, Any] | None = None
         self.kept_comments: list[str] = []
+        self.dropped_machines: list[str] | None = None
         self.plan_file = Path(state_root) / _UNINSTALL_DIRECTORY / f"uninstall-{self.name}.json"
         self.entry: dict[str, Any] | None = None
         self.base = ""
@@ -1228,8 +1263,9 @@ class Remove(_Transaction):
         """The files under components/NAME that no commit holds and git does not ignore: someone's
         work, which the commit of remove would take along."""
         untracked = self._git("ls-files", "--others", "--exclude-standard", "--", self._directory()).stdout
-        staged = self._git("diff", "--cached", "--name-only", "--diff-filter=A", "HEAD", "--", self._directory()).stdout
-        return sorted({line for line in (untracked + staged).splitlines() if line})
+        # Added, modified, staged or not: whatever differs from HEAD, except what is gone already.
+        changed = self._git("diff", "--name-only", "--no-renames", "--diff-filter=d", "HEAD", "--", self._directory())
+        return sorted({line for line in (untracked + changed.stdout).splitlines() if line})
 
     def _remove_directory(self) -> list[str]:
         """Deletes the committed files of components/NAME; what else is there stays, named."""
@@ -1237,9 +1273,16 @@ class Remove(_Transaction):
         removed = []
         for name in committed:
             path = self.root / name
-            if path.is_file() or path.is_symlink():
-                path.unlink()
-                removed.append(name)
+            if not (path.is_file() or path.is_symlink()):
+                continue
+            # Only what is the committed blob byte for byte goes.
+            blob = self._git("rev-parse", f"HEAD:{name}").stdout.strip()
+            here = self._git("hash-object", "--no-filters", "--", name).stdout.strip()
+            if path.is_symlink() or not blob or blob != here:
+                _say(self.command, f"{name} stays: it differs from what HEAD holds")
+                continue
+            path.unlink()
+            removed.append(name)
         directory = self.root / self._directory()
         kept = (
             sorted(
@@ -1259,19 +1302,17 @@ class Remove(_Transaction):
         return removed
 
     def _machines_of(self, table: Mapping[str, Any]) -> list[str]:
-        """The machines the component is for, by the intent: its machines, else every known machine."""
-        if isinstance(table.get("machines"), list):
-            return sorted(str(name) for name in table["machines"])
-        names = set(machine.known_names(self.root))
+        """The machines the component is for, by the intent."""
         this = machine.current_name(machine.read_machine(self.state_root), self.env)
-        if this is not None:
-            names.add(this)
-        tags = table.get("tags")
-        if isinstance(tags, list):
-            names = {
-                name for name in names if set(tags) & set((machine.read_host(self.root, name) or {}).get("tags") or [])
-            }
-        return sorted(names)
+        return sorted(machines_for(self.root, this, table))
+
+    def _applies_here(self) -> tuple[bool, str | None]:
+        try:
+            scope = machine.effective(self.instance, self.env)
+        except config.DotstewardError:
+            return True, None
+        reason = scope["reasons"].get(f"component:{self.name}")
+        return reason in (None, machine.REASON_NOT_ACTIVATED, machine.REASON_INCOMING), reason
 
     def _host_text(self) -> tuple[Path, str] | None:
         """This machine's host file without what it says about the component: its answer Never
@@ -1306,6 +1347,33 @@ class Remove(_Transaction):
         this = machine.current_name(machine.read_machine(self.state_root), self.env)
         if this is None:
             raise UsageError("--keep-here: this machine has no name yet; 'dotsteward host init' names it")
+        if not machine.host_path(self.root, this).is_file():
+            raise UsageError(
+                f"--keep-here: this machine has no host file (hosts/{this}.toml), which machines needs: "
+                "'dotsteward host publish' adds it"
+            )
+        here, reason = self._applies_here()
+        if not here:
+            way = {
+                machine.REASON_MACHINES: (
+                    f"its machines are {', '.join(table.get('machines') or [])}: to keep it there, remove nothing; "
+                    f"to have it here too, dotsteward add {self.name} --also-here"
+                ),
+                machine.REASON_TAGS: (
+                    f"its tags are {', '.join(table.get('tags') or [])} and this machine has none of them: give it "
+                    f"one (hosts/{this}.toml), or change the scope with dotsteward add {self.name} --here "
+                    "--replace-scope"
+                ),
+                machine.REASON_DECLINED: (
+                    f"this machine answered Never for it: dotsteward add {self.name} takes that back, then "
+                    f"dotsteward remove {self.name} --keep-here"
+                ),
+            }.get(str(reason), f"it is left out here ({reason})")
+            raise Refusal(
+                f"{self.name} does not apply on this machine, so --keep-here would keep it nowhere here: {way}; "
+                f"dotsteward remove {self.name} --uninstall removes it everywhere"
+            )
+        self.dropped_machines = sorted(set(self._machines_of(table)) - {this})
         current = tomlfile.loads(_read(self.instance.file))
         expected = _normal(current)
         expected["components"][self.name] = {**_normal(table), "machines": [this]}
@@ -1323,7 +1391,11 @@ class Remove(_Transaction):
             text = self._edited(edit, lambda text: _set_keys(text, self.name, {"machines": [this]}), expected)
             atomic.atomic_write(self.instance.file, text)
         self.run.step("intent", report.OK, detail=self.change)
-        _say(self.command, f"{self.name} stays on {this} only: no other machine has it after its next rebuild")
+        lost = ", ".join(self.dropped_machines)
+        _say(
+            self.command,
+            f"{self.name} stays on {this} only" + (f"; {lost} loses it at its next rebuild" if lost else ""),
+        )
         self._apply()
         return self.finish()
 
@@ -1367,7 +1439,8 @@ class Remove(_Transaction):
                     "message": (
                         f"{self.name} is a nix component: without its table it leaves the Home Manager profile of "
                         f"every machine it is for at their next rebuild ({', '.join(machines) or 'every machine'}); "
-                        f"--uninstall confirms that, --keep-here keeps it on this machine only"
+                        "--uninstall confirms that"
+                        + (", --keep-here keeps it on this machine only" if self._applies_here()[0] else "")
                     ),
                 }
             )
@@ -1380,8 +1453,8 @@ class Remove(_Transaction):
                     "code": "untracked-files",
                     "paths": unknown,
                     "message": (
-                        f"components/{self.name} holds files no commit has: move them out, or commit them first, "
-                        "then the same dotsteward remove; nothing was written"
+                        f"components/{self.name} holds files or edits no commit has: commit them first, or move or "
+                        "drop them, then the same dotsteward remove; nothing was written"
                     ),
                 }
             )
@@ -1434,7 +1507,7 @@ class Remove(_Transaction):
         return sys.stdin.isatty() and sys.stdout.isatty()
 
     def document(self) -> dict[str, Any]:
-        return {**super().document(), "uninstall": self.uninstall_result}
+        return {**super().document(), "uninstall": self.uninstall_result, "dropped_machines": self.dropped_machines}
 
 
 # --- the command lines ------------------------------------------------------------------------

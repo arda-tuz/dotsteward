@@ -53,7 +53,7 @@ print(text.replace("[components.example-last]\nenable = true\n\n",
 assert_eq "$expected" "$(git -C "$up_inst" show HEAD:workstation.toml)" "the new table is not where a person puts it"
 
 # A new key: at the end of its table.
-assert_exit 0 add example-lid --tags laptop --publish
+assert_exit 0 add example-lid --tags laptop --replace-scope --publish
 assert_contains "$(git -C "$up_inst" show HEAD:workstation.toml)" \
   $'# example-lid: the lid never suspends the machine.\n[components.example-lid]\nenable = true\ntags = ["laptop"]\n\n[components.example-last]'
 

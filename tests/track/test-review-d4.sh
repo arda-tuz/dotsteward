@@ -22,6 +22,9 @@ host_file other-host 'tags = ["gpu"]'
 git -C "$up_inst" add -A
 git -C "$up_inst" commit -q -m "chore: two machines"
 git -C "$up_inst" push -q origin HEAD:main
+for name in example-tool example-gpu; do
+  mkdir -p "$fw/modules/components/$name"
+done
 
 # --- uncommitted edits in components/NAME --------------------------------------------------------
 mkdir -p "$up_inst/components/example-notes"

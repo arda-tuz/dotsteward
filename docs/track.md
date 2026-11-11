@@ -37,9 +37,12 @@ expects. A name or an attribute part that Nix reserves (`let`, `in`, `rec`, `if`
 `assert`, `with`, `inherit`) is a usage error. The scope options write `machines` (`--here`: this
 machine's name; `--also-here`: the machines the table has and this one), `tags`, `profiles`,
 `method` and `updater` into the table ([workstation-toml.md](workstation-toml.md)); a table that is
-there already keeps its other keys and gets `enable = true`. An option that would drop values from
-a list the table has (another machine, a tag, a profile) stops with `scope-narrowed` (exit 3), which
-names them; `--replace-scope` confirms. Before anything runs, a value the schema refuses, a machine
+there already keeps its other keys and gets `enable = true`. A table without a scope key is for
+every machine and every profile, so an option that would leave out a machine the table is for now
+(another machine on `--here`, one without the tag on `--tags`) or a profile stops with
+`scope-narrowed` (exit 3), naming them, whether the table had a list or not; for a `nix` component
+`profile-removal` too, since those machines lose it from their profile. `--replace-scope` confirms.
+A new table narrows nothing. Before anything runs, a value the schema refuses, a machine
 without a host file (`hosts/<name>.toml`) and a method the component does not support (by its
 manifest) are usage errors; `--apt` is read from the APT lists of this machine only when the
 component is for it.
@@ -82,9 +85,10 @@ through sudo on a terminal, else with `install-required` (exit 3), exactly as `a
 the subject `feat: stop tracking NAME`. The comment right above the table goes with it when it
 names the component; one that does not may be about more tables, so it stays as a paragraph of its
 own and remove says so; a comment below the keys, or one a blank line keeps apart, is about what
-follows and stays. In `components/NAME` only the files a commit holds go; an ignored file stays and
-is named, and a file no commit holds (one git does not know, or one an add that did not finish only
-staged) stops remove with `untracked-files` (exit 3) before anything is written. A table no commit
+follows and stays. In `components/NAME` only files that are exactly what HEAD holds go; an ignored
+file stays and is named, and anything that differs from HEAD (a file git does not know, one an add
+that did not finish only staged, an edit of a committed file, staged or not) stops remove with
+`untracked-files` (exit 3) before anything is written. A table no commit
 holds is no tracked component: remove leaves it, and the directory, as they are. A component that
 another enabled component requires stays (exit 1, naming it), checked on the tree `maintain begin`
 brought; remove that one first. A name that is not tracked is nothing to do. This machine's answer
@@ -95,7 +99,12 @@ A `nix` component would leave the Home Manager profile of every machine it is fo
 rebuild. So a plain remove of one stops with `profile-removal` (exit 3), naming those machines, and
 writes nothing: `--uninstall` confirms the removal everywhere; `--keep-here` keeps it on this
 machine only (its table gets `machines` with this machine's name, under the subject
-`feat: keep NAME on <machine> only`), the way a component is scoped to one machine. The host file of
+`feat: keep NAME on <machine> only`), the way a component is scoped to one machine, and names the
+machines that lose it (`dropped_machines` in `--json`). `--keep-here` works only where the
+component applies on this machine and this machine has its host file: for a component of other
+machines, one whose tags this machine lacks, or one this machine answered Never, it refuses (exit 1)
+and says what to run instead, so it never moves a component here nor leaves it on no machine; the
+question of a plain remove offers it only then. The host file of
 a machine cannot carry a component (it can only decline one), so the scope goes into the table.
 
 Stopping to track never uninstalls what the person keeps:

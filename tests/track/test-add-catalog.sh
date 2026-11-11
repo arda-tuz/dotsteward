@@ -52,7 +52,7 @@ git -C "$up_inst" add -A
 git -C "$up_inst" commit -q -m "chore: the host file of this machine"
 git -C "$up_inst" push -q origin HEAD:main
 clear_log
-assert_exit 0 add example-viewer --here --tags gpu,laptop --profiles workstation --method nix \
+assert_exit 0 add example-viewer --here --tags gpu,laptop --profiles workstation --method nix --replace-scope \
   -m "feat: example-viewer on this machine only" --no-activate --publish --json
 assert_stdout_json '.command == "add" and .component == "example-viewer" and .change == "changed"'
 assert_stdout_json '.apply.command == "apply" and .apply.status == "ok" and .apply.data.published == true'
