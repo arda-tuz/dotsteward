@@ -28,6 +28,10 @@ remote_holds() {
   git -C "$up_bare" show "main:hosts/$1.toml" |
     python3 -c 'import json, sys, tomllib; print(json.dumps(tomllib.loads(sys.stdin.read()).get("holds", {}), sort_keys=True))'
 }
+# first_since COMMIT: the oldest commit of main after COMMIT (the whole list is read: no SIGPIPE).
+first_since() {
+  git -C "$up_bare" rev-list --reverse "$1..main" | sed -n 1p
+}
 # files_of COMMIT: the paths a commit of the remote changed.
 files_of() {
   git -C "$up_bare" show --format= --name-only "$1"
@@ -89,7 +93,7 @@ assert_exit 3 upgrade --tracked --retry-held
 assert_not_contains "$(steps '^pins .*apply')" "--skip agent_tools.codex.linux"
 assert_eq 2.0.0 "$(git -C "$up_bare" show main:versions.lock.json | jq -r '."agent_tools.codex.linux"')"
 remote_holds example-host | assert_json - '. == {}'
-release=$(git -C "$up_bare" rev-list --reverse "$before..main" | head -n 1)
+release=$(first_since "$before")
 assert_eq "chore(hosts): holds on example-host" "$(git -C "$up_bare" log -1 --format=%s "$release")"
 assert_eq "hosts/example-host.toml" "$(files_of "$release")"
 assert_contains "$(files_of main)" "versions.lock.json"
@@ -111,7 +115,7 @@ gate_red_when '."example.broken" == "2.0"'
 before=$(remote_oid)
 assert_exit 3 upgrade --tracked
 rm -f -- "$UP_CONTROL/during-gate" "$UP_CONTROL/static-red"
-pins_commit=$(git -C "$up_bare" rev-list --reverse "$before..main" | head -n 1)
+pins_commit=$(first_since "$before")
 assert_eq 2 "$(git -C "$up_bare" rev-list --count "$before..main")" "the pins and the hold, one commit each"
 assert_contains "$(files_of "$pins_commit")" "versions.lock.json"
 assert_not_contains "$(files_of "$pins_commit")" "hosts/"

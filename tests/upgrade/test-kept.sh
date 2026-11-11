@@ -72,7 +72,7 @@ clear_log
 assert_exit 0 on_terminal -- --tracked
 
 # --- the apt engine: the rule of the platform layer, the packages of the component -------------------
-policy=$(steps '^apt policy ' | head -n 1)
+policy=$(steps '^apt policy ' | sed -n 1p)
 [[ -n $policy ]] || ds_fail "no policy step: $(<"$UP_LOG")"
 printf '%s\n' "${policy#apt policy }" >"$DS_TEST_ROOT/policy.json"
 assert_json "$DS_TEST_ROOT/policy.json" '.constraints == {"example-app": "2.4.*"}'
