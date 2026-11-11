@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import Any
 
 from dotsteward_cli import atomic, config, machine, procs, report
-from dotsteward_cli.upgrade import facts
+from dotsteward_cli.upgrade import facts, holds
 
 _HELPER = Path(__file__).resolve().parents[2] / "libexec" / "apt_helper.py"
 _SYSTEM_PYTHON = "/usr/bin/python3"
@@ -74,13 +74,16 @@ class AptEngineError(Exception):
 class Request:
     """What one apt step needs to know. ``tracked`` is the set T of the enabled deb
     components. ``accept`` holds the keys of ``--accept``. ``constraints`` maps a
-    constrained server to its major version (``{"sampledbms": "16"}``). ``gated``
-    is false only for ``[apt.gated] enable = false`` of the machine."""
+    constrained server to its version constraint (``{"sampledbms": "16.*"}``). ``kept``
+    are the records of the constraints and holds of the machine: ``{component, kind
+    (constraint or hold), version, reason, packages}``. ``gated`` is false only for
+    ``[apt.gated] enable = false`` of the machine."""
 
     mode: str = "tracked"
     tracked: Sequence[str] = ()
     accept: Sequence[str] = ()
     constraints: Mapping[str, str] = field(default_factory=dict)
+    kept: Sequence[Mapping[str, Any]] = ()
     gated: bool = True
     running_kernel: str | None = None
     codename: str | None = None
@@ -96,6 +99,7 @@ class Request:
             "tracked": sorted(self.tracked),
             "accept": list(self.accept),
             "constraints": dict(self.constraints),
+            "kept": [dict(rule) for rule in self.kept],
             "gated": self.gated,
             "running_kernel": self.running_kernel or os.uname().release,
         }
@@ -126,6 +130,7 @@ class Request:
             tracked=tuple(data.get("tracked") or ()),
             accept=accept,
             constraints=dict(data.get("constraints") or {}),
+            kept=tuple(dict(rule) for rule in data.get("kept") or ()),
             gated=bool(data.get("gated", True)),
             running_kernel=data.get("running_kernel"),
             codename=data.get("codename"),
@@ -205,13 +210,15 @@ def _pin_parts(text: str) -> tuple[str, frozenset[str], frozenset[str]]:
 
 
 def check_files(request: Request) -> list[dict[str, str]]:
-    """The pin file there against ``files`` (design 10.3). The dpkg hook keeps its pairs at what
-    dpkg has after every dpkg run, whoever ran it; so a header or pairs that are not what dpkg has
-    is the one finding (``apt-file-mismatch``). What the owner's own apt can bring is a note: the
-    rule, which classes the file holds back, not yet what the next terminal run writes
-    (``apt-file-rule``); a file there that the machine does not want (``apt-file-unwanted``); a file
-    not there yet (``apt-file-missing``); an engine that cannot say (``apt-files-unchecked``). The
-    drop-in of unattended-upgrades is the system component apt-policy's, which checks it."""
+    """The files of the apt engine there against ``files`` (design 10.3). The dpkg hook keeps the
+    pairs of the pin file at what dpkg has after every dpkg run, whoever ran it; so a header or pairs
+    that are not what dpkg has is the one finding (``apt-file-mismatch``). What the owner's own apt can
+    bring is a note: the rule, which classes the file holds back, not yet what the next terminal run
+    writes (``apt-file-rule``); a file there that the machine does not want (``apt-file-unwanted``); a
+    file not there yet (``apt-file-missing``); an engine that cannot say (``apt-files-unchecked``). The
+    file of the constraints and holds follows the intent and what dpkg has, which the owner changes
+    any time, so all it gets is notes: missing, differing or unwanted (``apt-kept-*``). The drop-in of
+    unattended-upgrades is the system component apt-policy's, which checks it."""
     try:
         answer = files(request)
         entry = answer.get("pin")
@@ -223,12 +230,24 @@ def check_files(request: Request) -> list[dict[str, str]]:
     except (AptEngineError, AttributeError) as failure:
         detail = f"{failure.code}: {failure.message}" if isinstance(failure, AptEngineError) else str(failure)
         return [_note("apt-files-unchecked", "", f"the pin file was not checked: {detail}")]
+    kept = answer.get("kept")
+    return _check_pin(path, wanted) + (_check_kept(kept) if isinstance(kept, dict) else [])
+
+
+def _read_there(path: str) -> tuple[str | None, str | None]:
+    """The text of PATH (None when it is not there) and, when it cannot be read, why."""
     try:
-        there: str | None = Path(path).read_bytes().decode("utf-8", errors="replace")
+        return Path(path).read_bytes().decode("utf-8", errors="replace"), None
     except FileNotFoundError:
-        there = None
+        return None, None
     except OSError as error:
-        return [_note("apt-files-unchecked", path, f"the pin file was not checked: {path}: {error.strerror}")]
+        return None, str(error.strerror)
+
+
+def _check_pin(path: str, wanted: str | None) -> list[dict[str, str]]:
+    there, unreadable = _read_there(path)
+    if unreadable is not None:
+        return [_note("apt-files-unchecked", path, f"the pin file was not checked: {path}: {unreadable}")]
     if there is None:
         return (
             []
@@ -267,6 +286,35 @@ def check_files(request: Request) -> list[dict[str, str]]:
     return []
 
 
+def _check_kept(entry: Mapping[str, Any]) -> list[dict[str, str]]:
+    path, wanted = str(entry.get("path") or ""), entry.get("text")
+    if not path or not (wanted is None or isinstance(wanted, str)):
+        return [_note("apt-files-unchecked", "", "the file of the constraints and holds was not checked")]
+    there, unreadable = _read_there(path)
+    if unreadable is not None:
+        return [_note("apt-files-unchecked", path, f"{path} was not checked: {unreadable}")]
+    if there == wanted:
+        return []
+    if there is None:
+        return [_note("apt-kept-missing", path, f"{path} is not there yet: {_FIRST_TERMINAL_RUN}")]
+    if wanted is None:
+        return [
+            _note(
+                "apt-kept-unwanted",
+                path,
+                f"{path} is there, but nothing of the instance constrains or holds a package here: "
+                "the next 'dotsteward upgrade' on a terminal removes it",
+            )
+        ]
+    return [
+        _note(
+            "apt-kept-differs",
+            path,
+            f"{path} is not what the constraints and holds of the instance and dpkg say now: {_NEXT_TERMINAL_RUN}",
+        )
+    ]
+
+
 def _finding(code: str, path: str, message: str) -> dict[str, str]:
     return {"kind": "finding", "code": code, "path": path, "message": message}
 
@@ -277,7 +325,8 @@ def _note(code: str, path: str, message: str) -> dict[str, str]:
 
 def _check_files_main(arguments: Sequence[str]) -> int:
     """One line per finding or note: KIND, CODE, PATH (- for none) and MESSAGE, tab separated.
-    ``--instance DIR``: the request of this machine ([apt.gated] of its host file); ``--request
+    ``--instance DIR``: the request of this machine ([apt.gated] of its host file, the constraints
+    and holds of its components); ``--request
     FILE|-``: a request as the other actions read it."""
     if len(arguments) != 2 or arguments[0] not in ("--instance", "--request"):
         print(
@@ -289,8 +338,10 @@ def _check_files_main(arguments: Sequence[str]) -> int:
             request = _load_request(arguments[1])
         else:
             instance = config.load_instance(arguments[1])
-            record = machine.read_machine(config.state_root(instance, os.environ))
-            request = Request(gated=facts.gated(instance, machine.current_name(record, os.environ)))
+            name = machine.current_name(machine.read_machine(config.state_root(instance, os.environ)), os.environ)
+            active = facts.active_components(instance, machine.effective(instance, os.environ)["profile"], os.environ)
+            held = holds.component_holds(instance.root, name, holds.component_names(instance, os.environ))
+            request = Request(gated=facts.gated(instance, name), kept=facts.kept(active, instance, os.environ, held))
     except (config.DotstewardError, OSError, ValueError) as error:
         print(f"[dotsteward] ERROR: {error}", file=sys.stderr)
         return report.FAILED

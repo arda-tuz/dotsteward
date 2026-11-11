@@ -53,7 +53,7 @@
     },
     "holds": {
       "type": "object",
-      "description": "Versions this machine keeps, by component.",
+      "description": "What this machine holds back. A key that names a component is a component hold, which the owner writes: its pins take no version from `version` on, and on this machine its apt packages stay as dpkg has them while below it. Any other key is a pin hold, which `dotsteward upgrade` writes when a move of that pin went red here: the pin does not take `version` until upstream calls something newer the latest, or `upgrade --retry-held`. Every machine honours them, since the shared lock reaches them all.",
       "additionalProperties": {
         "type": "object",
         "properties": {

@@ -50,7 +50,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--retry-held",
         action="store_true",
-        help="take back every local hold (<state>/holds.json) first, so the held pins move again",
+        help="take back the pin holds of this machine first (in its host file and <state>/holds.json), "
+        "so the held pins move again",
     )
     parser.add_argument("--json", action="store_true", help="print the report as one JSON document")
     parser.add_argument(
@@ -150,9 +151,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         with locks.instance_lock("upgrade", state_root=state_root):
-            if options.retry_held and holds.read(state_root):
-                holds.write(state_root, [])
-                print("[upgrade] every hold is taken back: the held pins move again", flush=True)
+            if options.retry_held:
+                holds.retry(state_root)
+                print(
+                    "[upgrade] the pin holds of this machine are taken back, here and in its host file: "
+                    "the held pins move again",
+                    flush=True,
+                )
             upgrade = run.Upgrade(instance, state_root, mode, options.accept, terminal, arguments, again)
             code = upgrade.execute()
     except locks.LockBusy as busy:

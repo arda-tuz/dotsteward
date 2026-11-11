@@ -196,6 +196,52 @@ Firmware comes only on your word: listed first, asked device by device on a term
 after a green E2E in a short sudo window of its own, on mains power only. Locked devices are named and
 left to the vendor. Without a terminal it is never applied.
 
+## Constraints and holds
+
+A constraint or a hold is one rule, and `upgrade` applies it wherever it counts: to the pins the
+writer moves, to apt in the sudo window, and to the analysis.
+
+```toml
+# workstation.toml, or platforms/<platform>.toml, which wins on a machine of that platform
+[components.example-server]
+version = "16.*"
+reason = "the clusters of this machine run on 16; a new major is a migration the owner starts"
+
+# hosts/<name>.toml
+[holds.example-app]                     # a component hold: the owner writes it
+version = "2.0.0"
+reason = "the plugins of example-app 2 are not ready"
+
+[holds."agent_tools.example.linux"]     # a pin hold: upgrade writes it when the pin went red
+version = "1.4.0"
+reason = "E2E red: example:version"
+since = "2026-11-03T08:00:00Z"
+```
+
+`version` of a component is a pattern of versions as apt writes it (`*` is a wildcard, the epoch
+is part of the version); a series of numbers alone is that series, so `16` and `16.*` mean the same.
+
+| Rule | The writer (pins of the shared lock) | apt, in the sudo window | The analysis |
+| --- | --- | --- | --- |
+| `version` of a component | a pin inside it moves to a newer version inside it; a newer one outside it waits as `pins-constrained`, which names the constraint, its reason and the newest version, for you to decide. The rule of every machine counts: the shared lock reaches them all, so the platform file of a platform a machine runs counts as soon as that machine has a host file | a record at 990 for each package of the component whose installed version is inside it, or, not installed, that has a version inside it; a constrained server also refuses another major (`apt-denied`, class `constrained-major`) | `apt kept N back on purpose (...)`: the package, what apt would take without the rule, and the rule |
+| A component hold, the key a component | its pins take no version from `version` on, whichever machine's host file holds it | on the machine of the host file: a record at 990 for the installed version of each package of the component below `version` | the same line |
+| A pin hold, the key a pin id | the pin does not take `version`; the hold is over when upstream calls something newer the latest | nothing: a red that a package caused gets the `sudo apt-mark hold` command as a hint, never a hold | |
+| The kernel and NVIDIA series | not a pin | the pin file of the gated classes (above) | `apt kept`: it moves with the kernel and driver |
+
+The records of apt are a file of their own, `/etc/apt/preferences.d/61dotsteward-kept`, written
+from the request in the sudo window and taken away when nothing is left to keep. Each record has an
+`Explanation:` line that names the component, the rule and its reason, so `apt-cache policy` says why.
+There is no record at -1, so a version you ask for by name (`apt install example-app=2.0.0`) still
+installs, and a package you moved yourself is never pulled back: a package of the component that is
+outside its constraint, or past its hold, gets no record and a note (`constraint-outside`,
+`hold-outside`). A package of no component, such as another major you installed next to a
+constrained server, gets nothing, and so does a package of a gated class, whose rule is the series
+rule. `dotsteward e2e` compares the file with what the engine writes now (`core:apt-files`) and only
+notes a file that is missing, differs or is not wanted, since the intent and dpkg change it.
+
+Every run names each hold in force with the machine whose host file has it and its reason (`held`);
+`--retry-held` takes back the pin holds of this machine, never a component hold, which is yours.
+
 ## When something goes red
 
 - **The gate says no:** only what the red can be put on is held, never an innocent group. The run
@@ -217,8 +263,16 @@ left to the vendor. Without a terminal it is never applied.
 - **E2E ends without a result, or the rebuild is killed** (137, out of memory or from outside):
   `e2e-no-result` or a failed `rebuild`, exit 1. Nothing goes back and nothing is held; a waiting
   commit waits for the next run.
-- **Holds:** each run names what is held (`held`). `dotsteward upgrade --retry-held` takes every hold
-  back first, so those pins move again; the hold of a version that went red again comes back.
+- **Holds:** a hold goes to the machine layer, `[holds."<pin id>"]` of `hosts/<name>.toml`, in a
+  commit of its own (`chore(hosts): holds on <name>`) that the run publishes after the commit of the
+  pins, never before it, so that publish never races its own hold; when the pins went out, the
+  checkout follows both with its one rebuild, else it takes the hold commit with the next run. Other
+  machines pull it, and each run there names it with the machine and the reason (`held`); the writer
+  of any producer leaves it. Without a network the hold waits in `<state>/holds.json` and the next
+  run publishes it first, a hold of an older release kept only there too. `dotsteward upgrade
+  --retry-held` takes back the pin holds of this machine first, in a publish of its own before the
+  writer, so those pins move again in the same run; the hold of a version that went red again comes
+  back. A hold you take out of the host file by hand stays out.
 - **E2E or the rebuild is red after a move of this run:** the commit goes with its clone, the checkout
   never had it. A rebuild from the checkout returns the tree from before (from a clone of that tree
   when the checkout is dirty), official binaries that moved get their saved copy back, of the user
@@ -230,9 +284,10 @@ left to the vendor. Without a terminal it is never applied.
   and of the user manager, `systemctl --user show-environment`, so a run over SSH or from a timer
   protects the desktop too), is never touched; when neither environment names a desktop there (a
   session name in `XDG_SESSION_DESKTOP` or `DESKTOP_SESSION` is no unit prefix and counts as no
-  name), only the `dotsteward*` and `home-manager*` units of the moved generation go back, and E2E checks the way back. When that is
-  green, the pins of each red component, named by the pin of its binary or by its name in the pin
-  id, get a local hold in `<state>/holds.json`, or all that moved when the checks name none; the writer leaves those pins until upstream calls something newer the
+  name), only the `dotsteward*` and `home-manager*` units of the moved generation go back, and E2E
+  checks the way back. When that is green, the pins of each red component, named by the pin of its
+  binary or by its name in the pin id, get a hold in the host file of this machine, or all that moved
+  when the checks name none; the writer leaves those pins until upstream calls something newer the
   latest, and each run says what is held. Item `red-held`, exit 3. If the way back is red too, the
   move is not what broke the machine: no hold, `e2e-red`, exit 1. A daemon that a command starts
   outside the user manager is not known here; its component stops it in an `agentsPost` hook, which
@@ -266,8 +321,8 @@ left to the vendor. Without a terminal it is never applied.
   names. It goes back through the writer, `pins apply --restore` ([pins-engine.md](pins-engine.md)):
   the whole group comes back from the commit the consumer was green on (a pypi pin with its
   hash-pinned requirements, a binary with its companions), so the lock stays consistent and `pins
-  check` passes; a source the lock records as signed never comes back unsigned. A local hold at the
-  red value keeps the writer from moving it there again while upstream calls it the latest
+  check` passes; a source the lock records as signed never comes back unsigned. A hold of the
+  producer at the red value (in its host file, as every pin hold) keeps the writer from moving it there again while upstream calls it the latest
   (`consumer-red`). The commit message names what went back and for whom. A put back the gate
   refuses is held like any red group, waits for a person and is not tried again for that red lock
   (`<state>/upgrade/refused-restores.json`). That commit takes the
@@ -278,8 +333,8 @@ left to the vendor. Without a terminal it is never applied.
   or a hold with fields it does not know, is said (`consumer-unread`) and never acted on. Only a
   named producer answers, and only a machine with a named producer goes back.
 - **E2E is red with nothing of this run to go back to:** `e2e-red` names the checks, exit 1, no offer
-  and no firmware. A red `deb` component gets the `sudo apt-mark hold` command to run if you want it.
-  Nothing is written to the TOML; later releases carry holds in the machine layer.
+  and no firmware. A red `deb` component gets the `sudo apt-mark hold` command to run if you want it:
+  the package may have moved with your own apt, so `upgrade` never holds it by itself.
 - **The remote refuses the commit:** `publish-refused` says why, exit 1; the commit goes and the next
   run makes it again.
 - **Another machine came first** (`txn publish` exits 3: the remote is not at the base, or the push
@@ -320,7 +375,7 @@ The heaviest one of a run is the status, in the order 4, 1, 3, 6, 0 ([exit-codes
 | `upgrade/e2e-key.json` | the key of the last green E2E |
 | `upgrade/waiting.json` | what the waiting commit moved |
 | `plugins/scan.json` | the digests of the installed plugin trees and the open findings |
-| `holds.json` | the local holds |
+| `holds.json` | the pin holds of this machine and what waits for its host file |
 | `upgrade/held-at.json` | on a consumer, the shared lock that went red here and the commit it went back to |
 | `rollback/` | the official binaries saved while a move is not green yet |
 | `apt-logs/` | what dpkg printed, the newest 20 |
@@ -331,10 +386,10 @@ was published), `publish-waits`, `publish-race`, `publish-refused`, `red-held`, 
 `firmware-available`, `firmware-needs-ac`, the codes of the apt engine that wait (`apt-denied`,
 `dpkg-lock-busy`, `module-missing`, `python3-apt-missing`), and of the skills (`origin-unknown`,
 `skill-conflict`, `capture-blocked`). Notes that wait for nothing: `analysis`, `boot-space-low`,
-`reboot-required`, `checkout-dirty`, `checkout-behind`, `held`, `consumer-held` (the run waits
-through its `e2e` step: `held, unverified`), `consumer-red` (it waits when it has `person: true`),
-`consumer-unread`, `deb-floors-wait`, `deb-floor-unknown`, `pins-group-failed`, `series-available`,
-`phased-waiting`, `module-loss`, `producer-unset`,
+`reboot-required`, `checkout-dirty`, `checkout-behind`, `held`, `constraint-outside`, `hold-outside`,
+`consumer-held` (the run waits through its `e2e` step: `held, unverified`), `consumer-red` (it waits
+when it has `person: true`), `consumer-unread`, `deb-floors-wait`, `deb-floor-unknown`,
+`pins-group-failed`, `series-available`, `phased-waiting`, `module-loss`, `producer-unset`,
 `producer-stale`, `plugin-scan-finding`, `plugin-scan-failed`, `firmware-locked`,
 `firmware-needs-reboot`.
 

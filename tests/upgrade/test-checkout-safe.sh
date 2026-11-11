@@ -91,6 +91,9 @@ clear_log
 assert_exit 1 upgrade --tracked
 assert_contains "$DS_STDERR" "not published"
 assert_eq "$mine" "$(git -C "$up_inst" rev-parse HEAD)"
+# The hold of the red run reached the host file meanwhile, in a commit of its own on the remote.
+assert_eq "chore(hosts): holds on example-host" "$(git -C "$up_bare" log -1 --format=%s main)"
+git -C "$up_inst" pull -q --rebase origin main
 git -C "$up_inst" push -q origin HEAD:main
 
 # --- red with a dirty checkout: the way back works, nothing is orphaned (M9) --------------------------

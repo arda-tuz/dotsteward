@@ -313,11 +313,13 @@ class Upgrade(runner.Runner):
 
     def _request(self, mode: str) -> apt_plan.Request:
         active = self._active()
+        held = holds.component_holds(self.root, self.name, holds.component_names(self.instance, self.env))
         return apt_plan.Request(
             mode=mode,
             tracked=facts.tracked_packages(active, self.instance),
             accept=tuple(key for key in self.accept if key != "firmware"),
-            constraints=facts.constraints(active, self.instance),
+            constraints=facts.constraints(active, self.instance, self.env),
+            kept=facts.kept(active, self.instance, self.env, held),
             gated=facts.gated(self.instance, self.name),
         )
 
@@ -342,6 +344,7 @@ class Upgrade(runner.Runner):
                 self._e2e()
                 self._host_checks()
                 self._publish()
+                self._publish_holds()
                 self._after()
         except KeyboardInterrupt:
             # One way out, from every phase: what ran stays, what a later step would do does not
@@ -355,17 +358,24 @@ class Upgrade(runner.Runner):
 
     def _end(self) -> int:
         told = {item.get("id") for item in self.run.items if item.get("code") == "red-held"}
-        for hold in holds.read(self.state_root):
-            if hold.get("id") not in told:
-                message = f"{hold.get('id')} stays at the version before {hold.get('version')}: {hold.get('reason')}"
-                self.run.item(
-                    "held",
-                    pending=False,
-                    id=hold.get("id"),
-                    version=hold.get("version"),
-                    message=message,
-                    run=RETRY_HELD,
-                )
+        names = holds.component_names(self.instance, self.env)
+        for hold in holds.in_force(self.state_root, self.root, self.name, names):
+            if hold["key"] in told:
+                continue
+            where = f"hosts/{hold['machine']}.toml"
+            kept = "stays at the version before" if hold["kind"] == "pin" else "stays below"
+            own = hold["kind"] == "pin" and hold["machine"] == self.name
+            self.run.item(
+                "held",
+                pending=False,
+                id=hold["key"],
+                kind=hold["kind"],
+                version=hold["version"],
+                machine=hold["machine"],
+                reason=hold["reason"],
+                message=f"{hold['key']} {kept} {hold['version']} ({where}): {hold['reason']}",
+                **({"run": RETRY_HELD} if own else {}),
+            )
         waiting = self.waiting or self._waiting_ref()
         self.run.data.update(own_commits=[waiting] if waiting else [], moved=self.moved if waiting else [])
         self.paths = self.run.write()
@@ -929,8 +939,15 @@ class Upgrade(runner.Runner):
             return
         self._answer_consumers()
         restored = {str(entry["id"]) for entry in self.restores}
+        names = holds.component_names(self.instance, self.env)
+        assert self.work is not None
+        in_force = holds.in_force(self.state_root, self.work, self.name, names)
         # The holds of what goes back keep its rows of latest away; the restore itself goes on.
-        skips = [pattern for pattern in holds.skip_patterns(self.state_root, latest) if pattern not in restored]
+        skips = [
+            pattern
+            for pattern in holds.skip_patterns(self.state_root, latest, in_force, self.name, facts.pin_owners(self._active()))
+            if pattern not in restored
+        ]
         if not self._week_due():
             skips = [_FLAKE_INPUTS, *skips]
         skips = [*skips, *self._waiting_floors(latest)]
@@ -2183,7 +2200,9 @@ class Upgrade(runner.Runner):
                 self._keep_waiting(self.moved)
                 commit = str(self.waiting)
                 self._drop_waiting()
-                self._follow(commit)
+                # The holds of this run after the pins, so that their publish never races it; the
+                # checkout follows both, with the one rebuild it takes anyway.
+                self._follow(self._publish_holds() or commit)
                 return
             if status == _TXN_OFFLINE:
                 self.offline = True
@@ -2213,6 +2232,22 @@ class Upgrade(runner.Runner):
                 return
         self._drop_waiting()
         self._back_to_checkout()
+
+    def _publish_holds(self) -> str | None:
+        """What this run held or released goes to the host file of this machine, in a commit of its
+        own (`host publish`). The new tip, or None: nothing to publish, or it waits for the next run.
+        The checkout stays where it is: only a publish of the pins moves it, with its rebuild."""
+        if self.name is None or self.offline or not holds.unpublished(self.state_root):
+            return None
+        status = self._ds_output("host", "publish").returncode
+        self.run.step("hold-publish", status)
+        if status != 0:
+            return None
+        outcome, tip, _ = publishing.fetch_tip(self.root, self.branch, _PUBLISH_SCOPE)
+        if outcome != publishing.OK:
+            return None
+        self._track(tip)
+        return tip
 
     def _write_again(self) -> bool:
         """The lost race of the producer: no text is merged; the writer runs again on the new tip with

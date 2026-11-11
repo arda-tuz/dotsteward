@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from dotsteward_cli import config, machine
+from dotsteward_cli import config, machine, platforms
 
 _APT = "apt"
 _DEB = "deb"
@@ -74,14 +74,69 @@ def tools(instance: config.Instance) -> list[dict[str, Any]]:
     return list(instance.config["upgrade"]["tools"])
 
 
-def constraints(active: list[dict[str, Any]], instance: config.Instance) -> dict[str, str]:
-    """A constrained server and its version: ``{"sampledbms": "16.*"}``."""
+def _constraint(instance: config.Instance, name: str, env: Mapping[str, str] | None) -> dict[str, str] | None:
+    """The version constraint of NAME on this machine: its platform layer before workstation.toml."""
+    shared = instance.config.get("components") or {}
+    return platforms.constraint(instance.root, shared, name, platforms.platform_id(env))
+
+
+def _packages(component: Mapping[str, Any], instance: config.Instance) -> list[str]:
+    install = component.get("install") or {}
+    settings = _component_settings(instance, component["name"])
+    names = [*(install.get("packageNames") or ()), *(install.get("apt") or ()), *(settings.get("track") or ())]
+    return sorted(set(map(str, names)))
+
+
+def constraints(
+    active: list[dict[str, Any]], instance: config.Instance, env: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    """A constrained deb component and its version: ``{"sampledbms": "16.*"}``."""
     found: dict[str, str] = {}
     for component in active:
-        wanted = _component_settings(instance, component["name"]).get("version")
-        if component.get("method") == _DEB and isinstance(wanted, str) and wanted:
-            found[component["name"]] = wanted
+        rule = _constraint(instance, component["name"], env) if component.get("method") == _DEB else None
+        if rule is not None:
+            found[component["name"]] = rule["version"]
     return found
+
+
+def kept(
+    active: list[dict[str, Any]],
+    instance: config.Instance,
+    env: Mapping[str, str] | None,
+    component_holds: Mapping[str, Mapping[str, str]],
+) -> list[dict[str, Any]]:
+    """What binds apt on this machine, for the records of the apt engine: the version constraint of
+    each active deb component, and the hold the host file of this machine has for it, each with the
+    packages of the component."""
+    rules: list[dict[str, Any]] = []
+    for component in active:
+        if component.get("method") != _DEB:
+            continue
+        name = component["name"]
+        packages = _packages(component, instance)
+        rule = _constraint(instance, name, env)
+        if rule is not None and packages:
+            rules.append(
+                {
+                    "component": name,
+                    "kind": "constraint",
+                    "version": rule["version"],
+                    "reason": rule["reason"],
+                    "packages": packages,
+                }
+            )
+        hold = component_holds.get(name)
+        if hold is not None and packages:
+            rules.append(
+                {
+                    "component": name,
+                    "kind": "hold",
+                    "version": hold["version"],
+                    "reason": hold["reason"],
+                    "packages": packages,
+                }
+            )
+    return rules
 
 
 def gated(instance: config.Instance, name: str | None) -> bool:

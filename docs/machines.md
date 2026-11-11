@@ -36,6 +36,11 @@ tags = ["laptop"]
 declined = { components = [], skills = ["example-skill"], plugins = ["example@market"] }
 ```
 
+It also holds the holds of the machine, `[holds.<key>]` with `version`, `reason` and `since`: a
+component hold, the key a component, which you write, and a pin hold, the key a pin id, which
+`dotsteward upgrade` writes when a move of the pin went red here and publishes in a commit of its
+own. Every machine reads them, since the shared lock reaches them all: [upgrade.md](upgrade.md#constraints-and-holds).
+
 A reinstall under the same name reads it again (`dotsteward host init --name NAME
 --reuse`, the answer on a terminal, or `DOTSTEWARD_MACHINE_REUSE=1` for
 `./bootstrap.sh`), so what the machine declined stays declined and what is scoped to it

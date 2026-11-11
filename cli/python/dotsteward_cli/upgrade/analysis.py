@@ -1,11 +1,13 @@
 """The channels nothing tracks: a read only look, and the update when the owner says so.
 
-The framework knows the channels of the system (apt, snap, flatpak). Every other updater is a table
-of ``[[upgrade.tools]]`` in the instance, and they are all treated alike. Everything runs as the user,
-with a time limit per channel; a missing tool is ``available: false``, a failing one has ``error``,
-and neither ends the run. Without a network the channels that ask one say ``skipped``. The result
-stays in ``<state>/upgrade/analysis.json`` and is never published: it names packages of this machine.
-Updating here enters nothing into the intent, the lock or the state.
+The framework knows the channels of the system (apt, snap, flatpak). The apt channel also says what
+the constraints, the holds and the series rule keep back (``kept``), and why: none of it is offered.
+Every other updater is a table of ``[[upgrade.tools]]`` in the instance, and they are all treated
+alike. Everything runs as the user, with a time limit per channel; a missing tool is ``available:
+false``, a failing one has ``error``, and neither ends the run. Without a network the channels that
+ask one say ``skipped``. The result stays in ``<state>/upgrade/analysis.json`` and is never
+published: it names packages of this machine. Updating here enters nothing into the intent, the lock
+or the state.
 """
 
 from __future__ import annotations
@@ -164,6 +166,17 @@ def _names(items: Sequence[Mapping[str, Any]]) -> str:
     return ", ".join(names) + (", ..." if len(items) > _MAX_NAMES else "")
 
 
+def _why(row: Mapping[str, Any]) -> str:
+    """Why the apt engine keeps a package back: its constraint, its hold, or the series rule."""
+    if row.get("why") == "constraint":
+        return f"version {row.get('version')} of {row.get('component')}"
+    if row.get("why") == "hold":
+        return f"held below {row.get('version')} for {row.get('component')}"
+    if row.get("why") == "gated":
+        return "it moves with the kernel and driver"
+    return "a pin"
+
+
 def lines(channels: Mapping[str, Any]) -> list[str]:
     """One line per channel, for a person; ``--json`` has the rest."""
     said = []
@@ -194,6 +207,12 @@ def lines(channels: Mapping[str, Any]) -> list[str]:
                 + (f" (left out, they provide tracked commands or may: {len(left_out)})" if left_out else "")
             )
     apt = channels.get("apt") or {}
+    kept = apt.get("kept") or []
+    if kept:
+        why = "; ".join(
+            f"{row.get('name')} {row.get('candidate')} not {row.get('free')}: {_why(row)}" for row in kept[:_MAX_NAMES]
+        )
+        said.append(f"apt kept {len(kept)} back on purpose ({why}{'; ...' if len(kept) > _MAX_NAMES else ''})")
     if apt.get("autoremovable"):
         said.append(f"apt autoremove could take {apt['autoremovable']}; this command never does that")
     if apt.get("boot_low"):

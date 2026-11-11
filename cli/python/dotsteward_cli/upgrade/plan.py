@@ -10,7 +10,7 @@ from typing import Any
 
 from dotsteward_cli import apt_plan, config, firmware, machine, report
 from dotsteward_cli import publish as publishing
-from dotsteward_cli.upgrade import analysis, facts
+from dotsteward_cli.upgrade import analysis, facts, holds
 
 
 def _apt(request: apt_plan.Request) -> dict[str, Any]:
@@ -39,9 +39,11 @@ def build(instance: config.Instance, accept: Sequence[str]) -> dict[str, Any]:
     active = facts.active_components(instance, profile, env)
     mirror = facts.mirror(instance, env)
     tracked = facts.tracked_packages(active, instance)
+    held = holds.component_holds(instance.root, effective["name"], holds.component_names(instance, env))
     shared: dict[str, Any] = {
         "accept": tuple(accept),
-        "constraints": facts.constraints(active, instance),
+        "constraints": facts.constraints(active, instance, env),
+        "kept": facts.kept(active, instance, env, held),
         "gated": facts.gated(instance, effective["name"]),
     }
     remote = _remote(instance)

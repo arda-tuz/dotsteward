@@ -1,10 +1,11 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from the harness and the helpers
 # shellcheck disable=SC2016 # the scripts of tool_stub run later and are single-quoted on purpose
-# The red path of the first release: a red E2E after a move of this run goes back to the tree and the
-# binary from before, writes a local hold and publishes nothing; the writer leaves the held row until
-# upstream has something newer. Red without anything to go back to is exit 1 and names the checks.
-# Nothing is written to the TOML, and the hold stays local.
+# The red path: a red E2E after a move of this run goes back to the tree and the binary from before,
+# publishes no pin and holds the red one in the host file of this machine, in a commit of its own
+# (tests/upgrade/test-red-hosts.sh has the two machines); the writer leaves the held row until upstream
+# has something newer. Red without anything to go back to is exit 1 and names the checks. Nothing of it
+# is written to workstation.toml.
 # shellcheck source=tests/upgrade/helpers.sh
 source "$DS_REPO_ROOT/tests/upgrade/helpers.sh"
 
@@ -30,8 +31,8 @@ move example.other 3.0.0 pypi
 printf 'codex:version\n' >"$UP_CONTROL/e2e-red-once"
 assert_exit 3 upgrade --tracked
 output=$DS_STDOUT
-remote=$(remote_oid)
-assert_eq "$remote" "$(git -C "$up_inst" rev-parse HEAD)" "the checkout never had the commit"
+assert_eq "$(git -C "$up_bare" rev-parse main^)" "$(git -C "$up_inst" rev-parse HEAD)" "the checkout never had the commit"
+assert_eq "chore(hosts): holds on example-host" "$(git -C "$up_bare" log -1 --format=%s main)" "only the hold went out"
 assert_eq "" "$(waiting_commit)"
 work_gone
 assert_not_contains "$(git -C "$up_inst" log --format=%s -n 1)" "update pinned"
@@ -99,7 +100,7 @@ move example.not-building 1.0 pypi
 : >"$UP_CONTROL/rebuild-fails-in-work"
 assert_exit 1 upgrade --tracked
 rm -f -- "$UP_CONTROL/rebuild-fails-in-work"
-assert_eq "$(remote_oid)" "$(git -C "$up_inst" rev-parse HEAD)"
+assert_eq "$(git -C "$up_bare" rev-parse main^)" "$(git -C "$up_inst" rev-parse HEAD)" "only the hold went out"
 assert_json "$holds" '[.holds[] | select(.id == "example.not-building" and (.reason | contains("rebuild")))] | length == 1'
 review_json '[.items[] | select(.code == "red-held" and .id == "example.not-building")] | length == 1'
 

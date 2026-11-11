@@ -41,6 +41,7 @@ from typing import Any
 
 from dotsteward_cli import atomic, config, incoming, locks, machine, platforms, report, tomlfile
 from dotsteward_cli import publish as publishing
+from dotsteward_cli.upgrade import holds
 
 EXIT_REFUSAL = 1
 EXIT_USAGE = 2
@@ -411,9 +412,11 @@ def _tomlkit() -> Any:
     return tomlkit
 
 
-def host_text(current: str | None, facts: Mapping[str, Any]) -> str:
+def host_text(
+    current: str | None, facts: Mapping[str, Any], holds: Mapping[str, Mapping[str, str]] | None = None
+) -> str:
     """The text of the host file: what this machine knows about itself over CURRENT,
-    whose other keys and comments stay."""
+    whose other keys and comments stay. HOLDS, when given, is the whole ``holds`` table."""
     tomlkit = _tomlkit()
     try:
         document = tomlkit.parse(current) if current is not None else tomlkit.document()
@@ -426,6 +429,18 @@ def host_text(current: str | None, facts: Mapping[str, Any]) -> str:
             document[key] = facts[key]
     if facts.get("tags"):
         document["tags"] = list(facts["tags"])
+    plain = (tomlfile.loads(current) if current is not None else {}).get("holds") or {}
+    if holds is not None and plain != holds:
+        if "holds" in document:
+            del document["holds"]
+        if holds:
+            section = tomlkit.table(is_super_table=True)
+            for key in sorted(holds):
+                entry = tomlkit.table()
+                for field, value in holds[key].items():
+                    entry[field] = value
+                section[key] = entry
+            document["holds"] = section
     text: str = tomlkit.dumps(document)
     return text
 
@@ -542,15 +557,30 @@ def publish(
     facts["platform"] = platforms.platform_id(env)
     branch = instance.config["instance"]["branch"]
     path = f"{machine.HOSTS_DIR}/{name}.toml"
+    components = holds.component_names(instance, env)
+    # The holds table of the last tree built on, and what this machine's record makes of it.
+    there: dict[str, Any] = {}
 
     def build(tip: str) -> str | None:
         shown = _git(root, "show", f"{tip}:{path}")
         current = shown.stdout if shown.returncode == 0 else None
-        text = declined_text(current, facts, None, more=declined) if declined else host_text(current, facts)
+        try:
+            current_holds = dict((tomlfile.loads(current) if current is not None else {}).get("holds") or {})
+        except tomlfile.TomlError:
+            current_holds = {}
+        wanted = holds.table(current_holds, state, components)
+        there.update(holds=wanted)
+        text = host_text(current, facts, wanted)
+        if declined:
+            text = declined_text(text, facts, None, more=declined)
         if current is not None and tomlfile.loads(current) == tomlfile.loads(text):
             return None
         machine.parse_host(text, path, root)
-        subject = f"chore(hosts): decline on {name}" if declined else f"chore(hosts): publish {name}"
+        subject = f"chore(hosts): publish {name}"
+        if declined:
+            subject = f"chore(hosts): decline on {name}"
+        elif wanted != current_holds:
+            subject = f"chore(hosts): holds on {name}"
         commit = _commit_on_tip(instance, tip, name, text, subject)
         if check is not None:
             check(commit)
@@ -564,6 +594,8 @@ def publish(
         _error(str(finding))
         return EXIT_PRIVACY
     if published.outcome == publishing.OK:
+        if "holds" in there:
+            holds.published(state, there["holds"])
         if published.commit is None:
             _log(f"{path} is on the remote; nothing to publish")
         else:

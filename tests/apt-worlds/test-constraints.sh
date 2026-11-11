@@ -63,8 +63,7 @@ Pin-Priority: 990
 Explanation: samplenew: version 16: the same major as the server
 Package: samplenew
 Pin: version 16.*
-Pin-Priority: 990
-"
+Pin-Priority: 990"
 
 # --- what `files` says and `policy` writes ------------------------------------------------------
 world_up constraints
@@ -122,7 +121,7 @@ assert_eq 17.2-1 "$(upgraded_to sampledbms-client)" "without the constraint the 
 assert_eq 2.0-1 "$(upgraded_to sampleapp)"
 
 world_analysis constraints "$KEPT"
-assert_json "$ANALYSIS" '[.kept[].name] == ["sampleapp", "sampledbms-client", "samplenew"]'
+assert_json "$ANALYSIS" '[.kept[].name] == ["sampleapp", "sampledbms-client"]'
 assert_json "$ANALYSIS" '.kept[] | select(.name == "sampledbms-client") | .current == "16.15-1" and .candidate == "16.16-1" and .free == "17.2-1" and .why == "constraint" and .component == "sampledbms" and .version == "16.*" and .reason == "the clusters run on 16"'
 assert_json "$ANALYSIS" '.kept[] | select(.name == "sampleapp") | .candidate == "1.0-1" and .free == "2.0-1" and .why == "hold" and .version == "2.0-1"'
 assert_json "$ANALYSIS" '[.packages[].name] | index("sampleapp") == null'

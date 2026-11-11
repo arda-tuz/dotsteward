@@ -13,12 +13,12 @@ nothing of the framework. dotsteward_cli.apt_plan calls it:
     analysis  the upgradable packages outside the tracked set, read only
     policy    (root) under the lock of dpkg: the pin file, from what dpkg has, and the hook
               that keeps the pin file there whoever calls dpkg (the drop-in of unattended-upgrades
-              is the system component apt-policy)
+              is the system component apt-policy); the file of the constraints and holds
     recover   (root) `dpkg --configure -a` when dpkg was left half way
     commit    (root) the plan, under the lock of dpkg, and when nothing refuses it the
               same depcache applied
-    files     the pin file as policy would write it now (its path and text; no text when no
-              pin file belongs there), read only
+    files     the pin file and the file of the constraints and holds as policy would write
+              them now (path and text; no text when no file belongs there), read only
 
 The answer is one JSON document on standard output or in FILE. Exit status 0: the
 action ran, whatever the plan says; 1: it could not, and the document holds `error`
@@ -31,11 +31,20 @@ is installed; no version of a kernel or a driver is data of the framework. The p
 in /etc/apt/preferences.d always tells what dpkg has, so that no other user of libapt
 ever sees a target: a plan and a commit read their pin from a temporary directory, and a
 hook of dpkg keeps the file right after every dpkg, also when a person calls it.
+
+The version constraints and holds of the instance (`kept` of the request) are a file of their
+own, 61dotsteward-kept, one record per package at 990 and none at -1, so a version asked for by
+name still installs: a constraint for a package of the component whose installed version is inside
+it (or, not installed, that has a version inside it); a hold for an installed package below the
+held version, at that version. A package the owner moved out of its constraint or past its hold
+gets no record and a note; a package of a gated class gets none, the series rule is its rule. Plan,
+commit and analysis read these records from the request, never the file there.
 """
 
 from __future__ import annotations
 
 import datetime
+import fnmatch
 import functools
 import json
 import os
@@ -66,6 +75,12 @@ PIN_PRIORITY = 990
 PIN_HOOK_FILE = "60dotsteward-pin"
 PIN_SYNC_FILE = "usr/local/lib/dotsteward/pin-sync.py"
 PIN_HEADER = "# Managed by dotsteward: gated classes stay as dpkg has them. Only `dotsteward upgrade` moves them."
+KEPT_FILE = "61dotsteward-kept"
+KEPT_HEADER = (
+    "# Managed by dotsteward: the version constraints and holds of the instance. Only `dotsteward upgrade` writes it."
+)
+KEPT_RECORD = "Explanation: {explanation}\nPackage: {name}\nPin: version {version}\nPin-Priority: {priority}\n"
+SERIES_RE = re.compile(r"[0-9]+(?:\.[0-9]+)*")
 # The Sources of the gated classes: what the pin holds. The other kernel packages
 # (linux-signed-*, linux-hwe-*) carry the ABI in their names: only these pull them in. A rebuild
 # of the same ABI (~24.04.1 to .2) moves under the pin: the module of that ABI still loads.
@@ -139,6 +154,112 @@ def source_class(name, source):
     if (source == "linux" or source.startswith("linux-")) and ABI_PACKAGE_RE.match(name):
         return "kernel"
     return None
+
+
+def constraint_pattern(constraint):
+    """The apt pattern of a version constraint: a series of numbers alone is that series (16 is 16.*)."""
+    text = str(constraint).strip()
+    return f"{text}.*" if SERIES_RE.fullmatch(text) else text
+
+
+def in_constraint(constraint, version):
+    pattern = constraint_pattern(constraint)
+    return fnmatch.fnmatchcase(version, pattern) or (pattern.endswith(".*") and version == pattern[:-2])
+
+
+def one_line(text):
+    return " ".join(str(text).split())
+
+
+def gated_package(pkg):
+    """A package of a gated class: the series rule is its rule, never a constraint or a hold."""
+    sources = {version.source_name for version in pkg.versions}
+    return any(
+        source_class(pkg.shortname, source) in ("kernel", "nvidia-driver", "nvidia-module") for source in sources
+    )
+
+
+def kept_records(rules, cache):
+    """The records of the constraints and holds RULES of the request, by package, and the notes:
+    ({name: {kind, component, version, reason, pin, explanation}}, items). A hold goes before a
+    constraint of the same package: it is the narrower one."""
+    records = {}
+    items = []
+    ordered = sorted(rules, key=lambda rule: rule.get("kind") != "hold")
+    for rule in ordered:
+        kind = rule.get("kind")
+        version = str(rule.get("version") or "")
+        component = str(rule.get("component") or "")
+        reason = one_line(rule.get("reason") or "")
+        if kind not in ("constraint", "hold") or not version:
+            continue
+        for name in rule.get("packages") or ():
+            if name in records or name not in cache:
+                continue
+            pkg = cache[name]
+            if gated_package(pkg):
+                continue
+            installed = pkg.installed.version if pkg.installed is not None else None
+            if kind == "constraint":
+                inside = [candidate for candidate in pkg.versions if in_constraint(version, candidate.version)]
+                if installed is not None and not in_constraint(version, installed):
+                    if inside:
+                        items.append(
+                            report_item(
+                                "constraint-outside",
+                                package=name,
+                                component=component,
+                                installed=installed,
+                                version=version,
+                                message=f"{name} {installed} is outside version {version} of {component}: it was "
+                                "moved by hand, so it is not pinned back",
+                            )
+                        )
+                    continue
+                if installed is None and not inside:
+                    continue
+                pin = constraint_pattern(version)
+                explanation = f"{component}: version {version}"
+            else:
+                if installed is None:
+                    continue
+                if vcmp(installed, version) >= 0:
+                    items.append(
+                        report_item(
+                            "hold-outside",
+                            package=name,
+                            component=component,
+                            installed=installed,
+                            version=version,
+                            message=f"{name} {installed} is past the hold below {version} of {component}: it was "
+                            "moved by hand, so it is not held",
+                        )
+                    )
+                    continue
+                pin = installed
+                explanation = f"{component}: a hold below {version}"
+            if reason:
+                explanation += f": {reason}"
+            records[name] = {
+                "kind": kind,
+                "component": component,
+                "version": version,
+                "reason": reason,
+                "pin": pin,
+                "explanation": explanation,
+            }
+    return records, items
+
+
+def kept_text(records):
+    """The file of the records, None when there is none."""
+    if not records:
+        return None
+    body = [
+        KEPT_RECORD.format(explanation=entry["explanation"], name=name, version=entry["pin"], priority=PIN_PRIORITY)
+        for name, entry in sorted(records.items())
+    ]
+    return KEPT_HEADER + "\n" + "\n".join(body)
 
 
 PIN_PAIR = "Package: src:{source}:any\nPin: version {version}\nPin-Priority: {priority}\n"
@@ -237,6 +358,9 @@ class Session:
         self.running_kernel = request.get("running_kernel") or os.uname().release
         self.codename = request.get("codename") or os_release_codename()
         self.constraints = {name: str(value) for name, value in (request.get("constraints") or {}).items()}
+        self.kept_rules = [rule for rule in request.get("kept") or [] if isinstance(rule, dict)]
+        self.kept = None
+        self.kept_items = []
         self.accept_install = set()
         self.accept_kernel = None
         self.accept_nvidia = None
@@ -263,23 +387,38 @@ class Session:
     def close(self):
         shutil.rmtree(self.scratch, ignore_errors=True)
 
-    def pin_dir(self, text):
-        """A directory for Dir::Etc::PreferencesParts: the files of others as they are, ours with TEXT."""
+    def pin_dir(self, text, kept=True):
+        """A directory for Dir::Etc::PreferencesParts: the files of others as they are, ours with TEXT
+        and, with KEPT, the records of the constraints and holds of the request."""
         self.pin_dirs += 1
         directory = os.path.join(self.scratch, f"pins-{self.pin_dirs}")
         os.mkdir(directory)
         if os.path.isdir(self.real_parts):
             for name in os.listdir(self.real_parts):
-                if name != PIN_FILE:
+                if name not in (PIN_FILE, KEPT_FILE):
                     os.symlink(os.path.join(self.real_parts, name), os.path.join(directory, name))
         if text is not None:
             with open(os.path.join(directory, PIN_FILE), "w", encoding="utf-8") as handle:
                 handle.write(text)
+        records = kept_text(self.kept_records()) if kept else None
+        if records is not None:
+            with open(os.path.join(directory, KEPT_FILE), "w", encoding="utf-8") as handle:
+                handle.write(records)
         return directory
 
-    def open_cache(self, text):
-        """A cache under the other's pins and the pin TEXT; the real file of ours is never read."""
-        apt_pkg.config.set("Dir::Etc::PreferencesParts", self.pin_dir(text))
+    def kept_records(self, cache=None):
+        """The records of the constraints and holds, from what dpkg has and the archive offers."""
+        if self.kept is None:
+            if not self.kept_rules:
+                self.kept = {}
+            else:
+                self.kept, self.kept_items = kept_records(self.kept_rules, cache or self.open_pinless())
+        return self.kept
+
+    def open_cache(self, text, kept=True):
+        """A cache under the other's pins and the pin TEXT; the real files of ours are never read."""
+        self.kept_records()
+        apt_pkg.config.set("Dir::Etc::PreferencesParts", self.pin_dir(text, kept))
         return apt.Cache()
 
     def open_pinless(self):
@@ -1289,9 +1428,11 @@ def action_analysis(session):
     pinless = session.open_pinless()
     classes = read_classes(pinless)
     del pinless
+    free = upgradable(session.open_cache(None, kept=False))
     cache = session.open_cache(installed_pin(classes) if session.gated else None)
     autoremovable = sum(1 for pkg in cache if pkg.is_installed and pkg.is_auto_removable)
     candidates = upgradable(cache)
+    kept = kept_rows(session, cache, free, classes)
     upgrades = upgrade_all(cache)
     packages = [
         {
@@ -1317,11 +1458,40 @@ def action_analysis(session):
         "count": len(packages),
         "packages": packages,
         "kernels": len(classes["abis"]),
+        "kept": kept,
         "autoremovable": autoremovable,
         "boot_free_mib": boot_free,
         "boot_low": boot_free is not None and boot_free < boot_low_mib,
         "last_update": last_update(),
     }
+
+
+def kept_rows(session, cache, free, classes):
+    """What our records keep from an upgrade apt would make without them: the installed packages
+    whose candidate they change, with why. ``free`` is the candidate without them."""
+    records = session.kept_records()
+    rows = []
+    for name, row in sorted(free.items()):
+        candidate = cache[name].candidate.version if name in cache and cache[name].candidate is not None else None
+        if candidate == row["candidate"]:
+            continue
+        entry = {
+            "name": name,
+            "current": row["current"],
+            "candidate": candidate or row["current"],
+            "free": row["candidate"],
+        }
+        record = records.get(name)
+        if record is not None:
+            entry.update(
+                why=record["kind"], component=record["component"], version=record["version"], reason=record["reason"]
+            )
+        elif source_class(row["short"], row["source"]) in ("kernel", "nvidia-driver", "nvidia-module"):
+            entry.update(why="gated", reason="moves with the shared target of kernel, module and driver")
+        else:
+            entry.update(why="pin")
+        rows.append(entry)
+    return rows
 
 
 def last_update():
@@ -1461,7 +1631,22 @@ def apply_policy(session, classes):
         "pin": {"path": pin_path, "present": wanted_pin, "changed": pin_changed},
         "hook": hook,
         "installed_pairs": classes["pairs"],
+        "kept": apply_kept(session),
     }
+
+
+def apply_kept(session):
+    """The file of the constraints and holds, from the request and what dpkg has now; none without
+    a record. Whatever the gated classes are, and with them off."""
+    path = os.path.join(session.real_parts, KEPT_FILE)
+    text = kept_text(session.kept_records())
+    if text is not None:
+        changed = write_file(path, text)
+    else:
+        changed = os.path.exists(path)
+        if changed:
+            os.unlink(path)
+    return {"path": path, "present": text is not None, "changed": changed}
 
 
 def action_policy(session):
@@ -1475,12 +1660,14 @@ def action_policy(session):
             "recovery": None,
         }
     try:
-        classes = read_classes(session.open_pinless())
+        pinless = session.open_pinless()
+        classes = read_classes(pinless)
+        session.kept_records(pinless)
         recovery = {"ran": session.journal_recovery is not None, "clean": not dpkg_audit()}
         return {
             "schema_version": SCHEMA_VERSION,
             "status": "done",
-            "items": [],
+            "items": list(session.kept_items),
             "recovery": recovery,
             **apply_policy(session, classes),
         }
@@ -1491,13 +1678,23 @@ def action_policy(session):
 def action_files(session):
     """The pin file as `policy` would write it from what dpkg has now, read only: `dotsteward e2e`
     holds the file there to it. The same decision as apply_policy."""
-    classes = read_classes(session.open_pinless())
+    pinless = session.open_pinless()
+    classes = read_classes(pinless)
     pin_path = os.path.join(session.real_parts, PIN_FILE)
     text = None
     if session.gated and (classes["kernel"] is not None or classes["nvidia"] is not None):
         keep_nvidia = classes["nvidia"] is None and bool(dpkg_audit()) and NVIDIA_GLOB in read_text(pin_path)
         text = installed_pin(classes, keep_nvidia=keep_nvidia)
-    return {"schema_version": SCHEMA_VERSION, "pin": {"path": pin_path, "text": text, "header": PIN_HEADER}}
+    kept = {
+        "path": os.path.join(session.real_parts, KEPT_FILE),
+        "text": kept_text(session.kept_records(pinless)),
+        "header": KEPT_HEADER,
+    }
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "pin": {"path": pin_path, "text": text, "header": PIN_HEADER},
+        "kept": kept,
+    }
 
 
 def dpkg_environment():

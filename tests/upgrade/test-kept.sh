@@ -69,7 +69,7 @@ apt_answer analysis '{"available": true, "count": 0, "packages": [], "kernels": 
   "kept": [{"name": "example-tracked", "current": "2.4.1-1", "candidate": "2.4.2-1", "free": "3.0-1", "why": "constraint",
             "component": "example-app", "version": "2.4.*", "reason": "this release ships the 2.4 runtime"}]}'
 clear_log
-assert_exit 0 on_terminal 'Update these too=n' -- --tracked
+assert_exit 0 on_terminal -- --tracked
 
 # --- the apt engine: the rule of the platform layer, the packages of the component -------------------
 policy=$(steps '^apt policy ' | head -n 1)
@@ -93,11 +93,11 @@ review_json '[.items[] | select(.code == "held" and .id == "example-app" and .ma
 assert_contains "$DS_STDOUT" "the owner waits for the plugins of codex 3"
 # A hold the owner wrote is no hold of upgrade: --retry-held leaves it.
 clear_log
-assert_exit 0 on_terminal 'Update these too=n' -- --tracked --retry-held
+assert_exit 0 on_terminal -- --tracked --retry-held
 assert_contains "$(git -C "$up_bare" show main:hosts/example-host.toml)" "[holds.codex]"
 assert_contains "$(steps '^pins .*apply')" "--skip agent_tools.codex.linux"
 
-# --- the analysis says what the rules keep -------------------------------------------------------
-assert_contains "$DS_STDOUT" "kept"
-assert_contains "$DS_STDOUT" "example-tracked"
+# --- the analysis says what the rules keep, and offers none of it ---------------------------------
+assert_contains "$DS_STDOUT" "apt kept 1 back on purpose (example-tracked 2.4.2-1 not 3.0-1: version 2.4.* of example-app)"
+assert_not_contains "$DS_STDOUT" "Update these too"
 assert_json "$DOTSTEWARD_STATE_ROOT/upgrade/analysis.json" '.channels.apt.kept[0].why == "constraint"'
