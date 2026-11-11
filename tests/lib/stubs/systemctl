@@ -18,10 +18,17 @@
 # --user talks to the user manager of HOME instead: its units are
 # $HOME/.config/systemd/user, no root rights are needed, and it is reachable
 # only when the state value "user-manager" is "running" (else, as in a
-# container: "Failed to connect to bus", exit 1). There
-#   daemon-reload             loads every unit file of the directory
-#   start UNIT...             needs the unit file; also loads it
-#   show -p LoadState --value UNIT   loaded or not-found
+# container: "Failed to connect to bus", exit 1). As systemd does, it loads a
+# unit file on demand: a unit whose file is there is loaded, started or not.
+#   daemon-reload             succeeds
+#   start UNIT...             needs the unit file; active from then on
+#   stop UNIT...              inactive, but it was active once
+#   is-active UNIT            active, failed (the state value
+#                             "failed-UNIT" holds its Result) or inactive
+#   show [-p PROPERTY]... [--value] UNIT   LoadState (loaded or not-found),
+#                             ActiveState, Result (success unless failed)
+#                             and ActiveEnterTimestampMonotonic (0 for a unit
+#                             that was never active)
 set -euo pipefail
 # shellcheck source=tests/lib/harness.sh
 source "$(dirname "$(readlink -f "$0")")/../harness.sh"
@@ -51,30 +58,70 @@ if ((user)); then
   fi
   units_dir=$HOME/.config/systemd/user
   active_dir=$DS_STUB_DIR/user-active
-  loaded_dir=$DS_STUB_DIR/user-loaded
-  mkdir -p "$loaded_dir"
+  entered_dir=$DS_STUB_DIR/user-entered
+  mkdir -p "$active_dir" "$entered_dir"
+  # user_property NAME UNIT: one property as systemctl show prints it.
+  user_property() {
+    local failed
+    failed=$(ds_stub_value "failed-$2")
+    case $1 in
+      LoadState) if [[ -f $units_dir/$2 ]]; then printf 'loaded'; else printf 'not-found'; fi ;;
+      ActiveState)
+        if [[ -n $failed ]]; then
+          printf 'failed'
+        elif [[ -f $active_dir/$2 ]]; then
+          printf 'active'
+        else
+          printf 'inactive'
+        fi
+        ;;
+      Result) printf '%s' "${failed:-success}" ;;
+      ActiveEnterTimestampMonotonic) if [[ -f $entered_dir/$2 ]]; then printf '4242000'; else printf '0'; fi ;;
+      *) printf '' ;;
+    esac
+  }
   case $operation in
-    daemon-reload)
-      for file in "$units_dir"/*.path "$units_dir"/*.service "$units_dir"/*.timer; do
-        [[ -f $file ]] && : >"$loaded_dir/$(basename "$file")"
-      done
-      exit 0
-      ;;
+    daemon-reload) exit 0 ;;
     start)
       for unit in "${units[@]}"; do
         [[ -f $units_dir/$unit ]] || {
           printf 'Failed to start %s: Unit %s not found.\n' "$unit" "$unit" >&2
           exit 5
         }
-        : >"$loaded_dir/$unit"
-        mkdir -p "$active_dir"
         : >"$active_dir/$unit"
+        : >"$entered_dir/$unit"
       done
       exit 0
       ;;
+    stop)
+      for unit in "${units[@]}"; do
+        rm -f -- "$active_dir/$unit"
+      done
+      exit 0
+      ;;
+    is-active)
+      state=$(user_property ActiveState "${units[0]}")
+      printf '%s\n' "$state"
+      [[ $state == active ]] && exit 0
+      exit 3
+      ;;
     show)
+      properties=()
+      value=0
+      previous=''
+      for arg in "$@"; do
+        [[ $previous == -p ]] && properties+=("$arg")
+        [[ $arg == --value ]] && value=1
+        previous=$arg
+      done
       unit=${words[-1]}
-      if [[ -f $loaded_dir/$unit ]]; then printf 'loaded\n'; else printf 'not-found\n'; fi
+      for property in "${properties[@]}"; do
+        if ((value)); then
+          printf '%s\n' "$(user_property "$property" "$unit")"
+        else
+          printf '%s=%s\n' "$property" "$(user_property "$property" "$unit")"
+        fi
+      done
       exit 0
       ;;
   esac

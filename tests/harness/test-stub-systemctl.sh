@@ -4,7 +4,8 @@
 # links a unit into the wants directory of its WantedBy= below the fixture
 # root, a missing unit file and missing root rights are refused, and what
 # needs a running systemd fails without DS_SYSTEM_ROOT/run/systemd/system.
-# --user talks to the user manager of HOME, reachable when the test says so.
+# --user talks to the user manager of HOME, reachable when the test says so, and
+# loads a unit file on demand as systemd does.
 
 ds_use_stubs sudo systemctl
 
@@ -50,18 +51,28 @@ assert_exit 1 systemctl reticulate
 assert_contains "$DS_STDERR" "Unknown command verb reticulate."
 assert_eq "3" "$(ds_call_count systemctl 'is-active *')"
 
-# --user: the user manager of HOME, reachable only when the test says so.
+# --user: the user manager of HOME, reachable only when the test says so. A unit file
+# that is there is loaded (systemd loads on demand); a unit that never ran has an
+# ActiveEnterTimestampMonotonic of 0.
 assert_exit 1 systemctl --user is-active example-app.path
 assert_contains "$DS_STDERR" "Failed to connect to bus"
 ds_stub_set systemctl user-manager running
 user_units=$HOME/.config/systemd/user
 mkdir -p "$user_units"
-printf '[Path]\nPathChanged=/tmp/example\n' >"$user_units/example-app.path"
 assert_eq "not-found" "$(systemctl --user show -p LoadState --value example-app.path)"
+printf '[Path]\nPathChanged=/tmp/example\n' >"$user_units/example-app.path"
+assert_eq $'LoadState=loaded\nActiveState=inactive\nResult=success\nActiveEnterTimestampMonotonic=0' \
+  "$(systemctl --user show -p LoadState -p ActiveState -p Result -p ActiveEnterTimestampMonotonic example-app.path)"
 assert_exit 3 systemctl --user is-active example-app.path
 assert_exit 0 systemctl --user daemon-reload
-assert_eq "loaded" "$(systemctl --user show -p LoadState --value example-app.path)"
 assert_exit 0 systemctl --user start example-app.path
 assert_exit 0 systemctl --user is-active example-app.path
 assert_exit 3 systemctl is-active example-app.path
+assert_exit 0 systemctl --user stop example-app.path
+assert_eq $'inactive\n4242000' \
+  "$(systemctl --user show -p ActiveState -p ActiveEnterTimestampMonotonic --value example-app.path)"
+ds_stub_set systemctl failed-example-app.path unit-start-limit-hit
+assert_exit 3 systemctl --user is-active example-app.path
+assert_eq "failed" "$DS_STDOUT"
+assert_eq "unit-start-limit-hit" "$(systemctl --user show -p Result --value example-app.path)"
 assert_exit 5 systemctl --user start no-such.path

@@ -22,6 +22,8 @@ assert_core_eq '["default.target"]' "(homeOf $linux).systemd.user.paths.dotstewa
 assert_core_eq '["default.target"]' "(homeOf $linux).systemd.user.services.dotsteward-observe.Install.WantedBy"
 assert_core_eq '"exec"' "(homeOf $linux).systemd.user.services.dotsteward-observe.Service.Type"
 assert_core_eq '"3 6"' "(homeOf $linux).systemd.user.services.dotsteward-observe.Service.SuccessExitStatus"
+# An apt run writes the status file many times a second: no start limit may stop the path unit.
+assert_core_eq '0' "(homeOf $linux).systemd.user.services.dotsteward-observe.Unit.StartLimitIntervalSec"
 assert_core_eq 'true' \
   "(homeOf $linux).systemd.user.services.dotsteward-observe.Service.ExecStart == [ \"\${(homeOf $linux).dotsteward.observer.script}\" ]"
 # Home Manager writes both units and their links into default.target.wants into the

@@ -4,9 +4,11 @@
 # link), `dotsteward e2e` checks that the user manager runs dotsteward-observe.path. Until
 # the first activation of such a generation reaches the user manager it only reports: no
 # user manager to ask (a container, a session without one), no systemctl, or a unit the
-# user manager has not loaded yet (the next login or `rebuild --switch` starts it) is a
-# warning. A loaded path unit that is not active is the one finding: package changes go
-# unnoticed. A run of some components (--component) does not run it.
+# user manager has never started (systemd loads unit files on demand, so a unit that no
+# activation started is loaded and inactive, with no time it entered the active state) is a
+# warning. A path unit that was active and stopped, or failed (a start limit, say), is the
+# one finding: package changes go unnoticed. A run of some components (--component) does
+# not run it.
 # shellcheck source=tests/cli/e2e/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/e2e/helpers.sh"
 
@@ -49,18 +51,25 @@ assert_exit 0 env PATH="$(ds_path_without systemctl)" "$agents_fw/cli/dotsteward
   e2e --profile workstation </dev/null
 assert_contains "$DS_STDERR" "core:observer: no systemctl; dotsteward-observe.path was not checked"
 
-# The user manager has not loaded the unit yet: a warning that names the way.
+# The user manager has the unit but never started it (no activation reached it yet): a
+# warning that names the way.
 ds_stub_set systemctl user-manager running
 assert_exit 0 run_e2e
-assert_contains "$DS_STDERR" "core:observer: the user manager has not loaded dotsteward-observe.path yet; the next login or 'dotsteward rebuild --profile workstation --switch' starts it"
-
-# Loaded but not active: the one finding.
-assert_exit 0 systemctl --user daemon-reload
-assert_exit 1 run_e2e --json
-assert_eq '[["core:observer","observer-inactive","dotsteward-observe.path"]]' "$(findings)"
-assert_contains "$DS_STDOUT" "dotsteward-observe.path is inactive: package changes outside dotsteward go unnoticed"
+assert_contains "$DS_STDERR" "core:observer: dotsteward-observe.path has not been started yet; the next login or 'dotsteward rebuild --profile workstation --switch' starts it"
 
 # Active: green, and no warning.
 assert_exit 0 systemctl --user start dotsteward-observe.path
 assert_exit 0 run_e2e
 assert_not_contains "$DS_STDERR" "core:observer"
+
+# It ran and stopped: the one finding.
+assert_exit 0 systemctl --user stop dotsteward-observe.path
+assert_exit 1 run_e2e --json
+assert_eq '[["core:observer","observer-inactive","dotsteward-observe.path"]]' "$(findings)"
+assert_contains "$DS_STDOUT" "dotsteward-observe.path is inactive: package changes outside dotsteward go unnoticed"
+
+# Failed: red, with the result systemd gives.
+ds_stub_set systemctl failed-dotsteward-observe.path unit-start-limit-hit
+assert_exit 1 run_e2e --json
+assert_eq '[["core:observer","observer-inactive","dotsteward-observe.path"]]' "$(findings)"
+assert_contains "$DS_STDOUT" "dotsteward-observe.path failed (unit-start-limit-hit): package changes outside dotsteward go unnoticed"
