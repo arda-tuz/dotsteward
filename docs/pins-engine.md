@@ -104,7 +104,7 @@ declarations.
 
 | Adapter | Source |
 | --- | --- |
-| `github-release` | the newest stable GitHub release, with per-platform asset size and digest; `gh`, then `git ls-remote --tags` |
+| `github-release` | the newest stable GitHub release of the tag family by version, from the release list (drafts and prereleases never count), with per-platform asset size and digest; without a release list, the newest stable tag of `git ls-remote --tags` the list did not flag |
 | `npm` | the `latest` dist-tag of an npm package, with integrity and engines |
 | `pypi` | the newest final release of a package on a Python package index (pre-releases and yanked releases skipped), with its `requires_python` |
 | `apt-index` | the highest version in a vendor's APT `Packages` index |

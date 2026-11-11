@@ -137,11 +137,11 @@ done
 # against the tag's commit (an annotated tag is peeled).
 ds_stub_clear_routes gh
 ds_stub_route gh "api repos/example-org/example-tool/compare/*" --stdout '{"ahead_by": 2, "files": [{"filename": "skill/SKILL.md"}]}'
-ds_stub_route gh "api repos/example/dotsteward/releases/latest" --stdout '{"tag_name": "v0.2.0"}'
+ds_stub_route gh "api repos/example/dotsteward/releases?per_page=100" --stdout '[{"tag_name": "v0.2.0"}]'
 ds_stub_route gh "api repos/example-org/example-skills/compare/*" --stdout-file "$latest_fixtures/gh/compare-skills.json"
 ds_stub_route gh "api repos/example-org/example-plugins/compare/*" --stdout-file "$latest_fixtures/gh/compare-plugins.json"
 ds_stub_route gh "api repos/example-org/example-watch/compare/*" --stdout-file "$latest_fixtures/gh/compare-watch.json"
-ds_stub_route gh "api repos/example-org/example-term/releases/latest" --stdout-file "$(ds_fixture common/github/release-latest.json)"
+release_route example-org/example-term "$(ds_fixture common/github/release-latest.json)"
 ds_git_commit "$sources/example-org/example-tool" skill/SKILL.md "# moved" "chore: release 1.1.0"
 git -C "$sources/example-org/example-tool" tag -a v1.1.0 -m "release 1.1.0"
 publish example-org/example-tool
@@ -151,7 +151,7 @@ tagged=$(rev example-org/example-tool v1.1.0)
 assert_exit 0 latest --out "$report"
 assert_eq "[\"review\",\"${pinned:0:12}\",\"${tagged:0:12}\",\"v1.1.0\",[\"skill/SKILL.md\"]]" \
   "$(row skills.example-bound '[.status, .current, .latest, .details.release, .details.changed_paths]')"
-assert_call_count 1 gh "api repos/example-org/example-tool/releases/latest"
+assert_call_count 1 gh "api repos/example-org/example-tool/releases*per_page=100"
 assert_call_count 1 gh "api repos/example-org/example-tool/compare/$pinned...$tagged"
 
 # A skill directory that is not vendored: only the skill structure counts.

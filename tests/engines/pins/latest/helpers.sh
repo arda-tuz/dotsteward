@@ -15,7 +15,7 @@
 #     `url.<path>.insteadOf https://github.com/` in the test's global git
 #     configuration, so `git ls-remote https://github.com/OWNER/REPO` never
 #     leaves the machine;
-#   - the gh stub with canned REST answers (releases/latest of example-term,
+#   - the gh stub with canned REST answers (the release lists of example-term,
 #     example-cli, example-tool and the framework, the three compares), and
 #     the apt-cache stub with example-app 1.2.3 available.
 #
@@ -33,6 +33,9 @@
 #   row ID [JQ]             the report row with ID (or JQ applied to it) from
 #                           $report, compact JSON
 #   statuses                "status id" lines of $report, in report order
+#   release_route OWNER/REPO FILE...
+#                           the release list of OWNER/REPO holds the releases
+#                           of the files (newest first)
 #   latest_gh_routes        adds the canned gh answers of the world; gh tries
 #                           routes in order, so a test that needs another
 #                           answer clears the routes, adds its own first and
@@ -216,14 +219,25 @@ _latest_remotes() {
 
 latest_gh_routes() {
   local gh=$latest_fixtures/gh
-  ds_stub_route gh "api repos/example-org/example-term/releases/latest" \
-    --stdout-file "$(ds_fixture common/github/release-latest.json)"
-  ds_stub_route gh "api repos/example-org/example-cli/releases/latest" --stdout-file "$gh/example-cli-release.json"
-  ds_stub_route gh "api repos/example-org/example-tool/releases/latest" --stdout-file "$gh/example-tool-release.json"
-  ds_stub_route gh "api repos/example/dotsteward/releases/latest" --stdout-file "$gh/framework-release.json"
+  release_route example-org/example-term "$(ds_fixture common/github/release-latest.json)"
+  release_route example-org/example-cli "$gh/example-cli-release.json"
+  release_route example-org/example-tool "$gh/example-tool-release.json"
+  release_route example/dotsteward "$gh/framework-release.json"
   ds_stub_route gh "api repos/example-org/example-plugins/compare/*" --stdout-file "$gh/compare-plugins.json"
   ds_stub_route gh "api repos/example-org/example-watch/compare/*" --stdout-file "$gh/compare-watch.json"
   ds_stub_route gh "api repos/example-org/example-skills/compare/*" --stdout-file "$gh/compare-skills.json"
+}
+
+# release_route OWNER/REPO FILE...: the release list of OWNER/REPO (gh api
+# repos/OWNER/REPO/releases?per_page=100) holds the releases of the files,
+# newest first.
+release_route() {
+  local repo=$1 list
+  shift
+  list=$DS_TEST_ROOT/gh-releases/$repo.json
+  mkdir -p "$(dirname "$list")"
+  jq -s . "$@" >"$list"
+  ds_stub_route gh "api repos/$repo/releases?per_page=100" --stdout-file "$list"
 }
 
 latest_world() {

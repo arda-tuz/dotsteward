@@ -21,10 +21,10 @@ publish example-org/example-cli
 release_declaration='{"component":"example-cli","id":"agent_tools.example-release","adapter":"github-release","repo":"example-org/example-cli","tag_prefix":"cli-v","at":"agent_tools.example-release","asset":"example-cli-linux-x64.tar.gz"}'
 declare_latest "$release_declaration"
 
-# The latest release belongs to another tag family: the prefixed stable
+# The release list holds no release of the tag family: the prefixed stable
 # tags answer instead (no release, so no asset details).
 ds_stub_clear_routes gh
-ds_stub_route gh "api repos/example-org/example-cli/releases/latest" --stdout '{"tag_name": "desktop-v3.0.0"}'
+ds_stub_route gh "api repos/example-org/example-cli/releases?per_page=100" --stdout '[{"tag_name": "desktop-v3.0.0"}]'
 latest_gh_routes
 assert_exit 0 latest --out "$report"
 assert_eq '{"id":"agent_tools.example-release","kind":"github-release","current":"1.3.0","latest":"1.5.0","status":"update","source":"https://github.com/example-org/example-cli/releases","details":{"tag":"cli-v1.5.0"}}' \
@@ -32,16 +32,16 @@ assert_eq '{"id":"agent_tools.example-release","kind":"github-release","current"
 
 # gh fails: same answer from the tags.
 ds_stub_clear_routes gh
-ds_stub_route gh "api repos/example-org/example-cli/releases/latest" --exit 1 --stderr "HTTP 404: Not Found"
+ds_stub_route gh "api repos/example-org/example-cli/releases?per_page=100" --exit 1 --stderr "HTTP 404: Not Found"
 latest_gh_routes
 : >"$DS_CALL_LOG"
 assert_exit 0 latest --out "$report"
 assert_eq '["1.5.0","update",{"tag":"cli-v1.5.0"}]' "$(row agent_tools.example-release '[.latest, .status, .details]')"
-assert_call_count 1 gh "api repos/example-org/example-cli/releases/latest"
+assert_call_count 1 gh "api repos/example-org/example-cli/releases*per_page=100"
 
 # gh answers something that is not a release: same answer.
 ds_stub_clear_routes gh
-ds_stub_route gh "api repos/example-org/example-cli/releases/latest" --stdout '<html>maintenance</html>'
+ds_stub_route gh "api repos/example-org/example-cli/releases?per_page=100" --stdout '<html>maintenance</html>'
 latest_gh_routes
 assert_exit 0 latest --out "$report"
 assert_eq '["1.5.0","update"]' "$(row agent_tools.example-release '[.latest, .status]')"
@@ -85,7 +85,7 @@ json_edit "$versions" 'data["flake_inputs"]["example-term"]["version"] = "0.8.9"
 assert_exit 0 latest --out "$report"
 assert_eq '"review"' "$(row flake_inputs.example-term .status)"
 ds_stub_clear_routes gh
-ds_stub_route gh "api repos/example-org/example-term/releases/latest" --stdout '{"tag_name": "v0.8.10", "assets": []}'
+ds_stub_route gh "api repos/example-org/example-term/releases?per_page=100" --stdout '[{"tag_name": "v0.8.10", "assets": []}]'
 latest_gh_routes
 assert_exit 0 latest --out "$report"
 assert_eq '["0.8.10","update"]' "$(row flake_inputs.example-term '[.latest, .status]')"
@@ -124,7 +124,7 @@ assert_eq '{"tag":"v0.9.0","assets":{"linux":{"asset":"SHA256SUMS","size":95,"sh
 
 # Without a release (the tags answer), there are no asset details.
 ds_stub_clear_routes gh
-ds_stub_route gh "api repos/example-org/example-term/releases/latest" --exit 1 --stderr "HTTP 404: Not Found"
+ds_stub_route gh "api repos/example-org/example-term/releases?per_page=100" --exit 1 --stderr "HTTP 404: Not Found"
 latest_gh_routes
 assert_exit 0 latest --out "$report"
 assert_eq '["0.9.0","review",{"tag":"v0.9.0"}]' "$(row agent_tools.example-term '[.latest, .status, .details]')"

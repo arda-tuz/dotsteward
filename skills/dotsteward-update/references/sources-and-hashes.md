@@ -15,7 +15,7 @@ Every row comes from a declaration: the built-in rows from the lock files, the o
 | Adapter | Typical rows | Official source |
 | --- | --- | --- |
 | `channel-head` | nixpkgs, Home Manager (`flake_inputs.<name>` with a `channel`) | `git ls-remote` of the channel branches (`nixos-YY.MM`, `release-YY.MM`); a newer series is reported as `review` |
-| `github-release` | flake inputs with a `version`, release archives, Nix package sources | GitHub releases (tags when a repository has no releases), per-platform asset size and `digest` |
+| `github-release` | flake inputs with a `version`, release archives, Nix package sources | the newest stable GitHub release of the tag family by version (drafts and prereleases never count; tags when a repository has no such release), per-platform asset size and `digest` |
 | `npm` | npm dependencies and npm-distributed tools | registry `latest` dist-tag, integrity, `gitHead`, engines |
 | `pypi` | Python applications of the `pypi` method | the package index JSON API: the newest final release with files that are not yanked; regenerate the hash-pinned requirements file for the new version |
 | `apt-index` | desktop packages from a vendor APT repository | the vendor's `dists/<dist>/<component>/binary-<arch>/Packages` index |
@@ -23,7 +23,7 @@ Every row comes from a declaration: the built-in rows from the lock files, the o
 | `official-manifest` | applications with a JSON update manifest, such as VS Code or Claude Code | the vendor manifest's version, SHA-256 and size fields |
 | `nix-release` | the Nix installer (`nix.installer`) | stable tags of the Nix repository and the published installer checksum |
 | `git-compare` | upstream paths another pin depends on | GitHub compare from the recorded revision, watched paths only |
-| `skill-source` | vendored skills (`skills.<name>`) | GitHub compare filtered to the vendored files and the skill structure; `release_bound` skills compare against the latest release tag |
+| `skill-source` | vendored skills (`skills.<name>`) | GitHub compare filtered to the vendored files and the skill structure; `release_bound` skills compare against the tag of the newest stable release |
 | `local-apt` | local APT floors (with `--all`) | `apt-cache policy` on this machine |
 | `manual` | pins without an automatic source | the source named in the row |
 | `follows` | versions derived from another pin (with `--all`) | none; refresh with `./.dotsteward/cli.sh generate --nix` after the pin they follow moves |

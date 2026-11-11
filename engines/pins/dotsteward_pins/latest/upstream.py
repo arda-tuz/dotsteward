@@ -30,6 +30,8 @@ from .model import STABLE_TAG
 
 HTTP_TIMEOUT = 20
 COMMAND_TIMEOUT = 60
+# The release list of a repository is read as one page of its newest releases.
+RELEASES_PAGE = 100
 USER_AGENT = "dotsteward-pins/1.0"
 GITHUB = "https://github.com"
 _GITHUB_REFERENCE = re.compile(r"github:(?P<owner>[^/]+)/(?P<repo>[^/?#]+)(?:[/?#].*)?")
@@ -206,23 +208,38 @@ class Upstream:
                 tags.append(name)
         return tags
 
-    def newest_tag(self, url: str, prefix: str = "") -> str | None:
-        tags = self.stable_tags(url, prefix)
+    def newest_tag(self, url: str, prefix: str = "", *, excluded: frozenset[str] = frozenset()) -> str | None:
+        tags = [tag for tag in self.stable_tags(url, prefix) if tag not in excluded]
         best = versions.newest(tag_version(tag, prefix) for tag in tags)
         if best is None:
             return None
         return next(tag for tag in tags if tag_version(tag, prefix) == best)
 
     def latest_release(self, repo: str, prefix: str = "") -> tuple[str | None, dict[str, Any] | None]:
-        """The newest release tag of a GitHub repository and its release:
-        the GitHub latest release when its tag is a stable tag with the
-        prefix, otherwise (gh failing, missing or answering another tag
-        family) the newest stable tag from ``git ls-remote``, without a
-        release."""
+        """The newest stable release of a GitHub repository in the tag family
+        of PREFIX, and its release JSON: of the release list (``gh api
+        repos/<repo>/releases?per_page=100``, the newest releases first), the
+        highest version whose tag is a stable tag with the prefix and that is
+        neither a draft nor a prerelease, whatever GitHub calls latest.
+        Without such a release (gh failing or missing, no release of the
+        family), the newest stable tag from ``git ls-remote``, without a
+        release; a tag the list flagged as a draft or a prerelease never
+        answers."""
         try:
-            release = self.gh_json(f"repos/{repo}/releases/latest")
+            listed = self.gh_json(f"repos/{repo}/releases?per_page={RELEASES_PAGE}")
         except (RuntimeError, ValueError, OSError):
-            release = None
-        if isinstance(release, dict) and is_stable_tag(release.get("tag_name"), prefix):
-            return release["tag_name"], release
-        return self.newest_tag(github_url(repo), prefix), None
+            listed = None
+        flagged: set[str] = set()
+        stable: dict[str, dict[str, Any]] = {}
+        for release in listed if isinstance(listed, list) else ():
+            tag = release.get("tag_name") if isinstance(release, dict) else None
+            if not isinstance(tag, str) or not is_stable_tag(tag, prefix):
+                continue
+            if release.get("draft") or release.get("prerelease"):
+                flagged.add(tag)
+            else:
+                stable.setdefault(tag_version(tag, prefix), release)
+        best = versions.newest(stable)
+        if best is not None:
+            return stable[best]["tag_name"], stable[best]
+        return self.newest_tag(github_url(repo), prefix, excluded=frozenset(flagged)), None

@@ -22,13 +22,13 @@ set_original() {
 ds_stub_clear_routes gh
 latest_gh_routes_without_framework() {
   ds_stub_route gh "api repos/example-org/example-skills/compare/*" --stdout-file "$latest_fixtures/gh/compare-skills.json"
-  ds_stub_route gh "api repos/example-org/example-tool/releases/latest" --stdout-file "$latest_fixtures/gh/example-tool-release.json"
+  release_route example-org/example-tool "$latest_fixtures/gh/example-tool-release.json"
 }
 latest_gh_routes_without_framework
 assert_exit 0 latest --out "$report"
 assert_eq '{"id":"framework","kind":"framework","current":"v0.1.0","latest":"v0.2.0","status":"review","source":"https://github.com/example/dotsteward/releases","details":{"tag":"v0.2.0","upstream":"github:example/dotsteward"}}' \
   "$(row framework)"
-assert_call_count 1 gh "api repos/example/dotsteward/releases/latest"
+assert_call_count 1 gh "api repos/example/dotsteward/releases*per_page=100"
 
 # Pinned to the newest release, or ahead of it: current.
 set_original '{"owner": "example", "ref": "v0.2.0", "repo": "dotsteward", "type": "github"}'
