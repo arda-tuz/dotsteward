@@ -8,7 +8,8 @@
 #     each, committed;
 #   - bare git remotes under $github behind url.insteadOf, holding the tags and
 #     the upstream skill the rows name;
-#   - the fake nix, npm and example-compiler of fake-tools first on PATH, and
+#   - the fake nix, npm and example-compiler of fake-tools first on PATH (the
+#     index of the pypi row is a closed local port: no query leaves the machine), and
 #     the gh stub without routes (no attestation, no trusted root);
 #   - the state root at $state.
 #
@@ -182,7 +183,7 @@ data["pins"]["latest"] = [
     {"component": "example-watch", "id": "example_watch", "adapter": "git-compare", "repo_at": "example_watch.source", "revision_at": "example_watch.inspected_revision", "watched": [".*"]},
     {"component": "example-compat", "id": "agent_tools.example-compat", "adapter": "npm", "at": "agent_tools.example-compat", "package": "example-compat"},
     {"component": "example-plain", "id": "agent_tools.example-plain", "adapter": "npm", "at": "agent_tools.example-plain", "package": "example-plain"},
-    {"component": "example-tool", "id": "pypi.example-tool", "adapter": "pypi", "package": "example-tool"},
+    {"component": "example-tool", "id": "pypi.example-tool", "adapter": "pypi", "package": "example-tool", "index": "http://127.0.0.1:9/pypi"},
 ]
 '
   cat >"$FAKE_NIX_STATE/packages.json" <<'JSON'

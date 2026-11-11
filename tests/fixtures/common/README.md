@@ -24,6 +24,9 @@ repositories use the synthetic names `example-app`, `example-term` and
 | `sigstore/example-release-5.0.0.fork.sigstore.json` | A bundle of `example-release-5.0.0` by another repository's workflow (`example/example-fork`). |
 | `sigstore/example-release-5.0.0.intoto.jsonl` | A v0.3 bundle: a GitHub-style build provenance attestation (in-toto statement in DSSE, `https://slsa.dev/provenance/v1`) whose subject is `example-release-5.0.0`, with an inclusion proof. |
 | `sigstore/example-term_0.9.0_amd64.deb.sigstore.json` | A bundle of `debs/example-term_0.9.0_amd64.deb` by `example-org/example-term`, tag `v0.9.0`. |
+| `sigstore/example-tool-1.1.0.files.json` | The names and SHA-256 digests of two synthetic distribution files of `example-tool` 1.1.0 (a wheel and an sdist) on a package index. |
+| `sigstore/example_tool-1.1.0-py3-none-any.whl.provenance.json`, `sigstore/example_tool-1.1.0.tar.gz.provenance.json` | The answer of the PyPI integrity API (PEP 740) for each file: a publish attestation (`https://docs.pypi.org/attestations/publish/v1`) by the `release.yml` workflow of `example/example-tool` at `v1.1.0`. |
+| `sigstore/example_tool-1.1.0-py3-none-any.whl.fork.provenance.json` | The same for the wheel, by a workflow of another repository (`example/example-tool-fork`). |
 | `sigstore/generate.py` | Writes the files above (Python with `cryptography`; not run by the tests). The private keys exist only while it runs; signatures have a fixed time, so verification does not depend on the clock. |
 | `os-release/*` | `os-release` files for Ubuntu 24.04, Ubuntu 22.04 and Debian 12 (for `DOTSTEWARD_OS_RELEASE`). |
 

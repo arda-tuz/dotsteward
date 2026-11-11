@@ -282,18 +282,35 @@ def bundle_legacy(
     }
 
 
+PROVENANCE = "https://slsa.dev/provenance/v1"
+PYPI_PUBLISH = "https://docs.pypi.org/attestations/publish/v1"
+
+
 def attestation_v03(
-    authority: Authority, ct: Log, rekor: Log, identity: str, name: str, blob: bytes, when: datetime.datetime
+    authority: Authority,
+    ct: Log,
+    rekor: Log,
+    identity: str,
+    name: str,
+    blob: bytes,
+    when: datetime.datetime,
+    predicate_type: str = PROVENANCE,
 ) -> dict[str, object]:
-    """A GitHub-style build provenance attestation: an in-toto statement in DSSE."""
+    """An in-toto statement in DSSE: a GitHub-style build provenance attestation, or with
+    PYPI_PUBLISH the publish attestation of a distribution on PyPI."""
+    predicate: dict[str, object] = (
+        {
+            "buildDefinition": {"buildType": "https://example.invalid/build/v1"},
+            "runDetails": {"builder": {"id": identity}},
+        }
+        if predicate_type == PROVENANCE
+        else {}
+    )
     statement = {
         "_type": "https://in-toto.io/Statement/v1",
         "subject": [{"name": name, "digest": {"sha256": hashlib.sha256(blob).hexdigest()}}],
-        "predicateType": "https://slsa.dev/provenance/v1",
-        "predicate": {
-            "buildDefinition": {"buildType": "https://example.invalid/build/v1"},
-            "runDetails": {"builder": {"id": identity}},
-        },
+        "predicateType": predicate_type,
+        "predicate": predicate,
     }
     payload = canonical(statement)
     payload_type = "application/vnd.in-toto+json"
@@ -318,6 +335,40 @@ def attestation_v03(
         },
         "dsseEnvelope": envelope,
     }
+
+
+def provenance(bundles: list[tuple[str, dict[str, object]]]) -> dict[str, object]:
+    """The answer of the PyPI integrity API (PEP 740) for one file: per publisher (a GitHub
+    repository), its attestations, each the parts of a v0.3 bundle of attestation_v03."""
+    result = []
+    for repository, bundle in bundles:
+        material = bundle["verificationMaterial"]
+        envelope = bundle["dsseEnvelope"]
+        result.append(
+            {
+                "publisher": {
+                    "kind": "GitHub",
+                    "repository": repository,
+                    "workflow": "release.yml",
+                    "environment": None,
+                    "claims": None,
+                },
+                "attestations": [
+                    {
+                        "version": 1,
+                        "verification_material": {
+                            "certificate": material["certificate"]["rawBytes"],  # type: ignore[index]
+                            "transparency_entries": material["tlogEntries"],  # type: ignore[index]
+                        },
+                        "envelope": {
+                            "statement": envelope["payload"],  # type: ignore[index]
+                            "signature": envelope["signatures"][0]["sig"],  # type: ignore[index]
+                        },
+                    }
+                ],
+            }
+        )
+    return {"version": 1, "attestation_bundles": result}
 
 
 def trusted_root(authority: Authority, rekor: Log, ct: Log) -> dict[str, object]:
@@ -406,6 +457,26 @@ def main() -> None:
         SIGNED + 4 * minute,
     )
     (out / "example-release-5.0.0.intoto.jsonl").write_text(json.dumps(attestation) + "\n", encoding="ascii")
+    # Two distribution files of example-tool 1.1.0 on a package index: their digests, the
+    # provenance of each published by example/example-tool, and one of the wheel by a fork.
+    tool, tool_fork = "https://github.com/example/example-tool", "https://github.com/example/example-tool-fork"
+    files = {
+        "example_tool-1.1.0-py3-none-any.whl": b"synthetic wheel of example-tool 1.1.0\n",
+        "example_tool-1.1.0.tar.gz": b"synthetic sdist of example-tool 1.1.0\n",
+    }
+    write_json(
+        out / "example-tool-1.1.0.files.json", {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}
+    )
+    for offset, (name, data) in enumerate(files.items()):
+        signed = attestation_v03(
+            authority, ct, rekor, workflow(tool, "1.1.0"), name, data, SIGNED + (6 + offset) * minute, PYPI_PUBLISH
+        )
+        write_json(out / f"{name}.provenance.json", provenance([("example/example-tool", signed)]))
+    wheel = "example_tool-1.1.0-py3-none-any.whl"
+    forked = attestation_v03(
+        authority, ct, rekor, workflow(tool_fork, "1.1.0"), wheel, files[wheel], SIGNED + 8 * minute, PYPI_PUBLISH
+    )
+    write_json(out / f"{wheel}.fork.provenance.json", provenance([("example/example-tool-fork", forked)]))
     deb = (out.parent / "debs" / "example-term_0.9.0_amd64.deb").read_bytes()
     write_json(
         out / "example-term_0.9.0_amd64.deb.sigstore.json",
