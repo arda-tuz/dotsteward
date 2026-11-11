@@ -37,7 +37,7 @@ cat >"$up_inst/hosts/laptop-b.toml" <<'TOML'
 schema_version = 1
 platform = "ubuntu-24.04"
 
-[holds.example-app]
+[holds."component:example-app"]
 version = "9"
 reason = "the owner keeps example-app below 9 on this laptop"
 TOML
@@ -49,7 +49,7 @@ assert_exit 3 upgrade --tracked
 git -C "$up_inst" pull -q --ff-only origin main
 cat >>"$up_inst/hosts/example-host.toml" <<'TOML'
 
-[holds.codex]
+[holds."component:codex"]
 version = "3.0.0"
 reason = "the owner waits for the plugins of codex 3"
 TOML
@@ -94,7 +94,7 @@ assert_contains "$DS_STDOUT" "the owner waits for the plugins of codex 3"
 # A hold the owner wrote is no hold of upgrade: --retry-held leaves it.
 clear_log
 assert_exit 0 on_terminal -- --tracked --retry-held
-assert_contains "$(git -C "$up_bare" show main:hosts/example-host.toml)" "[holds.codex]"
+assert_contains "$(git -C "$up_bare" show main:hosts/example-host.toml)" '[holds."component:codex"]'
 assert_contains "$(steps '^pins .*apply')" "--skip agent_tools.codex.linux"
 
 # --- the analysis says what the rules keep, and offers none of it ---------------------------------

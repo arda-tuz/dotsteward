@@ -46,8 +46,8 @@ move agent_tools.codex.linux 2.0.0 download
 move example.other 3.0.0 pypi
 printf 'codex:version\n' >"$UP_CONTROL/e2e-red-once"
 assert_exit 3 upgrade --tracked
-remote_holds example-host | assert_json - '."agent_tools.codex.linux" | .version == "2.0.0" and (.reason | contains("codex:version")) and (.since | test("^2[0-9-]+T[0-9:]+Z$"))'
-remote_holds example-host | assert_json - 'keys == ["agent_tools.codex.linux"]'
+remote_holds example-host | assert_json - '."pin:agent_tools.codex.linux" | .version == "2.0.0" and (.reason | contains("codex:version")) and (.since | test("^2[0-9-]+T[0-9:]+Z$"))'
+remote_holds example-host | assert_json - 'keys == ["pin:agent_tools.codex.linux"]'
 assert_eq "chore(hosts): holds on example-host" "$(git -C "$up_bare" log -1 --format=%s main)"
 assert_eq "hosts/example-host.toml" "$(files_of main)" "the hold commit holds the host file alone"
 assert_contains "$(git -C "$up_bare" log -1 --format=%B main)" "Dotsteward-Machine: example-host"
@@ -84,7 +84,7 @@ assert_exit 3 upgrade --tracked
 assert_contains "$(steps '^pins .*apply')" "--skip agent_tools.codex.linux"
 assert_eq 3.0.0 "$(git -C "$up_bare" show main:versions.lock.json | jq -r '."example.other"')"
 assert_eq "$(remote_oid)" "$(git -C "$up_inst" rev-parse HEAD)"
-remote_holds example-host | assert_json - 'keys == ["agent_tools.codex.linux"]'
+remote_holds example-host | assert_json - 'keys == ["pin:agent_tools.codex.linux"]'
 
 # --- --retry-held: the release goes out alone, before the writer, and the pin moves ---------------
 clear_log
@@ -121,7 +121,7 @@ assert_contains "$(files_of "$pins_commit")" "versions.lock.json"
 assert_not_contains "$(files_of "$pins_commit")" "hosts/"
 assert_eq "hosts/example-host.toml" "$(files_of main)"
 assert_eq "1.1 null" "$(git -C "$up_bare" show main:versions.lock.json | jq -r '[."example.fine", ."example.broken"] | map(. // "null") | join(" ")')"
-remote_holds example-host | assert_json - '."example.broken" | .version == "2.0" and (.reason | contains("pypi:broken"))'
+remote_holds example-host | assert_json - '."pin:example.broken" | .version == "2.0" and (.reason | contains("pypi:broken"))'
 assert_eq "$(remote_oid)" "$(git -C "$up_inst" rev-parse HEAD)" "the checkout follows both"
 
 # --- while the commit of the pins waits, its hold waits too: that commit goes out as it is ---------
@@ -144,7 +144,7 @@ assert_eq "" "$(steps '^pins .*apply')" "the waiting commit goes out as it is: t
 assert_eq 2 "$(git -C "$up_bare" rev-list --count "$before..main")" "the pins, then the hold"
 assert_eq "$(git -C "$up_inst" rev-parse "$waiting^{tree}")" "$(git -C "$up_bare" rev-parse "main^^{tree}")"
 assert_eq "hosts/example-host.toml" "$(files_of main)"
-remote_holds example-host | assert_json - '."example.broken3".version == "2.0"'
+remote_holds example-host | assert_json - '."pin:example.broken3".version == "2.0"'
 assert_eq "$(remote_oid)" "$(git -C "$up_inst" rev-parse HEAD)"
 
 # --- a hold of an older release, only in holds.json, reaches the host file -------------------------
@@ -154,19 +154,19 @@ jq -n '{schema_version: 1, holds: [{component: "example", id: "example.legacy", 
   >"$DOTSTEWARD_STATE_ROOT/holds.json"
 chmod 0600 "$DOTSTEWARD_STATE_ROOT/holds.json"
 assert_exit 3 upgrade --tracked
-remote_holds example-host | assert_json - '."example.legacy" | .version == "9.0" and .reason == "E2E red: example:legacy"'
-remote_holds example-host | assert_json - 'has("example.broken")'
+remote_holds example-host | assert_json - '."pin:example.legacy" | .version == "9.0" and .reason == "E2E red: example:legacy"'
+remote_holds example-host | assert_json - 'has("pin:example.broken")'
 assert_json "$DOTSTEWARD_STATE_ROOT/holds.json" '[.holds[] | select(.id == "example.legacy") | .published] == [true]'
 
 # --- a hold the owner takes out of the host file by hand stays out ---------------------------------
 git -C "$up_inst" pull -q --ff-only origin main
 host_file=$up_inst/hosts/example-host.toml
-awk '/^\[/ { skip = ($0 == "[holds.\"example.legacy\"]") } !skip' "$host_file" >"$host_file.new"
+awk '/^\[/ { skip = ($0 == "[holds.\"pin:example.legacy\"]") } !skip' "$host_file" >"$host_file.new"
 mv -- "$host_file.new" "$host_file"
 assert_not_contains "$(<"$host_file")" "example.legacy"
 git -C "$up_inst" commit -q -am "chore(hosts): the legacy hold is over"
 git -C "$up_inst" push -q origin HEAD:main
 clear_log
 assert_exit 3 upgrade --tracked
-remote_holds example-host | assert_json - 'has("example.legacy") | not'
+remote_holds example-host | assert_json - 'has("pin:example.legacy") | not'
 assert_json "$DOTSTEWARD_STATE_ROOT/holds.json" '[.holds[] | select(.id == "example.legacy")] | length == 0'

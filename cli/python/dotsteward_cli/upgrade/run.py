@@ -60,12 +60,12 @@ from dotsteward_cli import (
 )
 from dotsteward_cli import publish as publishing
 from dotsteward_cli import state as states
-from dotsteward_cli.host import commit_identity, commit_message
+from dotsteward_cli.host import MACHINE_TRAILER, commit_identity, commit_message
 from dotsteward_cli.skills import commands as skills_commands
 from dotsteward_cli.skills import state as skill_state
 from dotsteward_cli.upgrade import analysis, consumer, facts, holds, plugins
 
-WAITING_REF = "refs/dotsteward/upgrade/waiting"
+WAITING_REF = holds.WAITING_REF
 _WORK = "work"
 # What the waiting commit moved, next to it: {schema_version, commit, moved}.
 _WAITING_FILE = "waiting.json"
@@ -313,7 +313,7 @@ class Upgrade(runner.Runner):
 
     def _request(self, mode: str) -> apt_plan.Request:
         active = self._active()
-        held = holds.component_holds(self.root, self.name, holds.component_names(self.instance, self.env))
+        held = holds.component_holds(self.root, self.name)
         return apt_plan.Request(
             mode=mode,
             tracked=facts.tracked_packages(active, self.instance),
@@ -359,10 +359,19 @@ class Upgrade(runner.Runner):
     def _end(self) -> int:
         told = {item.get("id") for item in self.run.items if item.get("code") == "red-held"}
         names = holds.component_names(self.instance, self.env)
-        for hold in holds.in_force(self.state_root, self.root, self.name, names):
-            if hold["key"] in told:
+        for hold in holds.in_force(self.state_root, self.root, self.name):
+            if hold["kind"] == "pin" and hold["key"] in told:
                 continue
             where = f"hosts/{hold['machine']}.toml"
+            if hold["kind"] == "component" and hold["key"] not in names:
+                self.run.item(
+                    "hold-unknown",
+                    pending=False,
+                    id=hold["key"],
+                    machine=hold["machine"],
+                    message=f"component:{hold['key']} in {where} names no component of the instance: it holds nothing",
+                )
+                continue
             kept = "stays at the version before" if hold["kind"] == "pin" else "stays below"
             own = hold["kind"] == "pin" and hold["machine"] == self.name
             self.run.item(
@@ -496,9 +505,7 @@ class Upgrade(runner.Runner):
     def _front(self) -> bool:
         self._name_machine()
         if self.name is not None:
-            # A hold commit before a waiting commit of the pins would make the remote another tip.
-            wait = ["--holds-wait"] if self._waiting_ref() else []
-            status = self._ds_output("host", "publish", *wait).returncode
+            status = self._ds_output("host", "publish").returncode
             self.run.step("host-publish", status)
         self._skills()
         return self._fetch()
@@ -578,9 +585,14 @@ class Upgrade(runner.Runner):
         elif waiting and self._git("rev-parse", f"{waiting}^").stdout.strip() == tip:
             self.waiting = waiting
         elif waiting:
-            # Another machine came first: no merge of pins, the writer starts again on the new tip.
+            # The remote moved: no merge of pins, the writer starts again on the new tip.
+            base = self._git("rev-parse", f"{waiting}^").stdout.strip()
+            machines = self._git(
+                "log", f"--format=%(trailers:key={MACHINE_TRAILER},valueonly)", f"{base}..{tip}"
+            ).stdout.split()
             self._drop_waiting()
-            _say("another machine published first: the waiting commit is made again on the new tip")
+            who = "this machine" if machines and set(machines) == {self.name} else "another machine"
+            _say(f"{who} published first: the waiting commit is made again on the new tip")
         if behind and not self.dirty:
             done = self._git("merge", "--quiet", "--ff-only", tip)
             if done.code != 0:
@@ -941,9 +953,8 @@ class Upgrade(runner.Runner):
             return
         self._answer_consumers()
         restored = {str(entry["id"]) for entry in self.restores}
-        names = holds.component_names(self.instance, self.env)
         assert self.work is not None
-        in_force = holds.in_force(self.state_root, self.work, self.name, names)
+        in_force = holds.in_force(self.state_root, self.work, self.name)
         # The holds of what goes back keep its rows of latest away; the restore itself goes on.
         skips = [
             pattern

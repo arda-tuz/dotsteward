@@ -94,9 +94,12 @@ assert_order '^rebuild ' '^e2e '
 # `txn publish` names the machine in it: the tree is what stays.
 assert_eq "$(git -C "$up_inst" rev-parse "$waiting^{tree}")" "$(git -C "$up_bare" rev-parse "refs/heads/main^{tree}")"
 
-# A rebuild that fails is: the commit goes, the pin holds.
+# A rebuild that fails is: the commit goes, the pin holds. The research has the row from now on, so
+# the hold is not over (the hold of a pin the research no longer has is: tests/upgrade/test-holds-keys.sh).
 clear_log
 move example.not-building 1.0 pypi
+printf '{"items": [{"id": "agent_tools.codex.linux", "latest": "2.1.0", "status": "current"}, {"id": "example.not-building", "latest": "1.0", "status": "update"}]}\n' \
+  >"$UP_CONTROL/latest-rows"
 : >"$UP_CONTROL/rebuild-fails-in-work"
 assert_exit 1 upgrade --tracked
 rm -f -- "$UP_CONTROL/rebuild-fails-in-work"

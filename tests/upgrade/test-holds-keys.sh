@@ -55,7 +55,7 @@ assert_exit 3 upgrade --tracked
 remote_holds example-host | assert_json - 'has("pin:example.gone")'
 clear_log
 rm -f -- "$UP_CONTROL/moves"
-printf '{"items": []}\n' >"$UP_CONTROL/latest-rows"
+printf '{"items": [{"id": "example.other", "latest": "1.0", "status": "current"}]}\n' >"$UP_CONTROL/latest-rows"
 assert_exit 3 upgrade --tracked
 remote_holds example-host | assert_json - 'has("pin:example.gone") | not'
 remote_holds example-host | assert_json - 'has("component:example-gone")'

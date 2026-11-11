@@ -1,18 +1,22 @@
 """Holds: what `upgrade` keeps back, and why, in the machine layer.
 
-A hold is a table ``[holds.<key>]`` of ``hosts/<name>.toml`` with ``version``, ``reason`` and
-``since``. Its key says which kind it is:
+A hold is a table ``[holds."<kind>:<name>"]`` of ``hosts/<name>.toml`` with ``version``, ``reason``
+and ``since``. The kind is part of the key, so the two never mix, whatever the names are:
 
-- **A pin hold**, the key a pin id (``agent_tools.codex.linux``): ``upgrade`` writes it when a move of
-  the pin went red on this machine, in the gate or in E2E. The pin does not take ``version``. The
-  hold is over when upstream calls something newer the latest, or with ``upgrade --retry-held``.
-- **A component hold**, the key the name of a component: the owner writes it. The pins of the
-  component take no version from ``version`` on, and on the machine of the file its apt packages
-  stay as dpkg has them while they are below it. Only the owner takes it out.
+- **A pin hold**, ``pin:<pin id>`` (``pin:agent_tools.codex.linux``): ``upgrade`` writes it when a move
+  of the pin went red on this machine, in the gate or in E2E. The pin does not take ``version``. The
+  hold is over when upstream calls another version the latest (a row the research could not read
+  says nothing), when the research no longer has the pin, or with ``upgrade --retry-held``.
+- **A component hold**, ``component:<name>`` (or the bare name, as earlier releases wrote it): the
+  owner writes it. The pins of the component take no
+  version from ``version`` on, and on the machine of the file its apt packages keep their installed
+  upstream version and take only its Debian revisions while they are below it. Only the owner takes
+  it out; a hold of a component the instance does not have holds nothing and is said.
 
 The shared lock reaches every machine, so the writer leaves what the host file of any machine holds,
 and every run names those holds with the machine and the reason. Only the machine of a file writes
-it, through ``host publish``, in a commit of its own.
+it, through ``host publish``, in a commit of its own, and not while a commit of the pins waits for
+the remote (``WAITING_REF``): a hold commit first would make the remote another tip.
 
 ``<state>/holds.json`` (0600) is the record of this machine between its runs and the remote: the pin
 holds it made (``published`` once the host file on the remote has them), ``released`` the pin ids to
@@ -35,6 +39,11 @@ from dotsteward_cli.upgrade import facts
 _FILE = "holds.json"
 SCHEMA_VERSION = 2
 _FIELDS = ("version", "reason", "since")
+PIN = "pin:"
+COMPONENT = "component:"
+WAITING_REF = "refs/dotsteward/upgrade/waiting"
+# The rows of the research that say what upstream calls the latest; an error row says nothing.
+_ANSWERS = ("update", "review", "current", "held")
 
 
 def _path(state_root: str) -> Path:
@@ -117,28 +126,32 @@ def unpublished(state_root: str) -> bool:
 
 
 def component_names(instance: config.Instance, env: Mapping[str, str] | None = None) -> set[str]:
-    """The names a key of a component hold can have."""
+    """The components of the instance, which a component hold can name."""
     names = set((instance.config.get("components") or {}).keys())
     names.update(str(entry.get("name")) for entry in facts.mirror(instance, env).get("components") or ())
     return names
 
 
-def table(current: Mapping[str, Any], state_root: str, components: Collection[str]) -> dict[str, dict[str, str]]:
-    """The ``holds`` of the host file over CURRENT (the one on the remote): the component holds and
-    the pin holds of others stay; what this machine released goes; what it holds and the remote does
-    not have yet comes. A published hold the remote no longer has was taken out by hand, and stays out."""
+def _plain(value: Mapping[str, Any]) -> dict[str, str]:
+    return {field: str(value[field]) for field in _FIELDS if value.get(field) is not None}
+
+
+def table(current: Mapping[str, Any], state_root: str) -> dict[str, dict[str, str]]:
+    """The ``holds`` of the host file over CURRENT (the one on the remote): the component holds stay;
+    the pin holds this machine released go; the ones it holds and the remote does not have yet come.
+    A published hold the remote no longer has was taken out by hand, and stays out."""
     document = _load(state_root)
     wanted: dict[str, dict[str, str]] = {}
     for key, value in current.items():
         if not isinstance(value, Mapping):
             continue
-        if key not in components and (document["released_all"] or key in document["released"]):
+        name = str(key).removeprefix(PIN)
+        if str(key).startswith(PIN) and (document["released_all"] or name in document["released"]):
             continue
-        wanted[str(key)] = {field: str(value[field]) for field in _FIELDS if value.get(field) is not None}
+        wanted[str(key)] = _plain(value)
     for hold in document["holds"]:
-        if hold.get("published") is True:
-            continue
-        wanted[hold["id"]] = {field: str(hold[field]) for field in _FIELDS if hold.get(field) is not None}
+        if hold.get("published") is not True:
+            wanted[PIN + hold["id"]] = _plain(hold)
     return wanted
 
 
@@ -147,7 +160,7 @@ def published(state_root: str, holds: Mapping[str, Mapping[str, Any]]) -> None:
     document = _load(state_root)
     kept = []
     for hold in document["holds"]:
-        there = holds.get(hold["id"])
+        there = holds.get(PIN + hold["id"])
         if there is None:
             # Taken out by hand after its publish, or released meanwhile: over.
             continue
@@ -160,7 +173,8 @@ def published(state_root: str, holds: Mapping[str, Mapping[str, Any]]) -> None:
 
 
 def machine_holds(root: str | os.PathLike[str]) -> list[dict[str, str]]:
-    """Every hold of the host files of the tree at ROOT: ``{machine, key, version, reason, since}``."""
+    """Every hold of the host files of the tree at ROOT: ``{machine, kind, key, version, reason,
+    since}``, KEY the pin id or the component name."""
     found = []
     for name in machine.known_names(root):
         try:
@@ -170,11 +184,18 @@ def machine_holds(root: str | os.PathLike[str]) -> list[dict[str, str]]:
             continue
         holds = document.get("holds")
         for key, value in sorted(holds.items()) if isinstance(holds, dict) else ():
+            kind, separator, rest = str(key).partition(":")
+            if not separator:
+                # The bare name of an earlier release: a component hold.
+                kind, rest = "component", str(key)
+            if kind not in ("pin", "component") or not rest:
+                continue
             if isinstance(value, dict) and value.get("version") is not None:
                 found.append(
                     {
                         "machine": name,
-                        "key": str(key),
+                        "kind": kind,
+                        "key": rest,
                         "version": str(value["version"]),
                         "reason": str(value.get("reason") or ""),
                         "since": str(value.get("since") or ""),
@@ -183,56 +204,57 @@ def machine_holds(root: str | os.PathLike[str]) -> list[dict[str, str]]:
     return found
 
 
-def in_force(
-    state_root: str, root: str | os.PathLike[str], me: str | None, components: Collection[str]
-) -> list[dict[str, str]]:
+def in_force(state_root: str, root: str | os.PathLike[str], me: str | None) -> list[dict[str, str]]:
     """The holds that count now: those of every host file at ROOT and those of this machine that wait
-    for their publish, without what this machine released. ``kind`` is ``pin`` or ``component``."""
+    for their publish, without what this machine released."""
     document = _load(state_root)
-    holds: dict[tuple[str, str], dict[str, str]] = {}
+    holds: dict[tuple[str, str, str], dict[str, str]] = {}
     for hold in machine_holds(root):
-        kind = "component" if hold["key"] in components else "pin"
         if (
             hold["machine"] == me
-            and kind == "pin"
+            and hold["kind"] == "pin"
             and (document["released_all"] or hold["key"] in document["released"])
         ):
             continue
-        holds[(hold["machine"], hold["key"])] = {**hold, "kind": kind}
+        holds[(hold["machine"], hold["kind"], hold["key"])] = hold
     for hold in document["holds"]:
-        if me is not None and (me, hold["id"]) not in holds:
-            holds[(me, hold["id"])] = {
+        if me is not None and (me, "pin", hold["id"]) not in holds:
+            holds[(me, "pin", hold["id"])] = {
                 "machine": me,
+                "kind": "pin",
                 "key": hold["id"],
                 "version": str(hold.get("version")),
                 "reason": str(hold.get("reason") or ""),
                 "since": str(hold.get("since") or ""),
-                "kind": "pin",
             }
     return [holds[key] for key in sorted(holds)]
 
 
-def component_holds(
-    root: str | os.PathLike[str], me: str | None, components: Collection[str]
-) -> dict[str, dict[str, str]]:
+def component_holds(root: str | os.PathLike[str], me: str | None) -> dict[str, dict[str, str]]:
     """The component holds of the host file of this machine, by component: what binds its apt."""
-    return {hold["key"]: hold for hold in machine_holds(root) if hold["machine"] == me and hold["key"] in components}
+    return {hold["key"]: hold for hold in machine_holds(root) if hold["machine"] == me and hold["kind"] == "component"}
 
 
 # --- the writer ----------------------------------------------------------------------------
 
 
-def _latest_rows(latest: str | os.PathLike[str]) -> dict[str, str]:
+def _latest_rows(latest: str | os.PathLike[str]) -> tuple[set[str], dict[str, str]]:
+    """The ids the research has, and of those the newest version upstream calls the latest; a row
+    the research could not read says nothing about it."""
     try:
         document = json.loads(Path(latest).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {}
+        return set(), {}
     rows = document.get("items") if isinstance(document, dict) else None
+    known: set[str] = set()
     found: dict[str, str] = {}
     for row in rows if isinstance(rows, list) else ():
-        if isinstance(row, dict) and isinstance(row.get("id"), str):
-            found[row["id"]] = str(row.get("latest"))
-    return found
+        if not isinstance(row, dict) or not isinstance(row.get("id"), str):
+            continue
+        known.update([row["id"], *(str(name) for name in (row.get("details") or {}).get("ids") or ())])
+        if row.get("status") in _ANSWERS and row.get("latest") is not None:
+            found[row["id"]] = str(row["latest"])
+    return known, found
 
 
 def _owned_by(identifier: str, component: str, owners: Mapping[str, str]) -> bool:
@@ -246,18 +268,21 @@ def skip_patterns(
     me: str | None,
     owners: Mapping[str, str],
 ) -> list[str]:
-    """The pins the writer leaves alone. A pin hold of a version upstream no longer calls the newest
-    is over: what comes now gets its own chance, and one of this machine leaves its host file. A
-    component hold leaves every pin of the component whose newest version it does not take."""
-    rows = _latest_rows(latest)
+    """The pins the writer leaves alone. A pin hold is over when upstream calls another version the
+    latest, or when the research no longer has the pin: what comes now gets its own chance, and one of
+    this machine leaves its host file. A row the research could not read keeps it. A component hold
+    leaves every pin of the component whose newest version it does not take."""
+    known, rows = _latest_rows(latest)
     skips: list[str] = []
     over: list[str] = []
     for hold in holds:
         if hold["kind"] == "pin":
-            if rows.get(hold["key"], hold["version"]) == hold["version"]:
-                skips.append(hold["key"])
-            elif hold["machine"] == me:
-                over.append(hold["key"])
+            gone = bool(known) and hold["key"] not in known
+            if gone or rows.get(hold["key"], hold["version"]) != hold["version"]:
+                if hold["machine"] == me:
+                    over.append(hold["key"])
+                continue
+            skips.append(hold["key"])
             continue
         for identifier, newest in sorted(rows.items()):
             if _owned_by(identifier, hold["key"], owners) and versions.compare(newest, hold["version"]) >= 0:

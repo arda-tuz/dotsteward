@@ -340,7 +340,7 @@ def _check_files_main(arguments: Sequence[str]) -> int:
             instance = config.load_instance(arguments[1])
             name = machine.current_name(machine.read_machine(config.state_root(instance, os.environ)), os.environ)
             active = facts.active_components(instance, machine.effective(instance, os.environ)["profile"], os.environ)
-            held = holds.component_holds(instance.root, name, holds.component_names(instance, os.environ))
+            held = holds.component_holds(instance.root, name)
             request = Request(gated=facts.gated(instance, name), kept=facts.kept(active, instance, os.environ, held))
     except (config.DotstewardError, OSError, ValueError) as error:
         print(f"[dotsteward] ERROR: {error}", file=sys.stderr)

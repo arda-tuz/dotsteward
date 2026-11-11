@@ -53,12 +53,17 @@
     },
     "holds": {
       "type": "object",
-      "description": "What this machine holds back. A key that names a component is a component hold, which the owner writes: its pins take no version from `version` on, and on this machine its apt packages stay as dpkg has them while below it. Any other key is a pin hold, which `dotsteward upgrade` writes when a move of that pin went red here: the pin does not take `version` until upstream calls something newer the latest, or `upgrade --retry-held`. Every machine honours them, since the shared lock reaches them all.",
+      "description": "What this machine holds back, by kind and name. `component:<name>`, or the bare name as earlier releases wrote it, is a component hold, which the owner writes: the pins of the component take no version from `version` on, and on this machine its apt packages keep the installed upstream version and take only its Debian revisions while below it. `pin:<id>` is a pin hold, which `dotsteward upgrade` writes when a move of that pin went red here: the pin does not take `version` until upstream calls a newer one the latest, or `upgrade --retry-held`. Every machine honours them, since the shared lock reaches them all.",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^((pin|component):)?[^: ]+$"
+      },
       "additionalProperties": {
         "type": "object",
         "properties": {
           "version": {
-            "$ref": "#/$defs/nonEmptyString"
+            "type": "string",
+            "pattern": "^[0-9A-Za-z.+~:-]+$"
           },
           "reason": {
             "$ref": "#/$defs/nonEmptyString"

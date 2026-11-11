@@ -412,6 +412,33 @@ def _tomlkit() -> Any:
     return tomlkit
 
 
+_HEADER = re.compile(r"""^\s*\[\s*([A-Za-z0-9_-]+)\s*\.\s*(?:"([^"]*)"|'([^']*)'|([A-Za-z0-9_-]+))\s*\]\s*(#.*)?$""")
+
+
+def _drop_tables(text: str, parent: str, keys: Collection[str]) -> str:
+    """TEXT without the tables [PARENT.<key>] of KEYS: each header and its lines up to the next
+    header, except the comments and blank lines right above that header, which belong to it."""
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    index = 0
+    while index < len(lines):
+        match = _HEADER.match(lines[index])
+        key = next((group for group in match.groups()[1:4] if group is not None), None) if match else None
+        if not (match and match.group(1) == parent and key in keys):
+            out.append(lines[index])
+            index += 1
+            continue
+        end = index + 1
+        while end < len(lines) and not lines[end].lstrip().startswith("["):
+            end += 1
+        keep = end
+        while keep > index + 1 and (lines[keep - 1].lstrip().startswith("#") or not lines[keep - 1].strip()):
+            keep -= 1
+        out.extend(lines[keep:end])
+        index = end
+    return re.sub(r"\n{3,}", "\n\n", "".join(out))
+
+
 def host_text(
     current: str | None, facts: Mapping[str, Any], holds: Mapping[str, Mapping[str, str]] | None = None
 ) -> str:
@@ -431,16 +458,23 @@ def host_text(
         document["tags"] = list(facts["tags"])
     plain = (tomlfile.loads(current) if current is not None else {}).get("holds") or {}
     if holds is not None and plain != holds:
-        if "holds" in document:
+        # Only what changed: the other tables, and the owner's comments, stay as they are. A table
+        # goes line by line, since tomlkit gives the comment above a header to the table before it.
+        gone = [key for key in plain if key not in holds]
+        if gone:
+            document = tomlkit.parse(_drop_tables(tomlkit.dumps(document), "holds", gone))
+        if "holds" not in document:
+            document["holds"] = tomlkit.table(is_super_table=True)
+        section = document["holds"]
+        for key in sorted(holds):
+            if plain.get(key) == holds[key]:
+                continue
+            entry = tomlkit.table()
+            for field, value in holds[key].items():
+                entry[field] = value
+            section[key] = entry
+        if not holds:
             del document["holds"]
-        if holds:
-            section = tomlkit.table(is_super_table=True)
-            for key in sorted(holds):
-                entry = tomlkit.table()
-                for field, value in holds[key].items():
-                    entry[field] = value
-                section[key] = entry
-            document["holds"] = section
     text: str = tomlkit.dumps(document)
     return text
 
@@ -526,7 +560,7 @@ def declined_text(
 
 
 def cmd_publish(args: argparse.Namespace, instance: config.Instance, env: Mapping[str, str]) -> int:
-    return publish(instance, env, holds_wait=args.holds_wait)
+    return publish(instance, env)
 
 
 class _PrivacyFinding(Exception):
@@ -539,15 +573,14 @@ def publish(
     *,
     declined: Mapping[str, Collection[str]] | None = None,
     check: Callable[[str], None] | None = None,
-    holds_wait: bool = False,
 ) -> int:
     """Brings hosts/<name>.toml of this machine to the remote: the exit status of
     ``host publish`` (OK, PARTIAL without a network, PRIVACY_STOP); Refusal when the
     remote says no. DECLINED adds names to declined in the same commit (`incoming`), and
     CHECK looks at that commit before it leaves; it refuses by raising. The holds of this
-    machine go with it (`dotsteward_cli.upgrade.holds`), unless HOLDS_WAIT: `upgrade` keeps
-    them back while a commit of its pins waits for the remote, which a hold commit before it
-    would make another machine's tip."""
+    machine go with it (`dotsteward_cli.upgrade.holds`), except while a commit of the pins of
+    `upgrade` waits for the remote: a hold commit before it would make the remote another tip,
+    and that commit would be made again."""
     env = os.environ if env is None else env
     root = instance.root
     state = config.state_root(instance, env)
@@ -561,7 +594,7 @@ def publish(
     facts["platform"] = platforms.platform_id(env)
     branch = instance.config["instance"]["branch"]
     path = f"{machine.HOSTS_DIR}/{name}.toml"
-    components = holds.component_names(instance, env)
+    holds_wait = _git(root, "rev-parse", "--verify", "--quiet", holds.WAITING_REF).returncode == 0
     # The holds table of the last tree built on, and what this machine's record makes of it.
     there: dict[str, Any] = {}
 
@@ -572,7 +605,7 @@ def publish(
             current_holds = dict((tomlfile.loads(current) if current is not None else {}).get("holds") or {})
         except tomlfile.TomlError:
             current_holds = {}
-        wanted = current_holds if holds_wait else holds.table(current_holds, state, components)
+        wanted = current_holds if holds_wait else holds.table(current_holds, state)
         if not holds_wait:
             there.update(holds=wanted)
         text = host_text(current, facts, wanted)
@@ -860,8 +893,6 @@ def _parser() -> argparse.ArgumentParser:
         ),
         allow_abbrev=False,
     )
-    # Internal: `upgrade` while a commit of its pins waits for the remote.
-    publish.add_argument("--holds-wait", action="store_true", help=argparse.SUPPRESS)
     publish.set_defaults(handler=cmd_publish)
     show = commands.add_parser(
         "show", help="print this machine", description="Prints this machine.", allow_abbrev=False

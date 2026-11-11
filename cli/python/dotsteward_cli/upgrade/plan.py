@@ -39,7 +39,7 @@ def build(instance: config.Instance, accept: Sequence[str]) -> dict[str, Any]:
     active = facts.active_components(instance, profile, env)
     mirror = facts.mirror(instance, env)
     tracked = facts.tracked_packages(active, instance)
-    held = holds.component_holds(instance.root, effective["name"], holds.component_names(instance, env))
+    held = holds.component_holds(instance.root, effective["name"])
     shared: dict[str, Any] = {
         "accept": tuple(accept),
         "constraints": facts.constraints(active, instance, env),
