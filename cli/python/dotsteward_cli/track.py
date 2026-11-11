@@ -74,11 +74,13 @@ _ADD_DESCRIPTION = (
 _REMOVE_DESCRIPTION = (
     "Stops tracking a component: opens a maintain transaction, removes [components.NAME], its entry of "
     "[components] order and, for a component of the instance, components/NAME, and finishes it with the one "
-    "dotsteward apply, under the subject 'feat: stop tracking NAME'. The software stays installed; what the Home "
-    "Manager profile installed (the nix method) leaves it at the next activation. --uninstall also removes, once "
-    "the commit landed, what the component installed outside the profile and no other component names: its APT "
-    "packages (through sudo on a terminal, else uninstall-required with the command, exit 3) and an official "
-    "binary or a Python environment of the home directory. A component that another one requires stays. Exit "
+    "dotsteward apply, under the subject 'feat: stop tracking NAME'. Only files a commit holds go; anything else in "
+    "components/NAME stays or is a question (untracked-files). The software stays installed. A nix component would "
+    "leave the profile of every machine it is for: a plain remove asks (profile-removal); --uninstall confirms, "
+    "--keep-here keeps it on this machine only. --uninstall also removes, once the removal is published, what the "
+    "component provably installed outside the profile and no other component names: its APT packages (through sudo "
+    "on a terminal, else uninstall-required with the command, exit 3), an official binary that answers its version "
+    "probe, a Python environment and its links below HOME. A component that another one requires stays. Exit "
     "status: as for dotsteward add."
 )
 
