@@ -8,6 +8,8 @@ apply_world
 ds_use_stubs gh
 ds_stub_route gh "api repos/example/example-release/releases/tags/v4.1.0" \
   --stdout '{"tag_name": "v4.1.0", "prerelease": true, "draft": false, "assets": []}'
+# The release list has no release of the family: the research reads the tags.
+ds_stub_route gh "api repos/*/releases?per_page=30&page=1" --stdout '[]'
 ds_stub_route gh "api repos/*" --exit 1 --stderr "HTTP 404: Not Found"
 json_edit "$manifest" '
 data["pins"]["latest"] = [
