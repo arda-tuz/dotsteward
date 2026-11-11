@@ -233,7 +233,8 @@ left to the vendor. Without a terminal it is never applied.
   commit before comes back from a clone, with the same care for user services, and E2E checks it.
   Green: the marker `<state>/upgrade/held-at.json` keeps this machine there (`consumer-held`, exit
   3): the checkout follows the remote as always, but no commit with that shared lock is built or
-  checked here, whatever else it brings (`consumer-held` again, exit 0). The state record carries it
+  checked here, whatever else it brings (`consumer-held` again, exit 0); that holds for an apt
+  commit of the run too, whose tracked packages wait for E2E until the marker goes. The state record carries it
   as `held` (the commit it went back to, the commit of the red lock, the components that went red),
   so the producer reads it from `state/<name>`. A commit with another shared lock drops the marker
   and is tried. Red on the way back too: nothing is held, `e2e-red`, exit 1.
