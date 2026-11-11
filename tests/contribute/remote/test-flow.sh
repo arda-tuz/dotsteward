@@ -8,7 +8,8 @@
 # (the invariant behind the framework skill links), the instance pins the
 # tag, and the report names the pull request, the merged commit, the
 # release, the instance commit and the tests; it ends the run. --json
-# prints the same as one document.
+# prints the same as one document. The instance commit is the one origin
+# has: txn publish names the machine in it, which rewrites the commit.
 # shellcheck source=tests/contribute/remote/helpers.sh
 source "$DS_REPO_ROOT/tests/contribute/remote/helpers.sh"
 
@@ -40,7 +41,11 @@ merged=$(upstream_main)
 assert_eq "$tested_tree" "$(git -C "$ct_upstream_bare" rev-parse 'refs/tags/v0.2.0^{tree}')" "tree of the release"
 jq -e --arg sha "$merged" '.nodes.dotsteward.locked.rev == $sha and .nodes.dotsteward.original.ref == "v0.2.0"' \
   "$ct_inst/flake.lock" >/dev/null || ds_fail "the instance does not pin the release"
-assert_eq "$(git -C "$ct_inst" rev-parse HEAD)" "$(field .instance_commit)" "instance commit"
+published=$(git -C "$rt_inst_bare" rev-parse refs/heads/main)
+assert_eq "$published" "$(git -C "$ct_inst" rev-parse HEAD)" "instance HEAD after the publish"
+git -C "$rt_inst_bare" log -1 --format=%B "$published" | grep -qx 'Dotsteward-Machine: example-machine' ||
+  ds_fail "the published instance commit names no machine"
+assert_eq "$published" "$(field .instance_commit)" "instance commit"
 assert_eq pinned "$(live)" "live framework at the end"
 
 # --- report -----------------------------------------------------------------------------------
@@ -50,7 +55,7 @@ assert_contains "$DS_STDOUT" "[dotsteward] contribute run $id: completed"
 assert_contains "$DS_STDOUT" "  pull request: https://github.com/$CT_UPSTREAM_SLUG/pull/1"
 assert_contains "$DS_STDOUT" "  merged commit: $merged"
 assert_contains "$DS_STDOUT" "  release: v0.2.0 (https://github.com/$CT_UPSTREAM_SLUG/releases/tag/v0.2.0)"
-assert_contains "$DS_STDOUT" "  instance commit: $(git -C "$ct_inst" rev-parse HEAD)"
+assert_contains "$DS_STDOUT" "  instance commit: $published"
 assert_contains "$DS_STDOUT" "  framework gate: passed at $tested"
 assert_contains "$DS_STDOUT" "  trial: full"
 assert_contains "$DS_STDOUT" "  upgrade: full"
@@ -58,6 +63,7 @@ state_json | assert_json - '.step == "done" and .outcome == "completed"'
 
 assert_exit 0 run_contribute report --json
 assert_json - ".schema_version == 1 and .id == \"$id\" and .outcome == \"completed\" and .merged_sha == \"$merged\"" <<<"$DS_STDOUT"
+assert_json - ".instance_commit == \"$published\"" <<<"$DS_STDOUT"
 assert_json - ".tag == \"v0.2.0\" and .release_url == \"https://github.com/$CT_UPSTREAM_SLUG/releases/tag/v0.2.0\"" <<<"$DS_STDOUT"
 assert_json - ".tests == {gate: \"passed\", tested_commit: \"$tested\", tested_tree: \"$tested_tree\", trial: \"full\", upgrade: \"full\"}" <<<"$DS_STDOUT"
 assert_json - '.trial_switched == false and .recovery == null' <<<"$DS_STDOUT"

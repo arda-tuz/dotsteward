@@ -74,7 +74,8 @@ assert_eq "$(rt_bootstrap 0.1.1)" "$(cat "$ct_inst/bootstrap.sh")" "refreshed bo
 assert_file_mode "$ct_inst/bootstrap.sh" 755
 assert_eq "$base" "$(git -C "$ct_inst" rev-parse HEAD^)" "one upgrade commit on the base"
 assert_eq "chore(dotsteward): upgrade to 0.1.1" "$(git -C "$ct_inst" log -1 --format=%s)" "upgrade commit subject"
-assert_eq "" "$(git -C "$ct_inst" log -1 --format=%b)" "upgrade commit body"
+# The only body is the machine that txn publish names; contribute adds no trailer.
+assert_eq "Dotsteward-Machine: example-machine" "$(git -C "$ct_inst" log -1 --format=%b)" "upgrade commit body"
 assert_eq "$(printf '%s\n' .dotsteward/synced bootstrap.sh flake.lock flake.nix)" \
   "$(git -C "$ct_inst" diff --name-only HEAD^ HEAD)" "files of the upgrade commit"
 assert_eq "" "$(git -C "$ct_inst" status --porcelain)" "instance after the upgrade"

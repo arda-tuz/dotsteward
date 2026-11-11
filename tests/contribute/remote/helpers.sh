@@ -24,9 +24,13 @@
 #                     <components.txt>"); gate refuses untracked files, as
 #                     the real gate does; e2e --expected-remote-base BASE
 #                     fails unless origin main is BASE, as the real e2e does;
+#                     txn publish names the machine in every commit after
+#                     origin main (the trailer Dotsteward-Machine:
+#                     example-machine, as the real one adds it), moves HEAD
+#                     to the rewritten tip and pushes it to origin main;
 #                     with the knob txn-publish-lost (any value), the next
-#                     txn publish pushes the instance and fails, as when
-#                     the answer of its push is lost (once); the old names
+#                     txn publish does so and fails, as when the answer of
+#                     its push is lost (once); the old names
 #                     update and sync refuse, because the framework does not
 #                     call its own old names
 #   DOTSTEWARD_CLI    (exported) the CLI the instance launcher runs (its
@@ -219,11 +223,37 @@ EOF
       txn)
         printf 'lost_knob=%q\n' "$rt_hub/knobs/txn-publish-lost"
         cat <<'EOF'
-if [[ ${1:-} == publish && -f $lost_knob ]]; then
-  rm -f -- "$lost_knob"
-  git -C "$DOTSTEWARD_INSTANCE" push -q origin HEAD:refs/heads/main
-  printf '[dotsteward] ERROR: push failed\n' >&2
-  exit 1
+# publish names the machine in every commit after origin main, as the real one does on a
+# machine with a name: the commits are rewritten, HEAD moves to the rewritten tip, and that
+# tip is what goes to origin main.
+if [[ ${1:-} == publish ]]; then
+  repo=$DOTSTEWARD_INSTANCE
+  remote=$(git -C "$repo" ls-remote origin refs/heads/main | cut -f1)
+  head=$(git -C "$repo" rev-parse HEAD)
+  if [[ $head != "$remote" ]] && git -C "$repo" merge-base --is-ancestor "$remote" "$head"; then
+    parent=$remote
+    while IFS= read -r commit; do
+      message=$(git -C "$repo" log -1 --format=%B "$commit")
+      grep -q '^Dotsteward-Machine:' <<<"$message" ||
+        message+=$'\n\nDotsteward-Machine: example-machine'
+      parent=$(
+        GIT_AUTHOR_NAME=$(git -C "$repo" log -1 --format=%an "$commit") \
+          GIT_AUTHOR_EMAIL=$(git -C "$repo" log -1 --format=%ae "$commit") \
+          GIT_AUTHOR_DATE=$(git -C "$repo" log -1 --format=%aI "$commit") \
+          GIT_COMMITTER_NAME=$(git -C "$repo" log -1 --format=%cn "$commit") \
+          GIT_COMMITTER_EMAIL=$(git -C "$repo" log -1 --format=%ce "$commit") \
+          GIT_COMMITTER_DATE=$(git -C "$repo" log -1 --format=%cI "$commit") \
+          git -C "$repo" commit-tree "$commit^{tree}" -p "$parent" -m "$message"
+      )
+    done < <(git -C "$repo" rev-list --reverse "$remote..HEAD")
+    git -C "$repo" update-ref -m "stand-in: name the machine" HEAD "$parent" "$head"
+    git -C "$repo" push -q origin HEAD:refs/heads/main
+    if [[ -f $lost_knob ]]; then
+      rm -f -- "$lost_knob"
+      printf '[dotsteward] ERROR: push failed\n' >&2
+      exit 1
+    fi
+  fi
 fi
 EOF
         ;;

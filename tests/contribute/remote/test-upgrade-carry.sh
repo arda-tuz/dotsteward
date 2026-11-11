@@ -77,7 +77,10 @@ assert_eq "" "$(git -C "$ct_inst" status --porcelain)" "instance after the carry
 if git -C "$ct_inst" rev-parse --verify --quiet "refs/dotsteward/carry/$(current_id)" >/dev/null; then
   ds_fail "the carry ref outlived the upgrade"
 fi
-state_json | assert_json - ".instance_commit == \"$(git -C "$ct_inst" rev-parse HEAD)\" and .upgrade_commit == \"$(git -C "$ct_inst" rev-parse HEAD^)\""
+# The upgrade commit as the run made it, before txn publish named the machine in it.
+state_json | assert_json - ".instance_commit == \"$(git -C "$ct_inst" rev-parse HEAD)\""
+assert_eq "$(git -C "$ct_inst" rev-parse 'HEAD^^{tree}')" "$(git -C "$ct_inst" rev-parse "$(field .upgrade_commit)^{tree}")" \
+  "the tree of the recorded upgrade commit"
 state_json | assert_json - '.carry.applied == true and .step == "report"'
 published
 
