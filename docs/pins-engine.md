@@ -106,7 +106,7 @@ declarations.
 | --- | --- |
 | `github-release` | the newest stable GitHub release of the tag family by version, from the release list (drafts and prereleases never count), with per-platform asset size and digest; without a release list, the newest stable tag of `git ls-remote --tags` the list did not flag |
 | `npm` | the `latest` dist-tag of an npm package, with integrity and engines |
-| `pypi` | the newest final release of a package on a Python package index (pre-releases and yanked releases skipped), with its `requires_python` |
+| `pypi` | the newest final release of a package on a Python package index (pre-releases and yanked releases skipped), with its `requires_python`; `integrity` and `repo` say where the writer finds its PEP 740 attestations and whose workflow signs them |
 | `apt-index` | the highest version in a vendor's APT `Packages` index |
 | `deb-url` | a vendor link that always serves the newest DEB (redirect target, size, date) |
 | `official-manifest` | a vendor's JSON release manifest: version, SHA-256 and size fields |
@@ -253,9 +253,37 @@ release age for unsigned files (decision T8-a). Its signer entry says
 `unsigned` and the report labels the move: the `pins apply` line
 (`moved <id>: <from> -> <to> (unsigned)` or `(sigstore: <identity>)`), the
 `authenticity` of each entry of `moved` in the JSON summary and the step of the
-run report. Requirements of a `pypi` group and packages built from source are
-labelled `unsigned` too; their PEP 740 attestations and upstream signatures are
-not read yet.
+run report. Packages built from source are labelled `unsigned` too; their
+upstream signatures are not read yet.
+
+A `pypi` pin moves with its hash-pinned requirements, and many files can be
+installed for it: every `--hash` of the distribution's line in the regenerated
+file, found by its digest among the files of the release on the index
+(`<index>/<package>/<version>/json`). Each of those files is looked up in the
+integrity API of the index (PEP 740, `<integrity>/<package>/<version>/<file>/provenance`;
+the declaration's `integrity`, else the index URL with its last segment `pypi`
+as `integrity`), with the same timeouts and the same "no answer is no verdict"
+rule. Its attestation, converted to a v0.3 Sigstore bundle, is verified with
+cosign: a publish attestation (`https://docs.pypi.org/attestations/publish/v1`,
+or SLSA provenance) whose statement names the digest of that file. The pin is
+signed only when every one of those files is, all by one signer; on first use
+it must be a workflow of the declaration's `repo` (or of the pin's `source`).
+The pin then records what it vouches for, and the signer goes into
+`trust.signers` as for a download:
+
+```json
+"pypi": { "example": { "version": "1.1.0",
+  "signature": { "kind": "attestation", "subject": "distributions",
+                 "predicate_type": "https://docs.pypi.org/attestations/publish/v1",
+                 "identity": "https://github.com/example/example/.github/workflows/release.yml@refs/tags/v1.1.0",
+                 "files": { "example-1.1.0-py3-none-any.whl": "<sha256>", "example-1.1.0.tar.gz": "<sha256>" } } } }
+```
+
+`pip install --require-hashes` then binds the install to exactly those digests. A
+release without provenance moves and its signer is `unsigned`; one with
+attestations for only some of its files moves `unsigned, N of M files attested`,
+and for a signed source that is `authenticity-signature-missing`. The transitive
+requirements stay hash-pinned only: their publishers are not pinned.
 
 What the lock holds:
 

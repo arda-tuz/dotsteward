@@ -18,7 +18,8 @@ from ..latest.upstream import github_repo
 from ..lockfile import VERSIONS, LockPath, Locks, dump, parse_path
 from ..syncer import sync_locks, write_changed
 from . import plan as routing
-from .authenticity import Authenticity, Finding, Release
+from ..latest.adapters.pypi import DEFAULT_INDEX, integrity_of
+from .authenticity import Authenticity, Distributions, Finding, Release
 from .plan import Declared, Group, Move, flake_original, hash_fields, pin_of, version_field
 from .tools import PLACEHOLDER, GroupFailure, Tools, Waits, nix_system
 
@@ -375,28 +376,58 @@ class Writer:
         if not text.strip():
             raise GroupFailure(f"{regenerate['command'][0]} wrote no requirements for {group.key}")
         atomic.atomic_write(file, text)
+        # The attestations of the files of each pinned distribution (PEP 740); the transitive
+        # requirements stay hash-pinned only.
+        findings = {move.id: self._pypi_authenticity(move, text) for move in group.moves}
 
         def change(locks: Locks) -> None:
             for move in group.moves:
-                self._pypi_pin(locks, move, text)
+                self._pypi_pin(locks, move, text, findings[move.id])
 
         self.edit(change)
         self.sync()
-        # PEP 740 attestations are not read yet: a requirement is hash-pinned only.
-        self.findings.update((move.id, Finding("unsigned")) for move in group.moves)
+        self.findings.update(findings)
 
-    def _pypi_pin(self, locks: Locks, move: Move, text: str) -> None:
+    def _pypi_authenticity(self, move: Move, text: str) -> Finding:
+        if self.authenticity is None:
+            return Finding("unsigned")
         name = _package(move)
-        pattern = "[-_.]+".join(re.escape(part) for part in re.split(r"[-_.]+", name))
-        found = re.search(rf"^{pattern}==([^\s;\\]+)", text, re.MULTILINE | re.IGNORECASE)
-        if found is None:
+        version = _pinned_version(name, text)
+        if version is None:
+            raise GroupFailure(f"{move.id}: the regenerated requirements do not pin {name}")
+        adapter = move.adapter if move.adapter is not None and move.adapter.name == "pypi" else None
+        index = str(adapter.values.get("index") or DEFAULT_INDEX) if adapter is not None else DEFAULT_INDEX
+        integrity = adapter.values.get("integrity") if adapter is not None else None
+        path = _path(move)
+        entry = self.instance.load_locks().get(path)
+        source = entry.get("source") if isinstance(entry, dict) else None
+        release = Distributions(
+            pin=path.text().removeprefix("versions:"),
+            project=name,
+            version=version,
+            hashes=_requirement_hashes(name, version, text),
+            index=index,
+            integrity=str(integrity) if integrity else integrity_of(index),
+            repository=_repository(move.request) or github_repo(source),
+        )
+        return self.authenticity.examine_distributions(self.instance.load_locks().documents[VERSIONS], release)
+
+    def _pypi_pin(self, locks: Locks, move: Move, text: str, finding: Finding) -> None:
+        name = _package(move)
+        version = _pinned_version(name, text)
+        if version is None:
             raise GroupFailure(f"{move.id}: the regenerated requirements do not pin {name}")
         path = _path(move)
         pin = locks.get(path)
         if isinstance(pin, dict):
-            pin[version_field(move, self.declared, pin) or "version"] = found[1]
+            pin[version_field(move, self.declared, pin) or "version"] = version
+            # The attestations vouch for the files of one release: the old ones never stay.
+            pin.pop("signature", None)
+            if finding.signature is not None:
+                pin["signature"] = finding.signature
         else:
-            locks.set(path, found[1])
+            locks.set(path, version)
+        record_trust(locks.documents[VERSIONS], path.text().removeprefix("versions:"), finding)
 
 
 def record_trust(versions: dict[str, Any], pin: str, finding: Finding) -> None:
@@ -435,6 +466,29 @@ def _tag(move: Move) -> str:
 def _repository(request: Request | None) -> str | None:
     value = request.values.get("repo") if request is not None else None
     return value if isinstance(value, str) else None
+
+
+def _name_pattern(name: str) -> str:
+    """A regular expression of the distribution NAME in every spelling its normalized name allows."""
+    return "[-_.]+".join(re.escape(part) for part in re.split(r"[-_.]+", name))
+
+
+def _pinned_version(name: str, text: str) -> str | None:
+    """The version the requirements TEXT pin the distribution NAME at."""
+    found = re.search(rf"^{_name_pattern(name)}==([^\s;\\]+)", text, re.MULTILINE | re.IGNORECASE)
+    return found[1] if found else None
+
+
+def _requirement_hashes(name: str, version: str, text: str) -> tuple[str, ...]:
+    """The SHA-256 digests the requirements TEXT allow for NAME==VERSION: the --hash options of
+    its line, with its continuation lines."""
+    logical = re.sub(r"\\[ \t]*\r?\n", " ", text)
+    head = re.compile(rf"\s*{_name_pattern(name)}\s*==\s*{re.escape(version)}(?=[\s;]|$)", re.IGNORECASE)
+    for line in logical.splitlines():
+        if head.match(line):
+            found = re.findall(r"--hash[=\s]+sha256:([0-9a-fA-F]{64})\b", line)
+            return tuple(dict.fromkeys(digest.lower() for digest in found))
+    return ()
 
 
 def _package(move: Move) -> str:

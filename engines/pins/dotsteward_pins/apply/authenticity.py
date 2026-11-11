@@ -31,6 +31,16 @@ release age, T8-a); its signer entry says ``unsigned``.
 The recorded signature is the bundle cosign verified (a legacy cosign bundle
 is converted to a v0.1 Sigstore bundle first), so an install verifies it again
 from the lock, without network.
+
+A pypi pin (``examine_distributions``) has many files: every file its hash-pinned
+requirements allow (each ``--hash`` of the distribution's line, found by its
+digest among the files of the release on the index) is looked up in the
+integrity API of the index (PEP 740: ``<integrity>/<project>/<version>/<file>/
+provenance``), and its publish attestation, converted to a v0.3 Sigstore
+bundle, is verified the same way. The pin is signed only when every one of
+those files is: the files and the identity are recorded, and pip's
+``--require-hashes`` binds the install to those digests. Only an answer that
+the file has no provenance (HTTP 404, 410) counts as not published.
 """
 
 from __future__ import annotations
@@ -43,6 +53,9 @@ import re
 import tarfile
 import tempfile
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -56,10 +69,17 @@ SUFFIXES = (".sigstore.json", ".sigstore", ".bundle")
 # The archives whose member the writer can read (the methods extract the same).
 ARCHIVES = (".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2", ".tar", ".zip")
 PROVENANCE = "https://slsa.dev/provenance/v1"
+PYPI_PUBLISH = "https://docs.pypi.org/attestations/publish/v1"
+# What an attestation of a distribution on a package index may state (PEP 740).
+DISTRIBUTION_PREDICATES = (PYPI_PUBLISH, PROVENANCE)
+INTEGRITY_ACCEPT = "application/vnd.pypi.integrity.v1+json"
+USER_AGENT = "dotsteward-pins/1.0"
 STEP_TIMEOUT = 60
 VERIFY_TIMEOUT = 120
 DISCOVERY_BUDGET = 180
 BUNDLE_V01 = "application/vnd.dev.sigstore.bundle+json;version=0.1"
+BUNDLE_V03 = "application/vnd.dev.sigstore.bundle.v0.3+json"
+IN_TOTO = "application/vnd.in-toto+json"
 _SAN = bytes.fromhex("0603551d11")
 _ISSUER_V1 = bytes.fromhex("060a2b0601040183bf300101")
 _ISSUER_V2 = bytes.fromhex("060a2b0601040183bf300108")
@@ -93,6 +113,24 @@ class Release:
     members: tuple[str, ...] = ()
 
 
+@dataclass
+class Distributions:
+    """What the writer moves a pypi pin to: the release on the index and the digests of
+    the files its requirements allow."""
+
+    pin: str
+    project: str
+    version: str
+    hashes: tuple[str, ...]
+    index: str
+    integrity: str | None
+    repository: str | None = None
+
+
+# What _get answers when the server says there is no such document.
+ABSENT: Any = object()
+
+
 class DiscoveryIncomplete(Exception):
     """A signature lookup got no answer (no network, a server error, a timeout):
     no verdict, so the pin waits for the next run."""
@@ -111,6 +149,8 @@ class Finding:
     incomplete: bool = False
     # The repository whose later releases the local APT bridge serves unsigned.
     bridge: str | None = None
+    # How many of the files of a pypi pin are attested, when some are and some are not.
+    attested: str | None = None
 
     def report(self, move_id: str) -> dict[str, Any]:
         entry: dict[str, Any] = {"id": move_id, "status": self.status}
@@ -121,11 +161,15 @@ class Finding:
             entry["discovery"] = "incomplete"
         if self.bridge is not None:
             entry["apt_bridge"] = "unsigned"
+        if self.attested is not None:
+            entry["attested"] = self.attested
         return entry
 
     def label(self) -> str:
         if self.signature is None:
             text = "unsigned, signature discovery incomplete" if self.incomplete else "unsigned"
+            if self.attested is not None:
+                text += f", {self.attested}"
         else:
             text = f"sigstore: {self.signature['identity']}"
             if self.first_use:
@@ -217,6 +261,111 @@ class Authenticity:
             )
         return Finding("sigstore", signature=signature, signer=new_signer, root=root, first_use=pinned is None)
 
+    def examine_distributions(self, versions: dict[str, Any], release: Distributions) -> Finding:
+        """The authenticity of a pypi pin: signed when every file its requirements allow has a
+        verified attestation of the pinned signer (on first use, of the declared repository)."""
+        trust = _object(versions.get("trust"))
+        signer = _object(_object(trust.get("signers")).get(release.pin)) or None
+        pinned = signer if signer is not None and signer.get("kind") == "sigstore" else None
+        unsigned = signer or {"kind": "unsigned", "first_seen": _today()}
+        self._deadline = time.monotonic() + DISCOVERY_BUDGET
+        self._unknown = []
+        files = self._release_files(release) if release.hashes and release.integrity else {}
+        names = {digest: files.get(digest) for digest in release.hashes} if files is not None else {}
+        lookups = [(digest, name) for digest, name in names.items() if name is not None]
+        found: dict[str, list[Candidate]] = {}
+        if lookups:
+            with ThreadPoolExecutor(max_workers=len(lookups)) as pool:
+                answers = list(pool.map(lambda lookup: self._provenance(release, lookup[1]), lookups))
+            found = {digest: answer for (digest, _), answer in zip(lookups, answers, strict=True) if answer}
+        missing = [digest for digest in release.hashes if digest not in found]
+        if not found or missing:
+            if self._unknown and pinned is not None:
+                unanswered = "; ".join(self._unknown[:3])
+                raise DiscoveryIncomplete(
+                    f"signature discovery got no answer ({unanswered}); the pin waits for the next run"
+                )
+            if pinned is not None:
+                first = missing[0] if missing else ""
+                raise Waits(
+                    "authenticity-signature-missing",
+                    reason="the source was signed and a file its requirements allow has no attestation",
+                    file=names.get(first) or f"sha256:{first}",
+                    identity_regexp=pinned.get("identity_regexp"),
+                )
+            finding = Finding("unsigned", signer=unsigned, incomplete=bool(self._unknown))
+            if found:
+                finding.attested = f"{len(found)} of {len(release.hashes)} files attested"
+            return finding
+        root = self._trusted_root(trust)
+        if root is None:
+            raise Waits("authenticity-no-trusted-root", reason="no trusted root is recorded and none could be read")
+        new_signer: dict[str, Any] | None = dict(pinned) if pinned is not None else None
+        identities: set[str] = set()
+        predicates: set[str] = set()
+        as_release = Release(pin=release.pin, url="", digest="", version=release.version)
+        for digest, candidates in found.items():
+            candidate = candidates[0]
+            signature = _signature(candidate, digest)
+            identity, issuer = signature["identity"], _issuer(candidate.bundle)
+            predicate = signature.get("predicate_type")
+            if signature["kind"] != "attestation" or predicate not in DISTRIBUTION_PREDICATES:
+                raise Waits(
+                    "authenticity-failed", error="the provenance holds no publish attestation", origin=candidate.origin
+                )
+            if _subject_digests(candidate.bundle) != [digest]:
+                raise Waits("authenticity-failed", error="the attestation is of another file", origin=candidate.origin)
+            if new_signer is None:
+                if not issuer:
+                    raise Waits("authenticity-failed", error="the certificate names no OIDC issuer", identity=identity)
+                new_signer = {
+                    "kind": "sigstore",
+                    "identity_regexp": trust_rules.identity_regexp(identity),
+                    "issuer": issuer,
+                    "first_seen": _today(),
+                }
+            regexp, expected = str(new_signer.get("identity_regexp") or ""), str(new_signer.get("issuer") or "")
+            if pinned is None and release.repository and not trust_rules.of_repository(identity, release.repository):
+                raise Waits(
+                    "authenticity-first-use-foreign",
+                    reason="the first signer is no workflow of the pin's repository",
+                    identity=identity,
+                    repository=release.repository,
+                )
+            if not trust_rules.matches(regexp, identity) or issuer != expected:
+                code = "authenticity-signer-changed" if pinned is not None else "authenticity-failed"
+                raise Waits(
+                    code,
+                    identity=identity,
+                    issuer=issuer,
+                    identity_regexp=regexp,
+                    expected_issuer=expected,
+                    reason="the files are not signed by one signer",
+                )
+            error = self._verify(signature, candidate, digest, root, identity, issuer)
+            if error is not None:
+                raise Waits("authenticity-failed", error=error, identity=identity, origin=candidate.origin)
+            tag = trust_rules.tag_of(identity)
+            if tag is not None and not _names_release(tag, as_release):
+                raise Waits(
+                    "authenticity-identity-version",
+                    reason="the signature is of another release than the one the pin moves to",
+                    identity=identity,
+                    tag=release.version,
+                )
+            identities.add(identity)
+            predicates.add(str(predicate))
+        if len(identities) != 1 or new_signer is None:
+            raise Waits("authenticity-failed", error="the files are signed by more than one identity")
+        recorded = {
+            "kind": "attestation",
+            "subject": "distributions",
+            "predicate_type": PYPI_PUBLISH if PYPI_PUBLISH in predicates else PROVENANCE,
+            "identity": identities.pop(),
+            "files": {names[digest]: digest for digest in release.hashes},
+        }
+        return Finding("sigstore", signature=recorded, signer=new_signer, root=root, first_use=pinned is None)
+
     # -- discovery --
 
     def _remaining(self) -> int:
@@ -242,6 +391,64 @@ class Authenticity:
         except (ValueError, KeyError, TypeError):
             self._unknown.append(f"{url}: nix answered no store path")
             return None
+
+    def _get(self, url: str, accept: str) -> Any:
+        """The JSON document at URL; ABSENT when the server says there is none; None when
+        there is no answer (noted in _unknown)."""
+        if time.monotonic() >= self._deadline:
+            self._unknown.append(f"{url}: no time left")
+            return None
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
+        try:
+            with urllib.request.urlopen(request, timeout=self._remaining()) as response:
+                body: bytes = response.read()
+        except urllib.error.HTTPError as error:
+            if error.code in (404, 410):
+                return ABSENT
+            self._unknown.append(f"{url}: HTTP {error.code}")
+            return None
+        except (OSError, ValueError) as error:
+            self._unknown.append(f"{url}: {error}")
+            return None
+        document = _json(body)
+        if document is None:
+            self._unknown.append(f"{url}: no JSON document")
+        return document
+
+    def _release_files(self, release: Distributions) -> dict[str, str] | None:
+        """The files of the release on the index, by their SHA-256 digest; None without an answer."""
+        quoted = "/".join(urllib.parse.quote(part, safe="") for part in (release.project, release.version))
+        document = self._get(f"{release.index}/{quoted}/json", "application/json")
+        if document is None:
+            return None
+        files: dict[str, str] = {}
+        for entry in document.get("urls") or () if isinstance(document, dict) else ():
+            digest = _object(_object(entry).get("digests")).get("sha256")
+            name = _object(entry).get("filename")
+            if isinstance(digest, str) and isinstance(name, str) and name and "/" not in name:
+                files[digest.lower()] = name
+        return files
+
+    def _provenance(self, release: Distributions, name: str) -> list[Candidate] | None:
+        """The attestations the integrity API publishes for the file NAME, as v0.3 bundles: none
+        when it says the file has no provenance, None without an answer."""
+        parts = (release.project, release.version, name)
+        address = f"{release.integrity}/{'/'.join(urllib.parse.quote(part, safe='') for part in parts)}/provenance"
+        document = self._get(address, INTEGRITY_ACCEPT)
+        if document is None or document is ABSENT:
+            return [] if document is ABSENT else None
+        found = []
+        for bundle in _object(document).get("attestation_bundles") or ():
+            for attestation in _object(bundle).get("attestations") or ():
+                converted = _from_pep740(attestation)
+                if converted is None:
+                    raise Waits(
+                        "authenticity-failed",
+                        error="the provenance holds an attestation that cannot be read",
+                        origin=address,
+                    )
+                found.append(Candidate(converted, "asset", origin=address))
+        return found
 
     def _artifact(self, release: Release) -> Path:
         """The file of the pin, downloaded (or found in the store) by Nix, with the digest
@@ -531,6 +738,42 @@ def _predicate(bundle: dict[str, Any]) -> str | None:
         return None
     statement = _json(base64.b64decode(str(envelope.get("payload", "")) + "=="))
     return statement.get("predicateType") if isinstance(statement, dict) else None
+
+
+def _subject_digests(bundle: dict[str, Any]) -> list[str]:
+    """The SHA-256 digests the statement of an attestation names."""
+    envelope = _object(bundle.get("dsseEnvelope"))
+    statement = _object(_json(base64.b64decode(str(envelope.get("payload", "")) + "==")))
+    subjects = statement.get("subject")
+    return [
+        str(_object(_object(subject).get("digest")).get("sha256") or "").lower()
+        for subject in (subjects if isinstance(subjects, list) else ())
+    ]
+
+
+def _from_pep740(attestation: Any) -> dict[str, Any] | None:
+    """A PEP 740 attestation object as the v0.3 Sigstore bundle cosign verifies: its
+    certificate, its transparency log entry and its DSSE envelope of an in-toto statement."""
+    try:
+        material = attestation["verification_material"]
+        envelope = attestation["envelope"]
+        entries = material["transparency_entries"]
+        if not entries or not isinstance(entries[0], dict):
+            return None
+        return {
+            "mediaType": BUNDLE_V03,
+            "verificationMaterial": {
+                "certificate": {"rawBytes": str(material["certificate"])},
+                "tlogEntries": [entries[0]],
+            },
+            "dsseEnvelope": {
+                "payload": str(envelope["statement"]),
+                "payloadType": IN_TOTO,
+                "signatures": [{"sig": str(envelope["signature"])}],
+            },
+        }
+    except (KeyError, IndexError, TypeError):
+        return None
 
 
 def _certificate(bundle: dict[str, Any]) -> bytes:

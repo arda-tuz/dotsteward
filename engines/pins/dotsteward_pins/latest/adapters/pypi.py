@@ -6,6 +6,11 @@ Fields (one of package and package_at):
     package     the package name (a lock template, "{key}" with for_each)
     package_at  lock path of the package name
     index       JSON API base URL (default https://pypi.org/pypi)
+    integrity   base URL of the integrity API of the index (PEP 740 provenance;
+                default: the index with its last segment "pypi" as "integrity")
+    repo        owner/name of the GitHub repository that publishes the package
+                (a lock template): the first signer of its attestations must be
+                a workflow of it (``pins apply``, docs/pins-engine.md)
 
 Query: ``GET <index>/<package>/json``. The newest release whose version is
 a final release (digits and dots only: no pre-release, development or
@@ -32,9 +37,15 @@ from dotsteward_cli import versions
 from ...lockfile import Scope, parse_path, parse_template, scalar_text
 from ..model import STABLE_TAG, Row, classify, item
 from ..upstream import Upstream, UpstreamError
-from . import Adapter, FieldSpec, PlanContext, Request, url
+from . import Adapter, FieldSpec, PlanContext, Request, repository, url
 
 DEFAULT_INDEX = "https://pypi.org/pypi"
+
+
+def integrity_of(index: str) -> str | None:
+    """The integrity API of an index whose JSON API ends in /pypi (as PyPI's does), else None."""
+    head, separator, last = index.rstrip("/").rpartition("/")
+    return f"{head}/integrity" if separator and last == "pypi" else None
 
 
 def _available(files: Any) -> list[dict[str, Any]]:
@@ -49,6 +60,8 @@ class Pypi(Adapter):
         "package": FieldSpec(parse_template),
         "package_at": FieldSpec(parse_path),
         "index": FieldSpec(url, default=DEFAULT_INDEX),
+        "integrity": FieldSpec(url),
+        "repo": FieldSpec(repository),
     }
 
     def validate(self) -> list[str]:
@@ -60,6 +73,8 @@ class Pypi(Adapter):
         else:
             package = scalar_text(self.lock_value(ctx.locks, self.values["package_at"], scope))
         request.values["package"] = package
+        if self.values["repo"] is not None:
+            request.values["repo"] = ctx.locks.render(self.values["repo"], scope)
 
     def default_source(self, request: Request) -> str:
         package = request.values["package"]
