@@ -179,11 +179,30 @@ def _next_lead(lines: Sequence[str], headers: Sequence[tuple[int, str]], index: 
 
 
 def _block_end(lines: Sequence[str], headers: Sequence[tuple[int, str]], index: int) -> int:
-    """The line after the last line of the block of the header at INDEX, blank lines left out."""
-    end = _next_lead(lines, headers, index)
-    while end > index + 1 and not lines[end - 1].strip():
+    """The line after the last key of the table whose header is at INDEX. The comments after it,
+    right below or after a blank line, are about what follows: a section, the next table."""
+    later = [at for at, _ in headers if at > index]
+    end = later[0] if later else len(lines)
+    while end > index + 1 and (not lines[end - 1].strip() or _is_comment(lines[end - 1])):
         end -= 1
     return end
+
+
+def _read(path: Path) -> str:
+    """The text of PATH with its own line endings."""
+    return path.read_bytes().decode("utf-8")
+
+
+def _by_lf(edit: Callable[[str], str | None]) -> Callable[[str], str | None]:
+    """EDIT on the LF form of a text whose every line ends in CRLF, and the result in CRLF again;
+    any other text as it is."""
+
+    def edited(text: str) -> str | None:
+        crlf = "\r\n" in text and text.count("\r\n") == text.count("\n")
+        result = edit(text.replace("\r\n", "\n") if crlf else text)
+        return result.replace("\n", "\r\n") if crlf and result is not None else result
+
+    return edited
 
 
 def _comment(text: str) -> str:
@@ -221,8 +240,6 @@ def _add_keys(text: str, name: str, values: Mapping[str, Any]) -> str | None:
     if at is None:
         return None
     end = _block_end(lines, headers, at)
-    while end > at + 1 and (not lines[end - 1].strip() or _is_comment(lines[end - 1])):
-        end -= 1
     before = "".join(lines[:end])
     if not before.endswith("\n"):
         before += "\n"
@@ -230,9 +247,10 @@ def _add_keys(text: str, name: str, values: Mapping[str, Any]) -> str | None:
 
 
 def _drop_table(text: str, name: str) -> tuple[str, list[str]]:
-    """TEXT without [components.NAME] and its sub-tables, and the comments it kept: the comment
-    above the table goes with it when it names the component; else it stays, as a paragraph of its
-    own, since it may be about more than this table."""
+    """TEXT without [components.NAME] and its sub-tables, and the comments it kept. A table is its
+    header and its keys. The comment right above the header goes with it when it names the
+    component; else it stays, as a paragraph of its own, since it may be about more than this
+    table. A comment after the keys, or one a blank line keeps apart, is about what follows."""
     lines = text.splitlines(keepends=True)
     headers = _headers(lines)
     own = re.compile(rf"(?<![a-z0-9-]){re.escape(name)}(?![a-z0-9-])")
@@ -248,24 +266,44 @@ def _drop_table(text: str, name: str) -> tuple[str, list[str]]:
             start = at
             kept.append("".join(lines[lead:at]).strip())
             pad_after.add(at - 1)
-        drop.update(range(start, _next_lead(lines, headers, at)))
+        end = _block_end(lines, headers, at)
+        # The blank lines after the table go with it when a blank line comes before it, so one
+        # blank line stays between what was above and what follows.
+        if start == 0 or not lines[start - 1].strip() or start - 1 in pad_after:
+            while end < len(lines) and not lines[end].strip():
+                end += 1
+        drop.update(range(start, end))
     out: list[str] = []
     for index, line in enumerate(lines):
         if index in drop:
             continue
         out.append(line if line.endswith("\n") else line + "\n")
-        if (
-            index in pad_after
-            and index + 1 < len(lines)
-            and any(later not in drop and lines[later].strip() for later in range(index + 1, len(lines)))
-        ):
-            following = next(later for later in range(index + 1, len(lines)) if later not in drop)
-            if lines[following].strip():
-                out.append("\n")
+        following = next((later for later in range(index + 1, len(lines)) if later not in drop), None)
+        if index in pad_after and following is not None and lines[following].strip():
+            out.append("\n")
     result = "".join(out)
     while result.endswith("\n\n"):
         result = result[:-1]
     return result, kept
+
+
+def _strip_component(text: str, name: str) -> str:
+    """TEXT with nothing about the component NAME: its table, wherever it is, and its order entry."""
+    import tomlkit
+
+    dropped, _ = _drop_table(text, name)
+    document = tomlkit.parse(dropped)
+    components = document.get("components")
+    if components is not None:
+        if name in components:
+            del components[name]
+        order = components.get("order")
+        if order is not None:
+            for index in reversed(range(len(order))):
+                if _plain(order[index]) == name:
+                    del order[index]
+    stripped: str = tomlkit.dumps(document)
+    return stripped
 
 
 class _Transaction(runner.Runner):
@@ -344,13 +382,17 @@ class _Transaction(runner.Runner):
         return foreign
 
     def _same_intent_but_this(self, base: str) -> bool:
+        """Whether workstation.toml differs from BASE only in the table and the order entry of the
+        component: a comment changed anywhere else is someone else's change."""
         before = self._git("show", f"{base}:{config.CONFIG_FILE}")
         try:
-            old = tomlfile.loads(before.stdout) if before.code == 0 else {}
-            new = tomlfile.loads(self.instance.file.read_text(encoding="utf-8"))
-        except (OSError, tomlfile.TomlError):
+            old = before.stdout if before.code == 0 else ""
+            new = _read(self.instance.file)
+            return _strip_component(old.replace("\r\n", "\n"), self.name) == _strip_component(
+                new.replace("\r\n", "\n"), self.name
+            )
+        except Exception:  # an unreadable or broken file: not provably ours
             return False
-        return _without(old, self.name) == _without(new, self.name)
 
     def _pending_since(self, base: str) -> bool:
         """Whether anything waits between BASE and the work tree: a change or a commit."""
@@ -361,8 +403,8 @@ class _Transaction(runner.Runner):
     def _edited(self, edit: Callable[[Any], None], by_lines: Callable[[str], str | None], expected: Any) -> str:
         """The new text of workstation.toml: BY_LINES of the text, when it parses to EXPECTED; else
         EDIT of the tomlkit document. Valid, or UsageError."""
-        text = self.instance.file.read_text(encoding="utf-8")
-        new_text = by_lines(text)
+        text = _read(self.instance.file)
+        new_text = _by_lf(by_lines)(text)
         try:
             same = new_text is not None and _normal(tomlfile.loads(new_text)) == _normal(expected)
         except tomlfile.TomlError:
@@ -481,7 +523,7 @@ class Add(_Transaction):
 
     def _add_text(self) -> str:
         """The text with the table of the component as add wants it; sets self.change."""
-        current = tomlfile.loads(self.instance.file.read_text(encoding="utf-8"))
+        current = tomlfile.loads(_read(self.instance.file))
         table = dict((current.get("components") or {}).get(self.name) or {})
         wanted = {**table, "enable": True, **self.keys}
         expected = _normal(current)
@@ -495,7 +537,7 @@ class Add(_Transaction):
         if self.change == "unchanged" and moved:
             self.change = "changed"
         if self.change == "unchanged":
-            return self.instance.file.read_text(encoding="utf-8")
+            return _read(self.instance.file)
 
         def by_lines(text: str) -> str | None:
             # A key the table has changes in place; a new one goes at the end of the table.
@@ -700,7 +742,7 @@ class Remove(_Transaction):
     def _tracked_at(self, base: str) -> bool:
         """Whether the table of the component is in BASE or in the work tree."""
         try:
-            work = tomlfile.loads(self.instance.file.read_text(encoding="utf-8"))
+            work = tomlfile.loads(_read(self.instance.file))
         except (OSError, tomlfile.TomlError):
             work = {}
         before = self._git("show", f"{base}:{config.CONFIG_FILE}")
@@ -712,7 +754,7 @@ class Remove(_Transaction):
 
     def _remove_text(self) -> str:
         """The text without the component; sets self.change and self.kept_comments."""
-        text = self.instance.file.read_text(encoding="utf-8")
+        text = _read(self.instance.file)
         current = tomlfile.loads(text)
         components = current.get("components") or {}
         if self.name not in components and self.name not in (components.get("order") or []):

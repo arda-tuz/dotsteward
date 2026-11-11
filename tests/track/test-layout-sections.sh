@@ -21,7 +21,7 @@ git -C "$up_inst" push -q origin HEAD:main
 assert_exit 0 add example-viewer --publish
 text=$(git -C "$up_inst" show HEAD:workstation.toml)
 assert_contains "$text" $'method = "official-binary"\n\n[components.example-viewer]\nenable = true\n\n# ----'
-assert_contains "$text" "$section"
+assert_contains "$text" "${section%$'\n'}"
 assert_eq "3 0" "$(git -C "$up_inst" diff --numstat HEAD^ HEAD -- workstation.toml | awk '{print $1, $2}')" \
   "add changed more than its table"
 
@@ -29,7 +29,7 @@ assert_eq "3 0" "$(git -C "$up_inst" diff --numstat HEAD^ HEAD -- workstation.to
 assert_exit 0 remove example-viewer --publish
 assert_exit 0 remove codex --publish
 text=$(git -C "$up_inst" show HEAD:workstation.toml)
-assert_contains "$text" "$section"
+assert_contains "$text" "${section%$'\n'}"
 assert_not_contains "$text" "components.codex"
 assert_not_contains "$DS_STDOUT" "stays, it may be about more"
 
