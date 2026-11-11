@@ -92,3 +92,17 @@ rm -f -- "$inst/platforms/ubuntu-22.04.toml"
 rows "$(release_row 5.0.0 5.1.0)"
 assert_exit 0 apply --plan --latest "$rows" --json
 assert_contains "$DS_STDOUT" "pins-constrained"
+
+# A constraint that is no series of versions is refused, never silently ineffective.
+for refused in '^4' '>=4' '4.x' '4*'; do
+  git -C "$inst" checkout -q -- workstation.toml
+  python3 - "$inst/workstation.toml" "$refused" <<'PY'
+import sys
+path, value = sys.argv[1:]
+text = open(path, encoding="utf-8").read().replace('version = "4.*"', f'version = "{value}"')
+open(path, "w", encoding="utf-8").write(text)
+PY
+  assert_exit 2 apply --plan --latest "$rows" --json
+  assert_contains "$DS_STDERR" "components.example-release.version"
+done
+git -C "$inst" checkout -q -- workstation.toml

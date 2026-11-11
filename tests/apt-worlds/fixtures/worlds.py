@@ -603,6 +603,42 @@ WORLDS = {
         description="a constrained server, a package with its own versions, one the owner moved out of "
         "its constraint, another major the owner installed, a held package and one the owner moved past its hold",
     ),
+    "constraints-safe": world(
+        [
+            rec("sampledbms-16", "16.16-1", "sampledbms-16"),
+            rec("samplecli", "16.16-1", "samplecli"),
+            rec("samplecli", "17.2-1", "samplecli"),
+            rec("sampledbms-lib", "16.16-1", "sampledbms-common"),
+            rec("sampledbms-lib", "17.2-1", "sampledbms-common"),
+            rec("sampledbms-17", "17.12-1", "sampledbms-17", depends="sampledbms-lib (>= 17.2-1)"),
+            rec("sampleapp", "1.0-2", "sampleapp"),
+            rec("sampleapp", "1.5-1", "sampleapp"),
+            rec("sampleapp", "2.0-1", "sampleapp"),
+            rec("sampleepoch", "5:27.3.2-1", "sampleepoch"),
+            rec("sampleepoch", "5:28.0.0-1", "sampleepoch"),
+            rec("sampleplus", "1.2+dfsg-2", "sampleplus"),
+            rec("sampleplus", "1.3+dfsg-1", "sampleplus"),
+            rec("sampleother", "1.1-1", "sampleother"),
+            rec("linux-firmware", "20240318.git3b128b60-0ubuntu2.27", "linux-firmware"),
+        ],
+        installed=[
+            *BASE_INSTALLED,
+            rec("sampledbms-16", "16.15-1", "sampledbms-16"),
+            rec("samplecli", "16.15-1", "samplecli"),
+            rec("sampledbms-lib", "16.15-1", "sampledbms-common"),
+            rec("sampledbms-17", "17.11-1", "sampledbms-17", depends="sampledbms-lib (>= 16)"),
+            rec("sampleapp", "1.0-1", "sampleapp"),
+            rec("sampleepoch", "5:27.3.1-1", "sampleepoch"),
+            rec("sampleplus", "1.2+dfsg-1", "sampleplus"),
+            rec("sampleother", "1.0-1", "sampleother"),
+        ],
+        suites={
+            PROPOSED: [rec("sampledbms-16", "16.19~rc1-1", "sampledbms-16")],
+            VENDOR: [rec("sampledbms-16", "16.18-1", "sampledbms-16")],
+        },
+        description="constraints and holds against the owner's own origin pins, a shared library, an epoch, "
+        "a + version and firmware",
+    ),
     "new-flavour": world(
         [
             *kernel_meta("7.0.0-44", K44)[:1],
