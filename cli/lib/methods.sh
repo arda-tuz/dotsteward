@@ -1025,6 +1025,7 @@ _methods_pypi_state() {
   for script in "${_py_bin[@]}"; do
     [[ $script =~ ^[A-Za-z0-9_][A-Za-z0-9_.+-]*$ ]] || die "$name (pypi): invalid console script name: $script"
   done
+  _py_name=$name
   _py_entry=$(_methods_pin_entry "$name" pypi "$_py_pin") || exit 1
   _py_version=$(_methods_pin_version "$name" pypi "$_py_pin" "$_py_entry") || exit 1
   _py_found=$(_methods_pypi_installed)
@@ -1042,13 +1043,40 @@ except importlib.metadata.PackageNotFoundError:
     pass' "$_py_dist" 2>/dev/null </dev/null || true
 }
 
+# _methods_pypi_record: where the method remembers the version it installed of NAME.
+_methods_pypi_record() {
+  printf '%s/pypi/%s.json\n' "$(state_root)" "$1"
+}
+
+# _methods_pypi_ours: the version found is the one this method installed last (so not the
+# owner's own), from the record of _methods_pypi_remember.
+_methods_pypi_ours() {
+  local record
+  record=$(_methods_pypi_record "$_py_name")
+  [[ -f $record ]] && [[ $(jq -r '.version // empty' "$record" 2>/dev/null) == "$_py_found" ]]
+}
+
+# _methods_pypi_remember: records the version this method just installed.
+_methods_pypi_remember() {
+  local record
+  record=$(_methods_pypi_record "$_py_name")
+  ensure_private_dir "${record%/*}" || die "$_py_name (pypi): cannot create ${record%/*}"
+  if ! jq -n --arg version "$_py_found" --arg distribution "$_py_dist" \
+    '{version: $version, distribution: $distribution}' >"$record.tmp" ||
+    ! mv -f -- "$record.tmp" "$record"; then
+    die "$_py_name (pypi): cannot write $record"
+  fi
+}
+
 # _methods_pypi_version_ok: the installed version meets the pin by policy: at-least keeps
-# a newer version the owner installed by hand, exact wants the pin's version.
+# a newer version the owner installed by hand, never one this method installed for another
+# pin (a pin that went back takes the environment back); exact wants the pin's version.
 _methods_pypi_version_ok() {
   [[ -n $_py_found ]] || return 1
   local order
   order=$(methods_version_compare "$_py_found" "$_py_version") || exit 1
-  [[ $order == 0 || ($_py_policy == at-least && $order == 1) ]]
+  [[ $order == 0 ]] && return 0
+  [[ $_py_policy == at-least && $order == 1 ]] && ! _methods_pypi_ours
 }
 
 # _methods_pypi_wanted: what the pin asks for, as the messages say it.
@@ -1092,7 +1120,12 @@ _methods_pypi_check() {
   _methods_pypi_state "$name"
   hint="run 'dotsteward rebuild --profile $profile --switch'"
   if ! _methods_pypi_version_ok; then
-    _methods_set failed "$(_methods_pypi_wanted) not found in $_py_venv_text (found ${_py_found:-none}); $hint"
+    local ours=''
+    if [[ -n $_py_found ]] && _methods_pypi_ours &&
+      [[ $(methods_version_compare "$_py_found" "$_py_version") == 1 ]]; then
+      ours=', installed by dotsteward for another pin'
+    fi
+    _methods_set failed "$(_methods_pypi_wanted) not found in $_py_venv_text (found ${_py_found:-none}$ours); $hint"
     return 1
   fi
   if ! _methods_pypi_links_ok; then
@@ -1148,6 +1181,8 @@ methods_pypi_install() {
   [[ $(methods_component_method "$name") == pypi ]] || die "$name: not a pypi component"
   _methods_pypi_state "$name"
   if _methods_pypi_version_ok && _methods_pypi_links_ok; then
+    # The pin's own version is what this method installs for it, whoever put it there.
+    [[ $_py_found == "$_py_version" ]] && _methods_pypi_remember
     _methods_set satisfied "$(_methods_pypi_found)"
     return 0
   fi
@@ -1184,6 +1219,7 @@ methods_pypi_install() {
     rm -f -- "$link"
     ln -s -- "$target" "$link" || die "$name (pypi): cannot link $link"
   done
+  _methods_pypi_remember
   _methods_set installed "$_py_dist $_py_found"
 }
 

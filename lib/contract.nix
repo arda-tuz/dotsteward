@@ -338,7 +338,7 @@ let
       policy = optionDefault (types.enum [
         "at-least"
         "exact"
-      ]) "at-least" "at-least keeps a newer version the owner installed by hand.";
+      ]) "at-least" "at-least keeps a newer version the owner installed by hand, never one dotsteward installed for another pin.";
       requirements = option types.path "Hash-pinned requirements file installed with pip --require-hashes.";
       python =
         optionDefault types.str "python3"
