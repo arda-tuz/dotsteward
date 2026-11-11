@@ -15,6 +15,7 @@ from dotsteward_cli import atomic
 from ..instance import Instance
 from ..latest.adapters import Request
 from ..latest.upstream import github_repo
+from .. import requirements
 from ..lockfile import VERSIONS, LockPath, Locks, dump, parse_path
 from ..syncer import sync_locks, write_changed
 from . import plan as routing
@@ -392,7 +393,7 @@ class Writer:
         if self.authenticity is None:
             return Finding("unsigned")
         name = _package(move)
-        version = _pinned_version(name, text)
+        version = requirements.pinned_version(name, text)
         if version is None:
             raise GroupFailure(f"{move.id}: the regenerated requirements do not pin {name}")
         adapter = move.adapter if move.adapter is not None and move.adapter.name == "pypi" else None
@@ -405,7 +406,7 @@ class Writer:
             pin=path.text().removeprefix("versions:"),
             project=name,
             version=version,
-            hashes=_requirement_hashes(name, version, text),
+            hashes=requirements.hashes(name, version, text),
             index=index,
             integrity=str(integrity) if integrity else integrity_of(index),
             repository=_repository(move.request) or github_repo(source),
@@ -414,7 +415,7 @@ class Writer:
 
     def _pypi_pin(self, locks: Locks, move: Move, text: str, finding: Finding) -> None:
         name = _package(move)
-        version = _pinned_version(name, text)
+        version = requirements.pinned_version(name, text)
         if version is None:
             raise GroupFailure(f"{move.id}: the regenerated requirements do not pin {name}")
         path = _path(move)
@@ -466,29 +467,6 @@ def _tag(move: Move) -> str:
 def _repository(request: Request | None) -> str | None:
     value = request.values.get("repo") if request is not None else None
     return value if isinstance(value, str) else None
-
-
-def _name_pattern(name: str) -> str:
-    """A regular expression of the distribution NAME in every spelling its normalized name allows."""
-    return "[-_.]+".join(re.escape(part) for part in re.split(r"[-_.]+", name))
-
-
-def _pinned_version(name: str, text: str) -> str | None:
-    """The version the requirements TEXT pin the distribution NAME at."""
-    found = re.search(rf"^{_name_pattern(name)}==([^\s;\\]+)", text, re.MULTILINE | re.IGNORECASE)
-    return found[1] if found else None
-
-
-def _requirement_hashes(name: str, version: str, text: str) -> tuple[str, ...]:
-    """The SHA-256 digests the requirements TEXT allow for NAME==VERSION: the --hash options of
-    its line, with its continuation lines."""
-    logical = re.sub(r"\\[ \t]*\r?\n", " ", text)
-    head = re.compile(rf"\s*{_name_pattern(name)}\s*==\s*{re.escape(version)}(?=[\s;]|$)", re.IGNORECASE)
-    for line in logical.splitlines():
-        if head.match(line):
-            found = re.findall(r"--hash[=\s]+sha256:([0-9a-fA-F]{64})\b", line)
-            return tuple(dict.fromkeys(digest.lower() for digest in found))
-    return ()
 
 
 def _package(move: Move) -> str:

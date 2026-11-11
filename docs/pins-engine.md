@@ -279,7 +279,10 @@ The pin then records what it vouches for, and the signer goes into
                  "files": { "example-1.1.0-py3-none-any.whl": "<sha256>", "example-1.1.0.tar.gz": "<sha256>" } } } }
 ```
 
-`pip install --require-hashes` then binds the install to exactly those digests. A
+`pip install --require-hashes` then binds the install to the digests of the
+requirements file, and `pins check` (the `text-guard` rule of that file) holds them to
+the pin: for a pin whose signer is `sigstore`, a `--hash` of the distribution's line that
+is not in `signature.files`, or a pin without a signature, is red. A
 release without provenance moves and its signer is `unsigned`; one with
 attestations for only some of its files moves `unsigned, N of M files attested`,
 and for a signed source that is `authenticity-signature-missing`. The transitive
