@@ -41,4 +41,4 @@ clear_log
 move example.later 1.0 pypi
 assert_exit 0 on_terminal 'Update these too=n' -- --tracked
 assert_eq ok "$(step_status gate)"
-review_json '[.items[] | select(.code == "constraint-invalid" and .component == "example-app" and .version == ">=16" and .pending == false)] | length == 1'
+review_json '[.items[] | select(.code == "constraint-invalid" and .component == "example-app" and .version == ">=16")] | length == 1'

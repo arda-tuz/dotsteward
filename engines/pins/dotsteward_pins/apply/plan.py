@@ -292,6 +292,8 @@ def constraint(move: Move, instance: Instance, declared: Declared, pin: Any) -> 
                 return f"the version follows {origin}"
     current = move.row.get("current")
     for rule in version_rules(instance, move.component):
+        if versions.constraint_rule(rule["version"]) is None:
+            return f"{rule['said']}; it is no series (16, 16.*, 5:27) and no version, so a person decides"
         if not versions.in_constraint(rule["version"], current):
             return f"{rule['said']}; the pinned {current} is outside it, so a person decides"
     against = [

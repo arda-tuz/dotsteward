@@ -864,10 +864,9 @@
           "description": "More package names dotsteward upgrade follows for the deb method."
         },
         "version": {
-          "type": "string",
-          "pattern": "^(([0-9]+:)?[0-9]+(\\.[0-9]+)*(\\.\\*)?|[0-9][0-9A-Za-z.+~:-]*)$",
+          "$ref": "#/$defs/nonEmptyString",
           "default": null,
-          "description": "A constraint on the version: a series, an optional epoch, numbers and an optional .* (16, 16.*, 1.140, 5:27), or one exact version (1.140.0-1) to stay on. The writer moves a pin of the component only inside it, apt lowers the versions of a `deb` component outside it, and a constrained server refuses another major."
+          "description": "A constraint on the version: a series, an optional epoch, numbers and an optional .* (16, 16.*, 1.140, 5:27), or one exact version (1.140.0-1) to stay on. The writer moves a pin of the component only inside it, the apt plan of dotsteward keeps the packages of a `deb` component inside it (never the owner's own apt), and a constrained server refuses another major. A value of an earlier release that is neither binds no apt version and keeps every pin of the component waiting, with a note."
         },
         "reason": {
           "$ref": "#/$defs/nonEmptyString",

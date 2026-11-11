@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from dotsteward_cli import config, machine, platforms
+from dotsteward_cli import config, machine, platforms, versions
 
 _APT = "apt"
 _DEB = "deb"
@@ -96,6 +96,19 @@ def constraints(
         rule = _constraint(instance, component["name"], env) if component.get("method") == _DEB else None
         if rule is not None:
             found[component["name"]] = rule["version"]
+    return found
+
+
+def invalid_constraints(
+    active: list[dict[str, Any]], instance: config.Instance, env: Mapping[str, str] | None = None
+) -> list[dict[str, str]]:
+    """The constraints of the active components that are no series and no version (values earlier
+    releases took): ``{component, version, where}``."""
+    found = []
+    for component in active:
+        rule = _constraint(instance, component["name"], env)
+        if rule is not None and versions.constraint_rule(rule["version"]) is None:
+            found.append({"component": component["name"], "version": rule["version"], "where": rule["where"]})
     return found
 
 

@@ -357,6 +357,14 @@ class Upgrade(runner.Runner):
         return self._end()
 
     def _end(self) -> int:
+        for invalid in facts.invalid_constraints(self._active(), self.instance, self.env):
+            self.run.item(
+                "constraint-invalid",
+                pending=False,
+                **invalid,
+                message=f"version {invalid['version']!r} of {invalid['component']} ({invalid['where']}) is no series "
+                "(16, 16.*, 5:27) and no version: it binds no apt version, and every pin of it waits for you",
+            )
         told = {item.get("id") for item in self.run.items if item.get("code") == "red-held"}
         names = holds.component_names(self.instance, self.env)
         for hold in holds.in_force(self.state_root, self.root, self.name):

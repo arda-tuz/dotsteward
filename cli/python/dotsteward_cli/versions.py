@@ -27,7 +27,8 @@ separated by dots and an optional ``.*`` (``16``, ``16.*``, ``1.140``, ``5:27``)
 it when the part after its epoch is the series, or the series and then ``.``, ``-``, ``+`` or ``~``
 (``16.4``, ``16-1``, ``1.2+dfsg-1``, ``16~rc1``); a constraint without an epoch takes every epoch.
 An exact version that is no series (``1.140.0-1``, as earlier releases took it) is that version
-alone. ``in_constraint`` is the answer, the same for apt
+alone. An epoch binds only a version that has one. A value of an earlier release that is neither
+(``>=16``) binds nothing (``constraint_rule`` says None). ``in_constraint`` is the answer, the same for apt
 (``cli/libexec/apt_helper.py``) and for every other channel.
 
 Where dpkg is at hand and the versions are of installed packages,
@@ -165,20 +166,39 @@ _SERIES_PARTS = re.compile(r"(?:([0-9]+):)?([0-9]+(?:\.[0-9]+)*)(?:\.\*)?")
 _SERIES_BOUNDARY = ".+~-"
 
 
+def constraint_rule(constraint: str) -> tuple[str | None, str, str] | None:
+    """(epoch or None, literal, what may follow it) of a version constraint: a series or one exact
+    version; None for a value that is neither (``>=16``, ``^16``), which earlier releases took and
+    which binds nothing. A leading v of a release tag is no part of it."""
+    text = str(constraint).strip()
+    if text[:1] == "v" and text[1:2] in _ASCII_DIGITS:
+        text = text[1:]
+    series = _SERIES_PARTS.fullmatch(text)
+    if series is not None:
+        return series.group(1), series.group(2), _SERIES_BOUNDARY
+    if not _EXACT.fullmatch(text):
+        return None
+    match = _EPOCH.fullmatch(text)
+    return (match.group(1), match.group(2), "") if match else (None, text, "")
+
+
 def in_constraint(constraint: str, version: Any) -> bool:
-    """Whether VERSION is inside the series CONSTRAINT, or is the exact version it names; a leading v
-    of a release tag is not part of the version."""
-    series = _SERIES_PARTS.fullmatch(str(constraint).strip())
+    """Whether VERSION is inside the series CONSTRAINT, or is the exact version it names. The epoch of
+    the constraint binds only a version that has one: a release tag or a package of a registry has
+    none. A leading v of a release tag is no part of the version. A value that is neither a series nor
+    a version takes nothing."""
+    rule = constraint_rule(constraint)
+    if rule is None:
+        return False
+    epoch, literal, boundary = rule
     text = str(version).strip()
     if text[:1] == "v" and text[1:2] in _ASCII_DIGITS:
         text = text[1:]
-    if series is None:
-        exact = str(constraint).strip()
-        return bool(_EXACT.fullmatch(exact)) and compare(text, exact) == 0
     match = _EPOCH.fullmatch(text)
-    epoch, rest = (match.group(1), match.group(2)) if match else ("0", text)
-    if series.group(1) is not None and series.group(1) != epoch:
+    found, rest = (match.group(1), match.group(2)) if match else (None, text)
+    if epoch is not None and found is not None and found != epoch:
         return False
-    literal = series.group(2)
+    if not boundary:
+        return rest == literal
     tail = rest[len(literal) :] if rest.startswith(literal) else None
-    return tail is not None and (tail == "" or tail[0] in _SERIES_BOUNDARY)
+    return tail is not None and (tail == "" or tail[0] in boundary)
