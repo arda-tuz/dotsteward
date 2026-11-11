@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # DS_* variables come from the harness and the helpers
 # shellcheck disable=SC2016 # the scripts of tool_stub run later and are single-quoted on purpose
-# design-v2 6.4 (M12): an E2E that upgrade ran green in this run checked every tracked component as
+# M12: an E2E that upgrade ran green in this run checked every tracked component as
 # dpkg has it, the change of this run and the owner's own alike, so the last observation of the
 # observer becomes what is installed and the observer it woke has nothing to do. The result of that
 # E2E is the check of each tracked deb component that has checks, so the state record says verified
