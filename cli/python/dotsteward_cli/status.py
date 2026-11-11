@@ -312,9 +312,25 @@ def overview(instance: config.Instance, env: Mapping[str, str] | None = None) ->
     """The document of ``status --json``."""
     env = os.environ if env is None else env
     state_root = config.state_root(instance, env)
-    scope = machine.effective(instance, env)
+    error = None
+    try:
+        scope = machine.effective(instance, env)
+    except config.DotstewardError as problem:
+        # What this machine says of itself cannot be read: the rest is still worth showing.
+        error = " ".join(problem.lines())
+        scope = {
+            "name": None,
+            "profile": None,
+            "tags": [],
+            "reasons": {},
+            "incoming": [],
+            "requires": {"arriving": [], "unmet": []},
+        }
     checkout = _checkout(instance)
-    recorded, orphans = _state(instance, scope["name"], env)
+    try:
+        recorded, orphans = _state(instance, scope["name"], env)
+    except config.DotstewardError:
+        recorded, orphans = None, []
     review = report.load_review(state_root) or {}
     return {
         "schema_version": SCHEMA_VERSION,
@@ -326,6 +342,7 @@ def overview(instance: config.Instance, env: Mapping[str, str] | None = None) ->
             "tags": scope["tags"],
             "framework_version": _framework_version(),
             "producer": (instance.config.get("hosts") or {}).get("producer"),
+            "error": error,
         },
         "checkout": checkout,
         "activation": _activation(instance, state_root, checkout["head"]),
@@ -360,6 +377,8 @@ def human(document: Mapping[str, Any]) -> list[str]:
         f"machine     {this['name'] or '(no name: dotsteward host init)'}, {this['platform']}, "
         f"profile {this['profile'] or 'unknown'}, framework {this['framework_version'] or 'unknown'}"
     )
+    if this.get("error"):
+        lines.append(f"            ERROR: {this['error']}")
     checkout = document["checkout"]
     where = f"{checkout['branch']} at {_short(checkout['head'])}"
     if checkout["remote_tip"] is None:
