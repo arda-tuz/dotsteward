@@ -15,10 +15,15 @@
 # paragraph and links to the component files; docs/catalog.md lists the
 # components with the same paragraph.
 #
-# Help text is wrapped by Python's argparse, which wraps differently across
-# Python versions, so docs/cli.md is compared with its whitespace collapsed:
-# a file that differs only in whitespace counts as fresh and is not
-# rewritten. The other files are compared byte for byte.
+# Help text is formatted by Python's argparse, which formats it differently
+# across Python versions, so the commands run with the toolchain of the
+# framework first on PATH, the one the checks run with: DS_TOOLCHAIN_PATH,
+# which the dev shell (nix develop) and every check set, else the one
+# `nix develop` of the checkout holding this script names. Without either
+# the script refuses; it never uses another python3. docs/cli.md is
+# compared with its whitespace collapsed: a file that differs only in
+# whitespace counts as fresh and is not rewritten. The other files are
+# compared byte for byte.
 #
 # Without --check the stale files are written (atomically) and the
 # documents of removed components deleted. --check only compares, names
@@ -59,6 +64,16 @@ while (($#)); do
 done
 [[ -x $root/cli/dotsteward && -d $root/cli/commands ]] || die "$root has no cli/dotsteward"
 [[ -d $root/modules/components ]] || die "$root has no modules/components"
+
+# The toolchain of the framework, first on PATH.
+if [[ -z ${DS_TOOLCHAIN_PATH:-} ]]; then
+  command -v nix >/dev/null 2>&1 ||
+    die "the help text needs the toolchain of the framework: run it in the dev shell (nix develop --command tools/gen-docs.sh), or with nix on PATH"
+  DS_TOOLCHAIN_PATH=$(nix --extra-experimental-features 'nix-command flakes' develop "$script_root" \
+    --command printenv DS_TOOLCHAIN_PATH </dev/null) && [[ -n $DS_TOOLCHAIN_PATH ]] ||
+    die "cannot read the toolchain of the dev shell of $script_root (nix develop)"
+fi
+export PATH=$DS_TOOLCHAIN_PATH:$PATH
 
 # Help text is rendered for an 80-column terminal without colour, with no
 # instance selected.
