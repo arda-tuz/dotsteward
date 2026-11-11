@@ -25,7 +25,10 @@ also runs at login, since nothing watches while nobody is logged in.
    ``e2e`` records its verdict on them too. When dpkg moved during the checks the verdict is
    dropped (no red, no notification) and it settles again. A red version gets one desktop
    notification; its last verified version stays apart from the installed one. The observer
-   never installs, removes, holds or downgrades a package: what the owner installed stays.
+   never installs, removes, holds or downgrades a package: what the owner installed stays. A
+   changed package the owner took outside the version rule of its component (its constraint, or
+   the component hold of the host file of this machine) is said once, as ``upgrade`` says it
+   (``constraint-left-by-owner``): a note, never red.
 5. The snapshot, then the record of the state writer on this machine
    (``recorded_by: observe``); the lock is let go and the record is pushed. When the status
    file moved meanwhile, it goes round again.
@@ -55,6 +58,8 @@ from typing import Any
 
 from dotsteward_cli import atomic, config, host, locks, machine, report
 from dotsteward_cli import state as states
+from dotsteward_cli import versions as version_rules
+from dotsteward_cli.upgrade import facts, holds
 
 EXIT_REFUSAL = 1
 EXIT_USAGE = 2
@@ -517,6 +522,38 @@ def _verify(
     return True
 
 
+def _left_by_owner(
+    instance: config.Instance,
+    env: Mapping[str, str],
+    state: str,
+    name: str,
+    packages: Mapping[str, Mapping[str, Any]],
+    changed: set[str],
+) -> None:
+    """Says each changed package that the owner took outside a version rule of its deb component
+    (the constraint, or the component hold of the host file of this machine), as the apt plan of
+    `upgrade` says it (``constraint-left-by-owner``): a note, never red and never notified, and the
+    package stays where the owner put it."""
+    if not changed:
+        return
+    profile = machine.machine_profile(instance, state, name, env)
+    active = facts.active_components(instance, profile, env)
+    for rule in facts.kept(active, instance, env, holds.component_holds(instance.root, name)):
+        wanted = [package for package in rule["packages"] if package in changed]
+        for package, version in _component_versions(packages, wanted).items():
+            if rule["kind"] == "constraint":
+                if version_rules.constraint_rule(rule["version"]) is None:
+                    continue
+                inside = version_rules.in_constraint(rule["version"], version)
+            else:
+                inside = version_rules.compare(version, rule["version"]) < 0
+            if not inside:
+                _say(
+                    f"constraint-left-by-owner: {package} {version} is outside {rule['kind']} {rule['version']} "
+                    f"of {rule['component']}: the owner took it there, and dotsteward leaves it as it is"
+                )
+
+
 # --- One observation -------------------------------------------------------------------------------------
 
 
@@ -546,6 +583,7 @@ def _observe_once(
         _say(f"{count} package{'' if count == 1 else 's'} changed since the last observation")
     else:
         _say("no package changed since the last observation")
+    _left_by_owner(instance, env, state, name, packages, changed)
     try:
         checked = _verify(instance, env, state, packages, changed, stamp)
     except CheckError:

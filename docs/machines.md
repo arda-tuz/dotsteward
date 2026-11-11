@@ -269,7 +269,10 @@ the state with `recorded_by: observe`: a checked component is `verified` or `red
 packages are the ones checked and `unverified` once they changed, with `version` (installed) and
 `last_verified` apart; `<state>/state/checks.json` keeps the last check of each component, so a
 later `state record` says the same. The observer never installs, removes, holds or downgrades a
-package: what the owner installed stays installed. A record that waits for the network goes out
+package: what the owner installed stays installed. A changed package that the owner took outside
+the version rule of its deb component (its constraint, or the component hold of the host file of
+this machine; [upgrade.md](upgrade.md)) is said once for that change, as `upgrade` says it
+(`constraint-left-by-owner`): a note, never red and never notified. A record that waits for the network goes out
 with the next run.
 
 ## The producer

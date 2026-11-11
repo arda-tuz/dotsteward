@@ -238,7 +238,8 @@ name of a component stays a pin hold; a bare name, as earlier releases wrote it,
 | The kernel and NVIDIA series | not a pin | the pin file of the gated classes (above) | `apt kept`: it moves with the kernel and driver |
 
 Nothing of it reaches your own apt. If you move a constrained package out of its rule yourself,
-dotsteward leaves it there and says so (`constraint-left-by-owner`), never red and never undone;
+dotsteward leaves it there and says so (`constraint-left-by-owner`: the observer once the change
+is made, and the apt plan of each run), never red and never undone;
 Debian names the majors of a server apart anyway (`example-server-16`, `example-server-17`). What the
 rules do not bind, with a note: a package another package outside the component needs in a version
 outside the rule, through `Depends`, a versioned `Provides` or `Breaks`, such as a library another
