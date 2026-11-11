@@ -23,8 +23,9 @@
 #   systemctl     a fake of the user manager, never the real one: $UP_CONTROL/user-units holds one
 #                 line "UNIT INVOCATION" per running user service; --user list-units, show (Id,
 #                 ActiveState, InvocationID of the units named), stop and restart (a new
-#                 invocation) read and change it, and each call goes to UP_LOG as
-#                 "systemctl ARG..."; start_unit UNIT starts one
+#                 invocation) read and change it, show-environment prints the environment of
+#                 the manager ($UP_CONTROL/manager-environment, empty without it), and each
+#                 call goes to UP_LOG as "systemctl ARG..."; start_unit UNIT starts one
 #
 #   upgrade ARG...           dotsteward upgrade through the dispatcher, standard input empty and
 #                            no terminal
@@ -207,6 +208,9 @@ case \$operation in
       awk -v unit="\$name" -v now="\$RANDOM\$RANDOM" '\$1 == unit { \$2 = now } { print }' "\$units" >"\$units.new"
       mv -- "\$units.new" "\$units"
     done
+    ;;
+  show-environment)
+    [[ ! -f $UP_CONTROL/manager-environment ]] || cat -- "$UP_CONTROL/manager-environment"
     ;;
   *) exit 1 ;;
 esac
