@@ -851,9 +851,11 @@ class Upgrade(runner.Runner):
 
     def _waiting_floors(self, latest: Path) -> list[str]:
         """The floor pins of the deb packages that would move above what dpkg has: a floor moves only
-        to a version every package of its component has installed, whatever a sudo window did (dpkg's
-        lock busy, the bridge paused, the vendor repository behind), since a floor above the installed
-        version turns the E2E of the package red and sends the run back."""
+        to a version its package has installed, whatever a sudo window did (dpkg's lock busy, the
+        bridge paused, the vendor repository behind), since a floor above the installed version turns
+        the E2E of the package red and sends the run back. The names of install.packageNames are
+        aliases of one package: as the install verifies the floor, any installed name at or above it
+        is enough. A pin without package names cannot be checked: it stays, and says so."""
         if not self.linux:
             return []
         try:
@@ -866,16 +868,32 @@ class Upgrade(runner.Runner):
             if isinstance(row, dict) and row.get("status") == "update" and row.get("latest")
         }
         waiting: list[dict[str, Any]] = []
+        unknown: list[dict[str, str]] = []
         for component in self._active():
             install = component.get("install") or {}
             pin = install.get("pin")
             if component.get("method") != "deb" or not isinstance(pin, str) or pin not in rows:
                 continue
-            installed = {str(name): _installed_version(str(name)) for name in install.get("packageNames") or ()}
+            names = [str(name) for name in install.get("packageNames") or ()]
+            if not names:
+                unknown.append({"id": pin, "component": str(component.get("name"))})
+                continue
+            installed = {name: _installed_version(name) for name in names}
             wanted = rows[pin]
-            if installed and all(version and versions.at_least(version, wanted) for version in installed.values()):
+            if any(version and versions.at_least(version, wanted) for version in installed.values()):
                 continue
             waiting.append({"id": pin, "wanted": wanted, "installed": installed})
+        if unknown:
+            said = "; ".join(
+                f"{floor['component']} names no install.packageNames for {floor['id']}" for floor in unknown
+            )
+            self.run.item(
+                "deb-floor-unknown",
+                pending=False,
+                ids=[floor["id"] for floor in unknown],
+                message=f"{said}: nothing says which package dpkg must have, so the floor stays where it is; "
+                "add the package names to the component",
+            )
         if waiting:
             said = "; ".join(
                 f"{floor['id']} {floor['wanted']} ("
@@ -891,7 +909,7 @@ class Upgrade(runner.Runner):
                 run=self._command_again(),
                 message=f"floors wait until dpkg has their version: {said}; a run on a terminal installs it",
             )
-        return [floor["id"] for floor in waiting]
+        return [floor["id"] for floor in [*waiting, *unknown]]
 
     def _prepare(self) -> bool:
         prepared = self._ds_output("txn", "prepare", "--official-sources-only", "--scope", "update")

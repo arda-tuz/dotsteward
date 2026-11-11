@@ -122,10 +122,12 @@ Update these too? [y/N] n
    name or a profile moves no pins, since nothing could prove them there: the command to run is said.
    Flake inputs move at most once a week, counted from the publish of their last move: a red gate or a
    red E2E starts no week; a move of them whose way back is red too, which holds nothing, pauses them
-   for a day. The floor of a deb package moves only to a version dpkg has installed for every package
-   of its component (`dpkg-query`, after the sudo window or the owner's own apt); otherwise it waits
+   for a day. The floor of a deb package moves only to a version dpkg has installed for its package
+   (`dpkg-query`, after the sudo window or the owner's own apt; the names of `packageNames` are
+   aliases, and any one of them at the version is enough, as for the install); otherwise it waits
    as `deb-floors-wait`, with the version it wants and what is installed, since a floor above what
-   dpkg has turns the E2E of the package red. Every other pin, such as an official binary of Codex,
+   dpkg has turns the E2E of the package red. A deb pin without `packageNames` (the evaluation
+   refuses such a component) stays where it is, as `deb-floor-unknown`. Every other pin, such as an official binary of Codex,
    moves when upstream does. A framework that moved runs the writer once more with its own CLI, and
    the rest of the run with it too. What fails in one group of the writer is named, and what the
    others moved goes on. Skills with a recorded transform are counted and left to `dotsteward-update`
@@ -272,7 +274,7 @@ was published), `publish-waits`, `publish-race`, `publish-refused`, `red-held`, 
 `firmware-available`, `firmware-needs-ac`, the codes of the apt engine that wait (`apt-denied`,
 `dpkg-lock-busy`, `module-missing`, `python3-apt-missing`), and of the skills (`origin-unknown`,
 `skill-conflict`, `capture-blocked`). Notes that wait for nothing: `analysis`, `boot-space-low`,
-`reboot-required`, `checkout-dirty`, `checkout-behind`, `held`, `deb-floors-wait`,
+`reboot-required`, `checkout-dirty`, `checkout-behind`, `held`, `deb-floors-wait`, `deb-floor-unknown`,
 `pins-group-failed`, `series-available`, `phased-waiting`, `module-loss`, `producer-unset`,
 `producer-stale`, `plugin-scan-finding`, `plugin-scan-failed`, `firmware-locked`,
 `firmware-needs-reboot`.
