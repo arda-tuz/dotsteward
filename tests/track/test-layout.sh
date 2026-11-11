@@ -32,6 +32,9 @@ update = "true"
 """
 open(path, "w", encoding="utf-8").write(text)
 PY
+mkdir -p "$up_inst/hosts"
+printf 'schema_version = 1\nsystem = "%s"\nprofile = "workstation"\nplatform = "ubuntu-24.04"\n' "$system" \
+  >"$up_inst/hosts/example-host.toml"
 for name in example-chat example-lid example-last; do
   mkdir -p "$up_inst/components/$name"
   printf '{ ... }:\n{\n  dotsteward.components.%s = { };\n}\n' "$name" >"$up_inst/components/$name/default.nix"

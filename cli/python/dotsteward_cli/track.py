@@ -40,7 +40,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from dotsteward_cli import atomic, config, context, locks, machine, report, runner, tomlfile
+from dotsteward_cli import atomic, config, context, locks, machine, platforms, report, runner, tomlfile
 from dotsteward_cli.skills import layout
 from dotsteward_cli.upgrade import holds
 
@@ -49,6 +49,8 @@ SCHEMA_VERSION = 1
 _SUBJECT = re.compile(r"^(" + "|".join(context.CONVENTIONAL_TYPES) + r")(\([a-z0-9._/-]+\))?!?: .+")
 _APT_PACKAGE = re.compile(r"[a-z0-9][a-z0-9+.-]+")
 _NIX_ATTRIBUTE = re.compile(r"[A-Za-z_][A-Za-z0-9_'-]*(\.[A-Za-z_][A-Za-z0-9_'-]*)*")
+# The words Nix reserves: no attribute name or path part without quotes ("or" is not one).
+NIX_KEYWORDS = frozenset({"let", "in", "rec", "if", "then", "else", "assert", "with", "inherit"})
 _COMMAND = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*")
 _LIST_VALUE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 # What begin asks that this command answers itself when the change is its own.
@@ -342,6 +344,8 @@ class _Transaction(runner.Runner):
         self.apply_report: dict[str, Any] | None = None
         self.code = report.OK
         self.subject = options.subject or self.default_subject()
+        self.taken: list[str] | None = None
+        self.replace_scaffold = False
         self.run.data.update(component=self.name)
 
     def default_subject(self) -> str:
@@ -377,7 +381,12 @@ class _Transaction(runner.Runner):
             code = question.get("code")
             if code in _NOTES:
                 self.notes.append(f"{code}: {question.get('message')}")
-            elif (code in _OWN_QUESTIONS and not foreign) or (code == "checkout-dirty" and self.options.with_changes):
+            elif code in _OWN_QUESTIONS and not foreign:
+                continue
+            elif code == "checkout-dirty" and self.options.with_changes:
+                self.taken = foreign
+                if foreign:
+                    _say(self.command, f"--with-changes takes along: {', '.join(foreign)}")
                 continue
             else:
                 self.ask.append(question)
@@ -403,8 +412,32 @@ class _Transaction(runner.Runner):
                 continue
             if path == config.CONFIG_FILE and self._same_intent_but_this(base):
                 continue
+            if self._own_host_file(path) and self._same_host_but_this(base, path):
+                continue
             foreign.append(path)
         return foreign
+
+    def _own_host_file(self, path: str) -> bool:
+        this = machine.current_name(machine.read_machine(self.state_root), self.env)
+        return this is not None and path == f"{machine.HOSTS_DIR}/{this}.toml"
+
+    def _same_host_but_this(self, base: str, path: str) -> bool:
+        """Whether this machine's host file differs from BASE only in what it says of the component."""
+
+        def without(text: str) -> Any:
+            document = tomlfile.loads(text) if text else {}
+            names = (document.get("declined") or {}).get("components")
+            if isinstance(names, list):
+                document["declined"]["components"] = [name for name in names if name != self.name]
+            (document.get("holds") or {}).pop(self.name, None)
+            return _normal(document)
+
+        before = self._git("show", f"{base}:{path}")
+        try:
+            same: bool = without(before.stdout if before.code == 0 else "") == without(_read(self.root / path))
+            return same
+        except (OSError, tomlfile.TomlError):
+            return False
 
     def _same_intent_but_this(self, base: str) -> bool:
         """Whether workstation.toml differs from BASE only in the table and the order entry of the
@@ -499,8 +532,8 @@ class Add(_Transaction):
         self.apt = _list(options.apt, "--apt", _APT_PACKAGE)
         self.commands = _list(options.command, "--command", _COMMAND) or []
         self.nix: str | None = options.nix
-        if self.nix is not None and not _NIX_ATTRIBUTE.fullmatch(self.nix):
-            raise UsageError(f"--nix: {self.nix!r} is not a nixpkgs attribute path")
+        if self.nix is not None and (not _NIX_ATTRIBUTE.fullmatch(self.nix) or set(self.nix.split(".")) & NIX_KEYWORDS):
+            raise UsageError(f"--nix: {self.nix!r} is not a nixpkgs attribute path (or a part is a Nix keyword)")
         if self.apt is not None and self.nix is not None:
             raise UsageError("one channel at a time: --apt or --nix")
         self.catalog = self.name in config.framework_catalog()
@@ -518,8 +551,22 @@ class Add(_Transaction):
             else "instance"
         )
         self.run.data.update(channel=self.channel)
+        self.entry = self._manifest_entry()
+        method = self.keys.get("method")
+        supported = ((self.entry or {}).get("supported_methods") or {}).get(config.runtime_platform(self.env)) or []
+        if method and supported and method not in supported:
+            raise UsageError(f"--method: {self.name} supports {', '.join(supported)} here, not {method}")
+        self.dropped: dict[str, list[str]] = {}
+        self.here: bool | None = None
+        self.reason: str | None = None
         # A usage error comes before anything runs.
         self._add_text()
+
+    def _manifest_entry(self) -> dict[str, Any] | None:
+        for entry in layout.manifest(self.instance).get("components") or ():
+            if isinstance(entry, dict) and entry.get("name") == self.name:
+                return entry
+        return None
 
     def _keys(self) -> dict[str, Any]:
         options = self.options
@@ -529,16 +576,22 @@ class Add(_Transaction):
         profiles = _list(options.profiles, "--profiles")
         if profiles is not None:
             keys["profiles"] = profiles
-        if options.here and options.machines:
-            raise UsageError("--here or --machines, not both")
+        if sum(bool(given) for given in (options.here, options.also_here, options.machines)) > 1:
+            raise UsageError("one of --here, --also-here and --machines")
+        self.this = machine.current_name(machine.read_machine(self.state_root), self.env)
+        if (options.here or options.also_here) and self.this is None:
+            raise UsageError("--here: this machine has no name yet; 'dotsteward host init' names it")
         if options.here:
-            name = machine.current_name(machine.read_machine(self.state_root), self.env)
-            if name is None:
-                raise UsageError("--here: this machine has no name yet; 'dotsteward host init' names it")
-            keys["machines"] = [name]
+            keys["machines"] = [self.this]
         machines = _list(options.machines, "--machines")
         if machines is not None:
             keys["machines"] = machines
+        for name in keys.get("machines") or ():
+            if not machine.host_path(self.root, name).is_file():
+                raise UsageError(
+                    f"--machines: {name} has no host file (hosts/{name}.toml): a machine joins with "
+                    "'dotsteward host init' on it"
+                )
         tags = _list(options.tags, "--tags")
         if tags is not None:
             keys["tags"] = tags
@@ -550,6 +603,15 @@ class Add(_Transaction):
         """The text with the table of the component as add wants it; sets self.change."""
         current = tomlfile.loads(_read(self.instance.file))
         table = dict((current.get("components") or {}).get(self.name) or {})
+        if self.options.also_here and isinstance(table.get("machines"), list) and self.this not in table["machines"]:
+            self.keys["machines"] = [*table["machines"], self.this]
+        self.dropped = {
+            key: [value for value in table[key] if value not in self.keys[key]]
+            for key in ("machines", "tags", "profiles")
+            if isinstance(table.get(key), list)
+            and key in self.keys
+            and any(value not in self.keys[key] for value in table[key])
+        }
         wanted = {**table, "enable": True, **self.keys}
         expected = _normal(current)
         expected.setdefault("components", {})[self.name] = _normal(wanted)
@@ -650,14 +712,95 @@ class Add(_Transaction):
         current = self.definition.read_text(encoding="utf-8") if self.definition.is_file() else None
         if self.scaffold is None:
             return current is not None
+        if current is not None and current != self.scaffold and self._own_scaffold(current):
+            # What an add that went red wrote and no commit holds: the next add writes its own.
+            current = None
+            self.replace_scaffold = True
         if current is not None and current != self.scaffold:
             raise Refusal(
                 f"components/{self.name}/default.nix is there already and is not what --{self.channel} writes: "
                 f"change that file by the maintain skill and run dotsteward add {self.name}"
             )
         if self.apt is not None:
-            self._check_apt(self.apt)
+            if self._for_this_machine():
+                self._check_apt(self.apt)
+            else:
+                _say(self.command, f"{', '.join(self.apt)}: not checked on this machine, which the scope leaves out")
         return True
+
+    def _own_scaffold(self, text: str) -> bool:
+        relative = str(self.definition.relative_to(self.root))
+        committed = self._git("ls-tree", "--name-only", "HEAD", "--", relative).stdout.strip()
+        return not committed and text.startswith(f"# {self.name}: the ") and "Written by dotsteward" in text
+
+    def _for_this_machine(self) -> bool:
+        machines = self.keys.get("machines")
+        if machines is not None and self.this not in machines:
+            return False
+        tags = self.keys.get("tags")
+        if tags is not None:
+            host = (machine.read_host(self.root, self.this) if self.this else None) or {}
+            return bool(set(tags) & set(host.get("tags") or []))
+        return True
+
+    def _take_back_never(self) -> bool:
+        """This machine's answer Never for the component goes: the owner asked to track it."""
+        if self.this is None:
+            return False
+        from dotsteward_cli import incoming
+
+        took = incoming.take_back_never(self.state_root, "components", self.name)
+        path = machine.host_path(self.root, self.this)
+        if path.is_file():
+            tomlkit = _tomlkit()
+            text = _read(path)
+            document = tomlkit.parse(text)
+            names = (document.get("declined") or {}).get("components")
+            if names is not None and self.name in [_plain(item) for item in names]:
+                for index in reversed(range(len(names))):
+                    if _plain(names[index]) == self.name:
+                        del names[index]
+                atomic.atomic_write(path, tomlkit.dumps(document))
+                took = True
+        if took:
+            _say(self.command, f"this machine answered Never for {self.name}: add takes back the answer Never")
+        return took
+
+    def _scope_here(self) -> None:
+        """Whether the component applies on this machine now, and why not."""
+        try:
+            instance = config.load_instance(str(self.root))
+            scope = machine.effective(instance, self.env)
+        except config.DotstewardError:
+            return
+        reason = scope["reasons"].get(f"component:{self.name}")
+        table = (instance.config.get("components") or {}).get(self.name) or {}
+        profiles = table.get("profiles")
+        if reason is None and isinstance(profiles, list) and scope["profile"] and scope["profile"] not in profiles:
+            reason = "profile"
+        entry = self._manifest_entry()
+        if reason is None and entry and entry.get("unavailable"):
+            reason = machine.REASON_PLATFORM
+        self.here = reason in (None, machine.REASON_NOT_ACTIVATED, machine.REASON_INCOMING)
+        self.reason = None if self.here else reason
+        if self.here:
+            return
+        why = {
+            machine.REASON_MACHINES: (
+                f"{self.name} does not apply on this machine (machines: {', '.join(table.get('machines') or [])}): "
+                f"dotsteward add {self.name} --also-here adds this machine"
+            ),
+            machine.REASON_TAGS: (
+                f"{self.name} does not apply on this machine (tags: {', '.join(table.get('tags') or [])}, this "
+                f"machine has {', '.join(scope['tags']) or 'none'})"
+            ),
+            machine.REASON_PLATFORM: (
+                f"{self.name} is not available on this platform ({platforms.platform_id(self.env)})"
+            ),
+            machine.REASON_DECLINED: f"{self.name} does not apply on this machine: it answered Never",
+            "profile": f"{self.name} does not apply on this machine (profiles: {', '.join(profiles or [])})",
+        }.get(str(reason), f"{self.name} does not apply on this machine ({reason})")
+        _say(self.command, why)
 
     def _check_apt(self, packages: Sequence[str]) -> None:
         """Each package is installed or a source of this machine offers it; read from the local lists."""
@@ -705,20 +848,27 @@ class Add(_Transaction):
             self.run.item("channel-unknown", component=self.name, message=self.ask[-1]["message"])
             self.code = report.PENDING
             return self.finish()
+        if self._narrowed():
+            return self.finish()
         base = self._begin()
         if base is None:
             return self.finish()
         text = self._add_text()
+        if self._narrowed():
+            return self.finish()
         wrote = self.change != "unchanged"
         if wrote:
             atomic.atomic_write(self.instance.file, text)
-        if self.scaffold is not None and not self.definition.is_file():
+        if self.scaffold is not None and (not self.definition.is_file() or self.replace_scaffold):
             self.definition.parent.mkdir(parents=True, exist_ok=True)
             atomic.atomic_write(self.definition, self.scaffold, mode=0o644)
+            wrote = True
+        if self._take_back_never():
             wrote = True
         self.run.step("intent", report.OK, detail=self.change)
         if not wrote and not self._pending_since(base):
             _say(self.command, f"{self.name} is tracked already: nothing to do")
+            self._scope_here()
             return self.finish()
         if not wrote:
             _say(
@@ -726,10 +876,36 @@ class Add(_Transaction):
                 f"{self.name} is in the intent already: dotsteward apply finishes what an earlier run left",
             )
         self._apply()
+        self._scope_here()
         return self.finish()
 
+    def _narrowed(self) -> bool:
+        """A scope option that would drop values of a list the table has: a question."""
+        if not self.dropped or self.options.replace_scope:
+            return False
+        said = "; ".join(f"{key}: {', '.join(values)}" for key, values in self.dropped.items())
+        self.ask.append(
+            {
+                "code": "scope-narrowed",
+                "component": self.name,
+                "dropped": self.dropped,
+                "message": (
+                    f"this would drop {said} from the scope of {self.name}: --also-here adds this machine and keeps "
+                    "the others, --replace-scope confirms the new scope"
+                ),
+            }
+        )
+        self._asked()
+        return True
+
     def document(self) -> dict[str, Any]:
-        return {**super().document(), "channel": self.channel}
+        return {
+            **super().document(),
+            "channel": self.channel,
+            "here": self.here,
+            "reason": self.reason,
+            "with_changes": self.taken,
+        }
 
 
 # --- remove -----------------------------------------------------------------------------------
@@ -1290,6 +1466,10 @@ def _add_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profiles", action="append", metavar="PROFILE", help="only these profiles")
     parser.add_argument("--machines", action="append", metavar="MACHINE", help="only these machines")
     parser.add_argument("--here", action="store_true", help="only this machine")
+    parser.add_argument("--also-here", action="store_true", help="this machine too, besides the machines it has")
+    parser.add_argument(
+        "--replace-scope", action="store_true", help="the scope options replace what the table has (confirmed)"
+    )
     parser.add_argument("--tags", action="append", metavar="TAG", help="only machines with one of these tags")
     parser.add_argument("--updater", help="the one thing that updates it")
     return parser
@@ -1322,7 +1502,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_USAGE
     command, rest = arguments[0], arguments[1:]
     options = (_add_parser() if command == "add" else _remove_parser()).parse_args(rest)
-    if not config.nix_match("[a-z][a-z0-9-]*", options.name):
+    if not config.nix_match("[a-z][a-z0-9-]*", options.name) or options.name in NIX_KEYWORDS:
         _error(f"{options.name!r} is not a component name (lower-case letters, digits and dashes)")
         return EXIT_USAGE
     if options.subject is not None and ("\n" in options.subject or not _SUBJECT.fullmatch(options.subject)):

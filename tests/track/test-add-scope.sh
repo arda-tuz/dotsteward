@@ -40,6 +40,7 @@ assert_exit 0 add example-viewer --here --replace-scope --publish
 toml_at HEAD '.components["example-viewer"].machines == ["example-host"]'
 
 # --- this machine said Never -------------------------------------------------------------------
+mkdir -p "$fw/modules/components/example-chat"
 enable_component example-chat
 printf '\n[declined]\ncomponents = ["example-chat"]\n' >>"$up_inst/hosts/example-host.toml"
 git -C "$up_inst" commit -q -am "chore: never example-chat here"

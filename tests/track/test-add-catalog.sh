@@ -45,6 +45,12 @@ assert_no_step '^rebuild '
 assert_eq "$head" "$(head_oid)" "no second commit"
 
 # The scope of a machine, tags, profiles and a method; --json prints one document on standard output.
+mkdir -p "$up_inst/hosts"
+printf 'schema_version = 1\nsystem = "%s"\nprofile = "workstation"\nplatform = "ubuntu-24.04"\n' "$system" \
+  >"$up_inst/hosts/example-host.toml"
+git -C "$up_inst" add -A
+git -C "$up_inst" commit -q -m "chore: the host file of this machine"
+git -C "$up_inst" push -q origin HEAD:main
 clear_log
 assert_exit 0 add example-viewer --here --tags gpu,laptop --profiles workstation --method nix \
   -m "feat: example-viewer on this machine only" --no-activate --publish --json

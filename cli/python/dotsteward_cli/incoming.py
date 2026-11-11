@@ -150,6 +150,17 @@ def _write_never(state_root: str | os.PathLike[str], never: Mapping[str, list[st
         (Path(state_root) / NEVER_FILE).unlink(missing_ok=True)
 
 
+def take_back_never(state_root: str | os.PathLike[str], key: str, name: str) -> bool:
+    """Forgets this machine's answer Never for NAME under KEY (skills, plugins, components) that
+    the host file does not hold yet: the owner asked for it after all. Whether there was one."""
+    never = never_answers(state_root)
+    if name not in never.get(key, []):
+        return False
+    never[key] = [other for other in never[key] if other != name]
+    _write_never(state_root, never)
+    return True
+
+
 def _accepted(env: Mapping[str, str] | None) -> set[str]:
     """The ids the `agents install` of an answer is told to take."""
     env = os.environ if env is None else env

@@ -88,8 +88,10 @@ assert_contains "$DS_STDOUT" "$HOME/.local/bin/example-bin stays"
 
 # --- a nix component -------------------------------------------------------------------------
 mkdir -p "$up_inst/hosts"
-printf 'schema_version = 1\nsystem = "%s"\nprofile = "workstation"\nplatform = "ubuntu-24.04"\n' "$system" \
-  >"$up_inst/hosts/other-host.toml"
+for host in example-host other-host; do
+  printf 'schema_version = 1\nsystem = "%s"\nprofile = "workstation"\nplatform = "ubuntu-24.04"\n' "$system" \
+    >"$up_inst/hosts/$host.toml"
+done
 git -C "$up_inst" add -A
 git -C "$up_inst" commit -q -m "chore: another machine"
 git -C "$up_inst" push -q origin HEAD:main
