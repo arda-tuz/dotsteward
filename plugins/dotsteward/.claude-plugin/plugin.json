@@ -1,6 +1,6 @@
 {
   "name": "dotsteward",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Set up and maintain a reproducible agent workstation with dotsteward.",
   "author": {
     "name": "dotsteward contributors"
