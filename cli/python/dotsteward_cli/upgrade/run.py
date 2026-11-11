@@ -124,10 +124,12 @@ def _say(text: str) -> None:
 
 
 def _installed_version(package: str) -> str | None:
-    """The version dpkg has installed of PACKAGE, None when it has none."""
+    """The version dpkg has installed of PACKAGE, None when it has none. Installed is the status
+    "installed" whatever the owner wants of it: a package held with apt-mark hold is installed, as
+    the install sees it (cli/lib/platform-linux.sh)."""
     try:
         done = subprocess.run(
-            ["dpkg-query", "-W", "-f=${db:Status-Abbrev}\t${Version}", package],
+            ["dpkg-query", "-W", "-f=${db:Status-Status}\t${Version}", package],
             capture_output=True,
             text=True,
             timeout=_VERSION_SECONDS,
@@ -136,7 +138,7 @@ def _installed_version(package: str) -> str | None:
     except (OSError, subprocess.TimeoutExpired):
         return None
     status, _, version = done.stdout.partition("\t")
-    if done.returncode != 0 or not status.startswith("ii"):
+    if done.returncode != 0 or status.strip() != "installed":
         return None
     return version.strip() or None
 
