@@ -80,7 +80,8 @@ mkdir -p "$fw/tests/isolation"
 cat >"$fw/tests/isolation/test-isolation.sh" <<'EOF'
 assert_eq "" "$(compgen -v XDG_ || true)"
 assert_eq "" "$(compgen -v DOTFILES_ || true)"
-assert_eq "DOTSTEWARD_APT_DIR DOTSTEWARD_CPU_COUNT DOTSTEWARD_ETC_SHELLS DOTSTEWARD_MEMORY_MIB DOTSTEWARD_OS_RELEASE DOTSTEWARD_PASSWD_CMD DOTSTEWARD_STATE_ROOT DOTSTEWARD_SW_VERS DOTSTEWARD_SYSTEM_ROOT" \
+# A run with DS_TEST_PLATFORM (checks.darwin-platform) forces the platform as DOTSTEWARD_PLATFORM.
+assert_eq "DOTSTEWARD_APT_DIR DOTSTEWARD_CPU_COUNT DOTSTEWARD_ETC_SHELLS DOTSTEWARD_MEMORY_MIB DOTSTEWARD_OS_RELEASE DOTSTEWARD_PASSWD_CMD ${DS_TEST_PLATFORM:+DOTSTEWARD_PLATFORM }DOTSTEWARD_STATE_ROOT DOTSTEWARD_SW_VERS DOTSTEWARD_SYSTEM_ROOT" \
   "$(compgen -v DOTSTEWARD_ | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
 assert_eq "GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM" "$(compgen -v GIT_ | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
 printf '%s\n' "$DS_TEST_ROOT" >"$SKELETON_PROBE/root"
@@ -101,6 +102,23 @@ first" "$(<"$probe/deferred")"
 inner_root=$(<"$probe/root")
 assert_contains "$inner_root" "$TMPDIR/dotsteward-test."
 [[ ! -e $inner_root ]] || ds_fail "temporary root survived: $inner_root"
+
+# DS_TEST_PLATFORM forces the platform of every test (the CLI and tests/lib/fixture-system.sh
+# read DOTSTEWARD_PLATFORM first); without it the test sees the host's; any other value is an
+# error of the harness.
+mkdir -p "$fw/tests/platform"
+cat >"$fw/tests/platform/test-platform.sh" <<'EOF'
+printf '%s\n' "${DOTSTEWARD_PLATFORM-unset}" >"$SKELETON_PROBE/platform"
+EOF
+for platform in darwin linux; do
+  SKELETON_PROBE=$probe DS_TEST_PLATFORM=$platform assert_exit 0 bash "$fw/tests/run.sh" "$fw/tests/platform"
+  assert_eq "$platform" "$(<"$probe/platform")" "the platform a test sees with DS_TEST_PLATFORM=$platform"
+done
+SKELETON_PROBE=$probe assert_exit 0 env -u DS_TEST_PLATFORM DOTSTEWARD_PLATFORM=darwin \
+  bash "$fw/tests/run.sh" "$fw/tests/platform"
+assert_eq unset "$(<"$probe/platform")" "the platform a test sees without DS_TEST_PLATFORM"
+DS_TEST_PLATFORM=windows assert_exit 1 bash "$fw/tests/run.sh" "$fw/tests/platform"
+assert_contains "$DS_STDOUT" "DS_TEST_PLATFORM: expected linux or darwin, got windows"
 
 # The runner itself leaves nothing behind in TMPDIR.
 assert_eq "" "$(find "$TMPDIR" -mindepth 1 -maxdepth 1 -name 'dotsteward-*' ! -name 'dotsteward-assert.*')"
