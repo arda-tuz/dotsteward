@@ -917,11 +917,19 @@ class Apply(_Checkout):
 
         started = time.monotonic()
         detail = None
-        try:
-            code = state_branch.record(self.instance, self.env, by="apply")
-        except (state_branch.Refusal, state_branch.Finding, state_branch.Busy, config.DotstewardError) as why:
-            detail = f"not recorded: {why}"
+        code = report.OK
+        if not self.activate:
+            # The state of this machine is what is active here: a tree it did not activate changed
+            # nothing of it. The next activation records.
+            detail = "not recorded: nothing was activated here"
         else:
+            try:
+                code = state_branch.record(self.instance, self.env, by="apply")
+            except KeyboardInterrupt:
+                detail = "not recorded: interrupted (dotsteward state record)"
+            except Exception as why:  # the commit is published: no failure of the record turns it red
+                detail = f"not recorded: {why or type(why).__name__}"
+        if detail is None:
             if code == report.PARTIAL:
                 detail = "recorded here; the push waits for the network (dotsteward state push)"
             elif code != report.OK:
