@@ -30,8 +30,9 @@ from .model import STABLE_TAG
 
 HTTP_TIMEOUT = 20
 COMMAND_TIMEOUT = 60
-# The release list of a repository is read as one page of its newest releases.
+# The release list of a repository is read in pages of its newest releases, at most this many.
 RELEASES_PAGE = 100
+RELEASES_PAGES = 5
 USER_AGENT = "dotsteward-pins/1.0"
 GITHUB = "https://github.com"
 _GITHUB_REFERENCE = re.compile(r"github:(?P<owner>[^/]+)/(?P<repo>[^/?#]+)(?:[/?#].*)?")
@@ -216,30 +217,39 @@ class Upstream:
         return next(tag for tag in tags if tag_version(tag, prefix) == best)
 
     def latest_release(self, repo: str, prefix: str = "") -> tuple[str | None, dict[str, Any] | None]:
-        """The newest stable release of a GitHub repository in the tag family
-        of PREFIX, and its release JSON: of the release list (``gh api
-        repos/<repo>/releases?per_page=100``, the newest releases first), the
-        highest version whose tag is a stable tag with the prefix and that is
-        neither a draft nor a prerelease, whatever GitHub calls latest.
-        Without such a release (gh failing or missing, no release of the
-        family), the newest stable tag from ``git ls-remote``, without a
-        release; a tag the list flagged as a draft or a prerelease never
-        answers."""
-        try:
-            listed = self.gh_json(f"repos/{repo}/releases?per_page={RELEASES_PAGE}")
-        except (RuntimeError, ValueError, OSError):
-            listed = None
+        """The newest stable release of a GitHub repository in the tag family of PREFIX, and its
+        release JSON: of the release list (``gh api repos/<repo>/releases?per_page=100&page=N``, the
+        newest releases first, read page by page until a page holds a stable release of the family,
+        at most RELEASES_PAGES pages), the highest version whose tag is a stable tag with the prefix
+        and that is neither a draft nor a prerelease, whatever GitHub calls latest. Only the list
+        says which tag is a draft or a prerelease: a list that cannot be read, or that holds no
+        stable release of the family in the pages read, is an UpstreamError. When the whole list
+        holds none, the newest stable tag from ``git ls-remote`` that the list did not flag, without
+        a release."""
         flagged: set[str] = set()
         stable: dict[str, dict[str, Any]] = {}
-        for release in listed if isinstance(listed, list) else ():
-            tag = release.get("tag_name") if isinstance(release, dict) else None
-            if not isinstance(tag, str) or not is_stable_tag(tag, prefix):
-                continue
-            if release.get("draft") or release.get("prerelease"):
-                flagged.add(tag)
-            else:
-                stable.setdefault(tag_version(tag, prefix), release)
-        best = versions.newest(stable)
-        if best is not None:
-            return stable[best]["tag_name"], stable[best]
-        return self.newest_tag(github_url(repo), prefix, excluded=frozenset(flagged)), None
+        for number in range(1, RELEASES_PAGES + 1):
+            path = f"repos/{repo}/releases?per_page={RELEASES_PAGE}&page={number}"
+            try:
+                listed = self.gh_json(path)
+            except (RuntimeError, ValueError, OSError) as error:
+                raise UpstreamError(f"the release list of {repo} could not be read ({error})") from error
+            if not isinstance(listed, list):
+                raise UpstreamError(f"the release list of {repo} is no list")
+            for release in listed:
+                tag = release.get("tag_name") if isinstance(release, dict) else None
+                if not isinstance(tag, str) or not is_stable_tag(tag, prefix):
+                    continue
+                if release.get("draft") or release.get("prerelease"):
+                    flagged.add(tag)
+                else:
+                    stable.setdefault(tag_version(tag, prefix), release)
+            best = versions.newest(stable)
+            if best is not None:
+                return stable[best]["tag_name"], stable[best]
+            if len(listed) < RELEASES_PAGE:
+                return self.newest_tag(github_url(repo), prefix, excluded=frozenset(flagged)), None
+        family = prefix or "of plain version tags"
+        raise UpstreamError(
+            f"{repo}: no stable release of the family {family} in the {RELEASES_PAGE * RELEASES_PAGES} newest releases"
+        )

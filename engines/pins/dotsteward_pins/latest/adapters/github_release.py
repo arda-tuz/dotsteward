@@ -12,11 +12,14 @@ Fields:
                 (linux, darwin) for an asset that differs from platform to
                 platform; missing assets are reported as ``asset_missing``
 
-Query: the release list ``gh api repos/<repo>/releases?per_page=100``: the
-highest version of a release in the tag family that is neither a draft nor a
-prerelease, whatever GitHub calls latest. When gh fails or the list holds no
-such release, the newest stable tag from ``git ls-remote --tags`` that the list
-did not flag as a draft or a prerelease (no asset details then). Row details:
+Query: the release list ``gh api repos/<repo>/releases?per_page=100&page=N``,
+page by page (at most five): the highest version of a release in the tag family
+that is neither a draft nor a prerelease, whatever GitHub calls latest. A list
+gh does not give, or one without a stable release of the family in those
+pages, is an error row: only the list says what is a draft or a prerelease.
+When the whole list holds no release of the family, the newest stable tag from
+``git ls-remote --tags`` that the list did not flag (no asset details then).
+Row details:
 ``tag`` and the asset's
 ``asset``, ``size``, ``sha256``, ``url`` (or ``asset_missing``); with an
 asset object, ``assets.<key>`` holds those fields for each declared key,

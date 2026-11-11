@@ -15,7 +15,7 @@ Every row comes from a declaration: the built-in rows from the lock files, the o
 | Adapter | Typical rows | Official source |
 | --- | --- | --- |
 | `channel-head` | nixpkgs, Home Manager (`flake_inputs.<name>` with a `channel`) | `git ls-remote` of the channel branches (`nixos-YY.MM`, `release-YY.MM`); a newer series is reported as `review` |
-| `github-release` | flake inputs with a `version`, release archives, Nix package sources | the newest stable GitHub release of the tag family by version (drafts and prereleases never count; tags when a repository has no such release), per-platform asset size and `digest` |
+| `github-release` | flake inputs with a `version`, release archives, Nix package sources | the newest stable GitHub release of the tag family by version (drafts and prereleases never count; tags only when the whole release list holds no release of the family; a list `gh` cannot give is an error row), per-platform asset size and `digest` |
 | `npm` | npm dependencies and npm-distributed tools | registry `latest` dist-tag, integrity, `gitHead`, engines |
 | `pypi` | Python applications of the `pypi` method | the package index JSON API: the newest final release with files that are not yanked; regenerate the hash-pinned requirements file for the new version; `pins apply` verifies the PEP 740 attestations of its files when the index publishes them |
 | `apt-index` | desktop packages from a vendor APT repository | the vendor's `dists/<dist>/<component>/binary-<arch>/Packages` index |

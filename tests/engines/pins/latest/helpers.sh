@@ -223,21 +223,26 @@ latest_gh_routes() {
   release_route example-org/example-cli "$gh/example-cli-release.json"
   release_route example-org/example-tool "$gh/example-tool-release.json"
   release_route example/dotsteward "$gh/framework-release.json"
+  release_route example-org/example-lib
   ds_stub_route gh "api repos/example-org/example-plugins/compare/*" --stdout-file "$gh/compare-plugins.json"
   ds_stub_route gh "api repos/example-org/example-watch/compare/*" --stdout-file "$gh/compare-watch.json"
   ds_stub_route gh "api repos/example-org/example-skills/compare/*" --stdout-file "$gh/compare-skills.json"
 }
 
 # release_route OWNER/REPO FILE...: the release list of OWNER/REPO (gh api
-# repos/OWNER/REPO/releases?per_page=100) holds the releases of the files,
-# newest first.
+# repos/OWNER/REPO/releases?per_page=100&page=1) holds the releases of the
+# files, newest first; without files it is empty, so the tags answer.
 release_route() {
   local repo=$1 list
   shift
   list=$DS_TEST_ROOT/gh-releases/$repo.json
   mkdir -p "$(dirname "$list")"
-  jq -s . "$@" >"$list"
-  ds_stub_route gh "api repos/$repo/releases?per_page=100" --stdout-file "$list"
+  if (($#)); then
+    jq -s . "$@" >"$list"
+  else
+    printf '[]\n' >"$list"
+  fi
+  ds_stub_route gh "api repos/$repo/releases?per_page=100&page=1" --stdout-file "$list"
 }
 
 latest_world() {

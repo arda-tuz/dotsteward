@@ -103,9 +103,10 @@ cp -- "$DS_TEST_ROOT/versions.saved" "$versions"
 
 # --- error rows -----------------------------------------------------------------
 
-# A query that fails becomes job-<n>: kind error, the message cut at 300
-# characters, the ids it was meant to answer; the other rows are reported
-# and the exit status is 1.
+# A query that fails becomes job-<n>: kind error, the ids it was meant to
+# answer; an upstream that cannot be read (a release list gh does not give) is
+# an error row of its id; each message is cut at 300 characters, the other
+# rows are reported and the exit status is 1.
 long=example-org/$(printf 'x%.0s' $(seq 1 400))
 declare_latest \
   "{\"component\":\"example-x\",\"id\":\"agent_tools.example-long\",\"adapter\":\"github-release\",\"repo\":\"$long\",\"at\":\"agent_tools.example-release\"}" \
@@ -114,11 +115,12 @@ declare_latest \
 assert_exit 1 latest --out "$report"
 assert_not_contains "$DS_STDERR" "Traceback"
 jobs=$(jq -c '[.items[] | select(.id | startswith("job-"))]' "$report")
-assert_eq 2 "$(jq length <<<"$jobs")" "two failed jobs"
+assert_eq 1 "$(jq length <<<"$jobs")" "one failed job"
 assert_json - 'all(.[]; .kind == "error" and .status == "error" and .current == null and .latest == null and .source == "" and (.id | test("^job-[0-9]+$")))' <<<"$jobs"
 assert_json - 'all(.[]; (.details | keys_unsorted) == ["error", "ids"])' <<<"$jobs"
-assert_json - '[.[].details.ids] | sort == [["agent_tools.example-long"], ["npm.example-gone"]]' <<<"$jobs"
-long_error=$(jq -r '.[] | select(.details.ids == ["agent_tools.example-long"]) | .details.error' <<<"$jobs")
+assert_json - '[.[].details.ids] == [["npm.example-gone"]]' <<<"$jobs"
+assert_eq '["github-release","error"]' "$(row agent_tools.example-long '[.kind, .status]')"
+long_error=$(row agent_tools.example-long .details.error | jq -r .)
 assert_eq 300 "${#long_error}" "error message length"
 assert_contains "$(jq -r '.[] | select(.details.ids == ["npm.example-gone"]) | .details.error' <<<"$jobs")" "404"
 assert_eq '"update"' "$(row desktop_packages.example-app .status)"

@@ -6,6 +6,8 @@ source "$DS_REPO_ROOT/tests/engines/pins/apply/helpers.sh"
 
 apply_world
 ds_use_stubs gh
+# The release lists hold no release, so the tags of the fake remotes answer.
+ds_stub_route gh "api repos/*/releases?per_page=100&page=1" --stdout '[]'
 ds_stub_route gh "api repos/*" --exit 1 --stderr "HTTP 404: Not Found"
 git -C "$sources/example/nixpkgs" branch example-26.05
 ds_git_commit "$sources/example/nixpkgs" channel.txt moved "chore: the channel moves"

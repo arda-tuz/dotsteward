@@ -1,6 +1,6 @@
 # shellcheck shell=bash
-# github-release rows: the git ls-remote fallback when gh fails or answers
-# another tag family, tag prefixes, stable tag selection, asset templates
+# github-release rows: the git ls-remote fallback when the whole release list
+# holds no release of the family, an error row when gh fails, tag prefixes, stable tag selection, asset templates
 # ({version}, {tag}) and missing assets, the status model (0.x minor and
 # major bumps are reviews, holdbacks are held), the error row of a flake
 # input whose reference is not on GitHub, and per-platform assets of an
@@ -24,27 +24,31 @@ declare_latest "$release_declaration"
 # The release list holds no release of the tag family: the prefixed stable
 # tags answer instead (no release, so no asset details).
 ds_stub_clear_routes gh
-ds_stub_route gh "api repos/example-org/example-cli/releases?per_page=100" --stdout '[{"tag_name": "desktop-v3.0.0"}]'
+ds_stub_route gh "api repos/example-org/example-cli/releases?per_page=100&page=1" --stdout '[{"tag_name": "desktop-v3.0.0"}]'
 latest_gh_routes
 assert_exit 0 latest --out "$report"
 assert_eq '{"id":"agent_tools.example-release","kind":"github-release","current":"1.3.0","latest":"1.5.0","status":"update","source":"https://github.com/example-org/example-cli/releases","details":{"tag":"cli-v1.5.0"}}' \
   "$(row agent_tools.example-release)"
 
-# gh fails: same answer from the tags.
+# gh fails: only the release list says what is a draft or a prerelease, so the
+# tags do not answer; an error row (test-latest-github-unread.sh).
 ds_stub_clear_routes gh
-ds_stub_route gh "api repos/example-org/example-cli/releases?per_page=100" --exit 1 --stderr "HTTP 404: Not Found"
+ds_stub_route gh "api repos/example-org/example-cli/releases?per_page=100&page=1" --exit 1 --stderr "HTTP 404: Not Found"
 latest_gh_routes
 : >"$DS_CALL_LOG"
-assert_exit 0 latest --out "$report"
-assert_eq '["1.5.0","update",{"tag":"cli-v1.5.0"}]' "$(row agent_tools.example-release '[.latest, .status, .details]')"
-assert_call_count 1 gh "api repos/example-org/example-cli/releases*per_page=100"
+assert_exit 1 latest --out "$report"
+assert_eq '["error",null]' "$(row agent_tools.example-release '[.status, .latest]')"
+assert_call_count 1 gh "api repos/example-org/example-cli/releases*per_page=100*"
 
-# gh answers something that is not a release: same answer.
+# gh answers something that is not a release list: an error row too.
 ds_stub_clear_routes gh
-ds_stub_route gh "api repos/example-org/example-cli/releases?per_page=100" --stdout '<html>maintenance</html>'
+ds_stub_route gh "api repos/example-org/example-cli/releases?per_page=100&page=1" --stdout '<html>maintenance</html>'
 latest_gh_routes
-assert_exit 0 latest --out "$report"
-assert_eq '["1.5.0","update"]' "$(row agent_tools.example-release '[.latest, .status]')"
+assert_exit 1 latest --out "$report"
+assert_eq '["error",null]' "$(row agent_tools.example-release '[.status, .latest]')"
+ds_stub_clear_routes gh
+ds_stub_route gh "api repos/example-org/example-cli/releases?per_page=100&page=1" --stdout '[{"tag_name": "desktop-v3.0.0"}]'
+latest_gh_routes
 
 # A new major version is a review; an older or equal one is current.
 ds_git_commit "$dir" VERSION 2.0.0 "chore: 2.0.0"
@@ -85,7 +89,7 @@ json_edit "$versions" 'data["flake_inputs"]["example-term"]["version"] = "0.8.9"
 assert_exit 0 latest --out "$report"
 assert_eq '"review"' "$(row flake_inputs.example-term .status)"
 ds_stub_clear_routes gh
-ds_stub_route gh "api repos/example-org/example-term/releases?per_page=100" --stdout '[{"tag_name": "v0.8.10", "assets": []}]'
+ds_stub_route gh "api repos/example-org/example-term/releases?per_page=100&page=1" --stdout '[{"tag_name": "v0.8.10", "assets": []}]'
 latest_gh_routes
 assert_exit 0 latest --out "$report"
 assert_eq '["0.8.10","update"]' "$(row flake_inputs.example-term '[.latest, .status]')"
@@ -122,9 +126,10 @@ assert_eq '{"id":"agent_tools.example-term","kind":"github-release","current":"0
 assert_eq '{"tag":"v0.9.0","assets":{"linux":{"asset":"SHA256SUMS","size":95,"sha256":"8acfe6209e718be45de0ccc09ffcb4c676a99c6f9ebb23f7181bddf886583ca4","url":"https://github.com/example-org/example-term/releases/download/v0.9.0/SHA256SUMS"},"darwin":{"asset_missing":"example-term_0.9.0_arm64.zip"}}}' \
   "$(row agent_tools.example-term-archive .details)"
 
-# Without a release (the tags answer), there are no asset details.
+# Without a release (the whole list holds none, so the tags answer), there are
+# no asset details.
 ds_stub_clear_routes gh
-ds_stub_route gh "api repos/example-org/example-term/releases?per_page=100" --exit 1 --stderr "HTTP 404: Not Found"
+ds_stub_route gh "api repos/example-org/example-term/releases?per_page=100&page=1" --stdout '[]'
 latest_gh_routes
 assert_exit 0 latest --out "$report"
 assert_eq '["0.9.0","review",{"tag":"v0.9.0"}]' "$(row agent_tools.example-term '[.latest, .status, .details]')"
