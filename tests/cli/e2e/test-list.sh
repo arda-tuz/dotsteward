@@ -8,7 +8,7 @@
 # verify are not listed (no commands, no managed links, no agent rules
 # source, no files, no settings buffer, no login shell), and
 # --skip-repo-checks drops the repository checks. --list --json prints
-# { "profile", "checks": [ ids ] }.
+# { "profile", "components": [ the active ones ], "checks": [ ids ] }.
 # shellcheck source=tests/cli/e2e/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/e2e/helpers.sh"
 
@@ -98,7 +98,7 @@ example-app:fresh-only
 core:framework-skills" "$DS_STDOUT"
 
 assert_exit 0 run_e2e --list --json --skip-repo-checks
-assert_json - '.profile == "workstation" and (.checks | length) == 16
+assert_json - '.profile == "workstation" and .components == ["example-term", "example-app"] and (.checks | length) == 16
   and .checks[0] == "core:commands" and .checks[-1] == "core:framework-skills"' <<<"$DS_STDOUT"
 
 # Nothing ran: no hook, no remote, no change in HOME, no temporary

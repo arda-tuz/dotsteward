@@ -7,8 +7,10 @@
 # /var/lib/dpkg/lock-frontend, /var/lib/dpkg/lock, /var/lib/apt/lists/lock or
 # /var/cache/apt/archives/lock (as /proc/locks lists them, whatever the program), an empty
 # /var/lib/dpkg/updates, a clean `dpkg --audit`, and a status file that stayed the same for
-# --settle-seconds (default 15). After --wait-limit seconds (default 1800) it gives up and
-# observes nothing; the next change of the status file starts it again. A busy instance
+# --settle-seconds (default 15), counted from the last moment it saw dpkg at work. While a
+# lock is held it waits without a limit; for the other signs, after --wait-limit seconds
+# (default 1800) it gives up and observes nothing; the next change of the status file starts
+# it again. A busy instance
 # lock leaves a pending mark (exit 3), and the holder starts the observer when it lets go.
 # shellcheck source=tests/cli/host/observe-helpers.sh
 source "$DS_REPO_ROOT/tests/cli/host/observe-helpers.sh"
@@ -28,18 +30,6 @@ busy() {
   [[ ! -e $snapshot ]] || ds_fail "an unsettled dpkg was observed ($1)"
   assert_eq "" "$(state_tip)"
 }
-
-for lock in /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock; do
-  lock_line "$lock" >"$DS_SYSTEM_ROOT/proc/locks"
-  busy "$lock is locked"
-done
-# A waiter on the lock (the kernel marks it "->") and a flock of another program count too.
-{
-  printf '1: POSIX  ADVISORY  WRITE 4242 00:00:1 0 EOF\n'
-  lock_line /var/lib/dpkg/lock | sed 's/^1: POSIX /1: -> FLOCK /'
-} >"$DS_SYSTEM_ROOT/proc/locks"
-busy "/var/lib/dpkg/lock is locked"
-: >"$DS_SYSTEM_ROOT/proc/locks"
 
 : >"$dpkg_dir/updates/0001"
 busy "/var/lib/dpkg/updates holds unfinished work"
@@ -70,6 +60,29 @@ assert_exit 0 run_observe --wait-limit 60
 assert_contains "$DS_STDOUT" "the first observation"
 assert_call_count 2 dpkg --audit
 rm -f -- "$DS_STUB_STATE/dpkg/override"
+
+# --- a lock of dpkg or apt keeps it waiting, without a limit while the lock is there ----------
+
+locked() {
+  local line=$1
+  pkg unrelated-package "$2"
+  printf '%s\n' "$line" >"$DS_SYSTEM_ROOT/proc/locks"
+  (sleep 1 && : >"$DS_SYSTEM_ROOT/proc/locks") &
+  local releaser=$! started=$SECONDS
+  assert_exit 0 run_observe --wait-limit 0
+  wait "$releaser"
+  ((SECONDS - started >= 1)) || ds_fail "the observer went on while a lock was held: $line"
+  assert_contains "$DS_STDOUT" "1 package changed since the last observation"
+  assert_eq "$2" "$(jq -r '.packages["unrelated-package"]' "$snapshot")"
+}
+
+version=0
+for lock in /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock; do
+  version=$((version + 1))
+  locked "$(lock_line "$lock")" "9.$version"
+done
+# A waiter on the lock (the kernel marks it "->") and a flock of another program count too.
+locked "$(lock_line /var/lib/dpkg/lock | sed 's/^1: POSIX /1: -> FLOCK /')" 9.8
 
 # A lock of another file, or of the same inode on another device, is no sign of dpkg.
 : >"$DS_SYSTEM_ROOT/run/other.lock"
