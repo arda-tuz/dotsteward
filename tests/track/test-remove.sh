@@ -67,9 +67,9 @@ printf '{ ... }:\n{\n  dotsteward.components.example-plugin = { };\n}\n' >"$up_i
 git -C "$up_inst" add -A
 git -C "$up_inst" commit -q -m "feat: the definition of example-plugin"
 git -C "$up_inst" push -q origin HEAD:main
-assert_exit 0 remove example-plugin --publish --json
+assert_exit 0 remove example-plugin --uninstall --publish --json
 assert_stdout_json '.command == "remove" and .component == "example-plugin" and .change == "removed"'
-assert_stdout_json '.apply.status == "ok" and .exit_code == 0 and .uninstall == null'
+assert_stdout_json '.apply.status == "ok" and .exit_code == 0 and .uninstall.status == "done" and .uninstall.removed == []'
 [[ ! -e $up_inst/components/example-plugin ]] || ds_fail "the directory of the component is still there"
 assert_eq "" "$(git -C "$up_inst" ls-tree HEAD components/example-plugin)" "the directory left the tree"
 assert_contains "$DS_STDERR" "next activation"
@@ -94,9 +94,16 @@ assert_exit 0 on_terminal_run -- remove example-player --uninstall --publish
 assert_order '^sudo apt-get remove example-player$'
 assert_no_step '^static '
 
-# --uninstall of an official binary deletes it and its companions; without --uninstall it stays.
+# --uninstall of an official binary deletes it and its companions, once it answers the version
+# probe of the component; without --uninstall it stays.
+jq '(.components[] | select(.name == "codex") | .install) += {versionArgv: ["--version"], versionRegex: "codex ([0-9.]+)"}' \
+  "$mirror" >"$mirror.new"
+mv -- "$mirror.new" "$mirror"
+git -C "$up_inst" commit -q -am "chore: the version probe of codex"
+git -C "$up_inst" push -q origin HEAD:main
 mkdir -p "$HOME/.local/bin"
-printf 'binary\n' >"$HOME/.local/bin/codex"
+printf '#!/bin/sh\necho codex 1.2.3\n' >"$HOME/.local/bin/codex"
+chmod 0755 "$HOME/.local/bin/codex"
 printf 'helper\n' >"$HOME/.local/bin/codex-helper"
 assert_exit 0 remove codex --uninstall --publish
 [[ ! -e $HOME/.local/bin/codex && ! -e $HOME/.local/bin/codex-helper ]] || ds_fail "the binary is still there"
