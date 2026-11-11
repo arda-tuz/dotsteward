@@ -2,9 +2,11 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # The darwin checks and the macOS CI (decision K13: macOS is tested on
 # release tags and nightly). checks.aarch64-darwin of nix/outputs.nix is the
-# list darwinChecks of existing checks: not empty, each one a
+# list of nix/darwin-checks.nix, of existing checks: not empty, each one a
 # nix/checks/<name>.nix, none named twice, and none that builds an
-# x86_64-linux derivation or is meant for Linux only. The workflow
+# x86_64-linux derivation or is meant for Linux only. checks.darwin-platform,
+# which runs their suites on Linux with the platform forced to darwin, reads
+# the same list and is not on it. The workflow
 # .github/workflows/macos-smoke.yml runs on release tags (v*), on a nightly
 # schedule and on demand, never on branch pushes, and has a job on a macOS
 # runner that runs `nix flake check`, which builds the checks of the
@@ -15,21 +17,32 @@
 # step. The workflow names no other label than the one its jobs run on.
 
 outputs=$DS_REPO_ROOT/nix/outputs.nix
+list=$DS_REPO_ROOT/nix/darwin-checks.nix
 workflow=$DS_REPO_ROOT/.github/workflows/macos-smoke.yml
 [[ -f $outputs ]] || ds_fail "missing nix/outputs.nix"
+[[ -f $list ]] || ds_fail "missing nix/darwin-checks.nix"
 [[ -f $workflow ]] || ds_fail "missing .github/workflows/macos-smoke.yml"
 
 # --- checks.aarch64-darwin ---------------------------------------------------------
 
-# The names of the darwinChecks list (one quoted name per line).
+# The names of the list (one quoted name per line).
 mapfile -t names < <(awk '
-  /^  darwinChecks = \[/ { open = 1; next }
-  open && /^  \];/ { exit }
-  open && match($0, /"[a-z0-9-]+"/) { print substr($0, RSTART + 1, RLENGTH - 2) }
-' "$outputs")
-((${#names[@]})) || ds_fail "nix/outputs.nix has no darwinChecks list, or it is empty"
+  /^\[/ { open = 1; next }
+  open && /^\]/ { exit }
+  open && match($0, /^  "[a-z0-9-]+"/) { print substr($0, RSTART + 3, RLENGTH - 4) }
+' "$list")
+((${#names[@]})) || ds_fail "nix/darwin-checks.nix has no list of checks, or it is empty"
+grep -qE '^  darwinChecks = import \./darwin-checks\.nix;' "$outputs" ||
+  ds_fail "nix/outputs.nix does not take darwinChecks from nix/darwin-checks.nix"
 grep -qE '^    aarch64-darwin = lib\.getAttrs darwinChecks \(checksFor "aarch64-darwin"\);' "$outputs" ||
   ds_fail "checks.aarch64-darwin is not the darwinChecks of checksFor \"aarch64-darwin\""
+[[ -f $DS_REPO_ROOT/nix/checks/darwin-platform.nix ]] || ds_fail "missing nix/checks/darwin-platform.nix"
+[[ " ${names[*]} " != *" darwin-platform "* ]] ||
+  ds_fail "darwin-platform forces the platform on Linux; it is no check of a Mac"
+grep -qF 'darwinSuites = lib.filter (name: !(lib.elem name wholeTree)) (import ./darwin-checks.nix);' \
+  "$DS_REPO_ROOT/nix/check-sources.nix" || ds_fail "darwinSuites of nix/check-sources.nix are not the darwin checks"
+grep -qF '(import ../check-sources.nix { inherit lib; }).darwinSuites' "$DS_REPO_ROOT/nix/checks/darwin-platform.nix" ||
+  ds_fail "checks.darwin-platform does not run the suites of nix/darwin-checks.nix"
 assert_eq "${#names[@]}" "$(printf '%s\n' "${names[@]}" | LC_ALL=C sort -u | wc -l)" "darwin checks named twice"
 for name in "${names[@]}"; do
   check=$DS_REPO_ROOT/nix/checks/$name.nix
