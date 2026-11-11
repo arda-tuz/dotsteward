@@ -1810,12 +1810,13 @@ class Upgrade(runner.Runner):
             self._still_red(red)
             return
         units = self._generation_units()
-        running = self._unit_states(sorted(name for name in units if not _session_unit(name, self.env)))
+        desktop = self._desktop() if units else ()
+        running = self._unit_states(sorted(name for name in units if not _session_unit(name, desktop)))
         # The rebuild first: an installer keeps a binary newer than its pin, so the copy goes last.
         status = self._ds("rebuild", "--profile", self.profile, "--switch")
         self._restore_binaries(saved)
         if status == 0:
-            self._take_back_services(units, running)
+            self._take_back_services(units, running, desktop)
         self.run.step("go-back", status, detail=reason)
         again = self._run_e2e() if status == 0 else ["rebuild"]
         self.red = True
