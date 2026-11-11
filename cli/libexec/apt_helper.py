@@ -33,19 +33,21 @@ ever sees a target: a plan and a commit read their pin from a temporary director
 hook of dpkg keeps the file right after every dpkg, also when a person calls it.
 
 The version constraints and holds of the instance (`kept` of the request) are a file of their
-own, 61dotsteward-kept, one record per package (`name:any`, every architecture) at 990 and none at
--1, so a version asked for by name still installs: a constraint for a package of the component
-whose installed version is inside it (or, not installed, that has a version inside it); a hold for
-an installed package below the held version, at that version. A package the owner moved out of its
-constraint or past its hold gets no record and a note; a package of a gated class gets none, the
-series rule is its rule. Plan, commit and analysis read these records from the request, never the
-file there.
+own, 61dotsteward-kept. Its records only lower: one per package and rule (`name:any`, every
+architecture) gives -1 to every version outside the rule (`Pin: version /ERE/`), and every version
+inside keeps the priority of its origin, so no record raises a prerelease, a backport or an origin
+the owner turned off, and a version asked for by name still installs. A constraint is a series
+(16, 16.*, 5:27) and binds the packages of the component whose versions are of it; a hold keeps the
+line of the installed upstream version (its Debian revisions) while it is below the held version. A
+package the owner moved out of its rule, one that a package outside the component needs in a version
+outside the rule (a shared library), a constraint nothing matches and a rule that is no series or no
+version get no record and a note; a package of a gated class or firmware gets none. Plan, commit and
+analysis read these records from the request, never the file there.
 """
 
 from __future__ import annotations
 
 import datetime
-import fnmatch
 import functools
 import json
 import os
@@ -78,10 +80,20 @@ PIN_SYNC_FILE = "usr/local/lib/dotsteward/pin-sync.py"
 PIN_HEADER = "# Managed by dotsteward: gated classes stay as dpkg has them. Only `dotsteward upgrade` moves them."
 KEPT_FILE = "61dotsteward-kept"
 KEPT_HEADER = (
-    "# Managed by dotsteward: the version constraints and holds of the instance. Only `dotsteward upgrade` writes it."
+    "# Managed by dotsteward: the version constraints and holds of the instance; change `version` in "
+    "workstation.toml or a platform file, or the hold in hosts/<name>.toml. Only `dotsteward upgrade` writes it."
 )
-KEPT_RECORD = "Explanation: {explanation}\nPackage: {name}:any\nPin: version {version}\nPin-Priority: {priority}\n"
-SERIES_RE = re.compile(r"[0-9]+(?:\.[0-9]+)*")
+KEPT_RECORD = "Explanation: {explanation}\nPackage: {name}:any\nPin: version /{regex}/\nPin-Priority: {priority}\n"
+# The records only lower: what is outside a rule drops to -1, whatever its origin said; what is inside
+# keeps the priority of its origin, so no record raises a version.
+KEPT_PRIORITY = -1
+# A series of a version constraint: an optional epoch, numbers, an optional .* (16, 16.*, 5:27, 1.140).
+SERIES_RE = re.compile(r"(?:([0-9]+):)?([0-9]+(?:\.[0-9]+)*)(?:\.\*)?")
+# What may follow a series inside it (16.4, 16-1, 16+dfsg, 16~rc1), and the Debian revision of a line.
+SERIES_BOUNDARY = ".+~-"
+LINE_BOUNDARY = "-"
+VERSION_TEXT_RE = re.compile(r"[0-9A-Za-z.+~:-]+")
+PACKAGE_RE = re.compile(r"[a-z0-9][a-z0-9+.-]+")
 # The Sources of the gated classes: what the pin holds. The other kernel packages
 # (linux-signed-*, linux-hwe-*) carry the ABI in their names: only these pull them in. A rebuild
 # of the same ABI (~24.04.1 to .2) moves under the pin: the module of that ABI still loads.
@@ -157,15 +169,78 @@ def source_class(name, source):
     return None
 
 
-def constraint_pattern(constraint):
-    """The apt pattern of a version constraint: a series of numbers alone is that series (16 is 16.*)."""
-    text = str(constraint).strip()
-    return f"{text}.*" if SERIES_RE.fullmatch(text) else text
+def split_epoch(version):
+    """(epoch, the rest): the epoch is "0" when the version names none."""
+    match = re.match(r"([0-9]+):(.*)", version)
+    return (match.group(1), match.group(2)) if match else ("0", version)
+
+
+def parse_series(constraint):
+    """(epoch or None for any, the series) of a version constraint, None when it is no series."""
+    match = SERIES_RE.fullmatch(str(constraint).strip())
+    return (match.group(1), match.group(2)) if match else None
+
+
+def in_line(version, epoch, literal, boundary):
+    """Whether VERSION is LITERAL, or LITERAL and then a character of BOUNDARY, with EPOCH (None: any)."""
+    found, rest = split_epoch(version)
+    if epoch is not None and found != epoch:
+        return False
+    if not rest.startswith(literal):
+        return False
+    tail = rest[len(literal) :]
+    return tail == "" or tail[0] in boundary
 
 
 def in_constraint(constraint, version):
-    pattern = constraint_pattern(constraint)
-    return fnmatch.fnmatchcase(version, pattern) or (pattern.endswith(".*") and version == pattern[:-2])
+    series = parse_series(constraint)
+    return series is not None and in_line(version, series[0], series[1], SERIES_BOUNDARY)
+
+
+def _ere(text):
+    return re.sub(r"([.+*?()\[\]{}|^$\\])", r"\\\1", text)
+
+
+def _not_one_of(chars):
+    """A bracket expression of every character but CHARS (a dash goes last)."""
+    chars = sorted(set(chars))
+    dash = "-" in chars
+    return "[^" + "".join(char for char in chars if char != "-") + ("-" if dash else "") + "]"
+
+
+def _rest_outside(literal, boundary, no_colon):
+    """ERE of a rest that is not LITERAL (followed by a character of BOUNDARY or the end). NO_COLON:
+    the whole version has no epoch, so no colon anywhere."""
+    colon = ":" if no_colon else ""
+    tail = "[^:]*" if no_colon else ".*"
+    alternatives = [
+        _ere(literal[:index]) + "($|" + _not_one_of(char + colon) + tail + "$)" for index, char in enumerate(literal)
+    ]
+    alternatives.append(_ere(literal) + _not_one_of(boundary + colon) + tail + "$")
+    return "(" + "|".join(alternatives) + ")"
+
+
+def _other_epoch(epoch):
+    """ERE of an epoch that is not EPOCH."""
+    alternatives = []
+    for index, digit in enumerate(epoch):
+        others = "".join(other for other in "0123456789" if other != digit)
+        alternatives.append(epoch[:index] + "[" + others + "][0-9]*")
+    alternatives += [epoch[:index] for index in range(1, len(epoch))]
+    alternatives.append(epoch + "[0-9]+")
+    return "(" + "|".join(alternatives) + ")"
+
+
+def outside_regex(epoch, literal, boundary):
+    """POSIX ERE (apt_preferences(5) `Pin: version /.../`) of every version outside the line: not
+    LITERAL followed by a character of BOUNDARY or the end, or of another epoch than EPOCH (None:
+    any). Measured by the apt worlds against apt itself."""
+    if epoch is None:
+        parts = ["^[0-9]+:" + _rest_outside(literal, boundary, False), "^" + _rest_outside(literal, boundary, True)]
+    else:
+        parts = ["^" + epoch + ":" + _rest_outside(literal, boundary, False), "^" + _other_epoch(epoch) + ":"]
+        parts.append("^" + _rest_outside(literal, boundary, True) if epoch == "0" else "^[^:]*$")
+    return "|".join(parts)
 
 
 def one_line(text):
@@ -173,53 +248,102 @@ def one_line(text):
 
 
 def gated_package(pkg):
-    """A package of a gated class: the series rule is its rule, never a constraint or a hold."""
+    """A package of a gated class or firmware: the series rule and the kernel are its rules, never a
+    constraint or a hold."""
     sources = {version.source_name for version in pkg.versions}
-    return any(
-        source_class(pkg.shortname, source) in ("kernel", "nvidia-driver", "nvidia-module") for source in sources
+    classes = ("kernel", "nvidia-driver", "nvidia-module", "firmware")
+    return any(source_class(pkg.shortname, source) in classes for source in sources)
+
+
+def shared_with(pkg, inside, packages):
+    """A package outside the component (not in PACKAGES) with a dependency on PKG that only a version
+    outside the rule meets: then a record would break it (another major the owner installs). None
+    when there is none."""
+    versions = [version.ver_str for version in pkg._pkg.version_list if inside(version.ver_str)]
+    for dependency in pkg._pkg.rev_depends_list:
+        if dependency.dep_type_untranslated not in ("Depends", "PreDepends"):
+            continue
+        parent = dependency.parent_pkg.name
+        if parent in packages or not dependency.target_ver:
+            continue
+        if not any(apt_pkg.check_dep(version, dependency.comp_type, dependency.target_ver) for version in versions):
+            return parent
+    return None
+
+
+def _rule_note(code, rule, message, **fields):
+    return report_item(
+        code,
+        component=str(rule.get("component") or ""),
+        version=one_line(rule.get("version")),
+        message=message,
+        **fields,
     )
 
 
 def kept_records(rules, cache):
     """The records of the constraints and holds RULES of the request, by package, and the notes:
-    ({name: {kind, component, version, reason, pin, explanation}}, items). A hold goes before a
-    constraint of the same package: it is the narrower one."""
+    ({name: [{kind, component, version, reason, regex, explanation}]}, items). A record lowers what
+    is outside its rule; a package with two rules gets both."""
     records = {}
     items = []
-    ordered = sorted(rules, key=lambda rule: rule.get("kind") != "hold")
-    for rule in ordered:
+    for rule in rules:
         kind = rule.get("kind")
         version = str(rule.get("version") or "")
-        component = str(rule.get("component") or "")
+        component = one_line(rule.get("component") or "")
         reason = one_line(rule.get("reason") or "")
-        if kind not in ("constraint", "hold") or not version:
+        packages = [str(name) for name in rule.get("packages") or () if PACKAGE_RE.fullmatch(str(name))]
+        if kind == "constraint":
+            series = parse_series(version)
+            if series is None:
+                items.append(
+                    _rule_note(
+                        "kept-invalid",
+                        rule,
+                        f"version {one_line(version)!r} of {component} is no series of versions (16, 16.*, 5:27): "
+                        "it binds nothing",
+                    )
+                )
+                continue
+        elif kind == "hold":
+            if not VERSION_TEXT_RE.fullmatch(version):
+                items.append(
+                    _rule_note("kept-invalid", rule, f"the hold of {component} names no version: it binds nothing")
+                )
+                continue
+        else:
             continue
-        for name in rule.get("packages") or ():
-            if name in records or name not in cache:
+        bound = False
+        for name in packages:
+            if name not in cache:
                 continue
             pkg = cache[name]
             if gated_package(pkg):
                 continue
             installed = pkg.installed.version if pkg.installed is not None else None
             if kind == "constraint":
-                inside = [candidate for candidate in pkg.versions if in_constraint(version, candidate.version)]
-                if installed is not None and not in_constraint(version, installed):
-                    if inside:
-                        items.append(
-                            report_item(
-                                "constraint-outside",
-                                package=name,
-                                component=component,
-                                installed=installed,
-                                version=version,
-                                message=f"{name} {installed} is outside version {version} of {component}: it was "
-                                "moved by hand, so it is not pinned back",
-                            )
+                epoch, literal = series
+                boundary = SERIES_BOUNDARY
+                inside = [
+                    candidate for candidate in pkg.versions if in_line(candidate.version, epoch, literal, boundary)
+                ]
+                if not inside:
+                    # Another scheme of versions (an extension of a server): not what the rule is about.
+                    continue
+                if installed is not None and not in_line(installed, epoch, literal, boundary):
+                    items.append(
+                        report_item(
+                            "constraint-outside",
+                            package=name,
+                            component=component,
+                            installed=installed,
+                            version=version,
+                            message=f"{name} {installed} is outside version {version} of {component}: it was "
+                            "moved by hand, so it is not pinned back",
                         )
+                    )
+                    bound = True
                     continue
-                if installed is None and not inside:
-                    continue
-                pin = constraint_pattern(version)
                 explanation = f"{component}: version {version}"
             else:
                 if installed is None:
@@ -236,19 +360,48 @@ def kept_records(rules, cache):
                             "moved by hand, so it is not held",
                         )
                     )
+                    bound = True
                     continue
-                pin = installed
-                explanation = f"{component}: a hold below {version}"
+                epoch, rest = split_epoch(installed)
+                literal = rest.rpartition("-")[0] or rest
+                boundary = LINE_BOUNDARY
+                explanation = f"{component}: a hold below {version}, the line of {literal} stays"
+            bound = True
+            line = (epoch, literal, boundary)
+            other = shared_with(pkg, lambda text, line=line: in_line(text, *line), set(packages))
+            if other is not None:
+                items.append(
+                    report_item(
+                        "constraint-shared",
+                        package=name,
+                        component=component,
+                        needed_by=other,
+                        version=version,
+                        message=f"{name} is also needed by {other} in a version outside the rule of {component}: "
+                        "a record would break it, so it is only reported",
+                    )
+                )
+                continue
             if reason:
                 explanation += f": {reason}"
-            records[name] = {
-                "kind": kind,
-                "component": component,
-                "version": version,
-                "reason": reason,
-                "pin": pin,
-                "explanation": explanation,
-            }
+            records.setdefault(name, []).append(
+                {
+                    "kind": kind,
+                    "component": component,
+                    "version": version,
+                    "reason": reason,
+                    "regex": outside_regex(epoch, literal, boundary),
+                    "explanation": explanation,
+                }
+            )
+        if kind == "constraint" and not bound:
+            items.append(
+                _rule_note(
+                    "constraint-matches-nothing",
+                    rule,
+                    f"no package of {component} has a version inside {version}: the constraint binds nothing",
+                )
+            )
     return records, items
 
 
@@ -257,8 +410,9 @@ def kept_text(records):
     if not records:
         return None
     body = [
-        KEPT_RECORD.format(explanation=entry["explanation"], name=name, version=entry["pin"], priority=PIN_PRIORITY)
-        for name, entry in sorted(records.items())
+        KEPT_RECORD.format(explanation=entry["explanation"], name=name, regex=entry["regex"], priority=KEPT_PRIORITY)
+        for name, entries in sorted(records.items())
+        for entry in entries
     ]
     return KEPT_HEADER + "\n" + "\n".join(body)
 
@@ -1174,7 +1328,8 @@ def evaluate(session, cache, classes, target):
                 deny("driver-series", name)
             for constrained, wanted in session.constraints.items():
                 major = re.match(rf"^{re.escape(constrained)}-(\d+)$", source)
-                if major and major.group(1) != wanted.split(".")[0]:
+                series = parse_series(wanted)
+                if major and series is not None and major.group(1) != series[1].split(".")[0]:
                     deny("constrained-major", name)
             image = IMAGE_RE.match(short)
             if (
@@ -1482,7 +1637,7 @@ def kept_rows(session, cache, free):
             "candidate": candidate or row["current"],
             "free": row["candidate"],
         }
-        record = records.get(row["short"])
+        record = (records.get(row["short"]) or [None])[0]
         if record is not None:
             entry.update(
                 why=record["kind"], component=record["component"], version=record["version"], reason=record["reason"]

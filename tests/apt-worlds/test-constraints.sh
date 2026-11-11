@@ -2,11 +2,12 @@
 # shellcheck disable=SC2154 # DS_* variables come from tests/lib/harness.sh
 # shellcheck disable=SC2016 # the header names a command in backquotes on purpose
 # The version constraints and holds of the instance bind apt: `policy` writes them to a file of
-# their own, 61dotsteward-kept, one record per package at 990 and no -1, so a version the owner
-# asks for by name still installs. A constraint record goes to a package of the component whose
-# version is inside it; a package whose versions are another scheme gets none, and one the owner
-# moved out of its constraint gets none either and only a note. A hold keeps the installed version
-# while it is below the held one; past it (the owner moved it) there is no record and a note. A
+# their own, 61dotsteward-kept: one record per package and rule that lowers what is outside the rule
+# to -1 (tests/apt-worlds/test-constraints-safe.sh: never raises), so a version the owner asks for by
+# name still installs. A constraint record goes to a package of the component whose versions are of
+# its series; a package whose versions are another scheme gets none, and one the owner moved out of
+# its constraint gets none either and only a note. A hold keeps the line of the installed upstream
+# version while it is below the held one; past it (the owner moved it) there is no record and a note. A
 # package of no component, such as another major the owner installed, is never pinned, and a gated
 # class is left to the series rule. Plan, commit and analysis read the records the request gives,
 # never a file left by an older run; the analysis says what they keep and why. The check of E2E only
@@ -43,32 +44,22 @@ upgraded_to() {
   jq -r --arg name "$1" '[.changes.upgrade[] | select(.name == $name) | .version] | first // "none"' "$PLAN"
 }
 
-header='# Managed by dotsteward: the version constraints and holds of the instance. Only `dotsteward upgrade` writes it.'
-expected="$header
-Explanation: sampleapp: a hold below 2.0-1: E2E red: sampleapp:start
-Package: sampleapp:any
-Pin: version 1.0-1
-Pin-Priority: 990
-
-Explanation: sampledbms: version 16.*: the clusters run on 16
-Package: sampledbms-16:any
-Pin: version 16.*
-Pin-Priority: 990
-
-Explanation: sampledbms: version 16.*: the clusters run on 16
-Package: sampledbms-client:any
-Pin: version 16.*
-Pin-Priority: 990
-
-Explanation: sampledbms: version 16.*: the clusters run on 16
-Package: sampledbms-lib:any
-Pin: version 16.*
-Pin-Priority: 990
-
-Explanation: samplenew: version 16: the same major as the server
-Package: samplenew:any
-Pin: version 16.*
-Pin-Priority: 990"
+header='# Managed by dotsteward: the version constraints and holds of the instance; change `version` in workstation.toml or a platform file, or the hold in hosts/<name>.toml. Only `dotsteward upgrade` writes it.'
+# record NAME EXPLANATION: the record of NAME with its explanation, at -1.
+record() {
+  printf 'Explanation: %s\nPackage: %s:any\nPin: version /' "$2" "$1"
+}
+records() {
+  local text=$1
+  assert_contains "$text" "$header"
+  assert_contains "$text" "$(record sampleapp 'sampleapp: a hold below 2.0-1, the line of 1.0 stays: E2E red: sampleapp:start')"
+  assert_contains "$text" "$(record sampledbms-16 'sampledbms: version 16.*: the clusters run on 16')"
+  assert_contains "$text" "$(record sampledbms-client 'sampledbms: version 16.*: the clusters run on 16')"
+  assert_contains "$text" "$(record sampledbms-lib 'sampledbms: version 16.*: the clusters run on 16')"
+  assert_contains "$text" "$(record samplenew 'samplenew: version 16: the same major as the server')"
+  assert_eq 5 "$(grep -c '^Pin-Priority: -1$' <<<"$text")"
+  assert_eq 5 "$(grep -c '^Package: ' <<<"$text")"
+}
 
 # --- what `files` says and `policy` writes ------------------------------------------------------
 world_up constraints
@@ -77,11 +68,12 @@ files=$DS_TEST_ROOT/out/files.json
 APT_CONFIG=$WORLD/apt.conf ds_python dotsteward_cli.apt_plan files --request - <<<"$KEPT" >"$files" ||
   ds_fail "files failed"
 assert_eq "$kept" "$(jq -r .kept.path "$files")"
-assert_eq "$expected" "$(jq -r .kept.text "$files")"
+records "$(jq -r .kept.text "$files")"
 [[ ! -e $kept ]] || ds_fail "files wrote the file"
 
 policy "$KEPT"
-assert_eq "$expected" "$(<"$kept")"
+records "$(<"$kept")"
+assert_eq "$(jq -r .kept.text "$files")" "$(<"$kept")"
 assert_file_mode "$kept" 644
 assert_json "$POLICY" '.kept.present == true and .kept.changed == true'
 assert_json "$POLICY" '[.items[] | select(.code == "constraint-outside")] | length == 1'
@@ -92,7 +84,7 @@ assert_not_contains "$(<"$kept")" "sampledbms-17"
 assert_not_contains "$(<"$kept")" "sampledbms-16-ext-3"
 assert_not_contains "$(<"$kept")" "sampletool"
 assert_not_contains "$(<"$kept")" "sampleheld"
-assert_not_contains "$(<"$kept")" "Pin-Priority: -1"
+assert_not_contains "$(<"$kept")" "Pin-Priority: 990"
 # The gated classes have their own file; this one does not depend on them.
 [[ ! -e $WORLD/etc/apt/preferences.d/60dotsteward ]] || [[ $(<"$WORLD/etc/apt/preferences.d/60dotsteward") != *sampledbms* ]] ||
   ds_fail "the records went into the pin file of the gated classes"
