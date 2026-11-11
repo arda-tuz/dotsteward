@@ -10,6 +10,7 @@
 # records the identity and the files it vouches for. A signed source whose file lacks an
 # attestation, an attestation of another file, a lookup without an answer: the pin stays (a
 # review item, or the group waits for the next run), and the requirements are put back.
+# pins check refuses a signed pin whose requirements allow a file beyond its attestations.
 # The transitive requirements stay hash-pinned only.
 # shellcheck source=tests/engines/pins/apply/helpers.sh
 source "$DS_REPO_ROOT/tests/engines/pins/apply/helpers.sh"
@@ -117,6 +118,25 @@ assert_eq "$(jq -c --arg id "$workflow/v1.1.0" --arg p "$publish" --slurpfile fi
   '{kind: "attestation", subject: "distributions", predicate_type: $p, identity: $id, files: $files[0]}')" "$(signature .)"
 assert_eq '[{"id":"pypi.example-tool","status":"sigstore","identity":"'"$workflow/v1.1.0"'","first_use":true}]' \
   "$(last_report '[.steps[] | select(.moved) | .authenticity[]]')"
+assert_exit 0 pins check
+# pins check holds a signed pin to what its attestations vouch for: a file the requirements
+# allow beyond them, or a signed source whose pin records no signature, is red.
+signed=$(commit "the pypi pin is signed")
+python3 - "$requirements" <<'PY'
+import sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+text = text.replace("example-tool==1.1.0 \\\n", "example-tool==1.1.0 \\\n    --hash=sha256:" + "9" * 64 + " \\\n", 1)
+open(path, "w", encoding="utf-8").write(text)
+PY
+assert_contains "$(<"$requirements")" "--hash=sha256:$(printf '9%.0s' {1..64})"
+assert_exit 1 pins check
+assert_contains "$DS_STDERR" "pypi.example-tool: the requirements allow a file its attestations do not vouch for: sha256:$(printf '9%.0s' {1..64})"
+at "$signed"
+json_edit "$versions" 'del data["pypi"]["example-tool"]["signature"]'
+assert_exit 1 pins check
+assert_contains "$DS_STDERR" "trust.signers.pypi.example-tool: a signed source, and pypi.example-tool records no signature"
+at "$signed"
 assert_exit 0 pins check
 
 # --- A pinned signer: the next move verifies against it. -----------------------------------
