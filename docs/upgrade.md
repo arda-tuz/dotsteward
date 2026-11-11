@@ -221,8 +221,9 @@ since = "2026-11-03T08:00:00Z"
 `version` of a component is a series: an optional epoch, numbers separated by dots and an optional
 `.*` (`16`, `16.*`, `1.140`, `5:27`). A version is inside it when the part after its epoch is the
 series, or the series and then `.`, `-`, `+` or `~` (`16.4`, `16-1`, `1.2+dfsg-1`, `16~rc1`); a
-series without an epoch takes every epoch. Anything else (`^16`, `>=16`, `16.x`, `16*`) is refused
-when the configuration is read. The kind of a hold is part of its key, so a pin id that is also the
+series without an epoch takes every epoch. One exact version that is no series (`1.140.0-1`, as
+earlier releases took it) keeps the pin and the packages on exactly that version, and a newer one
+waits for you. Anything else (`^16`, `>=16`, `16*`) is refused when the configuration is read. The kind of a hold is part of its key, so a pin id that is also the
 name of a component stays a pin hold; a bare name, as earlier releases wrote it, is a component hold.
 
 | Rule | The writer (pins of the shared lock) | apt, in the sudo window | The analysis |

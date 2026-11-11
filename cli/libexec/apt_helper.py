@@ -93,6 +93,8 @@ SERIES_RE = re.compile(r"(?:([0-9]+):)?([0-9]+(?:\.[0-9]+)*)(?:\.\*)?")
 SERIES_BOUNDARY = ".+~-"
 LINE_BOUNDARY = "-"
 VERSION_TEXT_RE = re.compile(r"[0-9A-Za-z.+~:-]+")
+# An exact version constraint of an earlier release: that version alone.
+EXACT_RE = re.compile(r"[0-9][0-9A-Za-z.+~:-]*")
 PACKAGE_RE = re.compile(r"[a-z0-9][a-z0-9+.-]+")
 # The Sources of the gated classes: what the pin holds. The other kernel packages
 # (linux-signed-*, linux-hwe-*) carry the ABI in their names: only these pull them in. A rebuild
@@ -181,6 +183,19 @@ def parse_series(constraint):
     return (match.group(1), match.group(2)) if match else None
 
 
+def parse_rule(constraint):
+    """(epoch, literal, boundary) of a version constraint: a series, or one exact version (nothing may
+    follow it, its epoch is its own); None when it is neither."""
+    series = parse_series(constraint)
+    if series is not None:
+        return (series[0], series[1], SERIES_BOUNDARY)
+    text = str(constraint).strip()
+    if not EXACT_RE.fullmatch(text):
+        return None
+    epoch, rest = split_epoch(text)
+    return (epoch, rest, "")
+
+
 def in_line(version, epoch, literal, boundary):
     """Whether VERSION is LITERAL, or LITERAL and then a character of BOUNDARY, with EPOCH (None: any)."""
     found, rest = split_epoch(version)
@@ -193,8 +208,8 @@ def in_line(version, epoch, literal, boundary):
 
 
 def in_constraint(constraint, version):
-    series = parse_series(constraint)
-    return series is not None and in_line(version, series[0], series[1], SERIES_BOUNDARY)
+    rule = parse_rule(constraint)
+    return rule is not None and in_line(version, *rule)
 
 
 def _ere(text):
@@ -216,7 +231,8 @@ def _rest_outside(literal, boundary, no_colon):
     alternatives = [
         _ere(literal[:index]) + "($|" + _not_one_of(char + colon) + tail + "$)" for index, char in enumerate(literal)
     ]
-    alternatives.append(_ere(literal) + _not_one_of(boundary + colon) + tail + "$")
+    follows = _not_one_of(boundary + colon) if boundary + colon else "."
+    alternatives.append(_ere(literal) + follows + tail + "$")
     return "(" + "|".join(alternatives) + ")"
 
 
@@ -294,14 +310,14 @@ def kept_records(rules, cache):
         reason = one_line(rule.get("reason") or "")
         packages = [str(name) for name in rule.get("packages") or () if PACKAGE_RE.fullmatch(str(name))]
         if kind == "constraint":
-            series = parse_series(version)
+            series = parse_rule(version)
             if series is None:
                 items.append(
                     _rule_note(
                         "kept-invalid",
                         rule,
-                        f"version {one_line(version)!r} of {component} is no series of versions (16, 16.*, 5:27): "
-                        "it binds nothing",
+                        f"version {one_line(version)!r} of {component} is no series of versions (16, 16.*, 5:27) "
+                        "and no version: it binds nothing",
                     )
                 )
                 continue
@@ -322,8 +338,7 @@ def kept_records(rules, cache):
                 continue
             installed = pkg.installed.version if pkg.installed is not None else None
             if kind == "constraint":
-                epoch, literal = series
-                boundary = SERIES_BOUNDARY
+                epoch, literal, boundary = series
                 inside = [
                     candidate for candidate in pkg.versions if in_line(candidate.version, epoch, literal, boundary)
                 ]

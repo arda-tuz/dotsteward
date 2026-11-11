@@ -26,7 +26,8 @@ A version constraint (``version`` of a component) is a series: an optional epoch
 separated by dots and an optional ``.*`` (``16``, ``16.*``, ``1.140``, ``5:27``). A version is inside
 it when the part after its epoch is the series, or the series and then ``.``, ``-``, ``+`` or ``~``
 (``16.4``, ``16-1``, ``1.2+dfsg-1``, ``16~rc1``); a constraint without an epoch takes every epoch.
-``SERIES`` is the pattern of the schemas, ``in_constraint`` the answer, the same for apt
+An exact version that is no series (``1.140.0-1``, as earlier releases took it) is that version
+alone. ``in_constraint`` is the answer, the same for apt
 (``cli/libexec/apt_helper.py``) and for every other channel.
 
 Where dpkg is at hand and the versions are of installed packages,
@@ -159,20 +160,21 @@ def numeric_parts(version: Any) -> tuple[int, ...]:
     return tuple(int(part[:32]) for part in _DIGITS.findall(str(version)))
 
 
-SERIES = r"^([0-9]+:)?[0-9]+(\.[0-9]+)*(\.\*)?$"
+_EXACT = re.compile(r"[0-9][0-9A-Za-z.+~:-]*")
 _SERIES_PARTS = re.compile(r"(?:([0-9]+):)?([0-9]+(?:\.[0-9]+)*)(?:\.\*)?")
 _SERIES_BOUNDARY = ".+~-"
 
 
 def in_constraint(constraint: str, version: Any) -> bool:
-    """Whether VERSION is inside the series CONSTRAINT (False for a constraint that is no series); a
-    leading v of a release tag is not part of the version."""
+    """Whether VERSION is inside the series CONSTRAINT, or is the exact version it names; a leading v
+    of a release tag is not part of the version."""
     series = _SERIES_PARTS.fullmatch(str(constraint).strip())
-    if series is None:
-        return False
     text = str(version).strip()
     if text[:1] == "v" and text[1:2] in _ASCII_DIGITS:
         text = text[1:]
+    if series is None:
+        exact = str(constraint).strip()
+        return bool(_EXACT.fullmatch(exact)) and compare(text, exact) == 0
     match = _EPOCH.fullmatch(text)
     epoch, rest = (match.group(1), match.group(2)) if match else ("0", text)
     if series.group(1) is not None and series.group(1) != epoch:

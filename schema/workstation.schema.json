@@ -865,9 +865,9 @@
         },
         "version": {
           "type": "string",
-          "pattern": "^([0-9]+:)?[0-9]+(\\.[0-9]+)*(\\.\\*)?$",
+          "pattern": "^(([0-9]+:)?[0-9]+(\\.[0-9]+)*(\\.\\*)?|[0-9][0-9A-Za-z.+~:-]*)$",
           "default": null,
-          "description": "A constraint on the version: a series, an optional epoch, numbers and an optional .* (16, 16.*, 1.140, 5:27). The writer moves a pin of the component only inside it, apt lowers the versions of a `deb` component outside it, and a constrained server refuses another major."
+          "description": "A constraint on the version: a series, an optional epoch, numbers and an optional .* (16, 16.*, 1.140, 5:27), or one exact version (1.140.0-1) to stay on. The writer moves a pin of the component only inside it, apt lowers the versions of a `deb` component outside it, and a constrained server refuses another major."
         },
         "reason": {
           "$ref": "#/$defs/nonEmptyString",

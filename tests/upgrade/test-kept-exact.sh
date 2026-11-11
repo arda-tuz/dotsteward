@@ -23,7 +23,7 @@ git -C "$up_inst" commit -q -m "chore: an exact constraint"
 git -C "$up_inst" push -q origin HEAD:main
 
 move example.other 3.0.0 pypi
-assert_exit 0 on_terminal -- --tracked
+assert_exit 0 on_terminal 'Update these too=n' -- --tracked
 assert_eq ok "$(step_status gate)"
 assert_eq ok "$(step_status publish)"
 assert_eq 3.0.0 "$(git -C "$up_bare" show main:versions.lock.json | jq -r '."example.other"')"
