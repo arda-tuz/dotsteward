@@ -141,24 +141,31 @@ def _installed_version(package: str) -> str | None:
     return version.strip() or None
 
 
-# The names of the desktop that runs: each part of these variables, colon separated.
-_DESKTOP_VARIABLES = ("XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION")
+# The names of the desktop that runs: each part of XDG_CURRENT_DESKTOP, colon separated. The
+# session variables (XDG_SESSION_DESKTOP, DESKTOP_SESSION) name a session, which is no unit prefix
+# (the session of a distribution is named after the distribution), so they name no desktop here.
+_DESKTOP_VARIABLE = "XDG_CURRENT_DESKTOP"
 # The units that are clearly the framework's or Home Manager's own, the only ones the way back
 # takes back when no environment names the desktop that runs.
 _FRAMEWORK_UNITS = ("dotsteward*", "home-manager*")
 
 
-def _desktop_units(*envs: Mapping[str, str]) -> tuple[str, ...] | None:
-    """The unit patterns of the desktop that runs: <name>-* and org.<name>.* for each of its names
-    in any of ENVS (lower case, letters, digits, dots, dashes and underscores only), as desktops
-    name their user services. None when no environment names a desktop."""
-    names = {
+def _names(value: str) -> set[str]:
+    """The parts of a colon separated value, lower case, of letters, digits, dots, dashes and
+    underscores only."""
+    return {
         part
-        for env in envs
-        for variable in _DESKTOP_VARIABLES
-        for part in (piece.strip().lower() for piece in env.get(variable, "").split(":"))
+        for part in (piece.strip().lower() for piece in value.split(":"))
         if part and all(char.isalnum() or char in "._-" for char in part)
     }
+
+
+def _desktop_units(*envs: Mapping[str, str]) -> tuple[str, ...] | None:
+    """The unit patterns of the desktop that runs: <name>-* and org.<name>.* for each name of
+    XDG_CURRENT_DESKTOP in any of ENVS, as desktops name their user services. None, so that only
+    the framework's units go back, when none names a desktop there, whatever a session variable
+    says."""
+    names = {name for env in envs for name in _names(env.get(_DESKTOP_VARIABLE, ""))}
     if not names:
         return None
     return tuple(pattern for name in sorted(names) for pattern in (f"{name}-*", f"org.{name}.*"))

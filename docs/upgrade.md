@@ -212,11 +212,11 @@ left to the vendor. Without a terminal it is never applied.
   manages) one that only the moved generation has is stopped and one whose file it changed is
   restarted, unless the rebuild back restarted it (`systemctl --user`); a unit no generation has, and
   a session unit (D-Bus, the session manager, the audio server and the like, and `<name>-*` and
-  `org.<name>.*` for each name of the desktop that runs in `XDG_CURRENT_DESKTOP`,
-  `XDG_SESSION_DESKTOP` and `DESKTOP_SESSION`, of this command and of the user manager,
-  `systemctl --user show-environment`, so a run over SSH or from a timer protects the desktop too),
-  is never touched; when neither environment names a desktop, only the `dotsteward*` and
-  `home-manager*` units of the moved generation go back, and E2E checks the way back. When that is
+  `org.<name>.*` for each name of the desktop that runs in `XDG_CURRENT_DESKTOP` of this command
+  and of the user manager, `systemctl --user show-environment`, so a run over SSH or from a timer
+  protects the desktop too), is never touched; when neither environment names a desktop there (a
+  session name in `XDG_SESSION_DESKTOP` or `DESKTOP_SESSION` is no unit prefix and counts as no
+  name), only the `dotsteward*` and `home-manager*` units of the moved generation go back, and E2E checks the way back. When that is
   green, the pins of each red component, named by the pin of its binary or by its name in the pin
   id, get a local hold in `<state>/holds.json`, or all that moved when the checks name none; the writer leaves those pins until upstream calls something newer the
   latest, and each run says what is held. Item `red-held`, exit 3. If the way back is red too, the
