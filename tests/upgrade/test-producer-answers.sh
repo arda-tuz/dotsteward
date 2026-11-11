@@ -5,7 +5,7 @@
 # the order of their names:
 # - a pin goes back only to a value every consumer that holds it back was green on, through the
 #   writer (pins apply --restore), named in the commit message; two such consumers green on
-#   different values, or another consumer whose last green run had a newer value, hold it where it
+#   different values, or another consumer whose last green run had another value, hold it where it
 #   is and wait for a person;
 # - a record is open while its red pin still has the value of its red lock, whatever else moved
 #   since (a publish of another pin while the consumer went back answers nothing);
@@ -13,7 +13,8 @@
 #   person instead of passing as answered;
 # - a record this producer cannot read, or a hold with fields it does not know, is said, never
 #   acted on;
-# - a put back the gate refuses waits for a person and is not tried again for that lock.
+# - a put back the gate refuses, or that goes red in the E2E of the producer, waits for a person
+#   and is not tried again for that lock.
 # shellcheck source=tests/upgrade/helpers.sh
 source "$DS_REPO_ROOT/tests/upgrade/helpers.sh"
 
@@ -152,3 +153,28 @@ assert_exit 3 on_terminal 'Update these too=n' -- --tracked
 assert_not_contains "$(<"$UP_LOG")" "--restore"
 assert_eq '[{"code":"consumer-red","person":true,"machines":["other-a"],"ids":[]}]' "$(items)"
 rm -f -- "$UP_CONTROL/during-gate" "$UP_CONTROL/static-red"
+
+# --- every consumer that reports a green run must be green on the value it goes back to -------------------
+forget other-a other-b
+reset_remote
+rm -f -- "$DOTSTEWARD_STATE_ROOT/upgrade/refused-restores.json"
+record other-a "$(held "$x2" "$y")"
+record other-b "$(jq -cn --arg c "$x1" '{intent_commit: $c, generation: {e2e: "pass", at: "2026-01-02T00:00:00Z"}}')"
+assert_exit 3 on_terminal 'Update these too=n' -- --tracked
+assert_eq 2.0.0 "$(published agent_tools.codex.linux)"
+reset_remote
+record other-b "$(jq -cn --arg c "$x2" '{intent_commit: $c, generation: {e2e: "pass", at: "2026-01-02T00:00:00Z"}}')"
+assert_exit 0 on_terminal 'Update these too=n' -- --tracked
+assert_eq 1.5.0 "$(published agent_tools.codex.linux)"
+reset_remote
+
+# --- a put back red in the E2E of the producer waits for a person too --------------------------------------
+forget other-a other-b
+record other-a "$(held "$x2" "$y")"
+printf 'codex:version\n' >"$UP_CONTROL/e2e-red-once"
+on_terminal 'Update these too=n' -- --tracked >/dev/null 2>&1 || true
+assert_eq 2.0.0 "$(published agent_tools.codex.linux)"
+clear_log
+assert_exit 3 on_terminal 'Update these too=n' -- --tracked
+assert_not_contains "$(<"$UP_LOG")" "--restore"
+assert_contains "$(items)" '"person":true'

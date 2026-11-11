@@ -4,8 +4,9 @@
 # The hold of a consumer (T19) holds wherever the red lock could become active, and never looks
 # green:
 # - a held run says "held, unverified" and waits (exit 3): nothing of this run is checked;
-# - when the red lock became active outside upgrade (a rebuild by hand), the next run checks it
-#   with E2E and goes back again, never "held" over an active red lock;
+# - when the red lock became active outside upgrade (a rebuild by hand), also a later lock that
+#   still has the red pin, the next run checks it with E2E and goes back again, never "held" over
+#   an active red lock;
 # - a lock that moves only what did not go red here is not tried again: no rebuild and no E2E
 #   until something it watches moves (the pins of what went red, or every moved path when the
 #   producer has no pin to put back);
@@ -83,6 +84,16 @@ assert_exit 3 on_terminal 'Update these too=n' -- --tracked
 assert_no_step '^rebuild '
 assert_no_step '^e2e '
 assert_json "$marker" ".lock_commit == \"$y\""
+assert_eq "$x" "$(active)"
+# Activated by hand now, this later lock still has the red pin: E2E checks it and the way back follows.
+z=$(remote_oid)
+"$fw/cli/dotsteward" --instance "$up_inst" rebuild --profile workstation --switch </dev/null >/dev/null 2>&1 ||
+  ds_fail "the rebuild by hand failed"
+assert_eq "$z" "$(active)"
+printf 'codex:version\n' >"$UP_CONTROL/e2e-red-once"
+clear_log
+assert_exit 3 on_terminal -- --tracked
+assert_order "^e2e .*root=$up_inst\$" '^rebuild .*root=.*/upgrade/work$' '^e2e .*root=.*/upgrade/work$'
 assert_eq "$x" "$(active)"
 # The red pin moves: the new lock is tried.
 publish_lock agent_tools.codex.linux 2.1.0

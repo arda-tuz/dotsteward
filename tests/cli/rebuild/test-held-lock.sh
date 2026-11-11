@@ -3,8 +3,9 @@
 # A consumer that holds back a shared lock (T19, <state>/upgrade/held-at.json) never activates it
 # by hand: `rebuild --switch` of a checkout whose shared lock is the one that went red here is
 # refused before anything is written, and says how to go on. --build-only activates nothing and
-# --ignore-hold builds it anyway (the next `upgrade` checks it with E2E). Another lock, the
-# producer itself, or a machine without a marker are never asked.
+# --ignore-hold builds it anyway (the next `upgrade` checks it with E2E). A later lock that moved
+# nothing the marker watches is held as well; one that moved it, the producer itself, or a
+# machine without a marker are never asked.
 # shellcheck source=tests/cli/rebuild/helpers.sh
 source "$DS_REPO_ROOT/tests/cli/rebuild/helpers.sh"
 
@@ -45,8 +46,19 @@ assert_exit 0 run_rebuild --profile workstation --build-only
 assert_exit 0 run_rebuild --profile workstation --switch --ignore-hold
 assert_eq "$head" "$(jq -r .revision "$rb_current/activation.json")"
 
-# Another lock is no reason.
+# Another lock is no reason, unless it keeps what went red: the marker watches it.
+watch=$(PYTHONPATH=$rb_fw/cli/python python3 -c '
+import json, sys
+from pathlib import Path
+from dotsteward_cli.upgrade import consumer
+print(json.dumps(consumer.watched_values(Path(sys.argv[1]), sys.argv[2], ["flake.lock.nixpkgs"])))' "$rb_inst" "$head")
 marker "$(printf '0%.0s' {1..64})"
+jq --argjson watch "$watch" '.watch = $watch' "$rb_state/upgrade/held-at.json" >"$rb_state/upgrade/held.json"
+mv -- "$rb_state/upgrade/held.json" "$rb_state/upgrade/held-at.json"
+assert_exit 1 run_rebuild --profile workstation --switch
+assert_contains "$DS_STDERR" "this machine holds back the shared lock of ${head:0:12}"
+jq '.watch["flake.lock.nixpkgs"] = "moved"' "$rb_state/upgrade/held-at.json" >"$rb_state/upgrade/held.json"
+mv -- "$rb_state/upgrade/held.json" "$rb_state/upgrade/held-at.json"
 assert_exit 0 run_rebuild --profile workstation --switch
 
 # On the producer a marker means nothing.
