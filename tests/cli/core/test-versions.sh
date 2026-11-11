@@ -13,7 +13,8 @@ source "$DS_REPO_ROOT/tests/cli/core/helpers.sh"
 # (after ~, after - and a letter, or attached like rc1 and .dev0) and before its
 # package revisions (after - and a digit) and what follows + (as esm1 in an
 # index, build5 in a release); parts compare as numbers and words, numbers first;
-# a missing part sorts first; a leading v and an epoch are understood.
+# a missing part sorts first; a leading v and an epoch are understood, also the
+# Python spellings (c and preview for a release candidate, N! for an epoch).
 pairs=(
   "1.2.3 1.2.3 0"
   "1.2.3 1.2.4 -1"
@@ -38,6 +39,12 @@ pairs=(
   "1.2.3rc1 1.2.3-rc1 0"
   "1.2.3RC1 1.2.3rc1 0"
   "1.2.3.dev0 1.2.3 -1"
+  "2.0.0c1 2.0.0 -1"
+  "2.0.0c1 2.0.0rc1 0"
+  "2.0.0preview1 2.0.0 -1"
+  "2.0.0.preview1 2.0.0 -1"
+  "1!1.0 2.0 1"
+  "1!1.0 1:1.0 0"
   "7.1.0.beta1 7.1.0 -1"
   "7.1.0.beta1 7.1.0.beta2 -1"
   "1.2.3.rc1 1.2.3 -1"
