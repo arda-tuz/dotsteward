@@ -3,11 +3,13 @@
 # shellcheck disable=SC2016 # the scripts of tool_stub and the hooks run later and are single-quoted on purpose
 # The way back protects the units of the desktop that runs also when `dotsteward upgrade` runs
 # without the desktop in its own environment (over SSH, from cron or a systemd timer): the names of
-# the desktop come from the user manager too (systemctl --user show-environment: XDG_CURRENT_DESKTOP,
-# XDG_SESSION_DESKTOP, DESKTOP_SESSION), whose units the way back stops and restarts. When neither
+# the desktop come from the user manager too (systemctl --user show-environment:
+# XDG_CURRENT_DESKTOP), whose units the way back stops and restarts. When neither
 # names a desktop, the way back takes back only what is clearly the framework's (dotsteward-* and
 # home-manager-* units of the moved generation) and leaves every other unit as it runs, since any of
-# them could be a unit of the desktop. dbus, the audio server and the portals stay protected always.
+# them could be a unit of the desktop. A session name (XDG_SESSION_DESKTOP, DESKTOP_SESSION) is no
+# unit prefix (the session of a distribution is named after it): alone it counts as no name.
+# dbus, the audio server and the portals stay protected always.
 # shellcheck source=tests/upgrade/helpers.sh
 source "$DS_REPO_ROOT/tests/upgrade/helpers.sh"
 
@@ -65,8 +67,8 @@ go_back 2.0.0
 assert_eq "systemctl --user stop --no-pager -- dotsteward-example.service example-daemon.service home-manager-example.service" \
   "$(steps '^systemctl --user stop ')"
 assert_eq "systemctl --user restart --no-pager -- example-changed.service" "$(steps '^systemctl --user restart ')"
-assert_eq "example-changed.service org.otherdesk.Shell.service otherdesk-keyring-daemon.service xdg-desktop-portal.service " "$(running)" \
-  "the units that run after the way back"
+assert_eq "example-changed.service org.otherdesk.Shell.service otherdesk-keyring-daemon.service xdg-desktop-portal.service " \
+  "$(running)" "the units that run after the way back"
 
 # Neither names a desktop: only the framework's units go back; the rest runs as it is.
 printf 'HOME=/home/example\n' >"$UP_CONTROL/manager-environment"
@@ -76,4 +78,15 @@ assert_eq "systemctl --user stop --no-pager -- dotsteward-example.service home-m
 assert_no_step '^systemctl --user restart '
 assert_eq "example-changed.service example-daemon.service org.otherdesk.Shell.service otherdesk-keyring-daemon.service xdg-desktop-portal.service " \
   "$(running)" "the units that run after the way back without a desktop name"
+assert_contains "$DS_STDOUT" "no desktop name"
+
+# Only a session name, the one a distribution names its session after: as no name at all, since
+# the units of its desktop are named after the desktop.
+printf 'HOME=/home/example\nXDG_SESSION_DESKTOP=ubuntu\nDESKTOP_SESSION=ubuntu\n' >"$UP_CONTROL/manager-environment"
+go_back 4.0.0
+assert_eq "systemctl --user stop --no-pager -- dotsteward-example.service home-manager-example.service" \
+  "$(steps '^systemctl --user stop ')"
+assert_no_step '^systemctl --user restart '
+assert_eq "example-changed.service example-daemon.service org.otherdesk.Shell.service otherdesk-keyring-daemon.service xdg-desktop-portal.service " \
+  "$(running)" "the units that run after the way back with only a session name"
 assert_contains "$DS_STDOUT" "no desktop name"
