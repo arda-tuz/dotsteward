@@ -28,6 +28,9 @@ refused or failed, 2 usage error, unless a subcommand says otherwise.
                                  {"steps": [{"name": N, "code": STATUS, ...}], "items":
                                  [{"code": C, "pending": P, ...}], "data": {...}};
                                  prints where as JSON; its exit code is the run's
+    held-lock TREEISH            exit 1 with the reason on standard error when TREEISH
+                                 has the shared lock this consumer holds back (T19,
+                                 upgrade.consumer.refusal); 0 otherwise
     e2e-checks                   after a full `dotsteward e2e` run: {"checks": [ids],
                                  "failed": [steps]} on standard input; the tracked deb
                                  components it checked pass or fail with it
@@ -217,6 +220,20 @@ def _report_write(args: argparse.Namespace) -> int:
     return run.exit_code
 
 
+def _held_lock(args: argparse.Namespace) -> int:
+    from dotsteward_cli import config, machine
+    from dotsteward_cli.upgrade import consumer, facts
+
+    instance = config.load_instance()
+    state_root = config.state_root(instance)
+    name = machine.current_name(machine.read_machine(state_root), os.environ)
+    reason = consumer.refusal(instance.root, state_root, args.treeish, facts.role(instance, name))
+    if reason is None:
+        return 0
+    print(reason, file=sys.stderr)
+    return 1
+
+
 def _e2e_checks(args: argparse.Namespace) -> int:
     from dotsteward_cli import config, machine, state
 
@@ -246,6 +263,10 @@ def _parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     commands = parser.add_subparsers(dest="subcommand", required=True)
+
+    held = commands.add_parser("held-lock", allow_abbrev=False)
+    held.add_argument("treeish")
+    held.set_defaults(handler=_held_lock)
 
     compare = commands.add_parser("version-compare", allow_abbrev=False)
     compare.add_argument("left")

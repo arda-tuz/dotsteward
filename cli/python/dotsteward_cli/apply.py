@@ -45,7 +45,7 @@ from typing import Any
 from dotsteward_cli import atomic, config, context, doctor, firmware, locks, machine, report, runner, writers
 from dotsteward_cli import publish as publishing
 from dotsteward_cli.host import commit_identity, commit_message
-from dotsteward_cli.upgrade import facts
+from dotsteward_cli.upgrade import consumer, facts
 
 EXIT_USAGE = 2
 EXIT_INTERRUPTED = 130
@@ -409,7 +409,14 @@ class Apply(_Checkout):
         for number in (signal.SIGTERM, signal.SIGHUP):
             signal.signal(number, interrupted)
         try:
-            committed = self._start() and self._stage() and self._generate() and self._gate() and self._commit()
+            committed = (
+                self._start()
+                and self._stage()
+                and self._generate()
+                and self._not_held()
+                and self._gate()
+                and self._commit()
+            )
             if committed and self.base != self.tip and not self.offline:
                 # A run that stopped after a lost race: the commits move onto the tip first.
                 committed = self._move_on()
@@ -420,6 +427,17 @@ class Apply(_Checkout):
             self.run.mark_interrupted(self.run.interrupted or ["SIGINT"])
             self.run.step("interrupted", report.FAILED, detail="the same command goes on from here")
         return self._end()
+
+    def _not_held(self) -> bool:
+        """A consumer never activates the shared lock that went red here (T19): the staged tree with
+        that lock is refused before the gate, and stays staged."""
+        if not self.activate:
+            return True
+        tree = self._git("write-tree").stdout.strip()
+        reason = consumer.refusal(self.root, self.state_root, tree, facts.role(self.instance, self.name))
+        if reason is None:
+            return True
+        return self._refuse(f"{reason}; --no-activate commits it without activating it here")
 
     def _refuse(self, message: str) -> bool:
         _error(message)

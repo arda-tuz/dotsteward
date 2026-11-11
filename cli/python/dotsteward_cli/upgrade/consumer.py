@@ -94,10 +94,10 @@ def _shared_files(root: Path, commit: str) -> dict[str, str]:
 
 
 def lock_digest(root: Path, commit: str) -> str | None:
-    """What the shared lock of COMMIT says, whatever else the commit holds: the pins of the pin
-    file, the locked inputs of flake.lock and the other files of the shared lock (the skills lock
-    and skills, the npm locks, the hash-pinned requirements); None when COMMIT is not here."""
-    if publishing.git(root, "cat-file", "-e", f"{commit}^{{commit}}").code != 0:
+    """What the shared lock of COMMIT (a commit or a tree) says, whatever else it holds: the pins of
+    the pin file, the locked inputs of flake.lock and the other files of the shared lock (the skills
+    lock and skills, the npm locks, the hash-pinned requirements); None when COMMIT is not here."""
+    if publishing.git(root, "cat-file", "-e", f"{commit}^{{tree}}").code != 0:
         return None
     payload = {"pins": _pins(root, commit), "flake": _flake_nodes(root, commit), "files": _shared_files(root, commit)}
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
@@ -258,6 +258,23 @@ def write_marker(
     if watch is not None:
         document["watch"] = dict(sorted(watch.items()))
     atomic.atomic_write_json(_path(state_root), document, mode=0o600)
+
+
+def refusal(root: Path, state_root: str, treeish: str, role: str) -> str | None:
+    """Why TREEISH must not become active on this machine: its shared lock is the one that went red
+    here and this machine (of ROLE, facts.role) is a consumer that holds it back. None otherwise,
+    and at once without a marker."""
+    marker = read_marker(state_root)
+    if marker is None or role in ("this-machine", "unnamed", "nobody"):
+        return None
+    if lock_digest(root, treeish) != marker["lock"]:
+        return None
+    components = ", ".join(str(name) for name in marker.get("components") or ()) or "its checks named none"
+    return (
+        f"this machine holds back the shared lock of {str(marker['lock_commit'])[:12]}: it went red here "
+        f"({components}), and the generation of {str(marker['commit'])[:12]} stays until {role} moves what "
+        "went red; `dotsteward upgrade` takes the next lock"
+    )
 
 
 def drop_marker(state_root: str) -> None:

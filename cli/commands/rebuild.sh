@@ -59,7 +59,7 @@ source "$DOTSTEWARD_LIB/txn.sh"
 usage() {
   cat <<'EOF'
 Usage: dotsteward rebuild --profile PROFILE --switch|--build-only
-                          [--framework-override REF]
+                          [--framework-override REF] [--ignore-hold]
 
 Builds the Home Manager generation of PROFILE for the running user and home
 through the machine's host flake (<state>/host-overrides), or reuses the
@@ -79,6 +79,9 @@ them, so run it after the rebuild.
                              reference REF instead of the locked one,
                              without writing a lock file (default:
                              DOTSTEWARD_FRAMEWORK_OVERRIDE)
+  --ignore-hold              activate a shared lock this machine holds
+                             back (T19, docs/upgrade.md); the next
+                             `dotsteward upgrade` checks it with E2E
 
 The instance must be the root of a git repository without uncommitted
 changes or untracked files.
@@ -90,6 +93,7 @@ EOF
 profile=''
 do_switch=0
 build_only=0
+ignore_hold=0
 framework_override=${DOTSTEWARD_FRAMEWORK_OVERRIDE:-}
 while (($#)); do
   case $1 in
@@ -120,6 +124,10 @@ while (($#)); do
       ;;
     --build-only)
       build_only=1
+      shift
+      ;;
+    --ignore-hold)
+      ignore_hold=1
       shift
       ;;
     -h | --help)
@@ -175,6 +183,13 @@ if ((${#changed[@]})); then
 fi
 instance_lock=$repo_path/flake.lock
 [[ -f $instance_lock ]] || die "instance flake.lock not found: $instance_lock"
+# A consumer never activates the shared lock that went red here (T19); without a marker this
+# costs one test of a file.
+if ((do_switch && !ignore_hold)) && [[ -f $(state_root)/upgrade/held-at.json ]]; then
+  if ! held_reason=$(DOTSTEWARD_INSTANCE=$repo_path ds_internal held-lock HEAD 2>&1); then
+    die "$held_reason; --ignore-hold activates it anyway"
+  fi
+fi
 
 source_nix_daemon
 for tool in nix jq git realpath sha256sum; do
