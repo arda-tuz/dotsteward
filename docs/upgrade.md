@@ -198,8 +198,10 @@ left to the vendor. Without a terminal it is never applied.
 
 ## Constraints and holds
 
-A constraint or a hold is one rule, and `upgrade` applies it wherever it counts: to the pins the
-writer moves, to apt in the sudo window, and to the analysis.
+A constraint or a hold is one rule, and `upgrade` applies it wherever dotsteward itself acts: to the
+pins the writer moves, to what its apt plan installs and upgrades in the sudo window, and to the
+analysis. It never binds your own apt: no preferences file is written for it, and whatever you do
+with apt yourself stays as you did it.
 
 ```toml
 # workstation.toml, or platforms/<platform>.toml, which wins on a machine of that platform
@@ -221,37 +223,28 @@ since = "2026-11-03T08:00:00Z"
 `version` of a component is a series: an optional epoch, numbers separated by dots and an optional
 `.*` (`16`, `16.*`, `1.140`, `5:27`). A version is inside it when the part after its epoch is the
 series, or the series and then `.`, `-`, `+` or `~` (`16.4`, `16-1`, `1.2+dfsg-1`, `16~rc1`); a
-series without an epoch takes every epoch. One exact version that is no series (`1.140.0-1`, as
+series without an epoch takes every epoch, and the epoch of a series binds only a version that has
+one (a release tag or a registry version has none). One exact version that is no series (`1.140.0-1`, as
 earlier releases took it) keeps the pin and the packages on exactly that version, and a newer one
-waits for you. Anything else (`^16`, `>=16`, `16*`) is refused when the configuration is read. The kind of a hold is part of its key, so a pin id that is also the
+waits for you. A value of an earlier release that is neither (`>=16`, `^16`) still loads: it binds
+no apt version, every pin of the component waits as before, and each run says so (`constraint-invalid`). The kind of a hold is part of its key, so a pin id that is also the
 name of a component stays a pin hold; a bare name, as earlier releases wrote it, is a component hold.
 
 | Rule | The writer (pins of the shared lock) | apt, in the sudo window | The analysis |
 | --- | --- | --- | --- |
-| `version` of a component | a pin inside it moves to the newest stable version inside it (a GitHub prerelease or draft, a deprecated npm version and a yanked PyPI release do not count), also when upstream has a newer series: that one waits on its own as `pins-constrained`, which names the constraint, its reason and the newest version, for you to decide. An upstream that lists no versions (anything but `github-release`, `npm` and `pypi`) cannot be searched inside: its row waits. The rule of every machine counts: the shared lock reaches them all, so the platform file of a platform a machine runs counts as soon as that machine has a host file | each package of the component whose versions are of the series gets a record that lowers every version outside it to -1; a constrained server also refuses another major (`apt-denied`, class `constrained-major`) | `apt kept N back on purpose (...)`: the package, what apt would take without the rule, and the rule |
-| A component hold, `component:<name>` | its pins take no version from `version` on, whichever machine's host file holds it | on the machine of the host file: each installed package of the component below `version` keeps its installed upstream version and takes its Debian revisions, the security fixes among them; every other upstream version drops to -1 | the same line |
+| `version` of a component | a pin inside it moves to the newest stable version inside it (a GitHub prerelease or draft, a deprecated npm version and a yanked PyPI release do not count), also when upstream has a newer series: that one waits on its own as `pins-constrained`, which names the constraint, its reason and the newest version, for you to decide. An upstream that lists no versions (anything but `github-release`, `npm` and `pypi`) cannot be searched inside: its row waits. The rule of every machine counts: the shared lock reaches them all, so the platform file of a platform a machine runs counts as soon as that machine has a host file | the plan of dotsteward takes, for each package of the component, the newest version inside it from an origin apt trusts as much as the version apt would take (no prerelease of `-proposed`, no backport, nothing of an origin you turned off); with none the package stays and the newer one waits (`constraint-waits`); a constrained server also refuses another major (`apt-denied`, class `constrained-major`) | `apt kept N back on purpose (...)`: the package, what apt would take without the rule, and the rule |
+| A component hold, `component:<name>` | its pins take no version from `version` on, whichever machine's host file holds it | on the machine of the host file, the plan of dotsteward takes for each package of the component the newest version below `version` in the same way | the same line |
 | A pin hold, `pin:<id>` | the pin does not take `version`; the hold is over when upstream calls another version the latest, or when the research no longer has the pin. A row the research could not read (an error row) keeps it | nothing: a red that a package caused gets the `sudo apt-mark hold` command as a hint, never a hold | |
 | The kernel and NVIDIA series | not a pin | the pin file of the gated classes (above) | `apt kept`: it moves with the kernel and driver |
 
-The records of apt are a file of their own, `/etc/apt/preferences.d/61dotsteward-kept`, written
-from the request in the sudo window and taken away when nothing is left to keep. A record only ever
-lowers: `Pin: version /.../` matches what is outside its rule and gives it -1, and every version
-inside keeps the priority of its origin. So a prerelease of `-proposed`, a backport or a version of
-an origin you turned off stays exactly as your own pins and the archive make it, and a version you
-ask for by name (`apt install example-server=17.2-1`) still installs. A record names the package with
-`:any`, so it binds every architecture of it, and has an `Explanation:` line that names the
-component, the rule and its reason, so `apt-cache policy` says why.
-
-What gets no record, with a note: a package of the component outside its constraint or past its
-hold, which you moved yourself (`constraint-outside`, `hold-outside`); a package another package
-outside the component needs in a version outside the rule, such as a library that another major you
-installed shares (`constraint-shared`), since a record would break that install; a constraint no
-package of the component has a version of (`constraint-matches-nothing`); a rule that is no series or
-no version (`kept-invalid`). A package of no component gets nothing, and neither does a package of a
-gated class or firmware, whose rule is the series rule. `dotsteward e2e` compares the file with what
-the engine writes now (`core:apt-files`) and only notes a file that is missing, differs or is not
-wanted, since the intent and dpkg change it; the next `dotsteward upgrade` on a terminal writes it,
-also after a constraint or a component is gone.
+Nothing of it reaches your own apt. If you move a constrained package out of its rule yourself,
+dotsteward leaves it there and says so (`constraint-left-by-owner`), never red and never undone;
+Debian names the majors of a server apart anyway (`example-server-16`, `example-server-17`). What the
+rules do not bind, with a note: a package another package outside the component needs in a version
+outside the rule, through `Depends`, a versioned `Provides` or `Breaks`, such as a library another
+major you installed shares (`constraint-shared`); a constraint no package of the component has a
+version of (`constraint-matches-nothing`); a hold that names no version (`constraint-invalid`). A
+package of no component, of a gated class or firmware is never bound.
 
 Every run names each hold in force with the machine whose host file has it and its reason (`held`),
 and a component hold of a component the instance does not have (`hold-unknown`); `--retry-held` takes
@@ -404,9 +397,10 @@ was published), `publish-waits`, `publish-race`, `publish-refused`, `red-held`, 
 `skill-conflict`, `capture-blocked`). Notes that wait for nothing: `analysis`, `boot-space-low`,
 `reboot-required`, `checkout-dirty`, `checkout-behind`, `held`, `consumer-held` (the run waits
 through its `e2e` step: `held, unverified`), `consumer-red` (it waits when it has `person: true`),
-`consumer-unread`, `hold-unknown`, `constraint-outside`, `hold-outside`, `constraint-shared`,
-`constraint-matches-nothing`, `kept-invalid`, `deb-floors-wait`, `deb-floor-unknown`,
-`pins-group-failed`, `series-available`, `phased-waiting`, `module-loss`, `producer-unset`,
+`consumer-unread`, `hold-unknown`, `constraint-left-by-owner`, `constraint-waits`,
+`constraint-shared`, `constraint-matches-nothing`, `constraint-invalid`, `deb-floors-wait`,
+`deb-floor-unknown`, `pins-group-failed`, `series-available`, `phased-waiting`, `module-loss`,
+`producer-unset`,
 `producer-stale`, `plugin-scan-finding`, `plugin-scan-failed`, `firmware-locked`,
 `firmware-needs-reboot`.
 

@@ -275,7 +275,7 @@ reason = "jammy ships the 14 runtime of the extensions"
 | --- | --- |
 | `fast_path` | A Linux release that takes the fast route like `[platform.linux.fast_path]` of `workstation.toml`, whose desktop rule still applies. It names the release of its file. |
 | `components.<name>.unavailable` | The component does not exist on this platform, and why. On a machine of the platform every command leaves it out, as `dotsteward skills effective` says with the reason `platform`, and Nix gets the tag `no:<name>`. A general layer reaches every release below it: a component unavailable in `linux.toml` is unavailable on every Linux release. |
-| `components.<name>.version`, `reason` | The version constraint of the component on this platform, in place of the one of `workstation.toml`: apt keeps to it on a machine of the platform, and the writer of the shared pins as soon as a machine with a host file runs it ([upgrade.md](upgrade.md#constraints-and-holds)). |
+| `components.<name>.version`, `reason` | The version constraint of the component on this platform, in place of the one of `workstation.toml`: the apt plan of dotsteward keeps to it on a machine of the platform, and the writer of the shared pins as soon as a machine with a host file runs it ([upgrade.md](upgrade.md#constraints-and-holds)). |
 
 A machine with a host file has one source for its platform: the `platform` of
 `hosts/<name>.toml`, which Nix reads for `hostConfigurations.<name>` and the CLI for
