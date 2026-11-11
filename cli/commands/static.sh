@@ -239,14 +239,17 @@ if [[ $target == instance ]]; then
   SKIP_PREFIXES+=("${DS_SKILLS_VENDOR_DIR%/}/" "$OWN_PLUGINS_DIR/" "$SKILL_LICENSES_DIR/")
 fi
 
-# The paths of an instance that the framework owns (a directory ends in /): its commands write
-# them and its checks check them, and a release may add one without the owner doing anything.
+# The paths of an instance that the framework owns (a directory ends in /): the paths where its
+# commands create files (generate, the upgrade's template refresh, skills capture and vendoring,
+# host, the settings engine's buffer), which its checks check, and a release may add one without
+# the owner doing anything. Files the commands only edit in place (workstation.toml, flake.nix,
+# flake.lock, versions.lock.json) are the owner's.
 # The instance scripts get them, and the other files, from the helper (run_scripts), so an
 # oracle of the owner's own files needs no edit when the framework starts to write a new path.
 OWNED_PATHS=()
 if [[ $target == instance ]]; then
   OWNED_PATHS=(.dotsteward/ bootstrap.sh "$DS_SKILLS_LOCK" "${DS_SKILLS_VENDOR_DIR%/}/" "$OWN_PLUGINS_DIR/"
-    "$SKILL_LICENSES_DIR/" hosts/)
+    "$SKILL_LICENSES_DIR/" hosts/ "${DS_SETTINGS_BUFFER_DIR%/}/")
 fi
 
 # owned PATH: whether the framework owns the file PATH of the instance.

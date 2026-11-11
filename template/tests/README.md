@@ -49,8 +49,10 @@ one per line and sorted: what git carries (tracked files and untracked ones it
 does not ignore), or every file below the root in the sandbox.
 `framework_paths` prints the paths the framework owns (`.dotsteward/`,
 `bootstrap.sh`, the skills lock, the vendored skills, `agent/plugins/`,
-`agent/skill-licenses/`, `hosts/`; a directory ends in `/`): its commands write
-them and its checks check them, and a new release may add one. A list of your
+`agent/skill-licenses/`, `hosts/`, the settings buffer `local-maintained-files/`;
+a directory ends in `/`): its commands create files there and its checks check
+them, and a new release may add one. Files the commands only edit in place,
+such as `workstation.toml`, `flake.lock` and `versions.lock.json`, are yours. A list of your
 own files checked against `own_files` therefore needs no edit when the
 framework starts to write a new path, and still names a file you did not
 expect:
