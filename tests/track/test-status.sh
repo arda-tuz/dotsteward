@@ -145,3 +145,18 @@ rm -f -- "$DOTSTEWARD_STATE_ROOT/machine.json"
 assert_exit 0 status --json
 assert_stdout_json '.machine.name == null and .state == null and .orphans == []'
 assert_stdout_json '[.components[].name] | index("example-app") != null'
+
+# A broken record of this machine or a broken host file: still an overview, the error in the
+# machine part.
+printf '{' >"$DOTSTEWARD_STATE_ROOT/machine.json"
+assert_exit 0 status --json
+assert_stdout_json '(.machine.error | test("machine.json")) and ([.components[].name] | index("example-app") != null)'
+assert_exit 0 status
+assert_contains "$DS_STDOUT" "machine.json"
+rm -f -- "$DOTSTEWARD_STATE_ROOT/machine.json"
+name_machine example-host
+mkdir -p "$up_inst/hosts"
+printf 'x = [\n' >"$up_inst/hosts/example-host.toml"
+assert_exit 0 status --json
+assert_stdout_json '(.machine.error | test("example-host.toml")) and (.components | length > 0)'
+rm -f -- "$up_inst/hosts/example-host.toml"
