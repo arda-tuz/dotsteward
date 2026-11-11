@@ -4,7 +4,16 @@
 # $UP_CONTROL/e2e-red-once: this run is red, with the findings in the file (one id per line).
 # $UP_CONTROL/e2e-red: every run is. $UP_CONTROL/drop-network-after-e2e: the network ends here.
 # $UP_CONTROL/e2e-hook: a script that runs while E2E runs (what the owner does meanwhile).
+# --list --json prints the ids of $UP_CONTROL/e2e-checks (one per line, none without it) and logs
+# nothing.
 set -euo pipefail
+case " $* " in
+  *" --list "*)
+    jq -Rn '{profile: "workstation", checks: [inputs]}' <"${UP_CONTROL}/e2e-checks" 2>/dev/null ||
+      jq -n '{profile: "workstation", checks: []}'
+    exit 0
+    ;;
+esac
 printf 'e2e %s root=%s\n' "$*" "$DOTSTEWARD_INSTANCE" >>"$UP_LOG"
 if [[ -e $UP_CONTROL/e2e-hook ]]; then bash "$UP_CONTROL/e2e-hook"; fi
 root=$DOTSTEWARD_INSTANCE
