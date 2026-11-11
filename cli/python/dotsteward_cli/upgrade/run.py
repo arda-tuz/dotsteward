@@ -45,7 +45,19 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from dotsteward_cli import apt_plan, atomic, config, firmware, incoming, machine, procs, report, runner, versions
+from dotsteward_cli import (
+    apt_plan,
+    atomic,
+    config,
+    firmware,
+    incoming,
+    machine,
+    observe,
+    procs,
+    report,
+    runner,
+    versions,
+)
 from dotsteward_cli import publish as publishing
 from dotsteward_cli import state as states
 from dotsteward_cli.host import commit_identity, commit_message
@@ -1666,6 +1678,10 @@ class Upgrade(runner.Runner):
             atomic.atomic_write_json(self.upgrade_dir / "e2e-key.json", {"key": key}, mode=0o600)
             self._forget_binaries()
             self._verify(True)
+            self._checked(set())
+            if self.linux and shutil.which("dpkg-query"):
+                # design-v2 6.4: this E2E checked what dpkg has, so the observer it woke has nothing to do.
+                observe.refresh_snapshot(self.state_root)
             return None
         self._verify(False)
         try:
@@ -1674,7 +1690,34 @@ class Upgrade(runner.Runner):
             findings = []
         if done.returncode == _KILLED or done.returncode < 0:
             return [_NO_RESULT]
-        return sorted({str(finding.get("step")) for finding in findings}) or [_NO_RESULT]
+        red = sorted({str(finding.get("step")) for finding in findings})
+        if red:
+            self._checked({check.split(":", 1)[0] for check in red})
+        return red or [_NO_RESULT]
+
+    def _checked(self, red: Collection[str]) -> None:
+        """A full E2E with a result is the check of each tracked deb component that has checks: passed
+        unless one of RED, with what dpkg has of its packages (``state.write_check``)."""
+        if not self.linux or self.name is None or self.profile is None:
+            return
+        tracked = states.tracked_debs(self.instance, self.env)
+        if not tracked:
+            return
+        arguments = ["e2e", "--profile", self.profile, "--list", "--json"]
+        for name in sorted(tracked):
+            arguments += ["--component", name]
+        try:
+            checks = json.loads(self._ds_output(*arguments).stdout)["checks"]
+        except (ValueError, KeyError, TypeError):
+            return
+        names = {str(check).partition(":")[0] for check in checks if isinstance(check, str)} & set(tracked)
+        installed = self._versions_of_tracked()
+        for name in sorted(names):
+            packages = {package: installed[package] for package in tracked[name]["packages"] if package in installed}
+            if any(package not in packages for package in tracked[name]["installs"]):
+                continue
+            version = states.main_version(tracked[name]["installs"], packages)
+            states.write_check(self.state_root, name, passed=name not in red, packages=packages, version=version)
 
     def _e2e(self, *, force: bool = False) -> None:
         if self.profile is None or self.red:

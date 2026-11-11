@@ -150,7 +150,13 @@ Update these too? [y/N] n
    tracked packages and of the own updaters. Without a network or with a dirty checkout it runs
    without the repository checks. An apt commit that changed something always runs it. A dirty
    checkout behind what was published waits as `checkout-behind`, exit 3: the active generation is of
-   the published commit, and the lock of the checkout is older.
+   the published commit, and the lock of the checkout is older. An E2E that ran green in this run
+   checked what dpkg has, the change of this run and the owner's own alike: what is installed
+   becomes the last observation of `dotsteward observe` (`<state>/observe/dpkg-snapshot.json`), so
+   the observer this run woke has nothing to do. An E2E that ran, green or red, is the check of each
+   tracked deb component with checks (`<state>/state/checks.json`), so the state record says
+   `verified` or `red` with the version. A skipped E2E changes neither: a dependency the owner moved
+   outside the key is still the observer's to check.
 8. **Machine checks.** Whether a reboot is due: the newest installed kernel as the apt engine names
    it against `uname -r`, or `/run/reboot-required` when it is there. Its absence proves nothing. The
    engine also checks the module of that kernel, in every run. Only said.
