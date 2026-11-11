@@ -131,6 +131,17 @@ Each row has a status:
 | `current` | up to date |
 | `follows` | derived from another pin |
 
+A pin that a `version` constraint governs (its current version is inside the
+constraint of its component in `workstation.toml`, or in the platform file of a
+platform a machine of the instance runs) and whose newest release is outside it
+gets the row of the newest stable release inside every such constraint, so the
+patches of its series keep coming; the newest release stays in
+`details.outside`. `github-release` (the stable tags of the family, with the
+release GitHub has for the chosen one), `npm` (the versions of the registry
+document) and `pypi` (the final releases with files) list their versions. Any
+other adapter gives one version: its row stays as it is, with
+`details.within = "unsearchable"`.
+
 The report (`--out`) is `{"schema_version": "1.0", "researched_at": ...,
 "items": [...]}`. One failing source never stops the others: its rows
 become `error` rows. How a refresh uses the report is described in
@@ -193,7 +204,11 @@ constraint of its component, or a pin already outside it, or a new major of a se
 override (`pins-constrained`). The constraint is the one of `[components.<name>]`, or of the
 platform file of a platform a machine of the instance runs (its host file names it), since the
 shared lock reaches them all; the item names the rule, its reason and the newest version. A
-move inside every such constraint moves like any other; a newer
+move inside every such constraint moves like any other. When the research found the newest
+release inside the constraints for a newer one outside them, the pin moves inside and the one
+outside waits on its own as `pins-constrained`: a new series, its version and the rule, for you to
+decide; with no list of versions to search, the row says the writer cannot search inside it and
+waits as before; a newer
 series of a channel (`series-available`); a framework major (`framework-major`); a
 changed watched path (`pins-review`), since moving it is an inspection; a release
 without the asset (`asset-missing`); a bundle whose audit findings grow, or whose audit

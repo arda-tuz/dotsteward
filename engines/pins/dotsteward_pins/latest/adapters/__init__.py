@@ -47,7 +47,7 @@ runner's ``job-<n>`` error row.
 from __future__ import annotations
 
 import re
-from collections.abc import Hashable, Iterator, Mapping
+from collections.abc import Callable, Hashable, Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -135,6 +135,9 @@ class Request:
     values: dict[str, Any] = field(default_factory=dict)
     # The lock path of the pin object, when the row has one (pins apply).
     base: LockPath | None = None
+    # The version constraints that govern the pin (its current version is inside each): the
+    # research also looks for the newest release inside all of them.
+    within: tuple[str, ...] = ()
 
     @property
     def kind(self) -> str:
@@ -236,6 +239,12 @@ class Adapter:
     def validate(self) -> list[str]:
         """Cross-field problems of the declaration."""
         return []
+
+    def fetch_within(self, request: Request, upstream: Upstream, accept: Callable[[str], bool]) -> list[Row] | None:
+        """The row of the newest stable release whose version ACCEPT takes, as ``fetch`` would write it
+        for that release; its latest is the current version when nothing newer is inside. None: this
+        upstream gives no list of versions to search."""
+        return None
 
     @property
     def optional(self) -> bool:

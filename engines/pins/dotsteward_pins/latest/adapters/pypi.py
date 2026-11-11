@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import urllib.error
 import urllib.parse
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 from dotsteward_cli import versions
@@ -85,6 +86,15 @@ class Pypi(Adapter):
         return f"{index}/{package}"
 
     def fetch(self, request: Request, upstream: Upstream) -> list[Row]:
+        return self._newest(request, upstream, lambda version: True)
+
+    def fetch_within(self, request: Request, upstream: Upstream, accept: Callable[[str], bool]) -> list[Row] | None:
+        """The newest final release with files that ACCEPT takes."""
+        return self._newest(request, upstream, accept, inside=True)
+
+    def _newest(
+        self, request: Request, upstream: Upstream, accept: Callable[[str], bool], *, inside: bool = False
+    ) -> list[Row]:
         package = request.values["package"]
         encoded = urllib.parse.quote(package, safe="")
         address = f"{self.values['index']}/{encoded}/json"
@@ -102,7 +112,9 @@ class Pypi(Adapter):
             for version, files in releases.items()
             if isinstance(version, str) and STABLE_TAG.fullmatch(version) and not version.startswith("v")
         }
-        version = versions.newest(version for version, files in candidates.items() if files)
+        version = versions.newest(version for version, files in candidates.items() if files and accept(version))
+        if version is None and inside:
+            return [item(request.id, self.name, request.current, request.current, "current", self.source_of(request))]
         if version is None:
             raise UpstreamError(f"{package} has no final release with files")
         requires = [entry["requires_python"] for entry in candidates[version] if entry.get("requires_python")]

@@ -7,7 +7,14 @@
    id, two declared rows with the same id are an error (exit 2); rows
    that follow other pins are dropped without --all.
 3. Query in parallel (``--jobs`` workers): one job per row, or per group
-   of rows sharing a compare. An ``UpstreamError`` becomes error rows of
+   of rows sharing a compare. A row of a pin a version constraint governs
+   (the constraint of its component in workstation.toml, or in the
+   platform file of a platform a machine of the instance runs, with the
+   current version inside) whose newest release is outside it is replaced
+   by the row of the newest stable release inside every such constraint,
+   which keeps the newest one in ``details.outside``; an upstream that
+   lists no versions leaves the row as it is, with ``details.within`` =
+   ``unsearchable``. An ``UpstreamError`` becomes error rows of
    the job's ids; any other failure becomes one ``job-<n>`` error row
    (``n`` the job's index, ``details.ids`` the rows it was for) and never
    stops the other jobs.
@@ -22,7 +29,7 @@ import argparse
 import concurrent.futures
 import datetime
 
-from dotsteward_cli import atomic
+from dotsteward_cli import atomic, platforms, versions
 
 from ..instance import EngineError, Instance
 from ..lockfile import dump
@@ -52,7 +59,42 @@ def plan(instance: Instance, include_optional: bool) -> list[Planned]:
     planned += [entry for entry in core.rows(instance, locks) if entry.id not in owners]
     if not include_optional:
         planned = [entry for entry in planned if not entry.optional]
+    components = instance.config.get("components")
+    shared = components if isinstance(components, dict) else {}
+    for entry in planned:
+        request = entry.request
+        if request is None or request.current is None or not request.adapter.VERSIONED:
+            continue
+        rules = platforms.shared_constraints(instance.root, shared, entry.component)
+        request.within = tuple(
+            rule["version"] for rule in rules if versions.in_constraint(rule["version"], request.current)
+        )
     return planned
+
+
+def _inside(request: Request, version: object) -> bool:
+    return all(versions.in_constraint(pattern, version) for pattern in request.within)
+
+
+def search_within(request: Request, row: model.Row, upstream: Upstream) -> model.Row:
+    """ROW of a governed pin, or, when its newest release is outside a constraint, the row of the
+    newest release inside them all with the newest one in ``details.outside``."""
+    if not request.within or row.get("status") not in ("update", "review") or _inside(request, row.get("latest")):
+        return row
+    try:
+        found = request.adapter.fetch_within(request, upstream, lambda version: _inside(request, version))
+    except UpstreamError as error:
+        row["details"]["within"] = f"unsearchable: {error}"
+        return row
+    if not found:
+        row["details"]["within"] = "unsearchable"
+        return row
+    inside = found[0]
+    if inside.get("latest") is None or versions.compare(inside["latest"], request.current) <= 0:
+        inside["latest"] = request.current
+        inside["status"] = "current"
+    inside["details"]["outside"] = {"latest": row.get("latest"), "status": row.get("status")}
+    return inside
 
 
 def jobs_of(planned: list[Planned]) -> list[Job]:
@@ -77,10 +119,13 @@ def run_job(job: Job, upstream: Upstream) -> list[model.Row]:
     first = job[0]
     try:
         if len(job) > 1 or first.adapter.group_key(first) is not None:
-            return first.adapter.fetch_group(job, upstream)
-        return first.adapter.fetch(first, upstream)
+            rows = first.adapter.fetch_group(job, upstream)
+        else:
+            rows = first.adapter.fetch(first, upstream)
     except UpstreamError as error:
         return [request.error(str(error)) for request in job]
+    requests = {request.id: request for request in job}
+    return [search_within(requests[row["id"]], row, upstream) if row.get("id") in requests else row for row in rows]
 
 
 def research(planned: list[Planned], workers: int) -> list[model.Row]:

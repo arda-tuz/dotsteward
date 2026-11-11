@@ -236,6 +236,14 @@ class Upstream:
             return None
         return next(tag for tag in tags if tag_version(tag, prefix) == best)
 
+    def release_of(self, repo: str, tag: str) -> dict[str, Any] | None:
+        """The GitHub release of TAG, None when gh fails or GitHub has none."""
+        try:
+            release = self.gh_json(f"repos/{repo}/releases/tags/{tag}")
+        except (RuntimeError, ValueError, OSError):
+            return None
+        return release if isinstance(release, dict) else None
+
     def latest_release(
         self, repo: str, prefix: str = "", *, like: str | None = None
     ) -> tuple[str | None, dict[str, Any] | None]:

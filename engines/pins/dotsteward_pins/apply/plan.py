@@ -254,6 +254,31 @@ def reached(move: Move, instance: Instance, locks: Locks, declared: Declared) ->
     return isinstance(current, str) and bool(move.latest) and versions.compare(current, move.latest) >= 0
 
 
+def version_rules(instance: Instance, component: str) -> list[dict[str, Any]]:
+    """The version constraints of COMPONENT that bind the shared lock, each with its words."""
+    components = instance.config.get("components")
+    shared = components if isinstance(components, dict) else {}
+    rules = []
+    for rule in platforms.shared_constraints(instance.root, shared, component):
+        where = rule["where"] + (f", machines {', '.join(rule['machines'])}" if rule["machines"] else "")
+        said = f"[components.{component}] version = {rule['version']!r} ({where})"
+        said += f": {rule['reason']}" if rule["reason"] else ""
+        rules.append({**rule, "said": said})
+    return rules
+
+
+def outside_reason(move: Move, instance: Instance, newest: Any) -> str:
+    """Why the newest release, outside the constraints, waits for a person: a new series."""
+    against = [
+        rule["said"]
+        for rule in version_rules(instance, move.component)
+        if not versions.in_constraint(rule["version"], newest)
+    ]
+    inside = move.row.get("latest")
+    moving = f"{inside}, the newest inside, moves" if move.row.get("status") != "current" else "nothing newer is inside"
+    return f"{'; '.join(against)}; the newest, {newest}, is a new series outside it and waits for you; {moving}"
+
+
 def constraint(move: Move, instance: Instance, declared: Declared, pin: Any) -> str | None:
     """Why a person decides this move, or None."""
     if isinstance(pin, dict):
@@ -265,18 +290,21 @@ def constraint(move: Move, instance: Instance, declared: Declared, pin: Any) -> 
             origin = declared.derived.get(move.path.child(name).text())
             if origin is not None:
                 return f"the version follows {origin}"
-    components = instance.config.get("components")
-    shared = components if isinstance(components, dict) else {}
-    for rule in platforms.shared_constraints(instance.root, shared, move.component):
-        version = rule["version"]
-        if versions.in_constraint(version, move.row.get("current")) and versions.in_constraint(version, move.latest):
-            continue
-        where = rule["where"] + (f", machines {', '.join(rule['machines'])}" if rule["machines"] else "")
-        said = f"[components.{move.component}] version = {version!r} ({where})"
-        said += f": {rule['reason']}" if rule["reason"] else ""
-        if not versions.in_constraint(version, move.row.get("current")):
-            return f"{said}; the pinned {move.row.get('current')} is outside it, so a person decides"
-        return f"{said}; the newest is {move.latest}, outside it"
+    current = move.row.get("current")
+    for rule in version_rules(instance, move.component):
+        if not versions.in_constraint(rule["version"], current):
+            return f"{rule['said']}; the pinned {current} is outside it, so a person decides"
+    against = [
+        rule["said"]
+        for rule in version_rules(instance, move.component)
+        if not versions.in_constraint(rule["version"], move.latest)
+    ]
+    if against:
+        # The research found nothing inside, or this upstream lists no versions to search.
+        return (
+            f"{'; '.join(against)}; the newest is {move.latest}, outside it, and this upstream gives no list "
+            "of versions, so the writer cannot search inside it"
+        )
     bundle = declared.bundles.get(move.path.text()) if move.path is not None else None
     if bundle is not None and bundle.override and move.row["status"] == "review":
         return "a new major of a security override"
@@ -450,6 +478,7 @@ class Router:
         identifier, status = row["id"], row.get("status")
         details = row.get("details") or {}
         if status in ("current", "follows"):
+            self._outside(row)
             return
         if any(fnmatch.fnmatchcase(identifier, pattern) for pattern in skips):
             self.line(row, "skipped", "--skip")
@@ -529,7 +558,18 @@ class Router:
         newest = details.get("newest_series")
         return bool(channel and newest and versions.compare(newest, channel) > 0)
 
+    def _outside(self, row: Row) -> None:
+        """The newest release outside the version constraints, which the research searched inside:
+        a new series, for a person, whatever the row inside it does."""
+        outside = (row.get("details") or {}).get("outside")
+        move = self.move_of(row) if isinstance(outside, dict) else None
+        if move is None or not isinstance(outside, dict):
+            return
+        newest = outside.get("latest")
+        self.item("pins-constrained", move, latest=newest, reason=outside_reason(move, self.instance, newest))
+
     def _route_pin(self, move: Move) -> None:
+        self._outside(move.row)
         pin = pin_of(self.locks, move.path)
         if self._newer_series(move):
             self.item("series-available", move, series=move.details["newest_series"])

@@ -21,8 +21,9 @@ gh does not give, or one without a stable release of the family in those
 pages, is an error row: only the list says what is a draft or a prerelease.
 When the whole list holds no release of the family, the newest stable tag from
 ``git ls-remote --tags`` that the list did not flag (no asset details then).
-Row details:
-``tag`` and the asset's
+Inside a version constraint: the newest stable tag of ``git ls-remote --tags``
+the constraint takes, and its release (``gh api repos/<repo>/releases/tags/<tag>``)
+when GitHub has one. Row details: ``tag`` and the asset's
 ``asset``, ``size``, ``sha256``, ``url`` (or ``asset_missing``); with an
 asset object, ``assets.<key>`` holds those fields for each declared key,
 all from the same release.
@@ -44,7 +45,10 @@ Examples::
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, ClassVar
+
+from dotsteward_cli import versions
 
 from ...lockfile import DeclarationError, Scope
 from .. import templates
@@ -135,6 +139,21 @@ class GithubRelease(Adapter):
         tag, release = upstream.latest_release(repo, prefix, like=request.current)
         if tag is None:
             raise UpstreamError(f"{repo} has no stable release or tag")
+        return self._row(request, tag, release)
+
+    def fetch_within(self, request: Request, upstream: Upstream, accept: Callable[[str], bool]) -> list[Row] | None:
+        """The newest stable tag of the family that ACCEPT takes, with its release when GitHub has one."""
+        repo = request.values["repo"]
+        prefix = self.values["tag_prefix"]
+        tags = [tag for tag in upstream.stable_tags(github_url(repo), prefix) if accept(tag_version(tag, prefix))]
+        best = versions.newest(tag_version(tag, prefix) for tag in tags)
+        if best is None:
+            return [item(request.id, self.name, request.current, request.current, "current", self.source_of(request))]
+        tag = next(tag for tag in tags if tag_version(tag, prefix) == best)
+        return self._row(request, tag, upstream.release_of(repo, tag))
+
+    def _row(self, request: Request, tag: str, release: dict[str, Any] | None) -> list[Row]:
+        prefix = self.values["tag_prefix"]
         latest = tag_version(tag, prefix)
         details: dict[str, Any] = {"tag": tag}
         asset = self.values["asset"]

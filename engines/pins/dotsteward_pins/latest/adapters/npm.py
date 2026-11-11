@@ -20,10 +20,13 @@ Examples::
 from __future__ import annotations
 
 import urllib.parse
+from collections.abc import Callable
 from typing import Any, ClassVar
 
+from dotsteward_cli import versions
+
 from ...lockfile import Scope, parse_path, parse_template, scalar_text
-from ..model import VERSION_TEXT, Row, classify, item
+from ..model import STABLE_TAG, VERSION_TEXT, Row, classify, item
 from ..upstream import Upstream, UpstreamError
 from . import Adapter, FieldSpec, PlanContext, Request, url
 
@@ -59,6 +62,27 @@ class Npm(Adapter):
         package = request.values["package"]
         encoded = urllib.parse.quote(package, safe="@")
         data = upstream.http_json(f"{self.values['registry']}/{encoded}/latest")
+        return self._row(request, data)
+
+    def fetch_within(self, request: Request, upstream: Upstream, accept: Callable[[str], bool]) -> list[Row] | None:
+        """The newest stable version of the registry document that ACCEPT takes."""
+        package = request.values["package"]
+        encoded = urllib.parse.quote(package, safe="@")
+        document = upstream.http_json(f"{self.values['registry']}/{encoded}")
+        found = document.get("versions") if isinstance(document, dict) else None
+        if not isinstance(found, dict):
+            raise UpstreamError(f"the registry answered no versions for {package}")
+        best = versions.newest(
+            version
+            for version in found
+            if isinstance(version, str) and STABLE_TAG.fullmatch(version) and accept(version)
+        )
+        if best is None:
+            return [item(request.id, self.name, request.current, request.current, "current", self.source_of(request))]
+        return self._row(request, found[best])
+
+    def _row(self, request: Request, data: Any) -> list[Row]:
+        package = request.values["package"]
         version = data.get("version") if isinstance(data, dict) else None
         if not isinstance(version, str) or not VERSION_TEXT.fullmatch(version):
             raise UpstreamError(f"the registry answered no version for {package}: {version!r}")
