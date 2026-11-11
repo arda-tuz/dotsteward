@@ -18,12 +18,23 @@
 # Generation: tools/gen-docs.sh writes docs/cli.md from the help of every
 # command and docs/catalog.md plus docs/components/<name>.md from the
 # catalog component directories; --check finds a stale, missing or extra
-# generated file and ignores the line wrapping of help text, which differs
-# between Python versions.
+# generated file and ignores the line wrapping of help text. The help text
+# comes from the toolchain of the framework (DS_TOOLCHAIN_PATH of the dev
+# shell and of the checks), whose Python formats it, whatever python3 comes
+# first on PATH; without that toolchain and without Nix to get it, the
+# generator refuses instead of using another Python.
 # shellcheck source=tests/static/helpers.sh
 source "$DS_REPO_ROOT/tests/static/helpers.sh"
 
 GEN=tools/gen-docs.sh
+
+# A local run outside the dev shell: the toolchain of the checkout, once for every run below.
+if [[ -z ${DS_TOOLCHAIN_PATH:-} ]]; then
+  command -v nix >/dev/null 2>&1 || ds_fail "this test needs DS_TOOLCHAIN_PATH (nix develop) or nix on PATH"
+  DS_TOOLCHAIN_PATH=$(nix --extra-experimental-features 'nix-command flakes' develop "$DS_REPO_ROOT" \
+    --command printenv DS_TOOLCHAIN_PATH) || ds_fail "cannot read DS_TOOLCHAIN_PATH of the dev shell"
+  export DS_TOOLCHAIN_PATH
+fi
 
 # docs_findings ROOT: one "path[:line]: problem" line per lint finding in
 # the framework tree ROOT; empty when the documentation is clean.
@@ -310,6 +321,19 @@ PY
 # The real tree is clean and its generated documents are fresh.
 assert_eq "" "$(docs_findings "$DS_REPO_ROOT")" "documentation lint of the framework tree"
 assert_exit 0 "$DS_REPO_ROOT/$GEN" --check
+
+# Another python3 first on PATH (argparse formats options differently across versions: 3.12
+# "-m SUBJECT, --message SUBJECT", 3.13 "-m, --message SUBJECT"): the toolchain's still writes
+# the help text.
+other=$DS_TEST_ROOT/other-python
+mkdir -p "$other"
+printf '#!%s\nprintf "not the python of the toolchain\\n" >&2\nexit 97\n' "$BASH" >"$other/python3"
+chmod 0755 "$other/python3"
+PATH=$other:$PATH assert_exit 0 "$DS_REPO_ROOT/$GEN" --check
+# Without the toolchain and without Nix: an error that names the dev shell, and no other Python.
+assert_exit 1 env -u DS_TOOLCHAIN_PATH PATH="$other:$(ds_path_without nix)" "$DS_REPO_ROOT/$GEN" --check
+assert_contains "$DS_STDERR" "nix develop"
+assert_not_contains "$DS_STDERR" "not the python of the toolchain"
 
 fw=$DS_TEST_ROOT/fw
 framework_copy "$fw"
