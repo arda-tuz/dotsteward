@@ -163,3 +163,14 @@ done
 grep -qF -- '--uninstall' "$skill" || ds_fail "SKILL.md does not name --uninstall of dotsteward remove"
 grep -q -- 'only when the user asks' <(grep -F -- '--uninstall' "$skill") ||
   ds_fail "SKILL.md does not keep --uninstall for when the user asks"
+
+# The questions of add and remove, and the two ways on for a nix component: remove would drop it
+# from the profile of every machine it is for.
+for code in scope-narrowed untracked-files profile-removal; do
+  grep -qF -- "\`$code\`" "$skill" || ds_fail "SKILL.md does not say what to do about $code"
+done
+for option in --also-here --replace-scope --keep-here --with-changes; do
+  grep -qF -- "$option" "$skill" || ds_fail "SKILL.md does not name $option"
+done
+grep -q -- 'every machine' <(grep -F -- 'profile-removal' "$skill") ||
+  ds_fail "SKILL.md does not say that a nix component leaves the profile of every machine"
