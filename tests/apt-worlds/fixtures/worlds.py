@@ -639,6 +639,53 @@ WORLDS = {
         description="constraints and holds against the owner's own origin pins, a shared library, an epoch, "
         "a + version and firmware",
     ),
+    "constraints-provides": world(
+        [
+            rec("sampledbms-16", "16.16-1", "sampledbms-16"),
+            rec("sampledbms-lib", "16.16-1", "sampledbms-common", provides="sampledbms-libabi (= 16.16-1)"),
+            rec("sampledbms-lib", "17.2-1", "sampledbms-common", provides="sampledbms-libabi (= 17.2-1)"),
+            rec("sampledbms-17", "17.12-1", "sampledbms-17", depends="sampledbms-libabi (>= 17.2-1)"),
+        ],
+        installed=[
+            *BASE_INSTALLED,
+            rec("sampledbms-16", "16.15-1", "sampledbms-16"),
+            rec("sampledbms-lib", "16.15-1", "sampledbms-common", provides="sampledbms-libabi (= 16.15-1)"),
+        ],
+        description="another major needs the library of a constrained server through a versioned virtual name",
+    ),
+    "constraints-breaks": world(
+        [
+            rec("sampledbms-16", "16.16-1", "sampledbms-16"),
+            rec("sampledbms-lib", "16.16-1", "sampledbms-common"),
+            rec("sampledbms-lib", "17.2-1", "sampledbms-common"),
+            rec("sampledbms-17", "17.12-1", "sampledbms-17", breaks="sampledbms-lib (<< 17.2-1)"),
+        ],
+        installed=[
+            *BASE_INSTALLED,
+            rec("sampledbms-16", "16.15-1", "sampledbms-16"),
+            rec("sampledbms-lib", "16.15-1", "sampledbms-common"),
+            rec("sampledbms-17", "17.11-1", "sampledbms-17"),
+        ],
+        description="another major breaks the library of the older series",
+    ),
+    "constraints-proposed": world(
+        [rec("samplecli", "17.2-1", "samplecli")],
+        installed=[*BASE_INSTALLED, rec("samplecli", "16.15-1", "samplecli")],
+        suites={
+            PROPOSED: [rec("samplecli", "16.19~rc1-1", "samplecli")],
+            BACKPORTS: [rec("samplecli", "16.18-1~bpo", "samplecli")],
+        },
+        description="the only newer version of the trusted origins is outside the constraint",
+    ),
+    "constraints-handmoved": world(
+        [
+            rec("samplecli", "16.16-1", "samplecli"),
+            rec("samplecli", "17.2-1", "samplecli"),
+            rec("samplecli", "17.2-2", "samplecli"),
+        ],
+        installed=[*BASE_INSTALLED, rec("samplecli", "17.2-1", "samplecli")],
+        description="the owner moved a constrained package out of its constraint",
+    ),
     "new-flavour": world(
         [
             *kernel_meta("7.0.0-44", K44)[:1],

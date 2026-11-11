@@ -93,17 +93,25 @@ rows "$(release_row 5.0.0 5.1.0)"
 assert_exit 0 apply --plan --latest "$rows" --json
 assert_contains "$DS_STDOUT" "pins-constrained"
 
-# A constraint that is no series of versions is refused, never silently ineffective.
-for refused in '^4' '>=4' '4*' '4.*.1'; do
+# A value 1.6.x took that is no series and no version stays valid: the configuration loads, every
+# pin of the component waits as before, and the item says why.
+for value in '^4' '>=4' '4*'; do
   git -C "$inst" checkout -q -- workstation.toml
-  python3 - "$inst/workstation.toml" "$refused" <<'PY'
-import sys
-path, value = sys.argv[1:]
-text = open(path, encoding="utf-8").read().replace('version = "4.*"', f'version = "{value}"')
-open(path, "w", encoding="utf-8").write(text)
-PY
-  assert_exit 2 apply --plan --latest "$rows" --json
-  assert_contains "$DS_STDERR" "components.example-release.version"
+  sed -i "s/^version = \"4\\.\\*\"$/version = \"$value\"/" "$inst/workstation.toml"
+  assert_exit 0 apply --plan --latest "$rows" --json
+  assert_contains "$DS_STDOUT" "pins-constrained"
+  assert_contains "$DS_STDOUT" "no series"
+done
+git -C "$inst" checkout -q -- workstation.toml
+
+# A tag with a leading v is the version without it; an epoch binds only a version that has one, so a
+# pin without an epoch is inside its series.
+for value in 'v5.*' '1:5'; do
+  git -C "$inst" checkout -q -- workstation.toml
+  sed -i "s/^version = \"4\\.\\*\"$/version = \"$value\"/" "$inst/workstation.toml"
+  rows "$(release_row 5.0.0 5.1.0)"
+  assert_exit 0 apply --plan --latest "$rows" --json
+  assert_not_contains "$DS_STDOUT" "pins-constrained"
 done
 git -C "$inst" checkout -q -- workstation.toml
 

@@ -31,3 +31,14 @@ policy=$(steps '^apt policy ' | sed -n 1p)
 printf '%s\n' "${policy#apt policy }" >"$DS_TEST_ROOT/policy.json"
 assert_json "$DS_TEST_ROOT/policy.json" '.kept == [{"component": "example-app", "kind": "constraint", "version": "1.140.0-1",
   "reason": "the extensions need exactly this build", "packages": ["example-tracked", "example-tracked-lib", "example-tracked-too"]}]'
+
+# A value 1.6.x took that is no series and no version: the instance still loads and upgrades, and the
+# run says the constraint binds no apt version.
+sed -i 's/^version = "1.140.0-1"$/version = ">=16"/' "$up_inst/workstation.toml"
+git -C "$up_inst" commit -q -am "chore: a constraint of an older release"
+git -C "$up_inst" push -q origin HEAD:main
+clear_log
+move example.later 1.0 pypi
+assert_exit 0 on_terminal 'Update these too=n' -- --tracked
+assert_eq ok "$(step_status gate)"
+review_json '[.items[] | select(.code == "constraint-invalid" and .component == "example-app" and .version == ">=16" and .pending == false)] | length == 1'
