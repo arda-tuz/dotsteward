@@ -213,10 +213,12 @@ left to the vendor. Without a terminal it is never applied.
   restarted, unless the rebuild back restarted it (`systemctl --user`); a unit no generation has, and
   a session unit (D-Bus, the session manager, the audio server and the like, and `<name>-*` and
   `org.<name>.*` for each name of the desktop that runs in `XDG_CURRENT_DESKTOP`,
-  `XDG_SESSION_DESKTOP` and `DESKTOP_SESSION`), is never touched, and
-  E2E checks the way back. When that is green, the pins of each red component, named by the pin of its
-  binary or by its name in the pin id, get a local hold in `<state>/holds.json`, or all that moved
-  when the checks name none; the writer leaves those pins until upstream calls something newer the
+  `XDG_SESSION_DESKTOP` and `DESKTOP_SESSION`, of this command and of the user manager,
+  `systemctl --user show-environment`, so a run over SSH or from a timer protects the desktop too),
+  is never touched; when neither environment names a desktop, only the `dotsteward*` and
+  `home-manager*` units of the moved generation go back, and E2E checks the way back. When that is
+  green, the pins of each red component, named by the pin of its binary or by its name in the pin
+  id, get a local hold in `<state>/holds.json`, or all that moved when the checks name none; the writer leaves those pins until upstream calls something newer the
   latest, and each run says what is held. Item `red-held`, exit 3. If the way back is red too, the
   move is not what broke the machine: no hold, `e2e-red`, exit 1. A daemon that a command starts
   outside the user manager is not known here; its component stops it in an `agentsPost` hook, which

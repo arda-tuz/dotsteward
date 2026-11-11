@@ -61,7 +61,8 @@ _BISECT_GATES = 12
 _RUNNING_STATES = {"active", "activating", "reloading", "deactivating"}
 # Session units the way back never stops or restarts, even when a generation names them: a restart
 # of one of them ends the desktop session of the owner. The units of the desktop that runs are
-# added by its names in the environment (_desktop_units).
+# added by its names (_desktop_units), from the environment of the command and of the user manager;
+# when neither names a desktop, only _FRAMEWORK_UNITS go back.
 _SESSION_UNITS = (
     "dbus*",
     "dbus-broker*",
@@ -142,23 +143,36 @@ def _installed_version(package: str) -> str | None:
 
 # The names of the desktop that runs: each part of these variables, colon separated.
 _DESKTOP_VARIABLES = ("XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION")
+# The units that are clearly the framework's or Home Manager's own, the only ones the way back
+# takes back when no environment names the desktop that runs.
+_FRAMEWORK_UNITS = ("dotsteward*", "home-manager*")
 
 
-def _desktop_units(env: Mapping[str, str]) -> tuple[str, ...]:
+def _desktop_units(*envs: Mapping[str, str]) -> tuple[str, ...] | None:
     """The unit patterns of the desktop that runs: <name>-* and org.<name>.* for each of its names
-    (lower case, letters, digits, dots, dashes and underscores only), as desktops name their user
-    services."""
+    in any of ENVS (lower case, letters, digits, dots, dashes and underscores only), as desktops
+    name their user services. None when no environment names a desktop."""
     names = {
         part
+        for env in envs
         for variable in _DESKTOP_VARIABLES
         for part in (piece.strip().lower() for piece in env.get(variable, "").split(":"))
         if part and all(char.isalnum() or char in "._-" for char in part)
     }
+    if not names:
+        return None
     return tuple(pattern for name in sorted(names) for pattern in (f"{name}-*", f"org.{name}.*"))
 
 
-def _session_unit(name: str, env: Mapping[str, str]) -> bool:
-    return any(fnmatch.fnmatchcase(name, pattern) for pattern in (*_SESSION_UNITS, *_desktop_units(env)))
+def _session_unit(name: str, desktop: tuple[str, ...] | None) -> bool:
+    """Whether the way back leaves the unit NAME alone: a session unit, a unit of the desktop that
+    runs (DESKTOP: its patterns), or, when no name of the desktop is known, any unit that is not
+    clearly the framework's."""
+    if any(fnmatch.fnmatchcase(name, pattern) for pattern in _SESSION_UNITS):
+        return True
+    if desktop is None:
+        return not any(fnmatch.fnmatchcase(name, pattern) for pattern in _FRAMEWORK_UNITS)
+    return any(fnmatch.fnmatchcase(name, pattern) for pattern in desktop)
 
 
 def _ask_yes(question: str) -> bool:
@@ -1270,19 +1284,40 @@ class Upgrade(runner.Runner):
             return None
         return done.stdout if done.returncode == 0 else None
 
-    def _take_back_services(self, moved: Mapping[str, bytes], running: Mapping[str, str] | None) -> None:
+    def _manager_environment(self) -> dict[str, str]:
+        """The environment of the user manager (systemctl --user show-environment), which the
+        desktop session imports its names into; empty when the manager does not answer."""
+        if not self.linux or shutil.which("systemctl") is None:
+            return {}
+        shown = self._systemctl("show-environment") or ""
+        return dict(line.split("=", 1) for line in shown.splitlines() if "=" in line)
+
+    def _desktop(self) -> tuple[str, ...] | None:
+        """The unit patterns of the desktop that runs, from the environment of this command and of
+        the user manager; None, said once, when neither names one."""
+        desktop = _desktop_units(self.env, self._manager_environment())
+        if desktop is None:
+            _say(
+                "no desktop name in the environment of this command or of the user manager: the way back "
+                "takes back only the dotsteward and Home Manager units of the moved generation"
+            )
+        return desktop
+
+    def _take_back_services(
+        self, moved: Mapping[str, bytes], running: Mapping[str, str] | None, desktop: tuple[str, ...] | None
+    ) -> None:
         """What the moved generation brought goes with it, and nothing else. MOVED: the units of the
         moved generation; RUNNING: the invocations of its active units before the rebuild back. A
         unit only the moved generation has is stopped while it runs; a unit whose file it changed is
         restarted while it runs, unless the rebuild back restarted it already. A unit no generation
         has is the owner's and never touched, nor is a session unit (_SESSION_UNITS and the units of
-        the desktop that runs), whatever a generation says."""
+        the desktop that runs, DESKTOP), whatever a generation says."""
         if running is None:
             return
         back = self._generation_units()
-        added = sorted(name for name in moved if name not in back and not _session_unit(name, self.env))
+        added = sorted(name for name in moved if name not in back and not _session_unit(name, desktop))
         changed = sorted(
-            name for name in moved if name in back and back[name] != moved[name] and not _session_unit(name, self.env)
+            name for name in moved if name in back and back[name] != moved[name] and not _session_unit(name, desktop)
         )
         states = self._unit_states([*added, *changed])
         if states is None:
@@ -1550,11 +1585,12 @@ class Upgrade(runner.Runner):
         # The units of the active generation, the moved one when its rebuild activated it, and how
         # they run, before the rebuild back activates the other one.
         units = self._generation_units()
-        running = self._unit_states(sorted(name for name in units if not _session_unit(name, self.env)))
+        desktop = self._desktop() if units else ()
+        running = self._unit_states(sorted(name for name in units if not _session_unit(name, desktop)))
         status = self._ds("rebuild", "--profile", self.profile, "--switch")
         self._restore_binaries(saved)
         if status == 0:
-            self._take_back_services(units, running)
+            self._take_back_services(units, running, desktop)
         self.run.step("go-back", status, detail=reason)
         again = self._run_e2e() if status == 0 else ["rebuild"]
         self.red = True
