@@ -17,7 +17,7 @@ world_require
 
 KEPT='{"kept": [
   {"component": "sampledbms", "kind": "constraint", "version": "16.*", "reason": "the clusters run on 16",
-   "packages": ["sampledbms-16", "sampledbms-client", "sampledbms-16-ext-3", "sampledbms-16-missing", "linux-generic-hwe-24.04"]},
+   "packages": ["sampledbms-16", "sampledbms-client", "sampledbms-lib", "sampledbms-16-ext-3", "sampledbms-16-missing", "linux-generic-hwe-24.04"]},
   {"component": "sampletool", "kind": "constraint", "version": "1", "reason": "the old plugin API",
    "packages": ["sampletool"]},
   {"component": "samplenew", "kind": "constraint", "version": "16", "reason": "the same major as the server",
@@ -46,22 +46,27 @@ upgraded_to() {
 header='# Managed by dotsteward: the version constraints and holds of the instance. Only `dotsteward upgrade` writes it.'
 expected="$header
 Explanation: sampleapp: a hold below 2.0-1: E2E red: sampleapp:start
-Package: sampleapp
+Package: sampleapp:any
 Pin: version 1.0-1
 Pin-Priority: 990
 
 Explanation: sampledbms: version 16.*: the clusters run on 16
-Package: sampledbms-16
+Package: sampledbms-16:any
 Pin: version 16.*
 Pin-Priority: 990
 
 Explanation: sampledbms: version 16.*: the clusters run on 16
-Package: sampledbms-client
+Package: sampledbms-client:any
+Pin: version 16.*
+Pin-Priority: 990
+
+Explanation: sampledbms: version 16.*: the clusters run on 16
+Package: sampledbms-lib:any
 Pin: version 16.*
 Pin-Priority: 990
 
 Explanation: samplenew: version 16: the same major as the server
-Package: samplenew
+Package: samplenew:any
 Pin: version 16.*
 Pin-Priority: 990"
 
@@ -97,6 +102,8 @@ assert_json "$POLICY" '.kept.changed == false'
 # --- apt keeps to them, the owner's own packages stay free ---------------------------------------
 assert_eq 16.16-1 "$(candidate sampledbms-client)" "a constrained package stays in its series"
 assert_eq 16.16-1 "$(candidate sampledbms-16)"
+assert_eq 16.16-1 "$(candidate sampledbms-lib)"
+assert_eq 16.16-1 "$(candidate sampledbms-lib:i386)" "a record binds every architecture of the package"
 assert_eq 16.2-1 "$(candidate samplenew)" "a bare series is the series"
 assert_eq 1.0-1 "$(candidate sampleapp)" "a held package stays as dpkg has it"
 assert_eq 3.8.0-1 "$(candidate sampledbms-16-ext-3)" "a package of another scheme is not bound"
@@ -121,7 +128,8 @@ assert_eq 17.2-1 "$(upgraded_to sampledbms-client)" "without the constraint the 
 assert_eq 2.0-1 "$(upgraded_to sampleapp)"
 
 world_analysis constraints "$KEPT"
-assert_json "$ANALYSIS" '[.kept[].name] == ["sampleapp", "sampledbms-client"]'
+assert_json "$ANALYSIS" '[.kept[].name] == ["sampleapp", "sampledbms-client", "sampledbms-lib", "sampledbms-lib:i386"]'
+assert_json "$ANALYSIS" '[.kept[] | select(.name | startswith("sampledbms-lib")) | .why] == ["constraint", "constraint"]'
 assert_json "$ANALYSIS" '.kept[] | select(.name == "sampledbms-client") | .current == "16.15-1" and .candidate == "16.16-1" and .free == "17.2-1" and .why == "constraint" and .component == "sampledbms" and .version == "16.*" and .reason == "the clusters run on 16"'
 assert_json "$ANALYSIS" '.kept[] | select(.name == "sampleapp") | .candidate == "1.0-1" and .free == "2.0-1" and .why == "hold" and .version == "2.0-1"'
 assert_json "$ANALYSIS" '[.packages[].name] | index("sampleapp") == null'

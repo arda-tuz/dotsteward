@@ -120,6 +120,29 @@ assert_eq "1.1 null" "$(git -C "$up_bare" show main:versions.lock.json | jq -r '
 remote_holds example-host | assert_json - '."example.broken" | .version == "2.0" and (.reason | contains("pypi:broken"))'
 assert_eq "$(remote_oid)" "$(git -C "$up_inst" rev-parse HEAD)" "the checkout follows both"
 
+# --- while the commit of the pins waits, its hold waits too: that commit goes out as it is ---------
+clear_log
+rm -f -- "$UP_CONTROL/moves"
+move example.broken3 2.0 pypi:broken3
+move example.fine3 1.1 npm:fine3
+gate_red_when '."example.broken3" == "2.0"'
+printf '137\n' >"$UP_CONTROL/rebuild-status"
+before=$(remote_oid)
+assert_exit 1 upgrade --tracked
+rm -f -- "$UP_CONTROL/rebuild-status" "$UP_CONTROL/during-gate" "$UP_CONTROL/static-red"
+waiting=$(waiting_commit)
+[[ -n $waiting ]] || ds_fail "no commit waits"
+assert_eq "$before" "$(remote_oid)" "nothing went out, the hold neither"
+assert_json "$DOTSTEWARD_STATE_ROOT/holds.json" '[.holds[] | select(.id == "example.broken3") | .published != true] == [true]'
+clear_log
+assert_exit 3 upgrade --tracked
+assert_eq "" "$(steps '^pins .*apply')" "the waiting commit goes out as it is: the writer does not run again"
+assert_eq 2 "$(git -C "$up_bare" rev-list --count "$before..main")" "the pins, then the hold"
+assert_eq "$(git -C "$up_inst" rev-parse "$waiting^{tree}")" "$(git -C "$up_bare" rev-parse "main^^{tree}")"
+assert_eq "hosts/example-host.toml" "$(files_of main)"
+remote_holds example-host | assert_json - '."example.broken3".version == "2.0"'
+assert_eq "$(remote_oid)" "$(git -C "$up_inst" rev-parse HEAD)"
+
 # --- a hold of an older release, only in holds.json, reaches the host file -------------------------
 clear_log
 rm -f -- "$UP_CONTROL/moves"

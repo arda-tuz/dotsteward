@@ -582,6 +582,11 @@ WORLDS = {
             rec("sampleheld", "1.5-1", "sampleheld"),
             rec("samplenew", "16.2-1", "samplenew"),
             rec("samplenew", "17.0-1", "samplenew"),
+            *[
+                rec("sampledbms-lib", version, "sampledbms-common", multi_arch="same", arch=arch)
+                for version in ("16.16-1", "17.2-1")
+                for arch in ("amd64", "i386")
+            ],
         ],
         installed=[
             *BASE_INSTALLED,
@@ -592,6 +597,8 @@ WORLDS = {
             rec("sampletool", "2.4-1", "sampletool"),
             rec("sampleapp", "1.0-1", "sampleapp"),
             rec("sampleheld", "1.2-1", "sampleheld"),
+            rec("sampledbms-lib", "16.15-1", "sampledbms-common", multi_arch="same"),
+            rec("sampledbms-lib", "16.15-1", "sampledbms-common", multi_arch="same", arch="i386"),
         ],
         description="a constrained server, a package with its own versions, one the owner moved out of "
         "its constraint, another major the owner installed, a held package and one the owner moved past its hold",
