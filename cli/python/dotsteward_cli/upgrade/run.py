@@ -964,11 +964,9 @@ class Upgrade(runner.Runner):
         assert self.work is not None
         in_force = holds.in_force(self.state_root, self.work, self.name)
         # The holds of what goes back keep its rows of latest away; the restore itself goes on.
-        skips = [
-            pattern
-            for pattern in holds.skip_patterns(self.state_root, latest, in_force, self.name, facts.pin_owners(self._active()))
-            if pattern not in restored
-        ]
+        owners = facts.pin_owners(self._active())
+        held = holds.skip_patterns(self.state_root, latest, in_force, self.name, owners)
+        skips = [pattern for pattern in held if pattern not in restored]
         if not self._week_due():
             skips = [_FLAKE_INPUTS, *skips]
         skips = [*skips, *self._waiting_floors(latest)]
