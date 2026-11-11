@@ -402,6 +402,9 @@ class Writer:
         path = _path(move)
         entry = self.instance.load_locks().get(path)
         source = entry.get("source") if isinstance(entry, dict) else None
+        current = (
+            entry.get(version_field(move, self.declared, entry) or "version") if isinstance(entry, dict) else entry
+        )
         release = Distributions(
             pin=path.text().removeprefix("versions:"),
             project=name,
@@ -410,6 +413,7 @@ class Writer:
             index=index,
             integrity=str(integrity) if integrity else integrity_of(index),
             repository=_repository(move.request) or github_repo(source),
+            current=str(current) if isinstance(current, str) and current else None,
         )
         return self.authenticity.examine_distributions(self.instance.load_locks().documents[VERSIONS], release)
 

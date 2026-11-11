@@ -125,6 +125,8 @@ class Distributions:
     index: str
     integrity: str | None
     repository: str | None = None
+    # The version pinned before the move: its project URLs name the repository when the row does not.
+    current: str | None = None
 
 
 # What _get answers when the server says there is no such document.
@@ -151,6 +153,8 @@ class Finding:
     bridge: str | None = None
     # How many of the files of a pypi pin are attested, when some are and some are not.
     attested: str | None = None
+    # Why attestations that were found leave the move unsigned.
+    unsigned_because: str | None = None
 
     def report(self, move_id: str) -> dict[str, Any]:
         entry: dict[str, Any] = {"id": move_id, "status": self.status}
@@ -170,6 +174,8 @@ class Finding:
             text = "unsigned, signature discovery incomplete" if self.incomplete else "unsigned"
             if self.attested is not None:
                 text += f", {self.attested}"
+            if self.unsigned_because is not None:
+                text += f", {self.unsigned_because}"
         else:
             text = f"sigstore: {self.signature['identity']}"
             if self.first_use:
@@ -297,6 +303,14 @@ class Authenticity:
             if found:
                 finding.attested = f"{len(found)} of {len(release.hashes)} files attested"
             return finding
+        repository = release.repository
+        if pinned is None and repository is None:
+            # Never from the release being moved to: a taken-over project would name its own.
+            repository = self._project_repository(release)
+            if repository is None:
+                finding = Finding("unsigned", signer=unsigned, incomplete=bool(self._unknown))
+                finding.unsigned_because = "the repository that publishes it is unknown"
+                return finding
         root = self._trusted_root(trust)
         if root is None:
             raise Waits("authenticity-no-trusted-root", reason="no trusted root is recorded and none could be read")
@@ -325,12 +339,12 @@ class Authenticity:
                     "first_seen": _today(),
                 }
             regexp, expected = str(new_signer.get("identity_regexp") or ""), str(new_signer.get("issuer") or "")
-            if pinned is None and release.repository and not trust_rules.of_repository(identity, release.repository):
+            if pinned is None and repository and not trust_rules.of_repository(identity, repository):
                 raise Waits(
                     "authenticity-first-use-foreign",
                     reason="the first signer is no workflow of the pin's repository",
                     identity=identity,
-                    repository=release.repository,
+                    repository=repository,
                 )
             if not trust_rules.matches(regexp, identity) or issuer != expected:
                 code = "authenticity-signer-changed" if pinned is not None else "authenticity-failed"
@@ -428,6 +442,19 @@ class Authenticity:
             if isinstance(digest, str) and isinstance(name, str) and name and "/" not in name:
                 files[digest.lower()] = name
         return files
+
+    def _project_repository(self, release: Distributions) -> str | None:
+        """The one GitHub repository the project URLs of the version pinned before the move name
+        (``info.project_urls`` and ``info.home_page`` of ``<index>/<package>/<current>/json``); None
+        without one, or with more than one."""
+        if not release.current:
+            return None
+        quoted = "/".join(urllib.parse.quote(part, safe="") for part in (release.project, release.current))
+        document = self._get(f"{release.index}/{quoted}/json", "application/json")
+        info = _object(_object(document).get("info")) if isinstance(document, dict) else {}
+        urls = [*_object(info.get("project_urls")).values(), info.get("home_page")]
+        found = {repo.lower(): repo for url in urls if (repo := _github_of(url)) is not None}
+        return next(iter(found.values())) if len(found) == 1 else None
 
     def _provenance(self, release: Distributions, name: str) -> list[Candidate] | None:
         """The attestations the integrity API publishes for the file NAME, as v0.3 bundles: none
@@ -738,6 +765,15 @@ def _predicate(bundle: dict[str, Any]) -> str | None:
         return None
     statement = _json(base64.b64decode(str(envelope.get("payload", "")) + "=="))
     return statement.get("predicateType") if isinstance(statement, dict) else None
+
+
+_GITHUB_PAGE = re.compile(r"https://(?:www\.)?github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?(?:[/?#].*)?")
+
+
+def _github_of(url: Any) -> str | None:
+    """owner/name of a page of a GitHub repository (its issues, its tree), else None."""
+    match = _GITHUB_PAGE.fullmatch(url) if isinstance(url, str) else None
+    return f"{match[1]}/{match[2]}" if match else None
 
 
 def _subject_digests(bundle: dict[str, Any]) -> list[str]:

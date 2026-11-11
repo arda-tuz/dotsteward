@@ -267,7 +267,11 @@ rule. Its attestation, converted to a v0.3 Sigstore bundle, is verified with
 cosign: a publish attestation (`https://docs.pypi.org/attestations/publish/v1`,
 or SLSA provenance) whose statement names the digest of that file. The pin is
 signed only when every one of those files is, all by one signer; on first use
-it must be a workflow of the declaration's `repo` (or of the pin's `source`).
+it must be a workflow of the declaration's `repo`, else of the pin's `source`,
+else of the one GitHub repository the project URLs of the version pinned before
+the move name (never those of the release it moves to, which a taken-over
+project could set). Without any, attested files move `unsigned, the repository
+that publishes it is unknown`: no signer is trusted on first use.
 The pin then records what it vouches for, and the signer goes into
 `trust.signers` as for a download:
 

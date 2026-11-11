@@ -10,7 +10,8 @@ Fields (one of package and package_at):
                 default: the index with its last segment "pypi" as "integrity")
     repo        owner/name of the GitHub repository that publishes the package
                 (a lock template): the first signer of its attestations must be
-                a workflow of it (``pins apply``, docs/pins-engine.md)
+                a workflow of it (``pins apply``, docs/pins-engine.md); without
+                it, the project URLs of the pinned version name it
 
 Query: ``GET <index>/<package>/json``. The newest release whose version is
 a final release (digits and dots only: no pre-release, development or
