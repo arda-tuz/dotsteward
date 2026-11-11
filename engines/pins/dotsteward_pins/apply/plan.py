@@ -109,6 +109,8 @@ class Declared:
         self.bundles: dict[str, Bundle] = {}
         self.guards: dict[str, str] = {}
         self.regenerators: dict[str, dict[str, Any]] = {}
+        # The download pin of each companion: the binary its component installs it next to.
+        self.companion_of: dict[str, str] = {}
         ctx = Context(instance, locks)
         for rule in build_rules(instance):
             try:
@@ -117,6 +119,18 @@ class Declared:
                 # A rule that cannot be evaluated is what `pins check` reports; it
                 # explains no pin here.
                 continue
+        for system in instance.systems:
+            for component in instance.manifest(system).get("components") or []:
+                install = component.get("install") if isinstance(component, dict) else None
+                if not isinstance(install, dict):
+                    continue
+                main = install.get("pin")
+                if not isinstance(main, str) or main not in self.downloads:
+                    continue
+                for companion in install.get("companions") or ():
+                    pin = companion.get("pin") if isinstance(companion, dict) else None
+                    if isinstance(pin, str) and pin in self.downloads and pin != main:
+                        self.companion_of[pin] = main
 
     def _read(self, rule: Rule, ctx: Context) -> None:
         locks = self.locks
@@ -273,7 +287,8 @@ def group_of(move: Move, instance: Instance, declared: Declared, locks: Locks) -
             return "channel", ""
         return "flake", str(steps[1].key)
     if text in declared.downloads:
-        return "download", move.id
+        # A binary and its companions move together: no pair of two releases.
+        return "download", declared.companion_of.get(text, move.id)
     if text in declared.bundles:
         return "npm", str(declared.bundles[text].rule.values["dir"])
     guarded = declared.guards.get(path.child("version").text()) or declared.guards.get(text)

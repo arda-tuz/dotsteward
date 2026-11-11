@@ -161,7 +161,7 @@ a row nothing explains is a review item (`pins-no-writer`):
 | the framework | `framework` | the reference in `flake.nix`, `flake.lock`, `bootstrap.sh` and `.dotsteward/cli.sh` from the new `template/`, the mirrors |
 | a flake input | `channel` (all channel inputs together), `flake:<name>` | the reference, `flake.lock` with `nix flake lock`, the lock fields, the pins that derive from it |
 | a `*_nix_sha256` field | `nix-package:<name>` | the version, the tag fields, each hash from a build with the placeholder hash |
-| a `download-pin` rule | `download:<id>` | the fields the rule names, from the row or from one prefetch |
+| a `download-pin` rule | `download:<id>` | the fields the rule names, from the row or from one prefetch; the pins of the companions a component installs next to its binary are in the group of the binary, so they move and wait together |
 | a `text-guard` with `regenerate` over a `pypi` pin | `pypi:<file>` | the hash-pinned requirements, from the command the rule declares |
 | an `npm-bundle` rule | `npm:<dir>` | `package.json`, `package-lock.json` with an audit, the mirrors, the bundle hash |
 | a vendored skill | `skill:<name>` | the whole directory, the revision and the digests |
