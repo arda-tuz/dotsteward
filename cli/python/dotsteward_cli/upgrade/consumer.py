@@ -7,8 +7,9 @@ generation of the commit before is green again, the consumer stays there: it lea
 that lock and the components that went red), and no commit whose shared lock is that one becomes
 active here. The record of its state carries the marker as ``held``, so the producer reads it from
 ``state/<name>``. The producer puts the pins of those components back to the values of the commit
-the consumer went back to and holds them locally; the lock that comes of it is another one, so the
-consumer drops the marker and tries it.
+the consumer went back to and holds them locally, for the pins of official binaries those components
+own; anything else the lock moved is named for a person. The lock that comes of it is another one,
+so the consumer drops the marker and tries it.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import datetime
 import hashlib
 import json
 import re
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -91,58 +92,59 @@ def _at(value: Any, keys: Sequence[str]) -> tuple[bool, Any]:
     return True, value
 
 
-def moved_pins(root: Path, before: str, after: str) -> list[dict[str, Any]]:
-    """The pins the pin file moved from BEFORE to AFTER: {id, path, from, to}. A pin is the object a
-    changed value is in (``agent_tools.codex.linux``, ``flake_inputs.nixpkgs``), or the value itself
-    at the top; a new one is no move."""
+def _pin_path(document: Mapping[str, Any], pin: str) -> list[str]:
+    """Where the pin id PIN is in the pin file: a top-level key of that name, else its dotted path."""
+    return [pin] if pin in document else pin.split(".")
+
+
+def moved_pins(root: Path, before: str, after: str, pins: Collection[str]) -> list[dict[str, Any]]:
+    """The pins of PINS whose value the pin file moved from BEFORE to AFTER: {id, path, from, to}. A
+    pin it adds is no move."""
     old, new = _pins(root, before), _pins(root, after)
     if not isinstance(old, dict) or not isinstance(new, dict):
         return []
-    paths: dict[tuple[str, ...], None] = {}
-    for keys, value in _leaves(old):
-        present, now = _at(new, keys)
-        if keys and present and now != value:
-            paths[keys[:-1] if len(keys) > 1 else keys] = None
     rows = []
-    for keys in sorted(paths):
-        _, was = _at(old, keys)
-        _, now = _at(new, keys)
-        rows.append({"id": ".".join(keys), "path": list(keys), "from": was, "to": now})
+    for pin in sorted(pins):
+        keys = _pin_path(old, pin)
+        had, was = _at(old, keys)
+        has, now = _at(new, keys)
+        if had and has and was != now:
+            rows.append({"id": pin, "path": keys, "from": was, "to": now})
     return rows
 
 
-def owned_by(rows: Sequence[Mapping[str, Any]], components: Sequence[str], owners: Mapping[str, str]) -> list[str]:
-    """The ids of ROWS that belong to one of COMPONENTS: by the pin of its binary (OWNERS: pin id to
-    component) or by its name as a part of the id."""
-    wanted = set(components)
-    return [
-        str(row["id"])
-        for row in rows
-        if owners.get(str(row["id"])) in wanted or wanted & set(str(row["id"]).split("."))
+def moved_paths(root: Path, before: str, after: str) -> list[str]:
+    """Every value the pin file moved from BEFORE to AFTER, by its dotted path, and each input of
+    flake.lock that moved, as flake.lock.NAME: what a person looks at."""
+    old, new = _pins(root, before), _pins(root, after)
+    paths = []
+    if isinstance(old, dict) and isinstance(new, dict):
+        for keys, value in _leaves(old):
+            present, now = _at(new, keys)
+            if keys and present and now != value:
+                paths.append(".".join(keys))
+    old_nodes, new_nodes = _flake_nodes(root, before), _flake_nodes(root, after)
+    paths += [
+        f"flake.lock.{name}" for name in sorted(old_nodes) if name in new_nodes and new_nodes[name] != old_nodes[name]
     ]
-
-
-def flake_input(row: Mapping[str, Any]) -> bool:
-    """A flake input moves with flake.nix and flake.lock, which only the writer writes."""
-    return str(row["id"]).startswith("flake_inputs.")
+    return paths
 
 
 def put_back(work: Path, rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
-    """Writes the value each pin of ROWS had before (``from``) into the pin file of the clone WORK, all
-    but the flake inputs: the rows it put back."""
-    done = [row for row in rows if not flake_input(row)]
-    if not done:
+    """Writes the value each pin of ROWS had before (``from``) into the pin file of the clone WORK: the
+    rows it put back."""
+    if not rows:
         return []
     path = work / PIN_FILE
     document = json.loads(path.read_text(encoding="utf-8"))
-    for row in done:
+    for row in rows:
         keys = [str(key) for key in row["path"]]
         target = document
         for key in keys[:-1]:
             target = target[key]
         target[keys[-1]] = row["from"]
     atomic.atomic_write(path, json.dumps(document, indent=2) + "\n")
-    return done
+    return list(rows)
 
 
 def version_of(value: Any) -> str:

@@ -41,7 +41,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -954,9 +954,10 @@ class Upgrade(runner.Runner):
     def _answer_consumers(self) -> None:
         """T19 on the producer: the state records of the other machines, and for each that holds back the
         shared lock of the tip, the pins of the components that went red there go back to the values of
-        the commit it went back to (all that moved, when the checks named none), with a local hold so the
+        the commit it went back to, with a local hold so the
         writer leaves them until upstream has something newer. A record of a lock the tip no longer has
-        is answered. The flake inputs are only held: flake.nix and flake.lock move with the writer."""
+        is answered. Only the pins of official binaries a red component owns go back; anything else the
+        lock moved is named, for a person to decide."""
         self.put_back = []
         try:
             if states.fetch(self.instance) != 0:
@@ -978,29 +979,30 @@ class Upgrade(runner.Runner):
                 continue
             if not isinstance(held, dict) or consumer.lock_digest(self.root, str(held["lock_commit"])) != tip_lock:
                 continue
-            rows = consumer.moved_pins(self.root, str(held["commit"]), str(held["lock_commit"]))
-            ids = consumer.owned_by(rows, held.get("components") or [], owners) or [str(row["id"]) for row in rows]
-            chosen = [row for row in rows if str(row["id"]) in ids]
-            if not chosen:
-                continue
-            reason = f"red on {other} with the lock of {str(held['lock_commit'])[:12]}"
+            commit, lock_commit = str(held["commit"]), str(held["lock_commit"])
+            red = {str(name) for name in held.get("components") or ()}
+            mine = {pin: owner for pin, owner in owners.items() if owner in red}
+            chosen = consumer.moved_pins(self.root, commit, lock_commit, mine)
+            moved = consumer.moved_paths(self.root, commit, lock_commit)
+            reason = f"red on {other} with the lock of {lock_commit[:12]}"
             for row in chosen:
-                component = owners.get(str(row["id"])) or next(
-                    (name for name in held.get("components") or () if name in str(row["id"]).split(".")),
-                    str(row["id"]),
-                )
-                holds.add(self.state_root, component, str(row["id"]), consumer.version_of(row["to"]), reason)
-            self.put_back += [row for row in chosen if not consumer.flake_input(row)]
-            shown = ", ".join(str(row["id"]) for row in chosen)
-            _say(f"{other} holds the lock of {str(held['lock_commit'])[:12]} back: {shown} go back and wait")
+                holds.add(self.state_root, mine[str(row["id"])], str(row["id"]), consumer.version_of(row["to"]), reason)
+            self.put_back += chosen
+            ids = [str(row["id"]) for row in chosen]
+            if ids:
+                said = f"{', '.join(ids)} go back to where they were and wait for upstream"
+            else:
+                said = "no pin of what went red moved, so nothing goes back: a person decides"
+            _say(f"{other} holds the lock of {lock_commit[:12]} back: {said}")
             self.run.item(
                 "consumer-red",
                 pending=False,
                 machine=other,
-                lock_commit=held["lock_commit"],
-                ids=[str(row["id"]) for row in chosen],
-                message=f"the shared lock went red on {other}: {shown} go back to where they were and wait for "
-                "upstream",
+                lock_commit=lock_commit,
+                components=sorted(red),
+                ids=ids,
+                moved=moved,
+                message=f"the shared lock went red on {other}: {said}",
             )
 
     def _write(self, latest: Path, skips: Sequence[str]) -> None:
@@ -1301,9 +1303,10 @@ class Upgrade(runner.Runner):
         self.run.data.update(plugins={"updated": found["updated"], "findings": len(found["findings"])})
         self.run.step("plugin-scan", report.OK)
 
-    def _saved_binaries(self) -> list[tuple[Path, Path]]:
-        """The official binaries of the waiting move, each with the place of its saved copy."""
-        moved = {str(row.get("id")) for row in self.moved}
+    def _saved_binaries(self, ids: Collection[str] | None = None) -> list[tuple[Path, Path]]:
+        """The official binaries of the waiting move (or of the pins IDS), each with the place of its
+        saved copy."""
+        moved = set(ids) if ids is not None else {str(row.get("id")) for row in self.moved}
         saved = []
         for component in self._active():
             install = component.get("install") or {}
@@ -1414,8 +1417,8 @@ class Upgrade(runner.Runner):
         if stop or restart:
             self.run.step("go-back-services", report.OK, stopped=stop, restarted=restart)
 
-    def _save_binaries(self) -> None:
-        for dest, copy in self._saved_binaries():
+    def _save_binaries(self, ids: Collection[str] | None = None) -> None:
+        for dest, copy in self._saved_binaries(ids):
             # A copy that is there came from before the move, also after a run that was cut short.
             if dest.is_file() and not copy.exists():
                 atomic.make_private_dirs(copy.parent.parent)
@@ -1450,6 +1453,8 @@ class Upgrade(runner.Runner):
         _say(f"rebuild of profile {self.profile}")
         if self.work is not None:
             self._save_binaries()
+        elif self.lock_before is not None:
+            self._save_binaries(self._consumer_pins())
         status = self._ds("rebuild", "--profile", self.profile, "--switch")
         if self.work is not None and (status == _KILLED or status < 0):
             # Out of memory, or stopped from outside: it says nothing about the pins, and this tree is
@@ -1474,8 +1479,15 @@ class Upgrade(runner.Runner):
             self._go_back(f"rebuild failed with status {status}", [])
 
     def _consumer(self) -> bool:
-        """This machine takes the shared lock from another one, the producer."""
-        return facts.role(self.instance, self.name) not in ("this-machine", "unnamed")
+        """This machine takes the shared lock from another one, the named producer."""
+        return facts.role(self.instance, self.name) not in ("this-machine", "unnamed", "nobody")
+
+    def _consumer_pins(self) -> list[str]:
+        """The pins of the official binaries that the shared lock of the checkout moved from the one of
+        the generation before."""
+        assert self.lock_before is not None
+        owners = facts.pin_owners(self._active())
+        return [str(row["id"]) for row in consumer.moved_pins(self.root, self.lock_before, self._head(), owners)]
 
     def _held_back(self) -> bool:
         """T19 before a rebuild of the checkout on a consumer: True when its shared lock is the one that
@@ -1519,12 +1531,15 @@ class Upgrade(runner.Runner):
         assert self.profile is not None and self.lock_before is not None
         revision, lock_commit = self.lock_before, self._head()
         reason = f"E2E red: {', '.join(red)}"
+        saved = self._saved_binaries(self._consumer_pins())
         if not self._open_work(revision):
             self._still_red(red)
             return
         units = self._generation_units()
         running = self._unit_states(sorted(name for name in units if not _session_unit(name, self.env)))
+        # The rebuild first: an installer keeps a binary newer than its pin, so the copy goes last.
         status = self._ds("rebuild", "--profile", self.profile, "--switch")
+        self._restore_binaries(saved)
         if status == 0:
             self._take_back_services(units, running)
         self.run.step("go-back", status, detail=reason)

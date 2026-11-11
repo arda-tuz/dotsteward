@@ -238,13 +238,14 @@ left to the vendor. Without a terminal it is never applied.
   so the producer reads it from `state/<name>`. A commit with another shared lock drops the marker
   and is tried. Red on the way back too: nothing is held, `e2e-red`, exit 1.
 - **The producer answers a consumer:** each producer run fetches `state/*`. For a record that holds
-  back the shared lock of the tip, the pins of the components that went red there (by the pin of
-  their binary or by their name in the pin id, all that moved when the checks named none) go back to
-  the values of the commit the consumer went back to, with a local hold at the red value, so the
-  writer leaves them until upstream calls something newer the latest (`consumer-red`). That commit
-  takes the gate, the rebuild and E2E of the producer and is published as any move of the lock. A
-  flake input is only held: `flake.nix` and `flake.lock` move with the writer. A record of a lock the
-  tip no longer has is answered.
+  back the shared lock of the tip, the pins of the official binaries of the components that went red
+  there go back to the values of the commit the consumer went back to, with a local hold at the red
+  value, so the writer leaves them while upstream calls that version the latest (`consumer-red`).
+  That commit takes the gate, the rebuild and E2E of the producer and is published as any move of
+  the lock. Anything else the lock moved, a flake input or a value no component owns, is named in
+  `consumer-red` for a person: nothing of it goes back or is held. A record of a lock the tip no
+  longer has is answered. Only a named producer answers, and only a machine with a named producer
+  goes back.
 - **E2E is red with nothing of this run to go back to:** `e2e-red` names the checks, exit 1, no offer
   and no firmware. A red `deb` component gets the `sudo apt-mark hold` command to run if you want it.
   Nothing is written to the TOML; later releases carry holds in the machine layer.
