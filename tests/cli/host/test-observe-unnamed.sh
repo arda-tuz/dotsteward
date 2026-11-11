@@ -26,6 +26,7 @@ lock_line /var/lib/dpkg/lock-frontend >"$DS_SYSTEM_ROOT/proc/locks"
 releaser=$!
 started=$SECONDS
 assert_exit 0 run_observe --wait-limit 0
+took=$((SECONDS - started))
 wait "$releaser"
-((SECONDS - started >= 2)) || ds_fail "the observer of an unnamed machine went on while dpkg held its lock"
+((took >= 2)) || ds_fail "the observer of an unnamed machine went on while dpkg held its lock"
 assert_contains "$DS_STDOUT" "nothing to observe"

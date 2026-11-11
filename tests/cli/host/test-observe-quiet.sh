@@ -7,8 +7,10 @@
 # - While a lock is visibly held the observer waits without a limit (the holder is alive, and
 #   no later write of the status file may come to start it again); --wait-limit bounds only
 #   the waiting for the other signs.
-# - On a file system whose files have an anonymous device (btrfs subvolumes, tmpfs: major 0),
-#   /proc/locks names another anonymous device than stat: there the inode alone matches.
+# - A lock matches by device and inode: the device stat gives, or the one of the superblock
+#   of its mount (btrfs subvolumes: /proc/self/mountinfo). Without that, a lock of the same
+#   inode on another anonymous device (major 0) may be dpkg's: it keeps the observer waiting
+#   only up to --wait-limit.
 # - A snapshot that is no JSON object is no snapshot: the next run takes a new baseline.
 # shellcheck source=tests/cli/host/observe-helpers.sh
 source "$DS_REPO_ROOT/tests/cli/host/observe-helpers.sh"
@@ -55,25 +57,45 @@ assert_exit 0 run_observe --wait-limit 0
 assert_contains "$DS_STDOUT" "dpkg did not settle within 0 s (/var/lib/dpkg/updates holds unfinished work)"
 rm -f -- "$dpkg_dir/updates/0001"
 
-# --- anonymous devices: the inode alone ----------------------------------------------------------
+# --- the device of a lock: what stat says, or the superblock of its mount -----------------------
 
+# btrfs: /proc/locks names the device of the superblock, which /proc/self/mountinfo has (in
+# decimal), stat the one of the subvolume. Device and inode match: dpkg holds it, no limit.
+mkdir -p "$DS_SYSTEM_ROOT/proc/self"
+printf '36 25 0:255 / %s rw,relatime shared:1 - btrfs /dev/vda2 rw,subvol=/@\n' "$(realpath "$dpkg_dir")" \
+  >"$DS_SYSTEM_ROOT/proc/self/mountinfo"
+printf '1: POSIX  ADVISORY  WRITE 4242 00:ff:%s 0 EOF\n' "$(stat -c '%i' "$dpkg_dir/lock")" \
+  >"$DS_SYSTEM_ROOT/proc/locks"
+pkg example-editor 1.3.1-1
+(sleep 5 && : >"$DS_SYSTEM_ROOT/proc/locks") &
+releaser=$!
+started=$SECONDS
+assert_exit 0 run_observe --wait-limit 0
+took=$((SECONDS - started))
+wait "$releaser"
+((took >= 5)) || ds_fail "a lock on the device of the superblock was not seen"
+assert_contains "$DS_STDOUT" "1 package changed since the last observation"
+rm -f -- "$DS_SYSTEM_ROOT/proc/self/mountinfo"
+
+# Without the device of the superblock, a lock of the same inode on another anonymous device
+# (tmpfs, another subvolume, FUSE) may be dpkg's or another file's: it keeps the observer
+# waiting, but only up to the wait limit.
 shm=/dev/shm
 if [[ -d $shm && -w $shm && $(stat -c '%t' "$shm") == 0 ]]; then
   anonymous=$(mktemp "$shm/dotsteward-test-lock.XXXXXX")
   ds_defer rm -f -- "$anonymous"
   ln -sfn "$anonymous" "$dpkg_dir/lock"
-  # /proc/locks names the device of the superblock, stat the one of the subvolume.
-  printf '1: POSIX  ADVISORY  WRITE 4242 00:ff:%s 0 EOF\n' "$(stat -L -c '%i' "$dpkg_dir/lock")" \
+  printf '1: FLOCK  ADVISORY  WRITE 4242 00:2a:%s 0 EOF\n' "$(stat -L -c '%i' "$dpkg_dir/lock")" \
     >"$DS_SYSTEM_ROOT/proc/locks"
-  pkg example-editor 1.3.1-1
-  (sleep 2 && : >"$DS_SYSTEM_ROOT/proc/locks") &
-  releaser=$!
-  started=$SECONDS
-  assert_exit 0 run_observe
-  wait "$releaser"
-  ((SECONDS - started >= 2)) || ds_fail "a lock on an anonymous device was not seen"
+  pkg example-editor 1.3.2-1
+  assert_exit 0 timeout 30 "$agents_fw/cli/dotsteward" --instance "$agents_inst" observe --settle-seconds 0 \
+    --wait-limit 1 </dev/null
+  assert_contains "$DS_STDOUT" "dpkg did not settle within 1 s (/var/lib/dpkg/lock may be locked: a lock of its inode on another device)"
+  : >"$DS_SYSTEM_ROOT/proc/locks"
   rm -f -- "$dpkg_dir/lock"
   : >"$dpkg_dir/lock"
+  assert_exit 0 run_observe
+  assert_contains "$DS_STDOUT" "1 package changed since the last observation"
 else
   printf 'no tmpfs at %s: the anonymous device case is not checked here\n' "$shm" >&2
 fi

@@ -70,8 +70,9 @@ locked() {
   (sleep 1 && : >"$DS_SYSTEM_ROOT/proc/locks") &
   local releaser=$! started=$SECONDS
   assert_exit 0 run_observe --wait-limit 0
+  local took=$((SECONDS - started))
   wait "$releaser"
-  ((SECONDS - started >= 1)) || ds_fail "the observer went on while a lock was held: $line"
+  ((took >= 1)) || ds_fail "the observer went on while a lock was held: $line"
   assert_contains "$DS_STDOUT" "1 package changed since the last observation"
   assert_eq "$2" "$(jq -r '.packages["unrelated-package"]' "$snapshot")"
 }
