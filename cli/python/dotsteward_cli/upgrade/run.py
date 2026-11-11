@@ -1072,6 +1072,7 @@ class Upgrade(runner.Runner):
                     row.update(commit=commit, lock_commit=lock_commit)
                     open_pins.setdefault(str(row["id"]), []).append((other, row))
         greens = self._green_values(records, holders)
+        refused = self._refused()
         for pin, entries in sorted(open_pins.items()):
             machines = sorted(name for name, _ in entries)
             values = {json.dumps(row["from"], sort_keys=True) for _, row in entries}
@@ -1110,6 +1111,17 @@ class Upgrade(runner.Runner):
                     "version: it stays where it is and a person decides",
                 )
                 continue
+            if (pin, lock_commit) in refused:
+                self._consumer_item(
+                    machines,
+                    [],
+                    lock_commit,
+                    [component],
+                    [pin],
+                    person=True,
+                    said=f"putting {pin} back failed the gate before: it stays where it is and a person decides",
+                )
+                continue
             commit = sorted(str(row["commit"]) for _, row in entries)[0]
             self.restores.append(
                 {
@@ -1118,6 +1130,7 @@ class Upgrade(runner.Runner):
                     "machines": machines,
                     "from": consumer.version_of(red_value),
                     "to": consumer.version_of(green),
+                    "lock_commit": lock_commit,
                 }
             )
             reason = f"red on {', '.join(machines)} with the lock of {lock_commit[:12]}"
@@ -1125,6 +1138,35 @@ class Upgrade(runner.Runner):
             said = f"{pin} goes back to {consumer.version_of(green)} and waits for upstream"
             _say(f"{', '.join(machines)} hold the lock of {lock_commit[:12]} back: {said}")
             self._consumer_item(machines, [pin], lock_commit, [component], [pin], person=False, said=said)
+
+    def _refused_path(self) -> Path:
+        return self.upgrade_dir / "refused-restores.json"
+
+    def _refused(self) -> set[tuple[str, str]]:
+        """The pins whose put back the gate refused, with the red lock it was for."""
+        try:
+            document = json.loads(self._refused_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return set()
+        entries = document.get("refused") if isinstance(document, dict) else None
+        return {
+            (str(entry.get("id")), str(entry.get("lock_commit"))) for entry in entries or () if isinstance(entry, dict)
+        }
+
+    def _refuse_restores(self, rows: Sequence[Mapping[str, Any]]) -> None:
+        """A put back the gate refused is never tried again for the same red lock: a person decides."""
+        ids = {str(row.get("id")) for row in rows if str(row.get("group") or "").startswith("restore:")}
+        refused = self._refused() | {
+            (str(entry["id"]), str(entry["lock_commit"])) for entry in self.restores if entry["id"] in ids
+        }
+        if not ids:
+            return
+        atomic.make_private_dirs(self.upgrade_dir)
+        atomic.atomic_write_json(
+            self._refused_path(),
+            {"refused": [{"id": pin, "lock_commit": commit} for pin, commit in sorted(refused)]},
+            mode=0o600,
+        )
 
     def _unread(self, other: str, why: str) -> None:
         _say(f"the state record of {other} is not answered: {why}")
@@ -1329,6 +1371,7 @@ class Upgrade(runner.Runner):
             )
 
         def hold(rows: Sequence[dict[str, Any]], why: str) -> None:
+            self._refuse_restores(rows)
             self._hold_moved(rows, [], why)
             # A publish that runs again leaves them too.
             self.skips = [*self.skips, *(str(row.get("id")) for row in rows)]

@@ -268,7 +268,9 @@ left to the vendor. Without a terminal it is never applied.
   hash-pinned requirements, a binary with its companions), so the lock stays consistent and `pins
   check` passes; a source the lock records as signed never comes back unsigned. A local hold at the
   red value keeps the writer from moving it there again while upstream calls it the latest
-  (`consumer-red`). The commit message names what went back and for whom. That commit takes the
+  (`consumer-red`). The commit message names what went back and for whom. A put back the gate
+  refuses is held like any red group, waits for a person and is not tried again for that red lock
+  (`<state>/upgrade/refused-restores.json`). That commit takes the
   gate, the rebuild and E2E of the producer and is published as any move of the lock. Everything
   else waits for a person (`consumer-red`, exit 3): consumers green on different values, a newer
   green consumer, and a red lock that moved no such pin (a flake input, the skills lock, an npm
