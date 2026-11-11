@@ -154,7 +154,7 @@ catalog component (see [catalog.md](catalog.md)) or a private component in
 | `components.<name>.tags` | none | The machine tags the component is for: a machine with one of them gets it. |
 | `components.<name>.updater` | none | The one thing that updates the component: `apt`, `nix`, `dotsteward`, `self`, `none`, `snap` or `flatpak`. `dotsteward upgrade` starts the updater a component declares for `self`, and for no `updater` on a method other than `deb`; the other values follow in a later release. |
 | `components.<name>.track` | none | More package names `dotsteward upgrade` follows for the `deb` method. |
-| `components.<name>.version` | none | A constraint on the version, as apt writes a pattern of versions (`16.*`; a series of numbers alone is that series). The writer moves a pin of the component only inside it, apt in the sudo window keeps the packages of a `deb` component inside it, and a constrained server refuses another major: [upgrade.md](upgrade.md#constraints-and-holds). A platform file can say it for one platform. |
+| `components.<name>.version` | none | A constraint on the version: a series, an optional epoch, numbers and an optional `.*` (`16`, `16.*`, `1.140`, `5:27`); anything else is refused. The writer moves a pin of the component only inside it, apt in the sudo window lowers the versions of a `deb` component outside it, and a constrained server refuses another major: [upgrade.md](upgrade.md#constraints-and-holds). A platform file can say it for one platform. |
 | `components.<name>.reason` | none | Why the version is constrained; the item that waits and the apt record say it. |
 
 ## `[settings]`
