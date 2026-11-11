@@ -166,6 +166,10 @@ pkgs.runCommand "dotsteward-check-template-full"
     mapfile -t links < <(jq -r '.managed_links[]' "$manifest")
     expected_links=(
       "~/.config/nix/nix.conf"
+      "~/.config/systemd/user/dotsteward-observe.path"
+      "~/.config/systemd/user/dotsteward-observe.service"
+      "~/.config/systemd/user/default.target.wants/dotsteward-observe.path"
+      "~/.config/systemd/user/default.target.wants/dotsteward-observe.service"
       "~/.zshrc"
       "~/.config/starship.toml"
       "~/.claude/CLAUDE.md"
