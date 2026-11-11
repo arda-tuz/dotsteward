@@ -159,7 +159,11 @@ Update these too? [y/N] n
    instance and without commits of its own; else `checkout-behind` says which and the command for it,
    and the checkout is not touched. Its tracking ref follows the remote. A last rebuild gives it the
    records of the machine back (the build comes from the store), and the clone goes; when that rebuild
-   fails, approved firmware waits. Then the analysis and the offer, firmware last, and the run report.
+   fails, approved firmware waits. Then the state of this machine goes to its branch `state/<name>`
+   (`dotsteward state record`, [machines.md](machines.md)), so what this run moved reaches the
+   remote; offline it waits here and the next run sends it. Then the analysis and the offer, a
+   second record after the extra pass, firmware last, and the run report. What the extra pass or
+   `--all` updates outside what is tracked is in no record: it never becomes tracked.
 
 The profile of a run is the one of the machine (`hosts/<name>.toml`, `machine.json`, the last
 rebuild), never `profiles.default`. A machine without a name is asked on a terminal, and gets

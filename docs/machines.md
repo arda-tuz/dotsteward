@@ -194,6 +194,9 @@ of the remote one is the queue, and the next `state record` or `state push` send
 at the same time in one checkout both land (the second one again on the new tip, exit 6 when that
 fails too), and a state branch checked out in a work tree is never moved under it.
 `[policy] observed_state_push = false` keeps the branch on this machine.
+`dotsteward upgrade` records the state itself (`recorded_by: upgrade`) after it published and the
+checkout followed, before the offer of tracked mode and once more after the extra pass, so what
+it moved reaches the remote next to the shared lock ([upgrade.md](upgrade.md)).
 
 `dotsteward state fetch` brings the branches of every machine to
 `refs/remotes/origin/state/*`, and `dotsteward state show [NAME] [--json]` prints the state of

@@ -9,7 +9,8 @@ this file only puts them in order:
     1  one sudo window before all Nix work: recovery, pin, bridge, apt-get update, the apt plan
     2  writer, gate, local commit; self triggers; plugin scan; rebuild; channels of the user
     3  E2E with a key, machine checks, the red path
-    4  publish, the checkout follows, analysis and the offer, firmware in a window of its own, the report
+    4  publish, the checkout follows, the state record, analysis and the offer, firmware in a window
+       of its own, the report
 
 The checkout belongs to its owner. Everything the writer does happens in a clone of the fetched tip
 under ``<state>/upgrade/work``, as ``dotsteward-update`` does and as a capture does in its worktree:
@@ -46,6 +47,7 @@ from typing import Any
 
 from dotsteward_cli import apt_plan, atomic, config, firmware, incoming, machine, procs, report, runner, versions
 from dotsteward_cli import publish as publishing
+from dotsteward_cli import state as states
 from dotsteward_cli.host import commit_identity, commit_message
 from dotsteward_cli.skills import commands as skills_commands
 from dotsteward_cli.skills import state as skill_state
@@ -1866,7 +1868,27 @@ class Upgrade(runner.Runner):
         self.run.step("analysis", report.OK)
         return channels
 
+    def _record_state(self) -> None:
+        """What this machine observes now goes to its own state branch, so the versions this run moved
+        reach the remote next to the shared lock it published. Offline the record waits here and the
+        next run sends it. Only what the intent tracks is in it."""
+        if self.name is None:
+            return
+        try:
+            code = states.record(self.instance, self.env, by="upgrade", push_after=not self.offline)
+        except states.Finding as finding:
+            self.run.step("state", report.PRIVACY_STOP, detail=str(finding))
+            return
+        except (states.Refusal, states.Busy, config.DotstewardError, OSError) as failure:
+            self.run.step("state", report.FAILED, detail=str(failure))
+            return
+        if self.offline or code == states.EXIT_OFFLINE:
+            self.run.step("state", report.PARTIAL, detail="offline: the record waits on this machine")
+        else:
+            self.run.step("state", code)
+
     def _after(self) -> None:
+        self._record_state()
         if self.mode == "tracked":
             channels = self._analysis()
             # The offer may stay open for hours: what happened so far is on disk.
@@ -1883,6 +1905,7 @@ class Upgrade(runner.Runner):
                 self._user_channels()
                 if self.apt_changed:
                     self._e2e(force=True)
+                self._record_state()
         if self.approved:
             if self.red or not self.verified:
                 self.run.item(
