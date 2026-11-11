@@ -71,7 +71,8 @@ _APPLY_DESCRIPTION = (
     "mirrors, runs the gate in the maintain scope, commits with SUBJECT and the trace line of this machine, "
     "then with --activate "
     "installs the system-level components an adopt-mode profile needs, runs rebuild --switch and E2E "
-    "against the base, and with --publish runs txn publish; when another machine published first, it moves "
+    "against the base, and with --publish runs txn publish and records the state of this machine on its state "
+    "branch; when another machine published first, it moves "
     "the commits onto the new tip, proves and activates them again and pushes again, three times at most. "
     "[maintain] activate and publish of "
     "workstation.toml are the defaults (both false). Run the same command again after a fix or a sudo "
@@ -422,6 +423,8 @@ class Apply(_Checkout):
                 committed = self._move_on()
             if committed and self._activated():
                 self._publish()
+                if self.published:
+                    self._record_state()
         except KeyboardInterrupt:
             self.interrupted = True
             self.run.mark_interrupted(self.run.interrupted or ["SIGINT"])
@@ -905,6 +908,27 @@ class Apply(_Checkout):
                 "publishes them"
             ),
         )
+
+    def _record_state(self) -> None:
+        """What this machine observes, on its state branch: the intent it publishes and the state
+        of the machine travel together. A record that cannot be made is a note, never a red run:
+        the commit is published, and the next record or state push catches up."""
+        from dotsteward_cli import state as state_branch
+
+        started = time.monotonic()
+        detail = None
+        try:
+            code = state_branch.record(self.instance, self.env, by="apply")
+        except (state_branch.Refusal, state_branch.Finding, state_branch.Busy, config.DotstewardError) as why:
+            detail = f"not recorded: {why}"
+        else:
+            if code == report.PARTIAL:
+                detail = "recorded here; the push waits for the network (dotsteward state push)"
+            elif code != report.OK:
+                detail = f"recorded here; the push did not land (exit {code}, dotsteward state push)"
+        self._step("state", report.OK, started, **({"detail": detail} if detail else {}))
+        if detail:
+            _say("apply", f"state: {detail}")
 
     # --- the replay ---------------------------------------------------------------------------
 

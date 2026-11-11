@@ -174,7 +174,8 @@ What a machine observes about itself lives on a branch of its own on the instanc
 each commit from objects alone, so HEAD, the index and the work tree never change: the checkout
 stays clean, and E2E, the gate and the commands of the checkout never see the branch.
 
-`dotsteward state record` observes this machine: the platform, the running and newest kernel,
+`dotsteward state record` observes this machine (and `dotsteward apply` records the same after a green
+publish, [apply.md](apply.md)): the platform, the running and newest kernel,
 the active Home Manager generation and the result of the last E2E run on it, the enabled
 components of the intent that apply here, and for a deb component the installed version of each
 package it installs or follows (`track`). It holds the document to `schema/state.schema.json`,

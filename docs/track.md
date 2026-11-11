@@ -99,7 +99,8 @@ uncommitted changes the person agreed belong to it; commits the remote lacks sta
 `enabled`, `changed`, `removed`, `unchanged`, or null when nothing was looked at), `ask`, `notes`,
 `apply` (the report of the `apply` it ran, else null), `uninstall` (`remove`: `status`, `run`,
 `removed`) and `exit_code`. Each run leaves a report in `<state>/runs/add/` or `runs/remove/`, and
-its questions in `review.json`.
+its questions in `review.json`. After a green publish, `apply` records the state of this machine on its
+state branch, so the orphans of `status` are those of other machines that did not record since.
 
 ## status
 

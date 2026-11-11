@@ -78,6 +78,12 @@ questions, or the adaptive route, which opens nothing; 6 no network, nothing ope
    active tree, generation and profile.
 7. **Published** (`--publish`): `txn publish --scope maintain`, which after an activation needs that
    passed E2E. It pushes without force and makes sure the remote holds the commit.
+8. **State recorded** (after a green publish): what this machine observes goes to its state branch,
+   as `dotsteward state record` writes it (`recorded_by` `apply`, [machines.md](machines.md#the-state-of-a-machine)),
+   so `dotsteward add` and `dotsteward remove` leave the state of the machine as current as the intent.
+   A record that cannot be made (a machine without a name, a finding of the privacy scan, no network for
+   its push) is a note in the `state` step and on standard output, never a red run: the commit is
+   published, and the next `state record` or `state push` catches up.
 
 ## When another machine published first
 
