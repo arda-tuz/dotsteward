@@ -12,6 +12,8 @@ dpkg means:
   attached and dotted forms of Python and Ruby packages (``1.2.3rc1``, ``2.0.0b2``,
   ``1.2.3.dev0``, ``7.1.0.beta1``) all mean ``1.2.3~rc1``, and ``~`` means the same
   to dpkg.
+- The Python spellings of PEP 440 mean the same: ``c`` and ``preview`` are a
+  release candidate (``2.0.0c1`` is ``2.0.0rc1``), and ``N!`` is an epoch.
 - A text without any digit sorts before every version.
 
 The rest is dpkg's: an epoch (``1:``) comes first; ``-`` and a digit starts a
@@ -35,10 +37,12 @@ from typing import Any
 
 _ASCII_DIGITS = frozenset("0123456789")
 _ASCII_LETTERS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-_EPOCH = re.compile(r"([0-9]+):(.*)", re.DOTALL)
+_EPOCH = re.compile(r"([0-9]+)[:!](.*)", re.DOTALL)
 # The first - of a version, before any ~ or +, when a letter follows.
 _HYPHEN_WORD = re.compile(r"^([^-~+]*)-(?=[A-Za-z])")
-_WORDS = "a|b|rc|alpha|beta|pre|dev"
+_WORDS = "a|b|rc|c|alpha|beta|preview|pre|dev"
+# The Python spellings of a release candidate (PEP 440).
+_CANDIDATE = {"c": "rc", "preview": "rc"}
 # 1.2.3rc1 and 1.2.3.dev0, with or without a package revision.
 _ATTACHED = re.compile(
     rf"(.*[0-9])(?:((?:{_WORDS})[0-9]+)|\.((?:{_WORDS})[0-9]*))(-[^-]*)?",
@@ -108,7 +112,10 @@ def _parse(version: Any) -> tuple[int, str, str, str]:
         attached = _ATTACHED.fullmatch(text)
         if attached:
             base, joined, dotted, revision = attached.groups()
-            text = f"{base}~{(joined or dotted).lower()}{revision or ''}"
+            word = (joined or dotted).lower()
+            letters = word.rstrip("0123456789")
+            word = _CANDIDATE.get(letters, letters) + word[len(letters) :]
+            text = f"{base}~{word}{revision or ''}"
     upstream, separator, revision = text.rpartition("-")
     if not separator:
         upstream, revision = text, ""
