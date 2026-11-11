@@ -211,11 +211,11 @@ the allowlist of what a record says), counts them (`ignored`, and `ignored: N fi
 framework`), and holds the rest to the schema as strictly as before. So a new field of the
 schema is always optional; a new required field or another form of a known field takes a new
 `schema_version`, which an older reader refuses. The writer stays strict: a record of this
-machine has only what its own schema allows. Releases up to 1.6.0 refuse a record with a field
-they do not know, `held` included: there `dotsteward state show NAME` of a machine that holds a
-lock back says the record breaks its schema, and nothing else reads the records of other
-machines. Upgrade every machine of the instance to 1.7.0 or later before a consumer first
-holds a lock back; the producer must run it anyway to read `held`.
+machine has only what its own schema allows. Earlier releases, the ones without `held` in their
+schema, refuse a record with a field they do not know, `held` included: there `dotsteward state
+show NAME` of a machine that holds a lock back says the record breaks its schema, and nothing else
+reads the records of other machines. Upgrade every machine of the instance to a release with `held`
+before a consumer first holds a lock back; the producer must run one anyway to read `held`.
 
 ## The observer
 
