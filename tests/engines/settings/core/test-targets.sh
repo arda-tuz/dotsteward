@@ -102,11 +102,14 @@ assert_json - '.entries | map(select(.id == "comp-key"))[0].target == "comp"' \
 jq '{schema_version: 1, system: "x86_64-linux", settings_targets: .targets, reload_hooks: .reload_hooks}' \
   "$targets" >"$DS_TEST_ROOT/manifest.json"
 assert_exit 0 lmf M --targets-file "$DS_TEST_ROOT/manifest.json" verify
-case $(uname -s)-$(uname -m) in
-  Linux-x86_64) system=x86_64-linux ;;
-  Linux-aarch64) system=aarch64-linux ;;
-  Darwin-arm64) system=aarch64-darwin ;;
-  Darwin-x86_64) system=x86_64-darwin ;;
+# The engine names the mirror <machine>-<platform>: the machine of the host, the platform the CLI
+# sees (DOTSTEWARD_PLATFORM first), never the kernel name of the host alone.
+# shellcheck source=tests/lib/fixture-system.sh
+source "$DS_REPO_ROOT/tests/lib/fixture-system.sh"
+case $(uname -m) in
+  x86_64 | amd64) system=x86_64-$fixture_platform ;;
+  arm64 | aarch64) system=aarch64-$fixture_platform ;;
+  *) ds_fail "unsupported machine: $(uname -m)" ;;
 esac
 mkdir -p "$settings_work/M/repo/.dotsteward"
 cp "$DS_TEST_ROOT/manifest.json" "$settings_work/M/repo/.dotsteward/manifest.$system.json"
