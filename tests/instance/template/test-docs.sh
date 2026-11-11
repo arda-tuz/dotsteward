@@ -66,7 +66,7 @@ contains_all agent/overlays/README.md '[skills.overlays]'
 # tests/README.md: how instance tests plug into the gate's static step.
 contains_all tests/README.md \
   '[gate]' 'static = ["tests/' 'dotsteward static' 'instance-static' \
-  'DOTSTEWARD_INSTANCE_ROOT' 'DOTSTEWARD_SANDBOX' 'DOTSTEWARD_STATIC_HELPER' 'fail'
+  'DOTSTEWARD_INSTANCE_ROOT' 'DOTSTEWARD_SANDBOX' 'DOTSTEWARD_STATIC_HELPER' 'fail' 'own_files' 'framework_paths'
 
 # Every `dotsteward <subcommand>` a document quotes exists in the CLI (init
 # is the command that creates an instance).
