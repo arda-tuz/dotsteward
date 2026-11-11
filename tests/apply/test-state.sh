@@ -35,10 +35,40 @@ apply_report '[.steps[].name] == ["stage", "generate", "gate", "commit", "rebuil
 apply_report '.steps[-1].status == "ok" and .status == "ok"'
 assert_eq "" "$(git -C "$up_inst" status --porcelain)" "the checkout is clean"
 
+# Published without an activation: the state of this machine did not change, nothing is recorded.
+edit "a change published but not activated here"
+assert_exit 0 apply -m "docs: published, not activated" --no-activate --publish
+assert_eq "$(head_oid)" "$(remote_oid)" "published"
+assert_eq "$local_tip" "$(state_tip "$up_inst")" "a record of a tree that is not active here"
+apply_report '(.steps[-1] | .name == "state" and (.detail | test("not recorded: nothing was activated")))'
+
+# Any failure of the record after the publish is a note: here the denylist of the privacy policy
+# goes away while E2E runs, after the gate proved the tree.
+denylist=$DS_TEST_ROOT/denylist.txt
+printf 'denied-name\n' >"$denylist"
+printf '\n[privacy]\ndenylist = "%s"\n' "$denylist" >>"$up_inst/workstation.toml"
+git -C "$up_inst" commit -q -am "chore: a denylist"
+git -C "$up_inst" push -q origin HEAD:main
+printf 'rm -f -- %q\n' "$denylist" >"$UP_CONTROL/e2e-hook"
+edit "a change whose record fails"
+assert_exit 0 apply -m "docs: the record fails" --activate --publish
+rm -f -- "$UP_CONTROL/e2e-hook"
+assert_eq "$(head_oid)" "$(remote_oid)" "published"
+apply_report '.status == "ok" and (.steps[-1] | .name == "state" and (.detail | test("not recorded")))'
+assert_contains "$DS_STDOUT" "state: not recorded"
+python3 - "$up_inst/workstation.toml" <<'PY'
+import re, sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+open(path, "w", encoding="utf-8").write(re.sub(r"\n\[privacy\]\ndenylist = .*\n", "\n", text))
+PY
+git -C "$up_inst" commit -q -am "chore: no denylist"
+git -C "$up_inst" push -q origin HEAD:main
+
 # A machine without a name: published, no record, a note, exit 0.
 rm -f -- "$DOTSTEWARD_STATE_ROOT/machine.json"
 edit "a change of an unnamed machine"
-assert_exit 0 apply -m "docs: an unnamed machine" --no-activate --publish
+assert_exit 0 apply -m "docs: an unnamed machine" --activate --publish
 assert_eq "$(head_oid)" "$(remote_oid)" "published"
 assert_eq "$local_tip" "$(state_tip "$up_inst")" "a record of a machine without a name"
 apply_report '.status == "ok" and (.steps[-1] | .name == "state" and .status == "ok" and (.detail | test("not recorded")))'
