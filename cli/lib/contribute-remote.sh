@@ -244,7 +244,15 @@ _contribute_recover() {
   base=$(_contribute_get instance_base)
   commit=$(_contribute_get instance_commit)
   if [[ $(_contribute_get step) == upgrade && -n $base && -n $commit ]]; then
-    e2e+=(--expected-remote-base "$base")
+    # A publish whose answer was lost: origin already is the instance commit, or HEAD, which txn
+    # publish rewrote to name the machine; e2e checks the instance against origin as it is, as a
+    # resumed upgrade does. Otherwise origin must still be the publish base.
+    local remote=""
+    remote=$(git_net 60 -C "$DS_INSTANCE_ROOT" ls-remote origin "refs/heads/${DS_INSTANCE_BRANCH:-main}" </dev/null |
+      awk -v ref="refs/heads/${DS_INSTANCE_BRANCH:-main}" '$2 == ref { print $1; exit }') || remote=""
+    if [[ -z $remote || ($remote != "$commit" && $remote != "$(git -C "$DS_INSTANCE_ROOT" rev-parse HEAD)") ]]; then
+      e2e+=(--expected-remote-base "$base")
+    fi
   else
     _contribute_waiting_base
     [[ -z $CT_WAITING_BASE ]] || e2e+=(--expected-remote-base "$CT_WAITING_BASE")
