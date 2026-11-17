@@ -91,12 +91,14 @@ The OpenCode and Pi coding agents: both discover the shared skills in `~/.agents
 enable = true
 # method = "external"                       # OpenCode installed by you
 # method_by_platform = { darwin = "external" }
+# options = { opencode = false }            # Pi only, no OpenCode
 ```
 
 | Part | Linux (`x86_64-linux`) | darwin (`aarch64-darwin`) |
 | --- | --- | --- |
 | OpenCode, method `official-binary` (default) | release asset `opencode-linux-x64.tar.gz`, pin `agent_tools.opencode` | release asset `opencode-darwin-arm64.zip`, pin `agent_tools.opencode-darwin` |
 | OpenCode, method `external` | `opencode` on `PATH`, at least the pinned version | same |
+| No OpenCode (`options.opencode = false`), method `nix` | nothing | same |
 | Pi | Nix package `pi`, built from source | same (evaluated, see Verification) |
 
 ## vscode
