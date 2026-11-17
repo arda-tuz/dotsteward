@@ -17,6 +17,11 @@
 # home.packages wherever the component is active, whatever the OpenCode
 # method is.
 #
+# options.opencode = false keeps Pi without OpenCode: the component then
+# uses the nix method (Pi is its only package) and declares nothing of
+# OpenCode (command, agents checks, settings target, skill root, release
+# pins).
+#
 # Checks: the Pi probes (version against the skills lock mirror nix_tools.pi,
 # the --help flags the agents rely on) and three agents checks in probes/:
 # OpenCode runs, OpenCode's /skill API and Pi's RPC get_commands both list
@@ -31,7 +36,13 @@
   ...
 }:
 let
-  inherit (builtins) elem filter;
+  inherit (builtins)
+    attrNames
+    elem
+    filter
+    isBool
+    toJSON
+    ;
 
   name = "opencode-pi";
   inherit (dotsteward) cfg system;
@@ -57,6 +68,34 @@ let
   };
   defaultMethod = "official-binary";
 
+  # --- options ------------------------------------------------------------------
+
+  componentOptions = component.options;
+  knownOptions = [ "opencode" ];
+  opencodeOption = componentOptions.opencode or true;
+  # OpenCode is part of the component unless options.opencode is false.
+  withOpencode = opencodeOption != false;
+  # Without OpenCode the component installs only Pi, a Nix package.
+  methods =
+    if withOpencode then
+      [
+        "official-binary"
+        "external"
+      ]
+    else
+      [ "nix" ];
+
+  optionProblems =
+    map (key: "unknown option ${key} (known: ${lib.concatStringsSep ", " knownOptions})") (
+      filter (key: !elem key knownOptions) (attrNames componentOptions)
+    )
+    ++ lib.optional (
+      !isBool opencodeOption
+    ) "options.opencode must be true or false, got ${toJSON opencodeOption}"
+    ++
+      lib.optional (!withOpencode && component.method != "nix")
+        "options.opencode = false installs no OpenCode, so the method must be nix (leave method and method_by_platform unset), got ${component.method}";
+
   # The platforms of nix.systems whose method is official-binary: each one
   # reads its own release pin, and every system's manifest declares the pin
   # rules of all of them (one lock serves every system).
@@ -70,8 +109,10 @@ let
           if cfg.components ? ${name} then dsLib.config.methodFor cfg name platformName else null;
       in
       if configured == null then defaultMethod else configured;
-  pinnedPlatforms = filter (platformName: methodOn platformName == "official-binary") (
-    lib.unique (map dsLib.platform.platformOf cfg.nix.systems)
+  pinnedPlatforms = lib.optionals withOpencode (
+    filter (platformName: methodOn platformName == "official-binary") (
+      lib.unique (map dsLib.platform.platformOf cfg.nix.systems)
+    )
   );
   pinned = platformName: elem platformName pinnedPlatforms;
 
@@ -167,16 +208,10 @@ let
 in
 {
   dotsteward.components.${name} = {
-    method = lib.mkDefault defaultMethod;
+    method = lib.mkDefault (if withOpencode then defaultMethod else "nix");
     supportedMethods = {
-      linux = [
-        "official-binary"
-        "external"
-      ];
-      darwin = [
-        "official-binary"
-        "external"
-      ];
+      linux = methods;
+      darwin = methods;
     };
 
     install = {
@@ -195,6 +230,8 @@ in
         versionArgv = [ "--version" ];
         minimum = releases.${platform}.pin;
       };
+      # Without OpenCode: Pi is the only package, added by the nix method.
+      nix.packages = lib.optional (!withOpencode) piPackage;
     };
 
     pins = {
@@ -218,29 +255,35 @@ in
       resolvedVersions.pi = piPackage.version;
     };
 
-    # OpenCode reads ~/.config/opencode/opencode.json on Linux and darwin
-    # alike (JSON with comments allowed).
-    settingsTargets.opencode = {
-      path = "~/.config/opencode/opencode.json";
-      format = "jsonc";
-      createIfMissing = true;
-    };
-
-    # Pi reads its user-level MCP servers from ~/.pi/agent/mcp.json (strict
-    # JSON); new MCP servers load in a new session or after /reload.
-    settingsTargets.pi-mcp = {
-      path = "~/.pi/agent/mcp.json";
-      format = "json";
-      createIfMissing = true;
-      createMode = "0600";
-    };
+    settingsTargets =
+      # OpenCode reads ~/.config/opencode/opencode.json on Linux and darwin
+      # alike (JSON with comments allowed).
+      lib.optionalAttrs withOpencode {
+        opencode = {
+          path = "~/.config/opencode/opencode.json";
+          format = "jsonc";
+          createIfMissing = true;
+        };
+      }
+      // {
+        # Pi reads its user-level MCP servers from ~/.pi/agent/mcp.json
+        # (strict JSON); new MCP servers load in a new session or after
+        # /reload.
+        pi-mcp = {
+          path = "~/.pi/agent/mcp.json";
+          format = "json";
+          createIfMissing = true;
+          createMode = "0600";
+        };
+      };
 
     # Skill roots that only OpenCode and only Pi read: the scoped skills of
     # the skills lock (agents = ["opencode"] or ["pi"]) are linked there.
-    skillLayout.agentRoots = {
-      opencode = "~/.config/opencode/skills";
-      pi = "~/.pi/agent/skills";
-    };
+    skillLayout.agentRoots =
+      lib.optionalAttrs withOpencode { opencode = "~/.config/opencode/skills"; }
+      // {
+        pi = "~/.pi/agent/skills";
+      };
 
     agentRulesTargets = [ { path = ".pi/agent/AGENTS.md"; } ];
     bootstrap.backupPaths = [ "~/.pi/agent/AGENTS.md" ];
@@ -282,25 +325,33 @@ in
     # The hooks are read in place from the framework source, so the
     # manifest mirror names them <dotsteward>/modules/components/opencode-pi/probes/<hook>.sh.
     checks = {
-      commands = [
-        "opencode"
-        "pi"
-      ];
+      commands = lib.optional withOpencode "opencode" ++ [ "pi" ];
       agents =
         map
           (hook: {
             name = hook;
             script = toString ./probes + "/${hook}.sh";
           })
-          [
-            "opencode-version"
-            "opencode-skill-api"
-            "pi-rpc"
-          ];
+          (
+            lib.optionals withOpencode [
+              "opencode-version"
+              "opencode-skill-api"
+            ]
+            ++ [ "pi-rpc" ]
+          );
     };
 
     docs = ./README.md;
   };
 
-  home.packages = lib.optional active piPackage;
+  # With OpenCode the method is official-binary or external, so Pi is added
+  # here; without it the nix method adds Pi (install.nix.packages).
+  home.packages = lib.optional (active && withOpencode) piPackage;
+
+  assertions = lib.optionals component.enable (
+    map (message: {
+      assertion = false;
+      message = "dotsteward: component ${name}: ${message}";
+    }) optionProblems
+  );
 }

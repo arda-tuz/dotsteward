@@ -9,7 +9,14 @@ Enable it in `workstation.toml`:
 enable = true
 # method = "external"                       # OpenCode installed by you
 # method_by_platform = { darwin = "external" }
+# options = { opencode = false }            # Pi only, no OpenCode
 ```
+
+## Options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `opencode` | `true` | `false` keeps Pi without OpenCode. The component then uses the `nix` method, whose only package is Pi, and declares nothing of OpenCode: no `opencode` command, no OpenCode agents checks, no settings target `opencode`, no skill root `opencode`, no OpenCode release pins and no `pins latest` rows for them. Leave `method` and `method_by_platform` unset; any other method is refused. A skills lock entry that names the agent `opencode` is refused too, since its skill root is gone. |
 
 ## What it installs
 
@@ -17,11 +24,12 @@ enable = true
 | --- | --- | --- |
 | OpenCode, method `official-binary` (default) | release asset `opencode-linux-x64.tar.gz`, pin `agent_tools.opencode` | release asset `opencode-darwin-arm64.zip`, pin `agent_tools.opencode-darwin` |
 | OpenCode, method `external` | `opencode` on `PATH`, at least the pinned version | same |
+| No OpenCode (`options.opencode = false`), method `nix` | nothing | same |
 | Pi | Nix package `pi`, built from source | same (evaluated, see Verification) |
 
 **OpenCode.** `dotsteward agents install` downloads the official release archive of the platform from the GitHub releases of `anomalyco/opencode` (tag `v<version>`), verifies its size and SHA-256 against the release pin in `versions.lock.json`, and installs its single member `opencode` as `~/.local/bin/opencode`. The policy is `at-least`: a binary that updated itself to a newer version is kept, an older or missing one is replaced (the previous file is backed up first), and a symbolic link at the destination is refused. `dotsteward agents check` only compares the installed version with the pin. The same applies in `adopt` and `fresh` profiles: the install is user level. With `method = "external"` nothing is downloaded; `opencode` must be on `PATH` and at least the pinned version.
 
-**Pi.** The instance package `pi` (`package.nix`, `pi-package.nix`) builds the Pi coding agent from the official source tag of `earendil-works/pi`, pinned by `agent_tools.pi`: the source hash, the npm dependency hash of the upstream workspace lock, and the model data of the `@earendil-works/pi-ai` package of the same version. The published npm tarball is not used because its shrinkwrap lacks the integrities of the internal workspace packages. The build runs `npm run build:offline` in the coding-agent workspace with install scripts disabled, replaces the links of the published workspaces of the release (every workspace the root `package.json` declares that is not `private`) with copies, and wraps `pi` with the ripgrep and fd packages of nixpkgs on its `PATH`. No `PI_*` variable is set, so Pi's own update check and telemetry defaults are untouched. The package is added to `home.packages` wherever the component is active (enabled, in the profile, on the platform), whatever the OpenCode method is, and `checks.<system>.pi` of the instance builds it, including its version check. An instance may replace it through `extraPackages`.
+**Pi.** The instance package `pi` (`package.nix`, `pi-package.nix`) builds the Pi coding agent from the official source tag of `earendil-works/pi`, pinned by `agent_tools.pi`: the source hash, the npm dependency hash of the upstream workspace lock, and the model data of the `@earendil-works/pi-ai` package of the same version. The published npm tarball is not used because its shrinkwrap lacks the integrities of the internal workspace packages. The build runs `npm run build:offline` in the coding-agent workspace with install scripts disabled, replaces the links of the published workspaces of the release (every workspace the root `package.json` declares that is not `private`) with copies, and wraps `pi` with the ripgrep and fd packages of nixpkgs on its `PATH`. No `PI_*` variable is set, so Pi's own update check and telemetry defaults are untouched. The package is added to `home.packages` wherever the component is active (enabled, in the profile, on the platform), whatever the OpenCode method is (without OpenCode, through the `nix` method), and `checks.<system>.pi` of the instance builds it, including its version check. An instance may replace it through `extraPackages`.
 
 ## Files and settings
 
@@ -33,6 +41,8 @@ enable = true
 ## Checks
 
 Run by `dotsteward agents check` (and after `agents install`), in this order:
+
+Without OpenCode (`options.opencode = false`) only the Pi steps run: the `pi` command, the probes and `pi-rpc`.
 
 1. Commands: `opencode` and `pi` are on `PATH`.
 2. Probes, with `PI_OFFLINE=1`: `pi --version` equals the skills lock mirror `nix_tools.pi`; `pi --help` lists `--offline` and `--no-skills`; `pi auth check --help` lists `--json` and `--no-refresh`.
@@ -55,7 +65,7 @@ The component declares the agent skill roots `opencode` (`~/.config/opencode/ski
 | `agent_tools.opencode` | Linux release: `minimum_version`, `source_revision`, `url`, `size`, `sha256`, `native_auto_updates` | download pin of `opencode-linux-x64.tar.gz` of `minimum_version`; mirrored to the skills lock `release_tools.opencode` |
 | `agent_tools.opencode-darwin` | darwin release: `minimum_version`, `source_revision`, `url`, `size`, `sha256` | download pin of `opencode-darwin-arm64.zip`; `minimum_version` follows the Linux pin when both platforms are pinned |
 
-Only the release pins of the platforms in `nix.systems` whose OpenCode method is `official-binary` are read and checked; `seed.json` holds all of them. The skills lock mirrors need their parent objects (`release_tools.opencode`, `nix_tools`) in `agent/skills.lock.json`; `dotsteward pins sync` fills the values but never creates entries. `dotsteward pins latest` follows the npm package `agent_tools.pi.package` and the GitHub releases of `anomalyco/opencode` (one row per release pin).
+Only the release pins of the platforms in `nix.systems` whose OpenCode method is `official-binary` are read and checked (none without OpenCode); `seed.json` holds all of them. The skills lock mirrors need their parent objects (`release_tools.opencode`, `nix_tools`) in `agent/skills.lock.json`; `dotsteward pins sync` fills the values but never creates entries. `dotsteward pins latest` follows the npm package `agent_tools.pi.package` and the GitHub releases of `anomalyco/opencode` (one row per release pin).
 
 ## Verification
 
