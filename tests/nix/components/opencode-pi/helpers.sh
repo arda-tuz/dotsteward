@@ -24,7 +24,9 @@
 #                           its path: nix.systems ["x86_64-linux"], the
 #                           profile "workstation" (fresh mode),
 #                           [components.opencode-pi] enable = true and
-#                           method = "external" followed by TOML_LINES; the
+#                           method = "$OP_METHOD" (default external; an
+#                           empty OP_METHOD writes no method) followed by
+#                           TOML_LINES; the
 #                           minimal instance lock with the seed's
 #                           versions_lock merged in (what dotsteward init
 #                           writes); the vendored skills alpha-skill and
@@ -93,7 +95,8 @@ _op_skill() {
 
 op_instance() {
   (($# >= 1 && $# <= 2)) || ds_fail "op_instance: usage: op_instance NAME [TOML_LINES]"
-  local dir=$DS_TEST_ROOT/$1 extra=${2:-} entries pi_version
+  local dir=$DS_TEST_ROOT/$1 extra=${2:-} entries pi_version method_line=''
+  [[ -z ${OP_METHOD-external} ]] || method_line="method = \"${OP_METHOD-external}\""
   [[ -f $op_seed ]] || ds_fail "missing $op_seed"
   rm -rf -- "$dir"
   mkdir -p "$dir/agent/skills"
@@ -117,7 +120,7 @@ names = ["workstation"]
 
 [components.opencode-pi]
 enable = true
-method = "external"
+$method_line
 $extra
 EOF
   jq --indent 2 -s '.[0] * .[1].versions_lock' "$_op_minimal/versions.lock.json" "$op_seed" \
